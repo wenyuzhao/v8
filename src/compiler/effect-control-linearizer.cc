@@ -1832,7 +1832,7 @@ void EffectControlLinearizer::LowerCheckMaps(Node* node, Node* frame_state) {
       Node* map0 = __ HeapConstant(maps[i]);
       Node* map = __ WordAnd(map0, ChangeInt32ToIntPtr(__ Int32Constant(-1)));
       Node* check = __ TaggedEqual(value_map, map);
-      // TODO(steve) map check performance likely an issue here
+      // TODO(steveblackburn) map check performance likely an issue here
       if (i == map_count - 1) {
         __ BranchWithCriticalSafetyCheck(check, &done, &migrate);
       } else {
