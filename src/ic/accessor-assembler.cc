@@ -85,6 +85,7 @@ TNode<MaybeObject> AccessorAssembler::TryMonomorphicCase(
 
   // Try to quickly handle the monomorphic case without knowing for sure
   // if we have a weak reference in feedback.
+  // TODOO
   GotoIfNot(IsWeakReferenceTo(feedback, lookup_start_object_map), if_miss);
 
   TNode<MaybeObject> handler = UncheckedCast<MaybeObject>(
@@ -120,6 +121,7 @@ void AccessorAssembler::HandlePolymorphicCase(
     TNode<MaybeObject> maybe_cached_map =
         LoadWeakFixedArrayElement(feedback, var_index.value());
     CSA_ASSERT(this, IsWeakOrCleared(maybe_cached_map));
+    // TODO
     GotoIfNot(IsWeakReferenceTo(maybe_cached_map, lookup_start_object_map),
               &loop_next);
 
@@ -2640,6 +2642,7 @@ void AccessorAssembler::TryProbeStubCache(StubCache* stub_cache,
   // Check that the {lookup_start_object} isn't a smi.
   GotoIf(TaggedIsSmi(lookup_start_object), &miss);
 
+  // TODO
   TNode<Map> lookup_start_object_map = LoadMap(CAST(lookup_start_object));
 
   // Probe the primary table.

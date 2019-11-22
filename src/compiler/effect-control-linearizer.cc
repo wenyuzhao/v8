@@ -1829,8 +1829,10 @@ void EffectControlLinearizer::LowerCheckMaps(Node* node, Node* frame_state) {
 
     // Perform the map checks.
     for (size_t i = 0; i < map_count; ++i) {
-      Node* map = __ HeapConstant(maps[i]);
+      Node* map0 = __ HeapConstant(maps[i]);
+      Node* map = __ WordAnd(map0, ChangeInt32ToIntPtr(__ Int32Constant(-1)));
       Node* check = __ TaggedEqual(value_map, map);
+      // TODO
       if (i == map_count - 1) {
         __ BranchWithCriticalSafetyCheck(check, &done, &migrate);
       } else {
