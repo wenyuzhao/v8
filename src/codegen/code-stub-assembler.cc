@@ -1895,6 +1895,11 @@ void CodeStubAssembler::DispatchMaybeObject(TNode<MaybeObject> maybe_object,
   Goto(if_strong);
 }
 
+TNode<BoolT> CodeStubAssembler::IsNotMapOffset(SloppyTNode<IntPtrT> value) {
+  return Word32NotEqual(TruncateIntPtrToInt32(value),
+                        Int32Constant(HeapObject::kMapOffset));
+}
+
 TNode<BoolT> CodeStubAssembler::IsStrong(TNode<MaybeObject> value) {
   return Word32Equal(Word32And(TruncateIntPtrToInt32(
                                    BitcastTaggedToWordForTagAndSmiBits(value)),
