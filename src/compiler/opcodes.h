@@ -425,7 +425,6 @@
   V(LoadDataViewElement)                \
   V(LoadElement)                        \
   V(LoadField)                          \
-  V(LoadMapField)                       \
   V(LoadFieldByIndex)                   \
   V(LoadFromObject)                     \
   V(LoadMessage)                        \
@@ -468,7 +467,6 @@
   V(StoreDataViewElement)               \
   V(StoreElement)                       \
   V(StoreField)                         \
-  V(StoreMapField)                      \
   V(StoreMessage)                       \
   V(StoreSignedSmallElement)            \
   V(StoreToObject)                      \

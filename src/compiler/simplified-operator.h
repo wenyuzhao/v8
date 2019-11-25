@@ -1008,9 +1008,7 @@ class V8_EXPORT_PRIVATE SimplifiedOperatorBuilder final
   const Operator* LoadFieldByIndex();
   const Operator* LoadField(FieldAccess const&);
   const Operator* StoreField(FieldAccess const&);
-  const Operator* LoadMapField(FieldAccess const&);
-  const Operator* StoreMapField(FieldAccess const&);
-
+  
   // load-element [base + index]
   const Operator* LoadElement(ElementAccess const&);
 

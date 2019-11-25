@@ -1878,8 +1878,6 @@ const Operator* SimplifiedOperatorBuilder::SpeculativeNumberEqual(
 #define ACCESS_OP_LIST(V)                                                \
   V(LoadField, FieldAccess, Operator::kNoWrite, 1, 1, 1)                 \
   V(StoreField, FieldAccess, Operator::kNoRead, 2, 1, 0)                 \
-  V(LoadMapField, FieldAccess, Operator::kNoWrite, 1, 1, 1)              \
-  V(StoreMapField, FieldAccess, Operator::kNoRead, 2, 1, 0)              \
   V(LoadElement, ElementAccess, Operator::kNoWrite, 2, 1, 1)             \
   V(StoreElement, ElementAccess, Operator::kNoRead, 3, 1, 0)             \
   V(LoadTypedElement, ExternalArrayType, Operator::kNoWrite, 4, 1, 1)    \
