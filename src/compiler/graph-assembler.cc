@@ -506,6 +506,13 @@ Node* JSGraphAssembler::Allocate(AllocationType allocation, Node* size) {
                        effect(), control()));
 }
 
+Node* JSGraphAssembler::LoadMapField(FieldAccess const& access, Node* object) {
+  Node* value =
+      AddNode(graph()->NewNode(simplified()->LoadField(access), object,
+                               effect(), control()));
+  return value;
+}
+
 Node* JSGraphAssembler::LoadField(FieldAccess const& access, Node* object) {
   Node* value = AddNode(graph()->NewNode(simplified()->LoadField(access),
                                          object, effect(), control()));
