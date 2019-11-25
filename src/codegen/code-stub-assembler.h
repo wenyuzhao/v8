@@ -1094,6 +1094,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
         LoadFromObject(MachineType::AnyTagged(), object,
                        IntPtrConstant(offset - kHeapObjectTag)));
   }
+  Node* LoadObjectMap(SloppyTNode<HeapObject> object);
   TNode<Object> LoadObjectField(TNode<HeapObject> object,
                                 TNode<IntPtrT> offset) {
     return UncheckedCast<Object>(

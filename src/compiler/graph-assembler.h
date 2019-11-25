@@ -820,7 +820,7 @@ class V8_EXPORT_PRIVATE JSGraphAssembler : public GraphAssembler {
     //     access.machine_type.representation()));
     return TNode<T>::UncheckedCast(LoadField(access, object));
   }
-  Node* LoadMapField(FieldAccess const&, Node* object);
+  Node* LoadMap(FieldAccess const&, Node* object);
   Node* LoadElement(ElementAccess const&, Node* object, Node* index);
   template <typename T>
   TNode<T> LoadElement(ElementAccess const& access, TNode<HeapObject> object,
@@ -831,7 +831,7 @@ class V8_EXPORT_PRIVATE JSGraphAssembler : public GraphAssembler {
     return TNode<T>::UncheckedCast(LoadElement(access, object, index));
   }
   Node* StoreField(FieldAccess const&, Node* object, Node* value);
-  Node* StoreMapField(FieldAccess const&, Node* object, Node* value);
+  Node* StoreMap(FieldAccess const&, Node* object, Node* value);
   Node* StoreElement(ElementAccess const&, Node* object, Node* index,
                      Node* value);
   void TransitionAndStoreElement(MapRef double_map, MapRef fast_map,

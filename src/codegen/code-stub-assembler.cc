@@ -1484,6 +1484,15 @@ TNode<Object> CodeStubAssembler::LoadFromParentFrame(int offset) {
   return LoadFullTagged(frame_pointer, IntPtrConstant(offset));
 }
 
+Node* CodeStubAssembler::LoadObjectMap(SloppyTNode<HeapObject> object) {
+  CSA_ASSERT(this, IsStrong(object));
+  return WordAnd(
+                LoadFromObject(MachineType::TaggedPointer(), object,
+                               IntPtrConstant(HeapObject::kMapOffset - kHeapObjectTag)),
+                IntPtrConstant(uintptr_t{-1} >> 1)
+                );
+}
+
 TNode<IntPtrT> CodeStubAssembler::LoadAndUntagObjectField(
     SloppyTNode<HeapObject> object, int offset) {
   if (SmiValuesAre32Bits()) {
@@ -1523,7 +1532,9 @@ TNode<Map> CodeStubAssembler::GetInstanceTypeMap(InstanceType instance_type) {
 }
 
 TNode<Map> CodeStubAssembler::LoadMap(SloppyTNode<HeapObject> object) {
-  return LoadObjectField<Map>(object, HeapObject::kMapOffset);
+  // TODO(v8:9637): Do a proper LoadObjectField<Map> and remove UncheckedCast
+  // when we can avoid making Large code objects due to TNodification.
+  return UncheckedCast<Map>(LoadObjectMap(object));
 }
 
 TNode<Uint16T> CodeStubAssembler::LoadInstanceType(
