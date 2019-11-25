@@ -820,7 +820,6 @@ class V8_EXPORT_PRIVATE JSGraphAssembler : public GraphAssembler {
     //     access.machine_type.representation()));
     return TNode<T>::UncheckedCast(LoadField(access, object));
   }
-  Node* LoadMap(FieldAccess const&, Node* object);
   Node* LoadElement(ElementAccess const&, Node* object, Node* index);
   template <typename T>
   TNode<T> LoadElement(ElementAccess const& access, TNode<HeapObject> object,

@@ -5,6 +5,7 @@
 #include "src/compiler/graph-assembler.h"
 
 #include "src/codegen/code-factory.h"
+#include "src/compiler/access-builder.h"
 #include "src/compiler/linkage.h"
 #include "src/compiler/schedule.h"
 // For TNode types.
@@ -506,17 +507,11 @@ Node* JSGraphAssembler::Allocate(AllocationType allocation, Node* size) {
                        effect(), control()));
 }
 
-Node* JSGraphAssembler::LoadMap(FieldAccess const& access, Node* object) {
-  Node* loaded_value =
-      AddNode(graph()->NewNode(simplified()->LoadField(access), object,
-                               effect(), control()));
-  Node* clean_value = WordAnd(loaded_value, IntPtrConstant(uintptr_t{-1} >> 1));
-  return clean_value;
-}
-
 Node* JSGraphAssembler::LoadField(FieldAccess const& access, Node* object) {
   Node* value = AddNode(graph()->NewNode(simplified()->LoadField(access),
                                          object, effect(), control()));
+  if (access == AccessBuilder::ForMap())
+    value = WordAnd(value, IntPtrConstant(uintptr_t{-1} >> 1));
   return value;
 }
 

@@ -1825,7 +1825,7 @@ void EffectControlLinearizer::LowerCheckMaps(Node* node, Node* frame_state) {
     auto migrate = __ MakeDeferredLabel();
 
     // Load the current map of the {value}.
-    Node* value_map = __ LoadMap(AccessBuilder::ForMap(), value);
+    Node* value_map = __ LoadField(AccessBuilder::ForMap(), value);
 
     // Perform the map checks.
     for (size_t i = 0; i < map_count; ++i) {
