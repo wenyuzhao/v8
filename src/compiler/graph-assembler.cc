@@ -507,10 +507,11 @@ Node* JSGraphAssembler::Allocate(AllocationType allocation, Node* size) {
 }
 
 Node* JSGraphAssembler::LoadMapField(FieldAccess const& access, Node* object) {
-  Node* value =
+  Node* loaded_value =
       AddNode(graph()->NewNode(simplified()->LoadField(access), object,
                                effect(), control()));
-  return value;
+  Node* clean_value = WordAnd(loaded_value, IntPtrConstant(uintptr_t{-1} >> 1));
+  return clean_value;
 }
 
 Node* JSGraphAssembler::LoadField(FieldAccess const& access, Node* object) {
