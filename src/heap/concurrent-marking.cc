@@ -270,7 +270,7 @@ class ConcurrentMarkingVisitor final
   template <typename T, typename TBodyDescriptor>
   const SlotSnapshot& MakeSlotSnapshot(Map map, T object, int size) {
     SlotSnapshottingVisitor visitor(&slot_snapshot_);
-    visitor.VisitPointer(object, object.map_slot());
+    visitor.VisitMapPointer(object);
     TBodyDescriptor::IterateBody(map, object, size, &visitor);
     return slot_snapshot_;
   }

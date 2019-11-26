@@ -133,6 +133,9 @@ class MarkingVisitorBase : public HeapVisitor<int, ConcreteVisitor> {
   V8_INLINE int VisitWeakCell(Map map, WeakCell object);
 
   // ObjectVisitor overrides.
+  V8_INLINE void VisitMapPointer(HeapObject host) final {
+    VisitPointersImpl(host, host.map_slot(), host.map_slot() + 1);
+  }
   V8_INLINE void VisitPointer(HeapObject host, ObjectSlot p) final {
     VisitPointersImpl(host, p, p + 1);
   }

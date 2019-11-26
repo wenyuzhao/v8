@@ -1003,6 +1003,12 @@ class MarkCompactCollector::CustomRootBodyMarkingVisitor final
     MarkObject(host, *p);
   }
 
+  void VisitMapPointer(HeapObject host) final {
+    ObjectSlot p = host.map_slot();
+    Object o = *p;  // TODO(steveblackburn)
+    MarkObject(host, o);
+  }
+
   void VisitPointers(HeapObject host, ObjectSlot start, ObjectSlot end) final {
     for (ObjectSlot p = start; p < end; ++p) {
       DCHECK(!HasWeakHeapObjectTag(*p));
@@ -1151,12 +1157,12 @@ class RecordMigratedSlotVisitor : public ObjectVisitor {
       : collector_(collector),
         ephemeron_remembered_set_(ephemeron_remembered_set) {}
 
-  inline void VisitPointer(HeapObject host, ObjectSlot p) final {
+  inline void VisitPointer(HeapObject host, ObjectSlot p) final { // TODO(steveblackburn) do we need anything here?
     DCHECK(!HasWeakHeapObjectTag(*p));
     RecordMigratedSlot(host, MaybeObject::FromObject(*p), p.address());
   }
 
-  inline void VisitPointer(HeapObject host, MaybeObjectSlot p) final {
+  inline void VisitPointer(HeapObject host, MaybeObjectSlot p) final { // TODO(steveblackburn) do we need anything here?
     RecordMigratedSlot(host, *p, p.address());
   }
 
@@ -2717,11 +2723,11 @@ class PointersUpdatingVisitor : public ObjectVisitor, public RootVisitor {
   explicit PointersUpdatingVisitor(IsolateRoot isolate) : isolate_(isolate) {}
 
   void VisitPointer(HeapObject host, ObjectSlot p) override {
-    UpdateStrongSlotInternal(isolate_, p);
+    UpdateStrongSlotInternal(isolate_, p);// TODO(steveblackburn) do we need anything here?
   }
 
   void VisitPointer(HeapObject host, MaybeObjectSlot p) override {
-    UpdateSlotInternal(isolate_, p);
+    UpdateSlotInternal(isolate_, p);// TODO(steveblackburn) do we need anything here?
   }
 
   void VisitPointers(HeapObject host, ObjectSlot start,

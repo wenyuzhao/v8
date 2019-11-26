@@ -74,7 +74,7 @@ template <typename ResultType, typename ConcreteVisitor>
 void HeapVisitor<ResultType, ConcreteVisitor>::VisitMapPointer(
     HeapObject host) {
   DCHECK(!host.map_word().IsForwardingAddress());
-  static_cast<ConcreteVisitor*>(this)->VisitPointer(host, host.map_slot());  // TODO(steveblackburn)
+  static_cast<ConcreteVisitor*>(this)->VisitMapPointer(host);
 }
 
 #define VISIT(TypeName)                                                        \

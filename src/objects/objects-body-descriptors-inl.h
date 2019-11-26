@@ -130,7 +130,7 @@ DISABLE_CFI_PERF void BodyDescriptorBase::IteratePointers(HeapObject obj,
 template <typename ObjectVisitor>
 void BodyDescriptorBase::IteratePointer(HeapObject obj, int offset,
                                         ObjectVisitor* v) {
-  v->VisitPointer(obj, obj.RawField(offset));
+  v->VisitPointer(obj, obj.RawField(offset));// TODO(steveblackburn) do we need anything here?
 }
 
 template <typename ObjectVisitor>
@@ -143,7 +143,7 @@ DISABLE_CFI_PERF void BodyDescriptorBase::IterateMaybeWeakPointers(
 template <typename ObjectVisitor>
 void BodyDescriptorBase::IterateMaybeWeakPointer(HeapObject obj, int offset,
                                                  ObjectVisitor* v) {
-  v->VisitPointer(obj, obj.RawMaybeWeakField(offset));
+  v->VisitPointer(obj, obj.RawMaybeWeakField(offset));// TODO(steveblackburn) do we need anything here?
 }
 
 template <typename ObjectVisitor>
