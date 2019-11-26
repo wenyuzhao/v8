@@ -53,14 +53,14 @@ class IterateAndScavengePromotedObjectsVisitor final : public ObjectVisitor {
   inline void VisitEphemeron(HeapObject obj, int entry, ObjectSlot key,
                              ObjectSlot value) override {
     DCHECK(Heap::IsLargeObject(obj) || obj.IsEphemeronHashTable());
-    VisitPointer(obj, value);// TODO(steveblackburn) do we need anything here?
+    VisitPointer(obj, value);  // TODO(steveblackburn) do we need anything here?
 
     if (ObjectInYoungGeneration(*key)) {
       // We cannot check the map here, as it might be a large object.
       scavenger_->RememberPromotedEphemeron(
           EphemeronHashTable::unchecked_cast(obj), entry);
     } else {
-      VisitPointer(obj, key);// TODO(steveblackburn) do we need anything here?
+      VisitPointer(obj, key);  // TODO(steveblackburn) do we need anything here?
     }
   }
 

@@ -130,7 +130,8 @@ DISABLE_CFI_PERF void BodyDescriptorBase::IteratePointers(HeapObject obj,
 template <typename ObjectVisitor>
 void BodyDescriptorBase::IteratePointer(HeapObject obj, int offset,
                                         ObjectVisitor* v) {
-  DCHECK(offset != HeapObject::kMapOffset); // TODO(steveblackburn) do we need anything here?
+  DCHECK(offset != HeapObject::kMapOffset);  // TODO(steveblackburn) do we need
+                                             // anything here?
   v->VisitPointer(obj, obj.RawField(offset));
 }
 
@@ -144,7 +145,8 @@ DISABLE_CFI_PERF void BodyDescriptorBase::IterateMaybeWeakPointers(
 template <typename ObjectVisitor>
 void BodyDescriptorBase::IterateMaybeWeakPointer(HeapObject obj, int offset,
                                                  ObjectVisitor* v) {
-  DCHECK(offset != HeapObject::kMapOffset); // TODO(steveblackburn) do we need anything here?
+  DCHECK(offset != HeapObject::kMapOffset);  // TODO(steveblackburn) do we need
+                                             // anything here?
   v->VisitPointer(obj, obj.RawMaybeWeakField(offset));
 }
 

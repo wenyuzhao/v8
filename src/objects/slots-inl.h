@@ -31,7 +31,9 @@ bool FullObjectSlot::contains_value(Address raw_value) const {
 
 bool FullObjectSlot::contains_map_value(Address raw_value) const {
   Address read_value = base::AsAtomicPointer::Relaxed_Load(location());
-  read_value &= (uintptr_t{-1} >> 1); // TODO(need to ensure we're robust to compressed pointers)
+  read_value &=
+      (uintptr_t{-1} >>
+       1);  // TODO(need to ensure we're robust to compressed pointers)
   return read_value == raw_value;
 }
 

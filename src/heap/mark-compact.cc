@@ -1157,12 +1157,14 @@ class RecordMigratedSlotVisitor : public ObjectVisitor {
       : collector_(collector),
         ephemeron_remembered_set_(ephemeron_remembered_set) {}
 
-  inline void VisitPointer(HeapObject host, ObjectSlot p) final { // TODO(steveblackburn) do we need anything here?
+  inline void VisitPointer(HeapObject host, ObjectSlot p)
+      final {  // TODO(steveblackburn) do we need anything here?
     DCHECK(!HasWeakHeapObjectTag(*p));
     RecordMigratedSlot(host, MaybeObject::FromObject(*p), p.address());
   }
 
-  inline void VisitPointer(HeapObject host, MaybeObjectSlot p) final { // TODO(steveblackburn) do we need anything here?
+  inline void VisitPointer(HeapObject host, MaybeObjectSlot p)
+      final {  // TODO(steveblackburn) do we need anything here?
     RecordMigratedSlot(host, *p, p.address());
   }
 
@@ -2723,11 +2725,13 @@ class PointersUpdatingVisitor : public ObjectVisitor, public RootVisitor {
   explicit PointersUpdatingVisitor(IsolateRoot isolate) : isolate_(isolate) {}
 
   void VisitPointer(HeapObject host, ObjectSlot p) override {
-    UpdateStrongSlotInternal(isolate_, p);// TODO(steveblackburn) do we need anything here?
+    UpdateStrongSlotInternal(isolate_,
+        p);// TODO(steveblackburn) do we need anything here?
   }
 
   void VisitPointer(HeapObject host, MaybeObjectSlot p) override {
-    UpdateSlotInternal(isolate_, p);// TODO(steveblackburn) do we need anything here?
+    UpdateSlotInternal(isolate_,
+        p);// TODO(steveblackburn) do we need anything here?
   }
 
   void VisitPointers(HeapObject host, ObjectSlot start,

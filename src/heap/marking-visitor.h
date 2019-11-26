@@ -138,7 +138,12 @@ class MarkingVisitorBase : public HeapVisitor<int, ConcreteVisitor> {
     Tagged_t ptr = (*p).ptr();
     ptr &= (Tagged_t{-1} >> 1);
     Object o(ptr);
-    MarkObject(host, HeapObject::cast(o));  // TODO(steveblackburn) note that we are skipping the recording the slot because map objects can't move, so this is safe (see ProcessStrongHeapObject for comparison)
+    MarkObject(
+        host,
+        HeapObject::cast(
+            o));  // TODO(steveblackburn) note that we are skipping the
+                  // recording the slot because map objects can't move, so this
+                  // is safe (see ProcessStrongHeapObject for comparison)
   }
   V8_INLINE void VisitPointer(HeapObject host, ObjectSlot p) final {
     VisitPointersImpl(host, p, p + 1);

@@ -714,9 +714,11 @@ ReadOnlyRoots HeapObject::GetReadOnlyRoots(IsolateRoot isolate) const {
 #endif
 }
 
-DEF_GETTER(HeapObject, map, Map) { return map_word(isolate).ToMap(); }// TODO(steveblackburn) ??
+DEF_GETTER(HeapObject, map, Map) {
+  return map_word(isolate).ToMap();
+}  // TODO(steveblackburn) ??
 
-void HeapObject::set_map(Map value) { // TODO(steveblackburn)
+void HeapObject::set_map(Map value) {  // TODO(steveblackburn)
 #ifdef VERIFY_HEAP
   if (FLAG_verify_heap && !value.is_null()) {
     GetHeapFromWritableObject(*this)->VerifyObjectLayoutChange(*this, value);
@@ -732,11 +734,11 @@ void HeapObject::set_map(Map value) { // TODO(steveblackburn)
 #endif
 }
 
-DEF_GETTER(HeapObject, synchronized_map, Map) { // TODO(steveblackburn) ??
+DEF_GETTER(HeapObject, synchronized_map, Map) {  // TODO(steveblackburn) ??
   return synchronized_map_word(isolate).ToMap();
 }
 
-void HeapObject::synchronized_set_map(Map value) { // TODO(steveblackburn)
+void HeapObject::synchronized_set_map(Map value) {  // TODO(steveblackburn)
 #ifdef VERIFY_HEAP
   if (FLAG_verify_heap && !value.is_null()) {
     GetHeapFromWritableObject(*this)->VerifyObjectLayoutChange(*this, value);
@@ -753,7 +755,7 @@ void HeapObject::synchronized_set_map(Map value) { // TODO(steveblackburn)
 }
 
 // Unsafe accessor omitting write barrier.
-void HeapObject::set_map_no_write_barrier(Map value) {// TODO(steveblackburn)
+void HeapObject::set_map_no_write_barrier(Map value) {  // TODO(steveblackburn)
 #ifdef VERIFY_HEAP
   if (FLAG_verify_heap && !value.is_null()) {
     GetHeapFromWritableObject(*this)->VerifyObjectLayoutChange(*this, value);
@@ -762,7 +764,8 @@ void HeapObject::set_map_no_write_barrier(Map value) {// TODO(steveblackburn)
   set_map_word(MapWord::FromMap(value));
 }
 
-void HeapObject::set_map_after_allocation(Map value, WriteBarrierMode mode) {// TODO(steveblackburn)
+void HeapObject::set_map_after_allocation(
+    Map value, WriteBarrierMode mode) {  // TODO(steveblackburn)
   set_map_word(MapWord::FromMap(value));
 #ifndef V8_DISABLE_WRITE_BARRIERS
   if (mode != SKIP_WRITE_BARRIER) {
@@ -784,7 +787,7 @@ DEF_GETTER(HeapObject, map_word, MapWord) {
   return MapField::Relaxed_Load(isolate, HeapObject::cast(Object(ptr)));
 }
 
-void HeapObject::set_map_word(MapWord map_word) {// TODO(steveblackburn)
+void HeapObject::set_map_word(MapWord map_word) {  // TODO(steveblackburn)
   MapField::Relaxed_Store(*this, map_word);
 }
 
@@ -794,12 +797,14 @@ DEF_GETTER(HeapObject, synchronized_map_word, MapWord) {
   return MapField::Acquire_Load(isolate, HeapObject::cast(Object(ptr)));
 }
 
-void HeapObject::synchronized_set_map_word(MapWord map_word) {// TODO(steveblackburn)
+void HeapObject::synchronized_set_map_word(
+    MapWord map_word) {  // TODO(steveblackburn)
   MapField::Release_Store(*this, map_word);
 }
 
-bool HeapObject::release_compare_and_swap_map_word(MapWord old_map_word,
-                                                   MapWord new_map_word) {// TODO(steveblackburn)
+bool HeapObject::release_compare_and_swap_map_word(
+    MapWord old_map_word,
+    MapWord new_map_word) {  // TODO(steveblackburn)
   Tagged_t result =
       MapField::Release_CompareAndSwap(*this, old_map_word, new_map_word);
   return result == static_cast<Tagged_t>(old_map_word.ptr());
