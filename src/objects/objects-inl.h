@@ -667,9 +667,13 @@ MaybeObjectSlot HeapObject::RawMaybeWeakField(int byte_offset) const {
   return MaybeObjectSlot(field_address(byte_offset));
 }
 
-MapWord MapWord::FromMap(const Map map) { return MapWord(map.ptr()); }
+MapWord MapWord::FromMap(const Map map) { return MapWord(map.ptr()); } // TODO
 
-Map MapWord::ToMap() const { return Map::unchecked_cast(Object(value_)); }
+Map MapWord::ToMap() const {
+  Address ptr = value_;
+  ptr &= (Tagged_t{-1} >> 1);  // TODO(steveblackburn)
+  return Map::unchecked_cast(Object(ptr));
+}
 
 bool MapWord::IsForwardingAddress() const { return HAS_SMI_TAG(value_); }
 
@@ -716,9 +720,9 @@ ReadOnlyRoots HeapObject::GetReadOnlyRoots(IsolateRoot isolate) const {
 
 DEF_GETTER(HeapObject, map, Map) {
   return map_word(isolate).ToMap();
-}  // TODO(steveblackburn) ??
+}
 
-void HeapObject::set_map(Map value) {  // TODO(steveblackburn)
+void HeapObject::set_map(Map value) {
 #ifdef VERIFY_HEAP
   if (FLAG_verify_heap && !value.is_null()) {
     GetHeapFromWritableObject(*this)->VerifyObjectLayoutChange(*this, value);
@@ -734,11 +738,11 @@ void HeapObject::set_map(Map value) {  // TODO(steveblackburn)
 #endif
 }
 
-DEF_GETTER(HeapObject, synchronized_map, Map) {  // TODO(steveblackburn) ??
+DEF_GETTER(HeapObject, synchronized_map, Map) {
   return synchronized_map_word(isolate).ToMap();
 }
 
-void HeapObject::synchronized_set_map(Map value) {  // TODO(steveblackburn)
+void HeapObject::synchronized_set_map(Map value) {
 #ifdef VERIFY_HEAP
   if (FLAG_verify_heap && !value.is_null()) {
     GetHeapFromWritableObject(*this)->VerifyObjectLayoutChange(*this, value);
@@ -755,7 +759,7 @@ void HeapObject::synchronized_set_map(Map value) {  // TODO(steveblackburn)
 }
 
 // Unsafe accessor omitting write barrier.
-void HeapObject::set_map_no_write_barrier(Map value) {  // TODO(steveblackburn)
+void HeapObject::set_map_no_write_barrier(Map value) {
 #ifdef VERIFY_HEAP
   if (FLAG_verify_heap && !value.is_null()) {
     GetHeapFromWritableObject(*this)->VerifyObjectLayoutChange(*this, value);
@@ -765,7 +769,7 @@ void HeapObject::set_map_no_write_barrier(Map value) {  // TODO(steveblackburn)
 }
 
 void HeapObject::set_map_after_allocation(
-    Map value, WriteBarrierMode mode) {  // TODO(steveblackburn)
+    Map value, WriteBarrierMode mode) {
   set_map_word(MapWord::FromMap(value));
 #ifndef V8_DISABLE_WRITE_BARRIERS
   if (mode != SKIP_WRITE_BARRIER) {
@@ -782,9 +786,7 @@ ObjectSlot HeapObject::map_slot() const {
 }
 
 DEF_GETTER(HeapObject, map_word, MapWord) {
-  Tagged_t ptr = (*this).ptr();
-  ptr &= (Tagged_t{-1} >> 1);  // TODO(steveblackburn)
-  return MapField::Relaxed_Load(isolate, HeapObject::cast(Object(ptr)));
+  return MapField::Acquire_Load(isolate, *this);
 }
 
 void HeapObject::set_map_word(MapWord map_word) {  // TODO(steveblackburn)
