@@ -491,8 +491,8 @@ AllocationMemento Heap::FindAllocationMemento(Map map, HeapObject object) {
   // below (memento_address == top) ensures that this is safe. Mark the word as
   // initialized to silence MemorySanitizer warnings.
   MSAN_MEMORY_IS_INITIALIZED(candidate_map_slot.address(), kTaggedSize);
-  if (!candidate_map_slot.contains_value(
-          ReadOnlyRoots(this).allocation_memento_map().ptr())) { // TODO(steveblackburn) the target may or may not be a map, so the regular load map cannot be used---otherwise this is a mapcheck
+  if (!candidate_map_slot.contains_map_value(
+          ReadOnlyRoots(this).allocation_memento_map().ptr())) {
     return AllocationMemento();
   }
 
