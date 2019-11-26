@@ -492,7 +492,7 @@ AllocationMemento Heap::FindAllocationMemento(Map map, HeapObject object) {
   // initialized to silence MemorySanitizer warnings.
   MSAN_MEMORY_IS_INITIALIZED(candidate_map_slot.address(), kTaggedSize);
   if (!candidate_map_slot.contains_value(
-          ReadOnlyRoots(this).allocation_memento_map().ptr())) {
+          ReadOnlyRoots(this).allocation_memento_map().ptr())) { // TODO(steveblackburn) the target may or may not be a map, so the regular load map cannot be used---otherwise this is a mapcheck
     return AllocationMemento();
   }
 
