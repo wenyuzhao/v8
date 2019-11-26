@@ -50,7 +50,7 @@ bool FreeSpace::IsValid() {
   Heap* heap = GetHeapFromWritableObject(*this);
   Object free_space_map =
       Isolate::FromHeap(heap)->root(RootIndex::kFreeSpaceMap);
-  CHECK_IMPLIES(!map_slot().contains_value(free_space_map.ptr()),  // TODO(steveblackburn)
+  CHECK_IMPLIES(!map_slot().contains_value(free_space_map.ptr()),  // TODO(steveblackburn) Invariant: free space maps are stored natively
                 !heap->deserialization_complete() &&
                     map_slot().contains_value(kNullAddress));
   CHECK_LE(kNextOffset + kTaggedSize, relaxed_read_size());

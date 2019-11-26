@@ -774,20 +774,24 @@ void HeapObject::set_map_after_allocation(Map value, WriteBarrierMode mode) {// 
 #endif
 }
 
-ObjectSlot HeapObject::map_slot() const {// TODO(steveblackburn)
+ObjectSlot HeapObject::map_slot() const {
   return ObjectSlot(MapField::address(*this));
 }
 
-DEF_GETTER(HeapObject, map_word, MapWord) {// TODO(steveblackburn)
-  return MapField::Relaxed_Load(isolate, *this);
+DEF_GETTER(HeapObject, map_word, MapWord) {
+  Tagged_t ptr = (*this).ptr();
+  ptr &= (Tagged_t{-1} >> 1);  // TODO(steveblackburn)
+  return MapField::Relaxed_Load(isolate, HeapObject::cast(Object(ptr)));
 }
 
 void HeapObject::set_map_word(MapWord map_word) {// TODO(steveblackburn)
   MapField::Relaxed_Store(*this, map_word);
 }
 
-DEF_GETTER(HeapObject, synchronized_map_word, MapWord) {// TODO(steveblackburn)
-  return MapField::Acquire_Load(isolate, *this);
+DEF_GETTER(HeapObject, synchronized_map_word, MapWord) {
+  Tagged_t ptr = (*this).ptr();
+  ptr &= (Tagged_t{-1} >> 1);  // TODO(steveblackburn)
+  return MapField::Acquire_Load(isolate, HeapObject::cast(Object(ptr)));
 }
 
 void HeapObject::synchronized_set_map_word(MapWord map_word) {// TODO(steveblackburn)
