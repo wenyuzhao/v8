@@ -511,7 +511,7 @@ Node* JSGraphAssembler::LoadField(FieldAccess const& access, Node* object) {
   Node* value = AddNode(graph()->NewNode(simplified()->LoadField(access),
                                          object, effect(), control()));
   if (access == AccessBuilder::ForMap())
-    value = WordAnd(value, IntPtrConstant(uintptr_t{-1} >> 1));
+    value = WordAnd(value, IntPtrConstant(uintptr_t{-1} >> 1)); // TODO(steveblackburn) need to handle compressed pointers correctly
   return value;
 }
 
