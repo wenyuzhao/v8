@@ -1005,7 +1005,9 @@ class MarkCompactCollector::CustomRootBodyMarkingVisitor final
 
   void VisitMapPointer(HeapObject host) final {
     ObjectSlot p = host.map_slot();
-    Object o = *p;  // TODO(steveblackburn)
+    Tagged_t ptr = (*p).ptr();
+    ptr &= (Tagged_t{-1} >> 1);
+    Object o (ptr);  // TODO(steveblackburn)
     MarkObject(host, o);
   }
 
