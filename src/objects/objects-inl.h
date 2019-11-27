@@ -679,11 +679,17 @@ Tagged_t MapWord::pack_map(Tagged_t raw) {
 }
 
 MapWord MapWord::FromMap(const Map map) {
-  return MapWord(pack_map(map.ptr()));
+  if (map.ptr() == kNullAddress)
+    return MapWord(map.ptr());
+  else
+    return MapWord(pack_map(map.ptr()));
 }
 
 Map MapWord::ToMap() const {
-  return Map::unchecked_cast(Object(unpack_map(value_)));
+  if (value_ == kNullAddress)
+    return Map::unchecked_cast(Object(value_));
+  else
+    return Map::unchecked_cast(Object(unpack_map(value_)));
 }
 
 bool MapWord::IsForwardingAddress() const { return HAS_SMI_TAG(value_); }
