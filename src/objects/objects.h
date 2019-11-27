@@ -763,6 +763,12 @@ class MapWord {  // TODO(steveblackburn)
   // View this map word as a map pointer.
   inline Map ToMap() const;
 
+  // Unpack a map word from its compressed form
+  static inline Tagged_t unpack_map(Tagged_t raw);
+
+  // Pack a map into its compressed form
+  static inline Tagged_t pack_map(Tagged_t raw);
+
   // Scavenge collection: the map word of live objects in the from space
   // contains a forwarding address (a heap object pointer in the to space).
 

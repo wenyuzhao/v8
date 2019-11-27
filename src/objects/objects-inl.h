@@ -667,12 +667,20 @@ MaybeObjectSlot HeapObject::RawMaybeWeakField(int byte_offset) const {
   return MaybeObjectSlot(field_address(byte_offset));
 }
 
-MapWord MapWord::FromMap(const Map map) { return MapWord(map.ptr()); } // TODO
+Tagged_t MapWord::unpack_map(Tagged_t raw) {
+  return raw & (Tagged_t{-1} >> 1);
+}
+
+Tagged_t MapWord::pack_map(Tagged_t raw) {
+  return raw;  // TODO(steveblackburn) for now do nothing
+}
+
+MapWord MapWord::FromMap(const Map map) {
+  return MapWord(pack_map(map.ptr()));
+}
 
 Map MapWord::ToMap() const {
-  Address ptr = value_;
-  ptr &= (Tagged_t{-1} >> 1);  // TODO(steveblackburn)
-  return Map::unchecked_cast(Object(ptr));
+  return Map::unchecked_cast(Object(unpack_map(value_)));
 }
 
 bool MapWord::IsForwardingAddress() const { return HAS_SMI_TAG(value_); }
@@ -718,9 +726,7 @@ ReadOnlyRoots HeapObject::GetReadOnlyRoots(IsolateRoot isolate) const {
 #endif
 }
 
-DEF_GETTER(HeapObject, map, Map) {
-  return map_word(isolate).ToMap();
-}
+DEF_GETTER(HeapObject, map, Map) { return map_word(isolate).ToMap(); }
 
 void HeapObject::set_map(Map value) {
 #ifdef VERIFY_HEAP
@@ -768,8 +774,7 @@ void HeapObject::set_map_no_write_barrier(Map value) {
   set_map_word(MapWord::FromMap(value));
 }
 
-void HeapObject::set_map_after_allocation(
-    Map value, WriteBarrierMode mode) {
+void HeapObject::set_map_after_allocation(Map value, WriteBarrierMode mode) {
   set_map_word(MapWord::FromMap(value));
 #ifndef V8_DISABLE_WRITE_BARRIERS
   if (mode != SKIP_WRITE_BARRIER) {
@@ -785,13 +790,9 @@ ObjectSlot HeapObject::map_slot() const {
   return ObjectSlot(MapField::address(*this));
 }
 
-Tagged_t HeapObject::unpack_map_ptr(Tagged_t raw) {
-  return raw & (Tagged_t{-1} >> 1);
-}
-
 Object HeapObject::extract_map() {
   ObjectSlot p = map_slot();
-  Tagged_t ptr = unpack_map_ptr((*p).ptr());
+  Tagged_t ptr = MapWord::unpack_map((*p).ptr());
   Object o (ptr);
   return o;
 }
@@ -805,9 +806,7 @@ void HeapObject::set_map_word(MapWord map_word) {  // TODO(steveblackburn)
 }
 
 DEF_GETTER(HeapObject, synchronized_map_word, MapWord) {
-  Tagged_t ptr = (*this).ptr();
-  ptr &= (Tagged_t{-1} >> 1);  // TODO(steveblackburn)
-  return MapField::Acquire_Load(isolate, HeapObject::cast(Object(ptr)));
+  return MapField::Acquire_Load(isolate, *this);  // TODO(steveblackburn)
 }
 
 void HeapObject::synchronized_set_map_word(
