@@ -4127,10 +4127,11 @@ class OldToNewSlotVerifyingVisitor : public SlotVerifyingVisitor {
 
   void VisitEphemeron(HeapObject host, int index, ObjectSlot key,
                       ObjectSlot target) override {
-    VisitPointer(host,
-                 target);  // TODO(steveblackburn) do we need anything here?
+    // TODO(steveblackburn) do we need anything here?
+    VisitPointer(host, target);
 #ifdef ENABLE_MINOR_MC
-    if (FLAG_minor_mc) return VisitPointer(host, target);  // TODO(steveblackburn) do we need anything here?
+    // TODO(steveblackburn) do we need anything here?
+    if (FLAG_minor_mc) return VisitPointer(host, target);
 #endif
     // Keys are handled separately and should never appear in this set.
     CHECK(!InUntypedSet(key));

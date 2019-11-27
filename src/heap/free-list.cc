@@ -92,12 +92,12 @@ void FreeListCategory::RepairFreeList(Heap* heap) {
   while (!n.is_null()) {
     ObjectSlot map_slot = n.map_slot();
     if (map_slot.contains_value(kNullAddress)) {
-      map_slot.store(free_space_map);  // TODO(steveblackburn) Invariant: free
-                                       // space maps are stored natively (need
-                                       // to add assertions/checks)
+      // TODO(steveblackburn) Invariant: free space maps are stored natively
+      // (need to add assertions/checks)
+      map_slot.store(free_space_map);
     } else {
-      DCHECK(map_slot.contains_value(
-          free_space_map.ptr()));  // TODO(steveblackburn)
+      // TODO(steveblackburn)
+      DCHECK(map_slot.contains_value(free_space_map.ptr()));
     }
     n = n.next();
   }
@@ -510,10 +510,10 @@ size_t FreeListCategory::SumFreeList() {
     DCHECK(cur.map_slot().contains_value(
         Page::FromHeapObject(cur)  // TODO(steveblackburn) Invariant: free space
                                    // maps are stored natively
-                                       ->heap()
-                                       ->isolate()
-                                       ->root(RootIndex::kFreeSpaceMap)
-                                       .ptr()));
+            ->heap()
+            ->isolate()
+            ->root(RootIndex::kFreeSpaceMap)
+            .ptr()));
     sum += cur.relaxed_read_size();
     cur = cur.next();
   }

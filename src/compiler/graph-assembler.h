@@ -830,7 +830,6 @@ class V8_EXPORT_PRIVATE JSGraphAssembler : public GraphAssembler {
     return TNode<T>::UncheckedCast(LoadElement(access, object, index));
   }
   Node* StoreField(FieldAccess const&, Node* object, Node* value);
-  Node* StoreMap(FieldAccess const&, Node* object, Node* value);
   Node* StoreElement(ElementAccess const&, Node* object, Node* index,
                      Node* value);
   void TransitionAndStoreElement(MapRef double_map, MapRef fast_map,
