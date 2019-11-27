@@ -1094,7 +1094,6 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
         LoadFromObject(MachineType::AnyTagged(), object,
                        IntPtrConstant(offset - kHeapObjectTag)));
   }
-  Node* LoadObjectMap(SloppyTNode<HeapObject> object);
   TNode<Object> LoadObjectField(TNode<HeapObject> object,
                                 TNode<IntPtrT> offset) {
     return UncheckedCast<Object>(
@@ -1299,7 +1298,6 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   // See MaybeObject for semantics of these functions.
   TNode<BoolT> IsNotMapOffset(SloppyTNode<IntPtrT> value);
   TNode<BoolT> IsStrong(TNode<MaybeObject> value);
-  TNode<BoolT> IsMapOffset(TNode<MaybeObject> value);
   TNode<HeapObject> GetHeapObjectIfStrong(TNode<MaybeObject> value,
                                           Label* if_not_strong);
 

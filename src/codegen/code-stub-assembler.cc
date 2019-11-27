@@ -1486,6 +1486,7 @@ TNode<Object> CodeStubAssembler::LoadFromParentFrame(int offset) {
 
 TNode<IntPtrT> CodeStubAssembler::LoadAndUntagObjectField(
     SloppyTNode<HeapObject> object, int offset) {
+  // ASSERT(offset != HeapObject::kMapOffset);
   if (SmiValuesAre32Bits()) {
 #if V8_TARGET_LITTLE_ENDIAN
     offset += 4;
@@ -1498,6 +1499,7 @@ TNode<IntPtrT> CodeStubAssembler::LoadAndUntagObjectField(
 
 TNode<Int32T> CodeStubAssembler::LoadAndUntagToWord32ObjectField(
     SloppyTNode<HeapObject> object, int offset) {
+  // ASSERT(offset != HeapObject::kMapOffset);
   if (SmiValuesAre32Bits()) {
 #if V8_TARGET_LITTLE_ENDIAN
     offset += 4;
