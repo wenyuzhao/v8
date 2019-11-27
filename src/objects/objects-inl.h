@@ -785,10 +785,13 @@ ObjectSlot HeapObject::map_slot() const {
   return ObjectSlot(MapField::address(*this));
 }
 
+Tagged_t HeapObject::unpack_map_ptr(Tagged_t raw) {
+  return raw & (Tagged_t{-1} >> 1);
+}
+
 Object HeapObject::extract_map() {
   ObjectSlot p = map_slot();
-  Tagged_t ptr = (*p).ptr();
-  ptr &= (Tagged_t{-1} >> 1);
+  Tagged_t ptr = unpack_map_ptr((*p).ptr());
   Object o (ptr);
   return o;
 }

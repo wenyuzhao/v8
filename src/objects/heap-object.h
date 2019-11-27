@@ -34,6 +34,7 @@ class HeapObject : public Object {
   inline void set_map(Map value);
 
   inline ObjectSlot map_slot() const;
+  inline Tagged_t unpack_map_ptr(Tagged_t raw);
   inline Object extract_map();
 
   // The no-write-barrier version.  This is OK if the object is white and in
