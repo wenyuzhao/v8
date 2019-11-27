@@ -785,6 +785,14 @@ ObjectSlot HeapObject::map_slot() const {
   return ObjectSlot(MapField::address(*this));
 }
 
+Object HeapObject::extract_map() {
+  ObjectSlot p = map_slot();
+  Tagged_t ptr = (*p).ptr();
+  ptr &= (Tagged_t{-1} >> 1);
+  Object o (ptr);
+  return o;
+}
+
 DEF_GETTER(HeapObject, map_word, MapWord) {
   return MapField::Acquire_Load(isolate, *this);
 }

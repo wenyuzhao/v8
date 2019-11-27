@@ -34,6 +34,7 @@ class HeapObject : public Object {
   inline void set_map(Map value);
 
   inline ObjectSlot map_slot() const;
+  inline Object extract_map();
 
   // The no-write-barrier version.  This is OK if the object is white and in
   // new space, or if the value is an immortal immutable object, like the maps
