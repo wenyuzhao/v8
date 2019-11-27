@@ -1007,7 +1007,7 @@ class MarkCompactCollector::CustomRootBodyMarkingVisitor final
     ObjectSlot p = host.map_slot();
     Tagged_t ptr = (*p).ptr();
     ptr &= (Tagged_t{-1} >> 1);
-    Object o (ptr);  // TODO(steveblackburn)
+    Object o (ptr);
     MarkObject(host, o);
   }
 
