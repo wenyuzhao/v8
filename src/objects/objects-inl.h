@@ -672,9 +672,9 @@ Tagged_t MapWord::unpack_map(Tagged_t raw) {
 }
 
 Tagged_t MapWord::pack_map(Tagged_t raw) {
-  CHECK(!HAS_SMI_TAG(raw));    // Not a forwarding pointer
+  CHECK(raw == kNullAddress || !HAS_SMI_TAG(raw));    // Not a forwarding pointer
   Tagged_t packed = raw ^ Tagged_t{MapWord::kXorMask};
-  CHECK(!HAS_SMI_TAG(packed)); // Not a forwarding pointer
+  CHECK(raw == kNullAddress || !HAS_SMI_TAG(packed)); // Not a forwarding pointer
   return packed;
 }
 
