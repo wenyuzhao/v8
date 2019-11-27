@@ -512,7 +512,7 @@ Node* JSGraphAssembler::LoadField(FieldAccess const& access, Node* object) {
                                          object, effect(), control()));
   // TODO(steveblackburn) unpacking of map. See MapWord::unpack_map().
   if (access == AccessBuilder::ForMap())
-    value = WordAnd(value, IntPtrConstant(uintptr_t{-1} >> 1));
+    value = Word32Xor(value, IntPtrConstant(MapWord::kXorMask));
   return value;
 }
 
@@ -525,6 +525,9 @@ Node* JSGraphAssembler::LoadElement(ElementAccess const& access, Node* object,
 
 Node* JSGraphAssembler::StoreField(FieldAccess const& access, Node* object,
                                    Node* value) {
+  // TODO(steveblackburn) packing of map. See MapWord::pack_map().
+  if (access == AccessBuilder::ForMap())
+    value = Word32Xor(value, IntPtrConstant(MapWord::kXorMask));
   return AddNode(graph()->NewNode(simplified()->StoreField(access), object,
                                   value, effect(), control()));
 }

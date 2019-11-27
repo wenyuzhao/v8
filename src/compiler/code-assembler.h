@@ -777,7 +777,7 @@ class V8_EXPORT_PRIVATE CodeAssembler {
   void OptimizedStoreFieldUnsafeNoWriteBarrier(MachineRepresentation rep,
                                                TNode<HeapObject> object,
                                                int offset, Node* value);
-  void OptimizedStoreMap(TNode<HeapObject> object, TNode<Map>);
+  void OptimizedStoreMapWord(TNode<HeapObject> object, Node*);
   // {value_high} is used for 64-bit stores on 32-bit platforms, must be
   // nullptr in other cases.
   Node* AtomicStore(MachineRepresentation rep, Node* base, Node* offset,

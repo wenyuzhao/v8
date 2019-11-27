@@ -757,6 +757,9 @@ class MapWord {  // TODO(steveblackburn)
  public:
   // Normal state: the map word contains a map pointer.
 
+  // Leave the lowest bit unchanged to avoid conflict with forwarding
+  static const int kXorMask = 0x8ffffffe;
+
   // Create a map word from a map pointer.
   static inline MapWord FromMap(const Map map);
 

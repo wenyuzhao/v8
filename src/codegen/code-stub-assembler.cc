@@ -2765,6 +2765,7 @@ void CodeStubAssembler::StoreObjectField(TNode<HeapObject> object,
                                          TNode<IntPtrT> offset,
                                          TNode<Object> value) {
   int const_offset;
+  CSA_ASSERT(this, IsNotMapOffset(offset));  // Use StoreMap instead.
   if (ToInt32Constant(offset, &const_offset)) {
     StoreObjectField(object, const_offset, value);
   } else {
@@ -2774,12 +2775,19 @@ void CodeStubAssembler::StoreObjectField(TNode<HeapObject> object,
 
 void CodeStubAssembler::UnsafeStoreObjectFieldNoWriteBarrier(
     TNode<HeapObject> object, int offset, TNode<Object> value) {
+  DCHECK_NE(HeapObject::kMapOffset, offset);  // Use StoreMap instead.
   OptimizedStoreFieldUnsafeNoWriteBarrier(MachineRepresentation::kTagged,
                                           object, offset, value);
 }
 
+Node* CodeStubAssembler::PackMap(Node* map) {
+  Node* packed = WordXor((Node*) map, IntPtrConstant(MapWord::kXorMask));
+  CSA_ASSERT(this, TaggedIsNotSmi(packed)); // Not a forwarding pointer
+  return packed;
+}
+
 void CodeStubAssembler::StoreMap(TNode<HeapObject> object, TNode<Map> map) {
-  OptimizedStoreMap(object, map);
+  OptimizedStoreMapWord(object, PackMap(map));
 }
 
 void CodeStubAssembler::StoreMapNoWriteBarrier(TNode<HeapObject> object,
@@ -2789,8 +2797,9 @@ void CodeStubAssembler::StoreMapNoWriteBarrier(TNode<HeapObject> object,
 
 void CodeStubAssembler::StoreMapNoWriteBarrier(TNode<HeapObject> object,
                                                TNode<Map> map) {
+  Node* mapword = PackMap(map);
   OptimizedStoreFieldAssertNoWriteBarrier(MachineRepresentation::kTaggedPointer,
-                                          object, HeapObject::kMapOffset, map);
+                                          object, HeapObject::kMapOffset, mapword);
 }
 
 void CodeStubAssembler::StoreObjectFieldRoot(TNode<HeapObject> object,

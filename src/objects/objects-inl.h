@@ -668,11 +668,14 @@ MaybeObjectSlot HeapObject::RawMaybeWeakField(int byte_offset) const {
 }
 
 Tagged_t MapWord::unpack_map(Tagged_t raw) {
-  return raw & (Tagged_t{-1} >> 1);
+  return raw ^ Tagged_t{MapWord::kXorMask};
 }
 
 Tagged_t MapWord::pack_map(Tagged_t raw) {
-  return raw;  // TODO(steveblackburn) for now do nothing
+  CHECK(!HAS_SMI_TAG(raw));    // Not a forwarding pointer
+  Tagged_t packed = raw ^ Tagged_t{MapWord::kXorMask};
+  CHECK(!HAS_SMI_TAG(packed)); // Not a forwarding pointer
+  return packed;
 }
 
 MapWord MapWord::FromMap(const Map map) {
