@@ -507,7 +507,7 @@ size_t FreeListCategory::SumFreeList() {
   while (!cur.is_null()) {
     // We can't use "cur->map()" here because both cur's map and the
     // root can be null during bootstrapping.
-    DCHECK(cur.map_slot().contains_value(
+    DCHECK(cur.map_slot().ontains_map_value(
         Page::FromHeapObject(cur)  // TODO(steveblackburn) Invariant: free space
                                    // maps are stored natively
             ->heap()

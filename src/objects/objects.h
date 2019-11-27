@@ -767,7 +767,9 @@ class MapWord {  // TODO(steveblackburn)
   inline Map ToMap() const;
 
   // Unpack a map word from its compressed form
-  static inline Tagged_t unpack_map(Tagged_t raw);
+  static inline Tagged_t unpack_map(Tagged_t raw) {
+    return raw ^ Tagged_t{MapWord::kXorMask};
+  }
 
   // Pack a map into its compressed form
   static inline Tagged_t pack_map(Tagged_t raw);

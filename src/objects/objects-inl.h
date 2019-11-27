@@ -667,10 +667,6 @@ MaybeObjectSlot HeapObject::RawMaybeWeakField(int byte_offset) const {
   return MaybeObjectSlot(field_address(byte_offset));
 }
 
-Tagged_t MapWord::unpack_map(Tagged_t raw) {
-  return raw ^ Tagged_t{MapWord::kXorMask};
-}
-
 Tagged_t MapWord::pack_map(Tagged_t raw) {
   CHECK(raw == kNullAddress || !HAS_SMI_TAG(raw));    // Not a forwarding pointer
   Tagged_t packed = raw ^ Tagged_t{MapWord::kXorMask};
@@ -679,17 +675,11 @@ Tagged_t MapWord::pack_map(Tagged_t raw) {
 }
 
 MapWord MapWord::FromMap(const Map map) {
-  if (map.ptr() == kNullAddress)
-    return MapWord(map.ptr());
-  else
-    return MapWord(pack_map(map.ptr()));
+  return MapWord(pack_map(map.ptr()));
 }
 
 Map MapWord::ToMap() const {
-  if (value_ == kNullAddress)
-    return Map::unchecked_cast(Object(value_));
-  else
-    return Map::unchecked_cast(Object(unpack_map(value_)));
+  return Map::unchecked_cast(Object(unpack_map(value_)));
 }
 
 bool MapWord::IsForwardingAddress() const { return HAS_SMI_TAG(value_); }
