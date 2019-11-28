@@ -124,6 +124,10 @@ DISABLE_CFI_PERF void BodyDescriptorBase::IteratePointers(HeapObject obj,
                                                           int start_offset,
                                                           int end_offset,
                                                           ObjectVisitor* v) {
+  if (start_offset == HeapObject::kMapOffset) {
+    v->VisitMapPointer(obj);
+    start_offset += EmbedderDataSlot::kSlotDataAlignment;
+  }
   v->VisitPointers(obj, obj.RawField(start_offset), obj.RawField(end_offset));
 }
 
