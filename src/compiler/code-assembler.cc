@@ -748,6 +748,7 @@ void CodeAssembler::OptimizedStoreFieldUnsafeNoWriteBarrier(
 
 void CodeAssembler::OptimizedStoreMapWord(TNode<HeapObject> object,
                                           Node* mapword) {
+  // TODO(steveblackburn) Have confirmed that this is intercepted upstream
   raw_assembler()->OptimizedStoreMap(object, mapword);
 }
 

@@ -177,7 +177,7 @@ class V8_EXPORT_PRIVATE RawMachineAssembler {
             object, value);
   }
   void OptimizedStoreMap(Node* object, Node* value) {
-    // TODO(steveblackburn) FIXME
+    // TODO(steveblackburn) Have confirmed that this is intercepted upstream
     AddNode(simplified()->StoreField(AccessBuilder::ForMap()), object, value);
   }
   Node* Retain(Node* value) { return AddNode(common()->Retain(), value); }
