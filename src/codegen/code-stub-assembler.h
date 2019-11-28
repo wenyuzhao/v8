@@ -1524,7 +1524,8 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   template <class T>
   void StoreObjectFieldNoWriteBarrier(TNode<HeapObject> object, int offset,
                                       TNode<T> value) {
-    DCHECK_NE(HeapObject::kMapOffset, offset);  // Use StoreMap instead.
+    if (offset == HeapObject::kMapOffset)
+      value = TNode<T>::UncheckedCast(PackMap(value));
     if (CanBeTaggedPointer(MachineRepresentationOf<T>::value)) {
       OptimizedStoreFieldAssertNoWriteBarrier(MachineRepresentationOf<T>::value,
                                               object, offset, value);
