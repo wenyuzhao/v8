@@ -147,6 +147,7 @@ void TaggedIndex::TaggedIndexVerify(Isolate* isolate) {
 }
 
 void HeapObject::HeapObjectVerify(Isolate* isolate) {
+  // TODO(steveblackburn) this may be an issue, like the other in this file
   TorqueGeneratedClassVerifiers::HeapObjectVerify(*this, isolate);
 
   switch (map().instance_type()) {
@@ -820,7 +821,8 @@ void JSFunction::JSFunctionVerify(Isolate* isolate) {
 
 void SharedFunctionInfo::SharedFunctionInfoVerify(Isolate* isolate) {
   // TODO(leszeks): Add a TorqueGeneratedClassVerifier for LocalIsolate.
-  TorqueGeneratedClassVerifiers::SharedFunctionInfoVerify(*this, isolate);
+  // TODO(steveblackburn) probably need to hand-write map verification
+  // TorqueGeneratedClassVerifiers::SharedFunctionInfoVerify(*this, isolate);
   this->SharedFunctionInfoVerify(ReadOnlyRoots(isolate));
 }
 
