@@ -768,11 +768,16 @@ class MapWord {  // TODO(steveblackburn)
 
   // Unpack a map word from its compressed form
   static inline Tagged_t unpack_map(Tagged_t raw) {
-    return raw ^ Tagged_t{MapWord::kXorMask};
+    return raw ^ Tagged_t { MapWord::kXorMask };
   }
 
   // Pack a map into its compressed form
-  static inline Tagged_t pack_map(Tagged_t raw);
+  static inline Tagged_t pack_map(Tagged_t raw) {
+    CHECK(raw == kNullAddress || !HAS_SMI_TAG(raw));  // Not forwarding pointer
+    Tagged_t packed = raw ^ Tagged_t { MapWord::kXorMask };
+    CHECK(raw == kNullAddress || !HAS_SMI_TAG(packed));// Not forwarding pointer
+    return packed;
+  }
 
   // Scavenge collection: the map word of live objects in the from space
   // contains a forwarding address (a heap object pointer in the to space).

@@ -667,13 +667,6 @@ MaybeObjectSlot HeapObject::RawMaybeWeakField(int byte_offset) const {
   return MaybeObjectSlot(field_address(byte_offset));
 }
 
-Tagged_t MapWord::pack_map(Tagged_t raw) {
-  CHECK(raw == kNullAddress || !HAS_SMI_TAG(raw));    // Not a forwarding pointer
-  Tagged_t packed = raw ^ Tagged_t{MapWord::kXorMask};
-  CHECK(raw == kNullAddress || !HAS_SMI_TAG(packed)); // Not a forwarding pointer
-  return packed;
-}
-
 MapWord MapWord::FromMap(const Map map) {
   return MapWord(pack_map(map.ptr()));
 }
@@ -787,31 +780,6 @@ void HeapObject::set_map_after_allocation(Map value, WriteBarrierMode mode) {
 
 ObjectSlot HeapObject::map_slot() const {
   return ObjectSlot(MapField::address(*this));
-}
-
-void HeapObject::repack_map() {
-  // assumption here is that we've just deserialized and our map is not packed
-  MapWord mw = MapWord::FromMap(Map::unchecked_cast(*map_slot()));
-  set_map_word(mw);
-}
-
-void HeapObject::check_map() {
-  HeapObject m = HeapObject::unchecked_cast(extract_map());
-
-  if (m == *this)
-    return; // we are map map and our map is sound
-  else {
-    HeapObject mm = HeapObject::unchecked_cast(m.extract_map());
-    if (mm == m)
-      return; // we are a map and our map is sound
-    else {
-      HeapObject mmm = HeapObject::unchecked_cast(mm.extract_map());
-      if (mmm == mm)
-        return; // we are not a map but our map is sound
-      else
-        DCHECK(false); // something when wrong
-    }
-  }
 }
 
 Object HeapObject::extract_map() {

@@ -91,13 +91,10 @@ void FreeListCategory::RepairFreeList(Heap* heap) {
   FreeSpace n = top();
   while (!n.is_null()) {
     ObjectSlot map_slot = n.map_slot();
-    if (map_slot.contains_value(kNullAddress)) {
-      // TODO(steveblackburn) Invariant: free space maps are stored natively
-      // (need to add assertions/checks)
-      map_slot.store(free_space_map);
+    if (map_slot.contains_map_value(kNullAddress)) {
+      map_slot.store(Object(MapWord::pack_map(free_space_map.ptr())));
     } else {
-      // TODO(steveblackburn)
-      DCHECK(map_slot.contains_value(free_space_map.ptr()));
+      DCHECK(map_slot.contains_map_value(free_space_map.ptr()));
     }
     n = n.next();
   }

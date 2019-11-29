@@ -41,6 +41,10 @@ Object FullObjectSlot::load(IsolateRoot isolate) const { return **this; }
 
 void FullObjectSlot::store(Object value) const { *location() = value.ptr(); }
 
+void FullObjectSlot::store_map(Object value) const {
+  *location() = MapWord::pack_map(value.ptr());
+}
+
 Object FullObjectSlot::Acquire_Load() const {
   return Object(base::AsAtomicPointer::Acquire_Load(location()));
 }
