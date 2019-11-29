@@ -338,10 +338,6 @@ void Deserializer::PostProcessNewObject(Handle<Map> map, Handle<HeapObject> obj,
   InstanceType instance_type = map->instance_type();
 
   if ((FLAG_rehash_snapshot && can_rehash_) || deserializing_user_code()) {
-    // obj.repack_map();
-   // obj.check_map();
-   printf("%lx (%lx -> %lx)\n",obj.ptr(),obj.map_word().ptr(),obj.map().address());
-   printf("%lx (%lx -> %lx ~> %lx)\n",obj.ptr(),obj.map_word().ptr(),obj.map().address(),obj.map().map().address());
     if (InstanceTypeChecker::IsString(instance_type)) {
       // Uninitialize hash field as we need to recompute the hash.
       Handle<String> string = Handle<String>::cast(obj);
@@ -509,7 +505,6 @@ Handle<HeapObject> Deserializer::ReadObject() {
 }
 
 Handle<HeapObject> Deserializer::ReadObject(SnapshotSpace space) {
-  printf(".\n");
   const int size_in_tagged = source_.GetInt();
   const int size_in_bytes = size_in_tagged * kTaggedSize;
 
@@ -577,7 +572,6 @@ Handle<HeapObject> Deserializer::ReadObject(SnapshotSpace space) {
   back_refs_.push_back(obj);
 
   ReadData(obj, 1, size_in_tagged);
-   printf("B %lx (%lx -> %lx)\n",obj.ptr(),obj.map_word().ptr(),obj.map().address());
   PostProcessNewObject(map, obj, space);
 
   DCHECK(!obj->IsThinString(isolate()));
@@ -879,7 +873,6 @@ int Deserializer::ReadSingleBytecodeData(byte data,
                                     kForeignForeignAddressTag);
       } else {
         DCHECK(!V8_HEAP_SANDBOX_BOOL);
-        printf("kExternalReference\n");
         return WriteAddress(slot_accessor.slot(), address);
       }
     }
@@ -946,8 +939,6 @@ int Deserializer::ReadSingleBytecodeData(byte data,
       // become misaligned.
       DCHECK_EQ(TSlot::kSlotDataSize, kTaggedSize);
       int size_in_tagged = source_.GetInt();
-      printf("kVariableRawData\n");
-      printf("kVariableRawCode\n");
       // TODO(leszeks): Only copy slots when there are Smis in the serialized
       // data.
       source_.CopySlots(slot_accessor.slot().location(), size_in_tagged);
@@ -1010,7 +1001,6 @@ int Deserializer::ReadSingleBytecodeData(byte data,
     }
 
     case kVariableRepeat: {
-      printf("kVariableRepeat\n");
       int repeats = VariableRepeatCount::Decode(source_.GetInt());
       return ReadRepeatedObject(slot_accessor, repeats);
     }
@@ -1022,7 +1012,6 @@ int Deserializer::ReadSingleBytecodeData(byte data,
           BackingStore::Allocate(isolate(), byte_length, SharedFlag::kNotShared,
                                  InitializedFlag::kUninitialized);
       CHECK_NOT_NULL(backing_store);
-      printf("kOffHeapBackingStore\n");
       source_.CopyRaw(backing_store->buffer_start(), byte_length);
       backing_stores_.push_back(std::move(backing_store));
       return 0;
@@ -1045,13 +1034,11 @@ int Deserializer::ReadSingleBytecodeData(byte data,
                                     kForeignForeignAddressTag);
       } else {
         DCHECK(!V8_HEAP_SANDBOX_BOOL);
-        printf("kApiReference\n");
         return WriteAddress(slot_accessor.slot(), address);
       }
     }
 
     case kClearedWeakReference:
-      printf("kClearedWeakReference\n");
       return slot_accessor.Write(HeapObjectReference::ClearedValue(isolate()));
 
     case kWeakPrefix: {
@@ -1080,7 +1067,6 @@ int Deserializer::ReadSingleBytecodeData(byte data,
     case CASE_RANGE(kHotObject, 8): {
       int index = HotObject::Decode(data);
       Handle<HeapObject> hot_object = hot_objects_.Get(index);
-      printf("kHotObject\n");
       return slot_accessor.Write(hot_object, GetAndResetNextReferenceType());
     }
 
@@ -1101,7 +1087,6 @@ int Deserializer::ReadSingleBytecodeData(byte data,
     }
 
     case CASE_RANGE(kFixedRepeat, 16): {
-      printf("kFixedRepeat\n");
       int repeats = FixedRepeatWithCount::Decode(data);
       return ReadRepeatedObject(slot_accessor, repeats);
     }
