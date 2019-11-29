@@ -789,10 +789,36 @@ ObjectSlot HeapObject::map_slot() const {
   return ObjectSlot(MapField::address(*this));
 }
 
+void HeapObject::repack_map() {
+  // assumption here is that we've just deserialized and our map is not packed
+  MapWord mw = MapWord::FromMap(Map::unchecked_cast(*map_slot()));
+  set_map_word(mw);
+}
+
+void HeapObject::check_map() {
+  HeapObject m = HeapObject::unchecked_cast(extract_map());
+
+  if (m == *this)
+    return; // we are map map and our map is sound
+  else {
+    HeapObject mm = HeapObject::unchecked_cast(m.extract_map());
+    if (mm == m)
+      return; // we are a map and our map is sound
+    else {
+      HeapObject mmm = HeapObject::unchecked_cast(mm.extract_map());
+      if (mmm == mm)
+        return; // we are not a map but our map is sound
+      else
+        DCHECK(false); // something when wrong
+    }
+  }
+}
+
 Object HeapObject::extract_map() {
   ObjectSlot p = map_slot();
   Tagged_t ptr = MapWord::unpack_map((*p).ptr());
   Object o (ptr);
+  DCHECK(Map::unchecked_cast(o).IsMap());
   return o;
 }
 

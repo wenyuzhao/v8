@@ -63,6 +63,9 @@ class SlotAccessorForHeapObject {
   // Writes the given value to this slot, optionally with an offset (e.g. for
   // repeat writes). Returns the number of slots written (which is one).
   int Write(MaybeObject value, int slot_offset = 0) {
+    if (slot_offset == 0 && offset() == 0) {
+      value = MaybeObject(MapWord::pack_map(value.ptr()));
+    }
     MaybeObjectSlot current_slot = slot() + slot_offset;
     current_slot.Relaxed_Store(value);
     WriteBarrier::Marking(*object_, current_slot, value);
@@ -119,6 +122,9 @@ class SlotAccessorForRootSlots {
   // Writes the given value to this slot, optionally with an offset (e.g. for
   // repeat writes). Returns the number of slots written (which is one).
   int Write(MaybeObject value, int slot_offset = 0) {
+    if (slot_offset == 0 && offset() == 0) {
+      value = MaybeObject(MapWord::pack_map(value.ptr()));
+    }
     FullMaybeObjectSlot current_slot = slot() + slot_offset;
     current_slot.Relaxed_Store(value);
     return 1;
@@ -332,6 +338,8 @@ void Deserializer::PostProcessNewObject(Handle<Map> map, Handle<HeapObject> obj,
   InstanceType instance_type = map->instance_type();
 
   if ((FLAG_rehash_snapshot && can_rehash_) || deserializing_user_code()) {
+    // obj.repack_map();
+   // obj.check_map();
     if (InstanceTypeChecker::IsString(instance_type)) {
       // Uninitialize hash field as we need to recompute the hash.
       Handle<String> string = Handle<String>::cast(obj);
@@ -499,6 +507,7 @@ Handle<HeapObject> Deserializer::ReadObject() {
 }
 
 Handle<HeapObject> Deserializer::ReadObject(SnapshotSpace space) {
+  printf(".\n");
   const int size_in_tagged = source_.GetInt();
   const int size_in_bytes = size_in_tagged * kTaggedSize;
 
@@ -707,6 +716,7 @@ template <typename SlotAccessor>
 int Deserializer::ReadRepeatedObject(SlotAccessor slot_accessor,
                                      int repeat_count) {
   CHECK_LE(2, repeat_count);
+  // TODO(steveblackburn) Assumption: this can't / won't include map word
 
   Handle<HeapObject> heap_object = ReadObject();
   DCHECK(!Heap::InYoungGeneration(*heap_object));

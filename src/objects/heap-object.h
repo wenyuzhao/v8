@@ -34,6 +34,9 @@ class HeapObject : public Object {
   inline void set_map(Map value);
 
   inline ObjectSlot map_slot() const;
+  inline void check_map();
+  inline void repack_map();
+
   static inline Tagged_t unpack_map_ptr(Tagged_t raw);
   inline Object extract_map();
 
