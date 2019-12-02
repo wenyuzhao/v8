@@ -1102,8 +1102,7 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
   Label push_stack_frame;
   // Check if feedback vector is valid. If valid, check for optimized code
   // and update invocation count. Otherwise, setup the stack frame.
-  __ LoadTaggedPointerField(
-      rcx, FieldOperand(feedback_vector, HeapObject::kMapOffset));
+  __ LoadMap(rcx, feedback_vector);
   __ CmpInstanceType(rcx, FEEDBACK_VECTOR_TYPE);
   __ j(not_equal, &push_stack_frame);
 
@@ -2036,7 +2035,7 @@ void Builtins::Generate_CallOrConstructVarargs(MacroAssembler* masm,
     Label ok, fail;
     __ AssertNotSmi(rbx);
     Register map = r9;
-    __ LoadTaggedPointerField(map, FieldOperand(rbx, HeapObject::kMapOffset));
+    __ LoadMap(map, rbx);
     __ CmpInstanceType(map, FIXED_ARRAY_TYPE);
     __ j(equal, &ok);
     __ CmpInstanceType(map, FIXED_DOUBLE_ARRAY_TYPE);
@@ -2123,7 +2122,7 @@ void Builtins::Generate_CallOrConstructForwardVarargs(MacroAssembler* masm,
   if (mode == CallOrConstructMode::kConstruct) {
     Label new_target_constructor, new_target_not_constructor;
     __ JumpIfSmi(rdx, &new_target_not_constructor, Label::kNear);
-    __ LoadTaggedPointerField(rbx, FieldOperand(rdx, HeapObject::kMapOffset));
+    __ LoadMap(rbx, rdx);
     __ testb(FieldOperand(rbx, Map::kBitFieldOffset),
              Immediate(Map::Bits1::IsConstructorBit::kMask));
     __ j(not_zero, &new_target_constructor, Label::kNear);
@@ -2576,7 +2575,7 @@ void Builtins::Generate_Construct(MacroAssembler* masm) {
   __ JumpIfSmi(rdi, &non_constructor);
 
   // Check if target has a [[Construct]] internal method.
-  __ LoadTaggedPointerField(rcx, FieldOperand(rdi, HeapObject::kMapOffset));
+  __ LoadMap(rcx, rdi);
   __ testb(FieldOperand(rcx, Map::kBitFieldOffset),
            Immediate(Map::Bits1::IsConstructorBit::kMask));
   __ j(zero, &non_constructor);
@@ -3806,9 +3805,7 @@ void CallApiFunctionAndReturn(MacroAssembler* masm, Register function_address,
   Register map = rcx;
 
   __ JumpIfSmi(return_value, &ok, Label::kNear);
-  __ LoadTaggedPointerField(map,
-                            FieldOperand(return_value, HeapObject::kMapOffset));
-
+  __ LoadMap(map, return_value);
   __ CmpInstanceType(map, LAST_NAME_TYPE);
   __ j(below_equal, &ok, Label::kNear);
 
