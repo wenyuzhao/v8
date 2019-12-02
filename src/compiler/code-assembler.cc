@@ -320,7 +320,8 @@ bool CodeAssembler::IsMapOffsetConstant(Node* node) {
     Int64Matcher m(node);
     if (m.HasValue() && m.IsInRange(std::numeric_limits<int32_t>::min(),
                                         std::numeric_limits<int32_t>::max()))
-      return static_cast<int32_t>(m.Value()) == HeapObject::kMapOffset;
+      return (static_cast<int32_t>(m.Value()) == HeapObject::kMapOffset
+        || static_cast<int32_t>(m.Value()) == (HeapObject::kMapOffset - kHeapObjectTag));
     else
       return false;
   }
