@@ -463,8 +463,6 @@ class V8_EXPORT_PRIVATE CodeAssembler {
 #endif
   };
 
-  TNode<BoolT> IsNotMapOffset(TNode<IntPtrT> value);
-
   template <class T>
   TNode<T> UncheckedCast(Node* value) {
     return TNode<T>::UncheckedCast(value);
@@ -550,6 +548,8 @@ class V8_EXPORT_PRIVATE CodeAssembler {
   TNode<BoolT> BoolConstant(bool value) {
     return value ? Int32TrueConstant() : Int32FalseConstant();
   }
+
+  bool IsMapOffsetConstant(Node* node);
 
   bool ToInt32Constant(Node* node, int32_t* out_value);
   bool ToInt64Constant(Node* node, int64_t* out_value);
