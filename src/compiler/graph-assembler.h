@@ -87,6 +87,7 @@ class BasicBlock;
   V(Word32Shl)                            \
   V(Word32Shr)                            \
   V(Word32Xor)                            \
+  V(WordXor)                              \
   V(Word64And)                            \
   V(Word64Equal)                          \
   V(Word64Or)                             \
