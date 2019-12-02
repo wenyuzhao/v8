@@ -2781,7 +2781,7 @@ void CodeStubAssembler::UnsafeStoreObjectFieldNoWriteBarrier(
 }
 
 Node* CodeStubAssembler::PackMap(Node* map) {
-  Node* packed = Word32Xor((Node*) map, Int32Constant(MapWord::kXorMask));
+  Node* packed = BitcastWordToTagged(WordXor(BitcastTaggedToWord(map),                  IntPtrConstant(MapWord::kXorMask)));
   CSA_ASSERT(this, TaggedIsNotSmi(packed)); // Not a forwarding pointer
   return packed;
 }

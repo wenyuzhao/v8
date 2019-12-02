@@ -468,7 +468,14 @@ bool ValueNeedsWriteBarrier(Node* value, Isolate* isolate) {
     switch (value->opcode()) {
       case IrOpcode::kBitcastWordToTaggedSigned:
         return false;
+      case IrOpcode::kBitcastWordToTagged:
+        value = NodeProperties::GetValueInput(value, 0);
+        continue;
+      case IrOpcode::kBitcastTaggedToWord:
+        value = NodeProperties::GetValueInput(value, 0);
+        continue;
       case IrOpcode::kWord32Xor:
+      case IrOpcode::kWord64Xor:
         value = NodeProperties::GetValueInput(value, 0);
         continue;
       case IrOpcode::kHeapConstant: {
