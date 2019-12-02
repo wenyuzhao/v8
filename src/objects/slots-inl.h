@@ -31,7 +31,7 @@ bool FullObjectSlot::contains_value(Address raw_value) const {
 
 bool FullObjectSlot::contains_map_value(Address raw_value) const {
   Address read_value = base::AsAtomicPointer::Relaxed_Load(location());
-  read_value = MapWord::unpack_map(read_value);
+  read_value = Internals::UnPackMapWord(read_value);
   return read_value == raw_value;
 }
 
@@ -42,7 +42,7 @@ Object FullObjectSlot::load(IsolateRoot isolate) const { return **this; }
 void FullObjectSlot::store(Object value) const { *location() = value.ptr(); }
 
 void FullObjectSlot::store_map(Object value) const {
-  *location() = MapWord::pack_map(value.ptr());
+  *location() = Internals::PackMapWord(value.ptr());
 }
 
 Object FullObjectSlot::Acquire_Load() const {

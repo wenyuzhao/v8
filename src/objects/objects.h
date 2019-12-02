@@ -757,27 +757,11 @@ class MapWord {  // TODO(steveblackburn)
  public:
   // Normal state: the map word contains a map pointer.
 
-  // Leave the lowest bit unchanged to avoid conflict with forwarding
-  static const int kXorMask = 0x8ffffffe;
-
   // Create a map word from a map pointer.
   static inline MapWord FromMap(const Map map);
 
   // View this map word as a map pointer.
   inline Map ToMap() const;
-
-  // Unpack a map word from its compressed form
-  static inline Tagged_t unpack_map(Tagged_t raw) {
-    return raw ^ Tagged_t { MapWord::kXorMask };
-  }
-
-  // Pack a map into its compressed form
-  static inline Tagged_t pack_map(Tagged_t raw) {
-    CHECK(raw == kNullAddress || !HAS_SMI_TAG(raw));  // Not forwarding pointer
-    Tagged_t packed = raw ^ Tagged_t { MapWord::kXorMask };
-    CHECK(raw == kNullAddress || !HAS_SMI_TAG(packed));// Not forwarding pointer
-    return packed;
-  }
 
   // Scavenge collection: the map word of live objects in the from space
   // contains a forwarding address (a heap object pointer in the to space).

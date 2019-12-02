@@ -92,7 +92,7 @@ void FreeListCategory::RepairFreeList(Heap* heap) {
   while (!n.is_null()) {
     ObjectSlot map_slot = n.map_slot();
     if (map_slot.contains_map_value(kNullAddress)) {
-      map_slot.store(Object(MapWord::pack_map(free_space_map.ptr())));
+      map_slot.store(Object(Internals::PackMapWord(free_space_map.ptr())));
     } else {
       DCHECK(map_slot.contains_map_value(free_space_map.ptr()));
     }

@@ -668,11 +668,11 @@ MaybeObjectSlot HeapObject::RawMaybeWeakField(int byte_offset) const {
 }
 
 MapWord MapWord::FromMap(const Map map) {
-  return MapWord(pack_map(map.ptr()));
+  return MapWord(Internals::PackMapWord(map.ptr()));
 }
 
 Map MapWord::ToMap() const {
-  return Map::unchecked_cast(Object(unpack_map(value_)));
+  return Map::unchecked_cast(Object(Internals::UnPackMapWord(value_)));
 }
 
 bool MapWord::IsForwardingAddress() const { return HAS_SMI_TAG(value_); }
@@ -784,7 +784,7 @@ ObjectSlot HeapObject::map_slot() const {
 
 Object HeapObject::extract_map() {
   ObjectSlot p = map_slot();
-  Tagged_t ptr = MapWord::unpack_map((*p).ptr());
+  Tagged_t ptr = Internals::UnPackMapWord((*p).ptr());
   Object o (ptr);
   DCHECK(Map::unchecked_cast(o).IsMap());
   return o;

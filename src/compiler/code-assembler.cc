@@ -699,7 +699,7 @@ Node* CodeAssembler::LoadFromObject(MachineType type, TNode<HeapObject> object,
                                     TNode<IntPtrT> offset) {
   Node* value = raw_assembler()->LoadFromObject(type, object, offset);
   if (IsMapOffsetConstant(offset))
-    return WordXor(value, IntPtrConstant(MapWord::kXorMask));
+    return WordXor(value, IntPtrConstant(Internals::kXorMask));
   else
     return value;
 }
@@ -725,7 +725,7 @@ TNode<Object> CodeAssembler::LoadRoot(RootIndex root_index) {
 }
 
 Node* CodeAssembler::PackMap(Node* map) {
-  Node* packed = BitcastWordToTagged(WordXor(BitcastTaggedToWord(map),                  IntPtrConstant(MapWord::kXorMask)));
+  Node* packed = BitcastWordToTagged(WordXor(BitcastTaggedToWord(map),                  IntPtrConstant(Internals::kXorMask)));
  // CSA_ASSERT(this, TaggedIsNotSmi(packed)); // Not a forwarding pointer
   return packed;
 }

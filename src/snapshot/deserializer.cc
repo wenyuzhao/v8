@@ -64,7 +64,7 @@ class SlotAccessorForHeapObject {
   // repeat writes). Returns the number of slots written (which is one).
   int Write(MaybeObject value, int slot_offset = 0) {
     if (slot_offset == 0 && offset() == 0) {
-      value = MaybeObject(MapWord::pack_map(value.ptr()));
+      value = MaybeObject(Internals::PackMapWord(value.ptr()));
     }
     MaybeObjectSlot current_slot = slot() + slot_offset;
     current_slot.Relaxed_Store(value);
@@ -123,7 +123,7 @@ class SlotAccessorForRootSlots {
   // repeat writes). Returns the number of slots written (which is one).
   int Write(MaybeObject value, int slot_offset = 0) {
     if (slot_offset == 0 && offset() == 0) {
-      value = MaybeObject(MapWord::pack_map(value.ptr()));
+      value = MaybeObject(Internals::PackMapWord(value.ptr()));
     }
     FullMaybeObjectSlot current_slot = slot() + slot_offset;
     current_slot.Relaxed_Store(value);

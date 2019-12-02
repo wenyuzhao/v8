@@ -251,6 +251,8 @@ class Internals {
   // incremental GC once the external memory reaches this limit.
   static constexpr int kExternalAllocationSoftLimit = 64 * 1024 * 1024;
 
+  static const int kXorMask = 0x8ffffffe;
+
   V8_EXPORT static void CheckInitializedImpl(v8::Isolate* isolate);
   V8_INLINE static void CheckInitialized(v8::Isolate* isolate) {
 #ifdef V8_ENABLE_CHECKS
@@ -276,7 +278,8 @@ class Internals {
 
   V8_INLINE static int GetInstanceType(const internal::Address obj) {
     typedef internal::Address A;
-    A map = ReadTaggedPointerField(obj, kHeapObjectMapOffset);
+    A mapword = ReadTaggedPointerField(obj, kHeapObjectMapOffset);
+    A map = UnPackMapWord(mapword);
     return ReadRawField<uint16_t>(map, kMapInstanceTypeOffset);
   }
 
@@ -350,6 +353,15 @@ class Internals {
     }
 #endif
     return *reinterpret_cast<const T*>(addr);
+  }
+
+
+  V8_INLINE static internal::Address PackMapWord(internal::Address map) {
+    return map ^ kXorMask;
+  }
+
+  V8_INLINE static internal::Address UnPackMapWord(internal::Address mapword) {
+    return mapword ^ kXorMask;
   }
 
   V8_INLINE static internal::Address ReadTaggedPointerField(

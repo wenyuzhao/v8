@@ -510,9 +510,9 @@ Node* JSGraphAssembler::Allocate(AllocationType allocation, Node* size) {
 Node* JSGraphAssembler::LoadField(FieldAccess const& access, Node* object) {
   Node* value = AddNode(graph()->NewNode(simplified()->LoadField(access),
                                          object, effect(), control()));
-  // TODO(steveblackburn) unpacking of map. See MapWord::unpack_map().
+  // TODO(steveblackburn) unpacking of map. See Internals::UnpackMapWord().
   if (access == AccessBuilder::ForMap())
-    value = WordXor(value, IntPtrConstant(MapWord::kXorMask));
+    value = WordXor(value, IntPtrConstant(Internals::kXorMask));
   return value;
 }
 
@@ -525,9 +525,9 @@ Node* JSGraphAssembler::LoadElement(ElementAccess const& access, Node* object,
 
 Node* JSGraphAssembler::StoreField(FieldAccess const& access, Node* object,
                                    Node* value) {
-  // TODO(steveblackburn) packing of map. See MapWord::pack_map().
+  // TODO(steveblackburn) packing of map. See Internals::pack_map().
   if (access == AccessBuilder::ForMap())
-    value = WordXor(value, IntPtrConstant(MapWord::kXorMask));
+    value = WordXor(value, IntPtrConstant(Internals::kXorMask));
   return AddNode(graph()->NewNode(simplified()->StoreField(access), object,
                                   value, effect(), control()));
 }
