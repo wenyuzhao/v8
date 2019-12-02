@@ -191,6 +191,7 @@ void TurboAssembler::CompareRoot(Operand with, RootIndex index) {
 void TurboAssembler::LoadMap(Register destination, Register object) {
   LoadTaggedPointerField(destination,
                          FieldOperand(object, HeapObject::kMapOffset));
+  xorq(destination, Immediate(MapWord::kXorMask));
 }
 
 void TurboAssembler::LoadTaggedPointerField(Register destination,
