@@ -1524,8 +1524,6 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   template <class T>
   void StoreObjectFieldNoWriteBarrier(TNode<HeapObject> object, int offset,
                                       TNode<T> value) {
-    if (offset == HeapObject::kMapOffset)
-      value = TNode<T>::UncheckedCast(PackMap(value));
     if (CanBeTaggedPointer(MachineRepresentationOf<T>::value)) {
       OptimizedStoreFieldAssertNoWriteBarrier(MachineRepresentationOf<T>::value,
                                               object, offset, value);
@@ -1537,8 +1535,6 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
 
   void UnsafeStoreObjectFieldNoWriteBarrier(TNode<HeapObject> object,
                                             int offset, TNode<Object> value);
-  // Convert a Map to a (packed) map word
-  Node* PackMap(Node* map);
   // Store the Map of an HeapObject.
   void StoreMap(TNode<HeapObject> object, TNode<Map> map);
   void StoreMapNoWriteBarrier(TNode<HeapObject> object,

@@ -2780,14 +2780,8 @@ void CodeStubAssembler::UnsafeStoreObjectFieldNoWriteBarrier(
                                           object, offset, value);
 }
 
-Node* CodeStubAssembler::PackMap(Node* map) {
-  Node* packed = BitcastWordToTagged(WordXor(BitcastTaggedToWord(map),                  IntPtrConstant(MapWord::kXorMask)));
-  CSA_ASSERT(this, TaggedIsNotSmi(packed)); // Not a forwarding pointer
-  return packed;
-}
-
 void CodeStubAssembler::StoreMap(TNode<HeapObject> object, TNode<Map> map) {
-  OptimizedStoreMapWord(object, PackMap(map));
+  OptimizedStoreMapWord(object, map);
 }
 
 void CodeStubAssembler::StoreMapNoWriteBarrier(TNode<HeapObject> object,
@@ -2797,9 +2791,9 @@ void CodeStubAssembler::StoreMapNoWriteBarrier(TNode<HeapObject> object,
 
 void CodeStubAssembler::StoreMapNoWriteBarrier(TNode<HeapObject> object,
                                                TNode<Map> map) {
-  Node* mapword = PackMap(map);
+  CSA_SLOW_ASSERT(this, IsMap(map));
   OptimizedStoreFieldAssertNoWriteBarrier(MachineRepresentation::kTaggedPointer,
-                                          object, HeapObject::kMapOffset, mapword);
+                                          object, HeapObject::kMapOffset, map);
 }
 
 void CodeStubAssembler::StoreObjectFieldRoot(TNode<HeapObject> object,

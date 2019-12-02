@@ -463,6 +463,8 @@ class V8_EXPORT_PRIVATE CodeAssembler {
 #endif
   };
 
+  TNode<BoolT> IsNotMapOffset(TNode<IntPtrT> value);
+
   template <class T>
   TNode<T> UncheckedCast(Node* value) {
     return TNode<T>::UncheckedCast(value);
@@ -705,6 +707,9 @@ class V8_EXPORT_PRIVATE CodeAssembler {
   // Poison |value| on speculative paths.
   TNode<Object> TaggedPoisonOnSpeculation(TNode<Object> value);
   TNode<WordT> WordPoisonOnSpeculation(TNode<WordT> value);
+
+  // Convert a Map to a (packed) map word
+  Node* PackMap(Node* map);
 
   // Load raw memory location.
   Node* Load(MachineType type, Node* base,
