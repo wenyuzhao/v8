@@ -759,6 +759,7 @@ class MapWord {  // TODO(steveblackburn)
 
   // Create a map word from a map pointer.
   static inline MapWord FromMap(const Map map);
+  static inline MapWord FromMapNoCheck(const Map map);
 
   // View this map word as a map pointer.
   inline Map ToMap() const;

@@ -668,6 +668,11 @@ MaybeObjectSlot HeapObject::RawMaybeWeakField(int byte_offset) const {
 }
 
 MapWord MapWord::FromMap(const Map map) {
+  DCHECK(map.is_null() || map.IsMap());
+  return FromMapNoCheck(map);
+}
+
+MapWord MapWord::FromMapNoCheck(const Map map) {
   return MapWord(Internals::PackMapWord(map.ptr()));
 }
 
@@ -778,14 +783,25 @@ void HeapObject::set_map_after_allocation(Map value, WriteBarrierMode mode) {
 #endif
 }
 
+void HeapObject::set_map_after_allocation_no_check(Map value, WriteBarrierMode mode) {
+  set_map_word(MapWord::FromMapNoCheck(value));
+#ifndef V8_DISABLE_WRITE_BARRIERS
+  if (mode != SKIP_WRITE_BARRIER) {
+    DCHECK(!value.is_null());
+    // TODO(1600) We are passing kNullAddress as a slot because maps can never
+    // be on an evacuation candidate.
+    MarkingBarrier(*this, ObjectSlot(kNullAddress), value);
+  }
+#endif
+}
+
 ObjectSlot HeapObject::map_slot() const {
   return ObjectSlot(MapField::address(*this));
 }
 
 Object HeapObject::extract_map() {
   ObjectSlot p = map_slot();
-  Tagged_t ptr = Internals::UnPackMapWord((*p).ptr());
-  Object o (ptr);
+  Object o (Internals::UnPackMapWord((*p).ptr()));
   DCHECK(Map::unchecked_cast(o).IsMap());
   return o;
 }
