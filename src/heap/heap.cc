@@ -5794,6 +5794,9 @@ class UnreachableObjectsFilter : public HeapObjectsFilter {
     explicit MarkingVisitor(UnreachableObjectsFilter* filter)
         : filter_(filter) {}
 
+    void VisitMapPointer(HeapObject object) override {
+      MarkHeapObject(Map::unchecked_cast(object.extract_map()));
+    }
     void VisitPointers(HeapObject host, ObjectSlot start,
                        ObjectSlot end) override {
       MarkPointers(MaybeObjectSlot(start), MaybeObjectSlot(end));
