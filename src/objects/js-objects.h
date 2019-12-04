@@ -115,6 +115,7 @@ class JSReceiver : public HeapObject {
       const ScopedVector<Handle<Object>>* excluded_properties = nullptr,
       bool use_set = true);
 
+  inline bool MapOK();
   // Implementation of [[HasProperty]], ECMA-262 5th edition, section 8.12.6.
   V8_EXPORT_PRIVATE V8_WARN_UNUSED_RESULT static Maybe<bool> HasProperty(
       LookupIterator* it);

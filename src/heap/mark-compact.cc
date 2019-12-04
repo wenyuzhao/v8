@@ -81,6 +81,7 @@ class MarkingVerifier : public ObjectVisitor, public RootVisitor {
   virtual ConcurrentBitmap<AccessMode::NON_ATOMIC>* bitmap(
       const MemoryChunk* chunk) = 0;
 
+  virtual void VerifyMap(Map map) = 0;
   virtual void VerifyPointers(ObjectSlot start, ObjectSlot end) = 0;
   virtual void VerifyPointers(MaybeObjectSlot start, MaybeObjectSlot end) = 0;
   virtual void VerifyRootPointers(FullObjectSlot start, FullObjectSlot end) = 0;
@@ -102,6 +103,11 @@ class MarkingVerifier : public ObjectVisitor, public RootVisitor {
   void VisitRootPointers(Root root, const char* description,
                          FullObjectSlot start, FullObjectSlot end) override {
     VerifyRootPointers(start, end);
+  }
+
+  void VisitMapPointer(HeapObject object) override {
+    Map map = Map::unchecked_cast(object.extract_map());
+    CHECK_IMPLIES(IsBlackOrGrey(object), IsBlackOrGrey(map));
   }
 
   void VerifyRoots();
@@ -207,6 +213,10 @@ class FullMarkingVerifier : public MarkingVerifier {
     return marking_state_->IsBlackOrGrey(object);
   }
 
+  void VerifyMap(Map map) override {
+    VerifyHeapObjectImpl(map);
+  }
+
   void VerifyPointers(ObjectSlot start, ObjectSlot end) override {
     VerifyPointersImpl(start, end);
   }
@@ -270,11 +280,17 @@ class EvacuationVerifier : public ObjectVisitor, public RootVisitor {
     VerifyRootPointers(start, end);
   }
 
+  void VisitMapPointer(HeapObject object) override {
+    Map map = Map::unchecked_cast(object.extract_map());
+    VerifyMap(map);
+  }
+
  protected:
   explicit EvacuationVerifier(Heap* heap) : heap_(heap) {}
 
   inline Heap* heap() { return heap_; }
 
+  virtual void VerifyMap(Map map) = 0;
   virtual void VerifyPointers(ObjectSlot start, ObjectSlot end) = 0;
   virtual void VerifyPointers(MaybeObjectSlot start, MaybeObjectSlot end) = 0;
   virtual void VerifyRootPointers(FullObjectSlot start, FullObjectSlot end) = 0;
@@ -353,7 +369,9 @@ class FullEvacuationVerifier : public EvacuationVerifier {
       }
     }
   }
-
+  void VerifyMap(Map map) override {
+    VerifyHeapObjectImpl(map);
+  }
   void VerifyPointers(ObjectSlot start, ObjectSlot end) override {
     VerifyPointersImpl(start, end);
   }
@@ -974,6 +992,7 @@ class MarkCompactCollector::RootMarkingVisitor final : public RootVisitor {
     for (FullObjectSlot p = start; p < end; ++p) MarkObjectByPointer(root, p);
   }
 
+
  private:
   V8_INLINE void MarkObjectByPointer(Root root, FullObjectSlot p) {
     if (!(*p).IsHeapObject()) return;
@@ -1329,7 +1348,7 @@ class EvacuateVisitorBase : public HeapObjectVisitor {
       if (mode != MigrationMode::kFast)
         base->ExecuteMigrationObservers(dest, src, dst, size);
     }
-    src.set_map_word(MapWord::FromForwardingAddress(dst));
+    src.set_map_word(MapWord::FromForwardingAddress(dst)); // TODO correct?
   }
 
   EvacuateVisitorBase(Heap* heap, EvacuationAllocator* local_allocator,
@@ -1458,7 +1477,7 @@ class EvacuateNewSpaceVisitor final : public EvacuateVisitorBase {
     if (map.visitor_id() == kVisitThinString) {
       HeapObject actual = ThinString::cast(object).unchecked_actual();
       if (MarkCompactCollector::IsOnEvacuationCandidate(actual)) return false;
-      object.set_map_word(MapWord::FromForwardingAddress(actual));
+      object.set_map_word(MapWord::FromForwardingAddress(actual)); // TODO correct?
       return true;
     }
     // TODO(mlippautz): Handle ConsString.
@@ -4156,6 +4175,10 @@ class YoungGenerationMarkingVerifier : public MarkingVerifier {
   }
 
  protected:
+  void VerifyMap(Map map) override {
+    VerifyHeapObjectImpl(map);
+  }
+
   void VerifyPointers(ObjectSlot start, ObjectSlot end) override {
     VerifyPointersImpl(start, end);
   }
@@ -4224,7 +4247,9 @@ class YoungGenerationEvacuationVerifier : public EvacuationVerifier {
       }
     }
   }
-
+  void VerifyMap(Map map) override {
+    VerifyHeapObjectImpl(map);
+  }
   void VerifyPointers(ObjectSlot start, ObjectSlot end) override {
     VerifyPointersImpl(start, end);
   }

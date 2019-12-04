@@ -649,11 +649,13 @@ void JSReceiver::initialize_properties(Isolate* isolate) {
 }
 
 DEF_GETTER(JSReceiver, HasFastProperties, bool) {
+  Map m = map(isolate);
+  DCHECK(m.IsMap());
   DCHECK(raw_properties_or_hash(isolate).IsSmi() ||
          ((raw_properties_or_hash(isolate).IsGlobalDictionary(isolate) ||
            raw_properties_or_hash(isolate).IsNameDictionary(isolate)) ==
-          map(isolate).is_dictionary_map()));
-  return !map(isolate).is_dictionary_map();
+          m.is_dictionary_map()));
+  return !m.is_dictionary_map();
 }
 
 DEF_GETTER(JSReceiver, property_dictionary, NameDictionary) {
@@ -695,6 +697,12 @@ DEF_GETTER(JSReceiver, property_array, PropertyArray) {
     return GetReadOnlyRoots(isolate).empty_property_array();
   }
   return PropertyArray::cast(prop);
+}
+
+bool JSReceiver::MapOK() {
+  const Isolate* isolate = GetIsolateForPtrCompr(*this); 
+  Map m = map(isolate);
+  return m.IsMap();
 }
 
 Maybe<bool> JSReceiver::HasProperty(Handle<JSReceiver> object,

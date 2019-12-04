@@ -668,7 +668,7 @@ MaybeObjectSlot HeapObject::RawMaybeWeakField(int byte_offset) const {
 }
 
 MapWord MapWord::FromMap(const Map map) {
-  DCHECK(map.is_null() || map.IsMap());
+ DCHECK(map.is_null() || map.IsMap());
   return FromMapNoCheck(map);
 }
 
@@ -772,7 +772,8 @@ void HeapObject::set_map_no_write_barrier(Map value) {
 }
 
 void HeapObject::set_map_after_allocation(Map value, WriteBarrierMode mode) {
-  set_map_word(MapWord::FromMap(value));
+  MapWord mapword = MapWord::FromMap(value);
+  set_map_word(mapword);
 #ifndef V8_DISABLE_WRITE_BARRIERS
   if (mode != SKIP_WRITE_BARRIER) {
     DCHECK(!value.is_null());
@@ -807,20 +808,20 @@ Object HeapObject::extract_map() {
 }
 
 DEF_GETTER(HeapObject, map_word, MapWord) {
-  return MapField::Acquire_Load(isolate, *this);
+  return MapField::Acquire_Load_No_Unpack(isolate, *this);
 }
 
 void HeapObject::set_map_word(MapWord map_word) {  // TODO(steveblackburn)
-  MapField::Relaxed_Store(*this, map_word);
+  MapField::Relaxed_Store_No_Pack(*this, map_word);
 }
 
 DEF_GETTER(HeapObject, synchronized_map_word, MapWord) {
-  return MapField::Acquire_Load(isolate, *this);  // TODO(steveblackburn)
+  return MapField::Acquire_Load_No_Unpack(isolate, *this);  // TODO(steveblackburn)
 }
 
 void HeapObject::synchronized_set_map_word(
     MapWord map_word) {  // TODO(steveblackburn)
-  MapField::Release_Store(*this, map_word);
+  MapField::Release_Store_No_Pack(*this, map_word);
 }
 
 bool HeapObject::release_compare_and_swap_map_word(

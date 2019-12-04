@@ -164,7 +164,9 @@ class ObjectVisitor {
   virtual void VisitRelocInfo(RelocIterator* it);
 
   // Visits the object's map pointer, decoding as necessary
-  virtual void VisitMapPointer(HeapObject host) {}
+  virtual void VisitMapPointer(HeapObject host) {
+    UNREACHABLE();
+  }
 };
 
 }  // namespace internal

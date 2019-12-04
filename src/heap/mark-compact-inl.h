@@ -208,6 +208,7 @@ void LiveObjectRange<mode>::iterator::AdvanceToNextValidObject() {
         Object map_object = black_object.extract_map();
         CHECK(map_object.IsMap());
         map = Map::cast(map_object);
+        DCHECK(map.IsMap());
         size = black_object.SizeFromMap(map);
         CHECK_LE(addr + size, chunk_->area_end());
         Address end = addr + size - kTaggedSize;

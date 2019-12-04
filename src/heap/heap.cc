@@ -3474,6 +3474,8 @@ class SlotCollectingVisitor final : public ObjectVisitor {
     UNREACHABLE();
   }
 
+  void VisitMapPointer(HeapObject object) override {} // do nothing
+
   int number_of_slots() { return static_cast<int>(slots_.size()); }
 
   MaybeObjectSlot slot(int i) { return slots_[i]; }

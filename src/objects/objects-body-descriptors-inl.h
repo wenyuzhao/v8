@@ -1142,7 +1142,8 @@ ReturnType BodyDescriptorApply(InstanceType type, T1 p1, T2 p2, T3 p3, T4 p4) {
 
 template <typename ObjectVisitor>
 void HeapObject::IterateFast(ObjectVisitor* v) {
-  BodyDescriptorBase::IteratePointer(*this, kMapOffset, v);
+  v->VisitMapPointer(*this);
+//  BodyDescriptorBase::IteratePointer(*this, kMapOffset, v);
   IterateBodyFast(v);
 }
 

@@ -178,6 +178,12 @@ class ConcurrentMarkingVisitor final
       }
     }
 
+    void VisitMapPointer(HeapObject object) override {
+      ObjectSlot p = object.map_slot();
+      Map map = Map::unchecked_cast(object.extract_map());
+      slot_snapshot_->add(p, map);
+    } 
+
     void VisitPointers(HeapObject host, MaybeObjectSlot start,
                        MaybeObjectSlot end) override {
       // This should never happen, because we don't use snapshotting for objects
