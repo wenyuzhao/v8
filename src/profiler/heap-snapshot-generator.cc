@@ -710,6 +710,9 @@ class IndexedReferencesExtractor : public ObjectVisitor {
                      ObjectSlot end) override {
     VisitPointers(host, MaybeObjectSlot(start), MaybeObjectSlot(end));
   }
+  void VisitMapPointer(HeapObject object) override {
+    VisitHeapObjectImpl(Map::unchecked_cast(object.extract_map()),-1);
+  }
   void VisitPointers(HeapObject host, MaybeObjectSlot start,
                      MaybeObjectSlot end) override {
     // [start,end) must be a sub-region of [parent_start_, parent_end), i.e.
