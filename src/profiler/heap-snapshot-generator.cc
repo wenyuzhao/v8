@@ -711,7 +711,11 @@ class IndexedReferencesExtractor : public ObjectVisitor {
     VisitPointers(host, MaybeObjectSlot(start), MaybeObjectSlot(end));
   }
   void VisitMapPointer(HeapObject object) override {
-    VisitHeapObjectImpl(Map::unchecked_cast(object.extract_map()),-1);
+    if (generator_->visited_fields_[0]) {
+      generator_->visited_fields_[0] = false;
+    } else {
+      VisitHeapObjectImpl(Map::unchecked_cast(object.extract_map()),-1);
+    }
   }
   void VisitPointers(HeapObject host, MaybeObjectSlot start,
                      MaybeObjectSlot end) override {
@@ -1538,6 +1542,8 @@ bool V8HeapExplorer::IterateAndExtractReferences(
 
     HeapEntry* entry = GetEntry(obj);
     ExtractReferences(entry, obj);
+
+    // FIXME check out the call below.   It 'seems' OK, but is a bit  worriesome.
     SetInternalReference(entry, "map", obj.map(), HeapObject::kMapOffset);
     // Extract unvisited fields as hidden references and restore tags
     // of visited fields.
