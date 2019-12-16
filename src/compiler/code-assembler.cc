@@ -740,13 +740,14 @@ void CodeAssembler::StoreToObject(MachineRepresentation rep,
                                   TNode<IntPtrT> offset, Node* value,
                                   StoreToObjectWriteBarrier write_barrier) {
   WriteBarrierKind write_barrier_kind;
+  if (IsMapOffsetConstant(offset))
+    value = PackMap(value);
   switch (write_barrier) {
     case StoreToObjectWriteBarrier::kFull:
       write_barrier_kind = WriteBarrierKind::kFullWriteBarrier;
       break;
     case StoreToObjectWriteBarrier::kMap:
       write_barrier_kind = WriteBarrierKind::kMapWriteBarrier;
-      value = PackMap(value);
       break;
     case StoreToObjectWriteBarrier::kNone:
       if (CanBeTaggedPointer(rep)) {
