@@ -293,6 +293,11 @@ Reduction MemoryLowering::ReduceLoadFromObject(Node* node) {
   DCHECK_EQ(IrOpcode::kLoadFromObject, node->opcode());
   ObjectAccess const& access = ObjectAccessOf(node->op());
   NodeProperties::ChangeOp(node, machine()->Load(access.machine_type));
+  //Node* offset = node->InputAt(1);
+  //if (access == AccessBuilder::ForMap()) {
+  // if (IsMapOffsetConstant(offset)) {
+  //   node = __ WordXor(node, __ IntPtrConstant(Internals::kXorMask));
+  // }
   return Changed(node);
 }
 
@@ -376,15 +381,39 @@ Reduction MemoryLowering::ReduceLoadField(Node* node) {
   } else {
     DCHECK(!access.type.Is(Type::SandboxedExternalPointer()));
   }
+  // if (access == AccessBuilder::ForMap()) {
+  // if (access.offset == HeapObject::kMapOffset) {
+  //   node = __ WordXor(node, __ IntPtrConstant(Internals::kXorMask));
+  // }
   return Changed(node);
 }
+
+bool MemoryLowering::IsMapOffsetConstant(Node* node) {
+  {
+    Int64Matcher m(node);
+    if (m.HasValue() && m.IsInRange(std::numeric_limits<int32_t>::min(),
+                                        std::numeric_limits<int32_t>::max()))
+      return (static_cast<int32_t>(m.Value()) == HeapObject::kMapOffset
+        || static_cast<int32_t>(m.Value()) == (HeapObject::kMapOffset - kHeapObjectTag));
+    else
+      return false;
+  }
+  DCHECK(false);
+  return false;
+}
+
 
 Reduction MemoryLowering::ReduceStoreToObject(Node* node,
                                               AllocationState const* state) {
   DCHECK_EQ(IrOpcode::kStoreToObject, node->opcode());
   ObjectAccess const& access = ObjectAccessOf(node->op());
   Node* object = node->InputAt(0);
+  Node* offset = node->InputAt(1);
   Node* value = node->InputAt(2);
+  // TODO(steveblackburn) packing of map. See Internals::PackMapWord()
+  if (IsMapOffsetConstant(offset)) {
+    node->ReplaceInput(2, __ WordXor(value, __ IntPtrConstant(Internals::kXorMask)));
+  }
   WriteBarrierKind write_barrier_kind = ComputeWriteBarrierKind(
       node, object, value, state, access.write_barrier_kind);
   NodeProperties::ChangeOp(
@@ -419,6 +448,10 @@ Reduction MemoryLowering::ReduceStoreField(Node* node,
                      !access.type.Is(Type::SandboxedExternalPointer()));
   Node* object = node->InputAt(0);
   Node* value = node->InputAt(1);
+  // TODO(steveblackburn) packing of map. See Internals::PackMapWord()
+  if (access.offset == HeapObject::kMapOffset) {
+    node->ReplaceInput(1, __ WordXor(value, __ IntPtrConstant(Internals::kXorMask)));
+  }
   WriteBarrierKind write_barrier_kind = ComputeWriteBarrierKind(
       node, object, value, state, access.write_barrier_kind);
   Node* offset = __ IntPtrConstant(access.offset - access.tag());
@@ -434,7 +467,9 @@ Reduction MemoryLowering::ReduceStore(Node* node,
   DCHECK_EQ(IrOpcode::kStore, node->opcode());
   StoreRepresentation representation = StoreRepresentationOf(node->op());
   Node* object = node->InputAt(0);
+  // Node* offset = node->InputAt(1);
   Node* value = node->InputAt(2);
+
   WriteBarrierKind write_barrier_kind = ComputeWriteBarrierKind(
       node, object, value, state, representation.write_barrier_kind());
   if (write_barrier_kind != representation.write_barrier_kind()) {
@@ -442,7 +477,12 @@ Reduction MemoryLowering::ReduceStore(Node* node,
         node, machine()->Store(StoreRepresentation(
                   representation.representation(), write_barrier_kind)));
     return Changed(node);
-  }
+  } 
+  // if (IsMapOffsetConstant(offset)) {
+  //   // this code is exercised (e.g. when the RecordWrite builtin is compiled)
+  //   node->ReplaceInput(2, __ WordXor(value, __ IntPtrConstant(Internals::kXorMask)));
+  //   return Changed(node);
+  // }
   return NoChange();
 }
 
@@ -468,16 +508,6 @@ bool ValueNeedsWriteBarrier(Node* value, Isolate* isolate) {
     switch (value->opcode()) {
       case IrOpcode::kBitcastWordToTaggedSigned:
         return false;
-      case IrOpcode::kBitcastWordToTagged:
-        value = NodeProperties::GetValueInput(value, 0);
-        continue;
-      case IrOpcode::kBitcastTaggedToWord:
-        value = NodeProperties::GetValueInput(value, 0);
-        continue;
-      case IrOpcode::kWord32Xor:
-      case IrOpcode::kWord64Xor:
-        value = NodeProperties::GetValueInput(value, 0);
-        continue;
       case IrOpcode::kHeapConstant: {
         RootIndex root_index;
         if (isolate->roots_table().IsRootHandle(HeapConstantOf(value->op()),

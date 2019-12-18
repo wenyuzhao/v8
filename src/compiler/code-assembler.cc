@@ -724,12 +724,6 @@ TNode<Object> CodeAssembler::LoadRoot(RootIndex root_index) {
       LoadFullTagged(isolate_root, IntPtrConstant(offset)));
 }
 
-Node* CodeAssembler::PackMap(Node* map) {
-  Node* packed = BitcastWordToTagged(WordXor(BitcastTaggedToWord(map),                  IntPtrConstant(Internals::kXorMask)));
- // CSA_ASSERT(this, TaggedIsNotSmi(packed)); // Not a forwarding pointer
-  return packed;
-}
-
 Node* CodeAssembler::Store(Node* base, Node* value) {
   return raw_assembler()->Store(MachineRepresentation::kTagged, base, value,
                                 kFullWriteBarrier);
@@ -740,8 +734,6 @@ void CodeAssembler::StoreToObject(MachineRepresentation rep,
                                   TNode<IntPtrT> offset, Node* value,
                                   StoreToObjectWriteBarrier write_barrier) {
   WriteBarrierKind write_barrier_kind;
-  if (IsMapOffsetConstant(offset))
-    value = PackMap(value);
   switch (write_barrier) {
     case StoreToObjectWriteBarrier::kFull:
       write_barrier_kind = WriteBarrierKind::kFullWriteBarrier;
@@ -764,8 +756,6 @@ void CodeAssembler::StoreToObject(MachineRepresentation rep,
 void CodeAssembler::OptimizedStoreField(MachineRepresentation rep,
                                         TNode<HeapObject> object, int offset,
                                         Node* value) {
-  if (offset == HeapObject::kMapOffset)
-    value = PackMap(value);
   raw_assembler()->OptimizedStoreField(rep, object, offset, value,
                                        WriteBarrierKind::kFullWriteBarrier);
 }
@@ -773,8 +763,6 @@ void CodeAssembler::OptimizedStoreField(MachineRepresentation rep,
 void CodeAssembler::OptimizedStoreFieldAssertNoWriteBarrier(
     MachineRepresentation rep, TNode<HeapObject> object, int offset,
     Node* value) {
-  if (offset == HeapObject::kMapOffset)
-    value = PackMap(value);
   raw_assembler()->OptimizedStoreField(rep, object, offset, value,
                                        WriteBarrierKind::kAssertNoWriteBarrier);
 }
@@ -782,15 +770,13 @@ void CodeAssembler::OptimizedStoreFieldAssertNoWriteBarrier(
 void CodeAssembler::OptimizedStoreFieldUnsafeNoWriteBarrier(
     MachineRepresentation rep, TNode<HeapObject> object, int offset,
     Node* value) {
-  if (offset == HeapObject::kMapOffset)
-    value = PackMap(value);
   raw_assembler()->OptimizedStoreField(rep, object, offset, value,
                                        WriteBarrierKind::kNoWriteBarrier);
 }
 
 void CodeAssembler::OptimizedStoreMapWord(TNode<HeapObject> object,
                                           Node* map) {
-  raw_assembler()->OptimizedStoreMap(object, PackMap(map));
+  raw_assembler()->OptimizedStoreMap(object, map);
 }
 
 Node* CodeAssembler::Store(Node* base, Node* offset, Node* value) {
@@ -807,6 +793,7 @@ Node* CodeAssembler::StoreEphemeronKey(Node* base, Node* offset, Node* value) {
 
 Node* CodeAssembler::StoreNoWriteBarrier(MachineRepresentation rep, Node* base,
                                          Node* value) {
+  // FIXME what's happening here?
   return raw_assembler()->Store(
       rep, base, value,
       CanBeTaggedPointer(rep) ? kAssertNoWriteBarrier : kNoWriteBarrier);

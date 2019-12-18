@@ -525,9 +525,6 @@ Node* JSGraphAssembler::LoadElement(ElementAccess const& access, Node* object,
 
 Node* JSGraphAssembler::StoreField(FieldAccess const& access, Node* object,
                                    Node* value) {
-  // TODO(steveblackburn) packing of map. See Internals::pack_map().
-  if (access == AccessBuilder::ForMap())
-    value = WordXor(value, IntPtrConstant(Internals::kXorMask));
   return AddNode(graph()->NewNode(simplified()->StoreField(access), object,
                                   value, effect(), control()));
 }

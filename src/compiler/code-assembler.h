@@ -708,9 +708,6 @@ class V8_EXPORT_PRIVATE CodeAssembler {
   TNode<Object> TaggedPoisonOnSpeculation(TNode<Object> value);
   TNode<WordT> WordPoisonOnSpeculation(TNode<WordT> value);
 
-  // Convert a Map to a (packed) map word
-  Node* PackMap(Node* map);
-
   // Load raw memory location.
   Node* Load(MachineType type, Node* base,
              LoadSensitivity needs_poisoning = LoadSensitivity::kSafe);
