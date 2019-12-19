@@ -779,6 +779,8 @@ class MapWord {  // TODO(steveblackburn)
   inline HeapObject ToForwardingAddress();
 
   inline Address ptr() { return value_; }
+  
+  explicit MapWord(Address value) : value_(value) {}
 
  private:
   // HeapObject calls the private constructor and directly reads the value.
@@ -786,7 +788,6 @@ class MapWord {  // TODO(steveblackburn)
   template <typename TFieldType, int kFieldOffset>
   friend class TaggedField;
 
-  explicit MapWord(Address value) : value_(value) {}
 
   Address value_;
 };

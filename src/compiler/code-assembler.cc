@@ -704,7 +704,17 @@ Node* CodeAssembler::LoadFromObject(MachineType type, TNode<HeapObject> object,
     return value;
 }
 
+Node* CodeAssembler::LoadFiller(RootIndex root_index) {
+  DCHECK(root_index == RootIndex::kOnePointerFillerMap);
+  Handle<Object> root = isolate()->root_handle(root_index);
+  Node* map = HeapConstant(Handle<HeapObject>::cast(root));
+  // TODO(steveblackburn) would be nice to use the xor'd constant
+  return WordXor(map, IntPtrConstant(Internals::kXorMask));
+}
+
 TNode<Object> CodeAssembler::LoadRoot(RootIndex root_index) {
+  DCHECK(root_index != RootIndex::kOnePointerFillerMap);
+
   if (RootsTable::IsImmortalImmovable(root_index)) {
     Handle<Object> root = isolate()->root_handle(root_index);
     if (root->IsSmi()) {

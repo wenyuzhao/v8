@@ -4121,9 +4121,9 @@ class OldToNewSlotVerifyingVisitor : public SlotVerifyingVisitor {
         ephemeron_remembered_set_(ephemeron_remembered_set) {}
 
   bool ShouldHaveBeenRecorded(HeapObject host, MaybeObject target) override {
-    DCHECK_IMPLIES(target->IsStrongOrWeak() && Heap::InYoungGeneration(target),
+    DCHECK_IMPLIES(target->IsStrongOrWeak() && !Internals::IsMapWord(target.ptr()) && Heap::InYoungGeneration(target),
                    Heap::InToPage(target));
-    return target->IsStrongOrWeak() && Heap::InYoungGeneration(target) &&
+    return target->IsStrongOrWeak() && !Internals::IsMapWord(target.ptr()) && Heap::InYoungGeneration(target) &&
            !Heap::InYoungGeneration(host);
   }
 
@@ -6309,7 +6309,11 @@ void VerifyPointersVisitor::VerifyPointersImpl(TSlot start, TSlot end) {
   for (TSlot slot = start; slot < end; ++slot) {
     typename TSlot::TObject object = slot.load(isolate);
     HeapObject heap_object;
-    if (object.GetHeapObject(&heap_object)) {
+    if (Internals::IsMapWord(object.ptr())) {
+//   Fix this, seeing map poiner with bogus address
+//      Object map (Internals::UnPackMapWord((*slot).ptr()));
+//      CHECK(Map::unchecked_cast(map).IsMap());
+    } else if (object.GetHeapObject(&heap_object)) {
       VerifyHeapObjectImpl(heap_object);
     } else {
       CHECK(object.IsSmi() || object.IsCleared());

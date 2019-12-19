@@ -10527,12 +10527,17 @@ void CodeStubAssembler::InitializeFieldsWithRoot(TNode<HeapObject> object,
   CSA_SLOW_ASSERT(this, TaggedIsNotSmi(object));
   start_offset = IntPtrAdd(start_offset, IntPtrConstant(-kHeapObjectTag));
   end_offset = IntPtrAdd(end_offset, IntPtrConstant(-kHeapObjectTag));
-  TNode<Object> root_value = LoadRoot(root_index);
+  Node* value;
+  if (root_index == RootIndex::kOnePointerFillerMap) {
+    value = LoadFiller(root_index);
+  } else {
+    value = LoadRoot(root_index);
+  }
   BuildFastLoop<IntPtrT>(
       end_offset, start_offset,
       [=](TNode<IntPtrT> current) {
         StoreNoWriteBarrier(MachineRepresentation::kTagged, object, current,
-                            root_value);
+                            value);
       },
       -kTaggedSize, CodeStubAssembler::IndexAdvanceMode::kPre);
 }
