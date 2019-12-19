@@ -251,7 +251,7 @@ class Internals {
   // incremental GC once the external memory reaches this limit.
   static constexpr int kExternalAllocationSoftLimit = 64 * 1024 * 1024;
 
-  static const int kXorMask = 0x8ffffffe;
+  static const int kXorMask = 0x8ffffffc;   // ensure two low-order bits are unchanged (tagging, weak ptr)
 
   V8_EXPORT static void CheckInitializedImpl(v8::Isolate* isolate);
   V8_INLINE static void CheckInitialized(v8::Isolate* isolate) {
