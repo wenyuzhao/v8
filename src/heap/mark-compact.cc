@@ -175,7 +175,7 @@ void MarkingVerifier::VerifyMarking(PagedSpace* space) {
 void MarkingVerifier::VerifyMarking(LargeObjectSpace* lo_space) {
   LargeObjectSpaceObjectIterator it(lo_space);
   for (HeapObject obj = it.Next(); !obj.is_null(); obj = it.Next()) {
-    if (IsBlackOrGrey(obj)) {
+    if (!Internals::IsMapWord(obj.ptr()) && IsBlackOrGrey(obj)) {
       obj.Iterate(this);
     }
   }
@@ -238,13 +238,15 @@ class FullMarkingVerifier : public MarkingVerifier {
     DCHECK(RelocInfo::IsEmbeddedObjectMode(rinfo->rmode()));
     if (!host.IsWeakObject(rinfo->target_object())) {
       HeapObject object = rinfo->target_object();
-      VerifyHeapObjectImpl(object);
+      if (!Internals::IsMapWord(object.ptr()))
+        VerifyHeapObjectImpl(object);
     }
   }
 
  private:
   V8_INLINE void VerifyHeapObjectImpl(HeapObject heap_object) {
-    CHECK(marking_state_->IsBlackOrGrey(heap_object));
+    if (!Internals::IsMapWord(heap_object.ptr()))
+      CHECK(marking_state_->IsBlackOrGrey(heap_object));
   }
 
   template <typename TSlot>
@@ -252,7 +254,7 @@ class FullMarkingVerifier : public MarkingVerifier {
     for (TSlot slot = start; slot < end; ++slot) {
       typename TSlot::TObject object = *slot;
       HeapObject heap_object;
-      if (object.GetHeapObjectIfStrong(&heap_object)) {
+      if (!Internals::IsMapWord(heap_object.ptr()) && object.GetHeapObjectIfStrong(&heap_object)) {
         VerifyHeapObjectImpl(heap_object);
       }
     }
@@ -364,7 +366,7 @@ class FullEvacuationVerifier : public EvacuationVerifier {
     for (TSlot current = start; current < end; ++current) {
       typename TSlot::TObject object = *current;
       HeapObject heap_object;
-      if (object.GetHeapObjectIfStrong(&heap_object)) {
+      if (object.GetHeapObjectIfStrong(&heap_object) && !Internals::IsMapWord(heap_object.ptr())) {
         VerifyHeapObjectImpl(heap_object);
       }
     }
@@ -1028,9 +1030,11 @@ class MarkCompactCollector::CustomRootBodyMarkingVisitor final
 
   void VisitPointers(HeapObject host, ObjectSlot start, ObjectSlot end) final {
     for (ObjectSlot p = start; p < end; ++p) {
-      DCHECK(host.map_slot() != p); // don't blindly iterate over the map field
-      DCHECK(!HasWeakHeapObjectTag(*p));
-      MarkObject(host, *p);
+      if (!Internals::IsMapWord(p.Relaxed_Load().ptr())) {
+        CHECK(host.map_slot() != p); // don't blindly iterate over the map field
+        DCHECK(!HasWeakHeapObjectTag(*p));
+        MarkObject(host, *p);
+      }
     }
   }
 
@@ -1078,7 +1082,7 @@ class InternalizedStringTableCleaner : public RootVisitor {
     Isolate* isolate = heap_->isolate();
     for (OffHeapObjectSlot p = start; p < end; ++p) {
       Object o = p.load(isolate);
-      if (o.IsHeapObject()) {
+      if (!Internals::IsMapWord(p.Acquire_Load().ptr()) && o.IsHeapObject()) {
         HeapObject heap_object = HeapObject::cast(o);
         DCHECK(!Heap::InYoungGeneration(heap_object));
         if (marking_state->IsWhite(heap_object)) {
@@ -1109,7 +1113,7 @@ class ExternalStringTableCleaner : public RootVisitor {
     Object the_hole = ReadOnlyRoots(heap_).the_hole_value();
     for (FullObjectSlot p = start; p < end; ++p) {
       Object o = *p;
-      if (o.IsHeapObject()) {
+      if (!Internals::IsMapWord(p.Relaxed_Load().ptr()) && o.IsHeapObject()) {
         HeapObject heap_object = HeapObject::cast(o);
         if (marking_state->IsWhite(heap_object)) {
           if (o.IsExternalString()) {
@@ -1432,6 +1436,7 @@ class EvacuateNewSpaceVisitor final : public EvacuateVisitorBase {
         always_promote_young_(always_promote_young) {}
 
   inline bool Visit(HeapObject object, int size) override {
+    DCHECK(!Internals::IsMapWord(object.ptr()));
     if (TryEvacuateWithoutCopy(object)) return true;
     HeapObject target_object;
 
@@ -1832,6 +1837,7 @@ size_t MarkCompactCollector::ProcessMarkingWorklist(size_t bytes_to_process) {
          local_marking_worklists()->PopOnHold(&object)) {
     // Left trimming may result in grey or black filler objects on the marking
     // worklist. Ignore these objects.
+    DCHECK(!Internals::IsMapWord(object.ptr()));
     if (object.IsFreeSpaceOrFiller()) {
       // Due to copying mark bits and the fact that grey and black have their
       // first bit set, one word fillers are always black.
