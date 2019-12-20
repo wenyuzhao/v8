@@ -1870,6 +1870,7 @@ class StringTableVerifier : public RootVisitor {
     for (OffHeapObjectSlot p = start; p < end; ++p) {
       Object o = p.load(isolate_);
       DCHECK(!HasWeakHeapObjectTag(o));
+      DCHECK(!Internals::IsMapWord(p.Acquire_Load().ptr()));
       if (o.IsHeapObject()) {
         HeapObject object = HeapObject::cast(o);
         // Check that the string is actually internalized.
@@ -3464,7 +3465,8 @@ class SlotCollectingVisitor final : public ObjectVisitor {
   void VisitPointers(HeapObject host, MaybeObjectSlot start,
                      MaybeObjectSlot end) final {
     for (MaybeObjectSlot p = start; p < end; ++p) {
-      slots_.push_back(p);
+      if (!Internals::IsMapWord(p.Relaxed_Load().ptr()))
+        slots_.push_back(p);
     }
   }
 
@@ -5828,6 +5830,7 @@ class UnreachableObjectsFilter : public HeapObjectsFilter {
     void TransitiveClosure() {
       while (!marking_stack_.empty()) {
         HeapObject obj = marking_stack_.back();
+        DCHECK(!Internals::IsMapWord(obj.ptr()));
         marking_stack_.pop_back();
         obj.Iterate(this);
       }
@@ -5845,7 +5848,7 @@ class UnreachableObjectsFilter : public HeapObjectsFilter {
       for (TSlot p = start; p < end; ++p) {
         typename TSlot::TObject object = p.load(isolate);
         HeapObject heap_object;
-        if (object.GetHeapObject(&heap_object)) {
+        if (!Internals::IsMapWord(object.ptr()) && object.GetHeapObject(&heap_object)) {
           MarkHeapObject(heap_object);
         }
       }
