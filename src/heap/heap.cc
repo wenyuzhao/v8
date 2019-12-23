@@ -2679,6 +2679,7 @@ void Heap::VisitExternalResources(v8::ExternalResourceVisitor* visitor) {
     void VisitRootPointers(Root root, const char* description,
                            FullObjectSlot start, FullObjectSlot end) override {
       for (FullObjectSlot p = start; p < end; ++p) {
+        DCHECK(!Internals::IsMapWord(p.Relaxed_Load().ptr()));
         DCHECK((*p).IsExternalString());
         visitor_->VisitExternalString(
             Utils::ToLocal(Handle<String>(String::cast(*p), isolate_)));
@@ -2956,6 +2957,7 @@ class LeftTrimmerVerifierRootVisitor : public RootVisitor {
   void VisitRootPointers(Root root, const char* description,
                          FullObjectSlot start, FullObjectSlot end) override {
     for (FullObjectSlot p = start; p < end; ++p) {
+      DCHECK(!Internals::IsMapWord(p.Relaxed_Load().ptr()));
       DCHECK_NE(*p, to_check_);
     }
   }
@@ -4315,7 +4317,9 @@ class FixStaleLeftTrimmedHandlesVisitor : public RootVisitor {
 
   void VisitRootPointers(Root root, const char* description,
                          FullObjectSlot start, FullObjectSlot end) override {
-    for (FullObjectSlot p = start; p < end; ++p) FixHandle(p);
+    for (FullObjectSlot p = start; p < end; ++p) {
+      FixHandle(p);
+    }
   }
 
  private:
@@ -4323,6 +4327,7 @@ class FixStaleLeftTrimmedHandlesVisitor : public RootVisitor {
     if (!(*p).IsHeapObject()) return;
     HeapObject current = HeapObject::cast(*p);
     const MapWord map_word = current.map_word();
+    DCHECK_IMPLIES(Internals::IsMapWord(p.Relaxed_Load().ptr()), current.IsFreeSpaceOrFiller());
     if (!map_word.IsForwardingAddress() && current.IsFreeSpaceOrFiller()) {
 #ifdef DEBUG
       // We need to find a FixedArrayBase map after walking the fillers.

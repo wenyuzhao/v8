@@ -23,6 +23,7 @@ namespace v8 {
 namespace internal {
 
 void MarkCompactCollector::MarkObject(HeapObject host, HeapObject obj) {
+  DCHECK(!Internals::IsMapWord(obj.ptr()));
   if (marking_state()->WhiteToGrey(obj)) {
     local_marking_worklists()->Push(obj);
     if (V8_UNLIKELY(FLAG_track_retaining_path)) {
@@ -32,6 +33,7 @@ void MarkCompactCollector::MarkObject(HeapObject host, HeapObject obj) {
 }
 
 void MarkCompactCollector::MarkRootObject(Root root, HeapObject obj) {
+  DCHECK(!Internals::IsMapWord(obj.ptr()));
   if (marking_state()->WhiteToGrey(obj)) {
     local_marking_worklists()->Push(obj);
     if (V8_UNLIKELY(FLAG_track_retaining_path)) {
@@ -43,6 +45,7 @@ void MarkCompactCollector::MarkRootObject(Root root, HeapObject obj) {
 #ifdef ENABLE_MINOR_MC
 
 void MinorMarkCompactCollector::MarkRootObject(HeapObject obj) {
+  DCHECK(!Internals::IsMapWord(obj.ptr()));
   if (Heap::InYoungGeneration(obj) &&
       non_atomic_marking_state_.WhiteToGrey(obj)) {
     worklist_->Push(kMainThreadTask, obj);
@@ -52,6 +55,7 @@ void MinorMarkCompactCollector::MarkRootObject(HeapObject obj) {
 #endif
 
 void MarkCompactCollector::MarkExternallyReferencedObject(HeapObject obj) {
+  DCHECK(!Internals::IsMapWord(obj.ptr()));
   if (marking_state()->WhiteToGrey(obj)) {
     local_marking_worklists()->Push(obj);
     if (V8_UNLIKELY(FLAG_track_retaining_path)) {
@@ -62,11 +66,13 @@ void MarkCompactCollector::MarkExternallyReferencedObject(HeapObject obj) {
 
 void MarkCompactCollector::RecordSlot(HeapObject object, ObjectSlot slot,
                                       HeapObject target) {
+  DCHECK(!Internals::IsMapWord(object.ptr()));
   RecordSlot(object, HeapObjectSlot(slot), target);
 }
 
 void MarkCompactCollector::RecordSlot(HeapObject object, HeapObjectSlot slot,
                                       HeapObject target) {
+  DCHECK(!Internals::IsMapWord(object.ptr()));
   BasicMemoryChunk* target_page = BasicMemoryChunk::FromHeapObject(target);
   MemoryChunk* source_page = MemoryChunk::FromHeapObject(object);
   if (target_page->IsEvacuationCandidate<AccessMode::ATOMIC>() &&

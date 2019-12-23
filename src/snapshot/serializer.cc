@@ -130,6 +130,7 @@ bool Serializer::MustBeDeferred(HeapObject object) { return false; }
 void Serializer::VisitRootPointers(Root root, const char* description,
                                    FullObjectSlot start, FullObjectSlot end) {
   for (FullObjectSlot current = start; current < end; ++current) {
+    DCHECK(!Internals::IsMapWord(current.Relaxed_Load().ptr()));
     SerializeRootObject(current);
   }
 }

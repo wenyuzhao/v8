@@ -1480,6 +1480,7 @@ class RootsReferencesExtractor : public RootVisitor {
   void VisitRootPointers(Root root, const char* description,
                          FullObjectSlot start, FullObjectSlot end) override {
     for (FullObjectSlot p = start; p < end; ++p) {
+      DCHECK(!Internals::IsMapWord(p.Relaxed_Load().ptr()));
       VisitRootPointer(root, description, p);
     }
   }
@@ -1816,6 +1817,7 @@ class GlobalObjectsEnumerator : public RootVisitor {
   void VisitRootPointersImpl(Root root, const char* description, TSlot start,
                              TSlot end) {
     for (TSlot p = start; p < end; ++p) {
+      DCHECK(!Internals::IsMapWord(p.Relaxed_Load().ptr()));
       Object o = p.load(isolate_);
       if (!o.IsNativeContext(isolate_)) continue;
       JSObject proxy = Context::cast(o).global_proxy();

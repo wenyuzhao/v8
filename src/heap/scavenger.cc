@@ -741,7 +741,10 @@ void RootScavengeVisitor::VisitRootPointers(Root root, const char* description,
                                             FullObjectSlot start,
                                             FullObjectSlot end) {
   // Copy all HeapObject pointers in [start, end)
-  for (FullObjectSlot p = start; p < end; ++p) ScavengePointer(p);
+  for (FullObjectSlot p = start; p < end; ++p) {
+    DCHECK(!Internals::IsMapWord(p.Relaxed_Load().ptr()));
+    ScavengePointer(p);
+  }
 }
 
 void RootScavengeVisitor::ScavengePointer(FullObjectSlot p) {

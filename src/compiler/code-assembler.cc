@@ -715,6 +715,8 @@ Node* CodeAssembler::LoadFiller(RootIndex root_index) {
 
 TNode<Object> CodeAssembler::LoadRoot(RootIndex root_index) {
   DCHECK(root_index != RootIndex::kOnePointerFillerMap);
+  DCHECK(root_index != RootIndex::kTwoPointerFillerMap);
+  DCHECK(root_index != RootIndex::kFreeSpaceMap);
 
   if (RootsTable::IsImmortalImmovable(root_index)) {
     Handle<Object> root = isolate()->root_handle(root_index);

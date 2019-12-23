@@ -986,12 +986,16 @@ class MarkCompactCollector::RootMarkingVisitor final : public RootVisitor {
 
   void VisitRootPointer(Root root, const char* description,
                         FullObjectSlot p) final {
-    MarkObjectByPointer(root, p);
+    if (!Internals::IsMapWord(p.Relaxed_Load().ptr()))
+      MarkObjectByPointer(root, p);
   }
 
   void VisitRootPointers(Root root, const char* description,
                          FullObjectSlot start, FullObjectSlot end) final {
-    for (FullObjectSlot p = start; p < end; ++p) MarkObjectByPointer(root, p);
+    for (FullObjectSlot p = start; p < end; ++p) {
+      if (!Internals::IsMapWord(p.Relaxed_Load().ptr()))
+        MarkObjectByPointer(root, p);
+    }
   }
 
  private:
@@ -2777,13 +2781,15 @@ class PointersUpdatingVisitor : public ObjectVisitor, public RootVisitor {
 
   void VisitRootPointer(Root root, const char* description,
                         FullObjectSlot p) override {
-    UpdateRootSlotInternal(isolate_, p);
+    if(!Internals::IsMapWord(p.Relaxed_Load().ptr()))
+      UpdateRootSlotInternal(isolate_, p);
   }
 
   void VisitRootPointers(Root root, const char* description,
                          FullObjectSlot start, FullObjectSlot end) override {
     for (FullObjectSlot p = start; p < end; ++p) {
-      UpdateRootSlotInternal(isolate_, p);
+      if(!Internals::IsMapWord(p.Relaxed_Load().ptr()))
+        UpdateRootSlotInternal(isolate_, p);
     }
   }
 
@@ -4525,8 +4531,8 @@ class MinorMarkCompactCollector::RootMarkingVisitor : public RootVisitor {
   void VisitRootPointers(Root root, const char* description,
                          FullObjectSlot start, FullObjectSlot end) final {
     for (FullObjectSlot p = start; p < end; ++p) {
-      if (!Internals::IsMapWord((*p).ptr()) )
-      MarkObjectByPointer(p);
+      if (!Internals::IsMapWord((*p).ptr()))
+        MarkObjectByPointer(p);
     }
   }
 

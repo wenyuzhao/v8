@@ -10531,6 +10531,7 @@ void CodeStubAssembler::InitializeFieldsWithRoot(TNode<HeapObject> object,
   if (root_index == RootIndex::kOnePointerFillerMap) {
     value = LoadFiller(root_index);
   } else {
+    DCHECK(root_index != RootIndex::kTwoPointerFillerMap && root_index != RootIndex::kFreeSpaceMap);
     value = LoadRoot(root_index);
   }
   BuildFastLoop<IntPtrT>(
