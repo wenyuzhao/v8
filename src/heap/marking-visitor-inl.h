@@ -73,6 +73,7 @@ MarkingVisitorBase<ConcreteVisitor, MarkingState>::VisitPointersImpl(
   for (TSlot slot = start; slot < end; ++slot) {
     typename TSlot::TObject object = slot.Relaxed_Load();
     HeapObject heap_object;
+    if (!Internals::IsMapWord(object.ptr())) {
     if (object.GetHeapObjectIfStrong(&heap_object)) {
       // If the reference changes concurrently from strong to weak, the write
       // barrier will treat the weak reference as strong, so we won't miss the
@@ -80,6 +81,7 @@ MarkingVisitorBase<ConcreteVisitor, MarkingState>::VisitPointersImpl(
       ProcessStrongHeapObject(host, THeapObjectSlot(slot), heap_object);
     } else if (TSlot::kCanBeWeak && object.GetHeapObjectIfWeak(&heap_object)) {
       ProcessWeakHeapObject(host, THeapObjectSlot(slot), heap_object);
+    }
     }
   }
 }
