@@ -56,7 +56,8 @@ Tagged_t TaggedField<T, kFieldOffset>::full_to_tagged(Address value) {
 template <typename T, int kFieldOffset>
 T TaggedField<T, kFieldOffset>::load(HeapObject host, int offset) {
   Tagged_t value = *location(host, offset);
-  if (kFieldOffset + offset == HeapObject::kMapOffset) // TODO(steveblackburn) perf?
+  if (kFieldOffset + offset ==
+      HeapObject::kMapOffset)  // TODO(steveblackburn) perf?
     value = Internals::UnPackMapWord(value);
   return T(tagged_to_full(host.ptr(), value));
 }
@@ -66,7 +67,8 @@ template <typename T, int kFieldOffset>
 T TaggedField<T, kFieldOffset>::load(IsolateRoot isolate, HeapObject host,
                                      int offset) {
   Tagged_t value = *location(host, offset);
-  if (kFieldOffset + offset == HeapObject::kMapOffset) // TODO(steveblackburn) perf?
+  if (kFieldOffset + offset ==
+      HeapObject::kMapOffset)  // TODO(steveblackburn) perf?
     value = Internals::UnPackMapWord(value);
   return T(tagged_to_full(isolate, value));
 }
@@ -78,9 +80,9 @@ void TaggedField<T, kFieldOffset>::store(HeapObject host, T value) {
   Relaxed_Store(host, value);
 #else
   Address ptr = value.ptr();
-  if (kFieldOffset == HeapObject::kMapOffset) // TODO(steveblackburn) perf?
+  if (kFieldOffset == HeapObject::kMapOffset)  // TODO(steveblackburn) perf?
     ptr = Internals::PackMapWord(ptr);
-   *location(host) = full_to_tagged(ptr);
+  *location(host) = full_to_tagged(ptr);
 #endif
 }
 
@@ -91,7 +93,8 @@ void TaggedField<T, kFieldOffset>::store(HeapObject host, int offset, T value) {
   Relaxed_Store(host, offset, value);
 #else
   Address ptr = value.ptr();
-  if (kFieldOffset + offset == HeapObject::kMapOffset) // TODO(steveblackburn) perf?
+  if (kFieldOffset + offset ==
+      HeapObject::kMapOffset)  // TODO(steveblackburn) perf?
     ptr = Internals::PackMapWord(ptr);
   *location(host, offset) = full_to_tagged(ptr);
 #endif
@@ -101,7 +104,8 @@ void TaggedField<T, kFieldOffset>::store(HeapObject host, int offset, T value) {
 template <typename T, int kFieldOffset>
 T TaggedField<T, kFieldOffset>::Relaxed_Load(HeapObject host, int offset) {
   AtomicTagged_t value = AsAtomicTagged::Relaxed_Load(location(host, offset));
-  if (kFieldOffset + offset == HeapObject::kMapOffset) // TODO(steveblackburn) perf?
+  if (kFieldOffset + offset ==
+      HeapObject::kMapOffset)  // TODO(steveblackburn) perf?
     value = Internals::UnPackMapWord(value);
   return T(tagged_to_full(host.ptr(), value));
 }
@@ -111,14 +115,16 @@ template <typename T, int kFieldOffset>
 T TaggedField<T, kFieldOffset>::Relaxed_Load(IsolateRoot isolate,
                                              HeapObject host, int offset) {
   AtomicTagged_t value = AsAtomicTagged::Relaxed_Load(location(host, offset));
-  if (kFieldOffset + offset == HeapObject::kMapOffset) // TODO(steveblackburn) perf?
+  if (kFieldOffset + offset ==
+      HeapObject::kMapOffset)  // TODO(steveblackburn) perf?
     value = Internals::UnPackMapWord(value);
   return T(tagged_to_full(isolate, value));
 }
 
 // static
 template <typename T, int kFieldOffset>
-void TaggedField<T, kFieldOffset>::Relaxed_Store_No_Pack(HeapObject host, T value) {
+void TaggedField<T, kFieldOffset>::Relaxed_Store_No_Pack(HeapObject host,
+                                                         T value) {
   AsAtomicTagged::Relaxed_Store(location(host), full_to_tagged(value.ptr()));
 }
 
@@ -126,7 +132,7 @@ void TaggedField<T, kFieldOffset>::Relaxed_Store_No_Pack(HeapObject host, T valu
 template <typename T, int kFieldOffset>
 void TaggedField<T, kFieldOffset>::Relaxed_Store(HeapObject host, T value) {
   Address ptr = value.ptr();
-  if (kFieldOffset == HeapObject::kMapOffset) // TODO(steveblackburn) perf?
+  if (kFieldOffset == HeapObject::kMapOffset)  // TODO(steveblackburn) perf?
     ptr = Internals::PackMapWord(ptr);
   AsAtomicTagged::Relaxed_Store(location(host), full_to_tagged(ptr));
 }
@@ -136,17 +142,18 @@ template <typename T, int kFieldOffset>
 void TaggedField<T, kFieldOffset>::Relaxed_Store(HeapObject host, int offset,
                                                  T value) {
   Address ptr = value.ptr();
-  if (kFieldOffset + offset == HeapObject::kMapOffset) // TODO(steveblackburn) perf?
+  if (kFieldOffset + offset ==
+      HeapObject::kMapOffset)  // TODO(steveblackburn) perf?
     ptr = Internals::PackMapWord(ptr);
-  AsAtomicTagged::Relaxed_Store(location(host, offset),
-                                full_to_tagged(ptr));
+  AsAtomicTagged::Relaxed_Store(location(host, offset), full_to_tagged(ptr));
 }
 
 // static
 template <typename T, int kFieldOffset>
 T TaggedField<T, kFieldOffset>::Acquire_Load(HeapObject host, int offset) {
   AtomicTagged_t value = AsAtomicTagged::Acquire_Load(location(host, offset));
-  if (kFieldOffset + offset == HeapObject::kMapOffset) // TODO(steveblackburn) perf?
+  if (kFieldOffset + offset ==
+      HeapObject::kMapOffset)  // TODO(steveblackburn) perf?
     value = Internals::UnPackMapWord(value);
   return T(tagged_to_full(host.ptr(), value));
 }
@@ -154,7 +161,7 @@ T TaggedField<T, kFieldOffset>::Acquire_Load(HeapObject host, int offset) {
 // static
 template <typename T, int kFieldOffset>
 T TaggedField<T, kFieldOffset>::Acquire_Load_No_Unpack(IsolateRoot isolate, HeapObject host,
-                                             int offset) {
+                                                       int offset) {
   AtomicTagged_t value = AsAtomicTagged::Acquire_Load(location(host, offset));
   return T(tagged_to_full(isolate, value));
 }
@@ -163,7 +170,8 @@ template <typename T, int kFieldOffset>
 T TaggedField<T, kFieldOffset>::Acquire_Load(IsolateRoot isolate,
                                              HeapObject host, int offset) {
   AtomicTagged_t value = AsAtomicTagged::Acquire_Load(location(host, offset));
-  if (kFieldOffset + offset == HeapObject::kMapOffset) // TODO(steveblackburn) perf?
+  if (kFieldOffset + offset ==
+      HeapObject::kMapOffset)  // TODO(steveblackburn) perf?
     value = Internals::UnPackMapWord(value);
   return T(tagged_to_full(isolate, value));
 }
@@ -172,14 +180,15 @@ T TaggedField<T, kFieldOffset>::Acquire_Load(IsolateRoot isolate,
 template <typename T, int kFieldOffset>
 void TaggedField<T, kFieldOffset>::Release_Store(HeapObject host, T value) {
   Address ptr = value.ptr();
-  if (kFieldOffset == HeapObject::kMapOffset) // TODO(steveblackburn) perf?
+  if (kFieldOffset == HeapObject::kMapOffset)  // TODO(steveblackburn) perf?
     ptr = Internals::PackMapWord(ptr);
   AsAtomicTagged::Release_Store(location(host), full_to_tagged(ptr));
 }
 
 // static
 template <typename T, int kFieldOffset>
-void TaggedField<T, kFieldOffset>::Release_Store_No_Pack(HeapObject host, T value) {
+void TaggedField<T, kFieldOffset>::Release_Store_No_Pack(HeapObject host,
+                                                         T value) {
   Address ptr = value.ptr();
   AsAtomicTagged::Release_Store(location(host), full_to_tagged(ptr));
 }
@@ -189,10 +198,10 @@ template <typename T, int kFieldOffset>
 void TaggedField<T, kFieldOffset>::Release_Store(HeapObject host, int offset,
                                                  T value) {
   Address ptr = value.ptr();
-  if (kFieldOffset + offset == HeapObject::kMapOffset) // TODO(steveblackburn) perf?
+  if (kFieldOffset + offset ==
+      HeapObject::kMapOffset)  // TODO(steveblackburn) perf?
     ptr = Internals::PackMapWord(ptr);
-  AsAtomicTagged::Release_Store(location(host, offset),
-                                full_to_tagged(ptr));
+  AsAtomicTagged::Release_Store(location(host, offset), full_to_tagged(ptr));
 }
 
 // static

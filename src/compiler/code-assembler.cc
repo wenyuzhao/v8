@@ -319,9 +319,10 @@ bool CodeAssembler::IsMapOffsetConstant(Node* node) {
   {
     Int64Matcher m(node);
     if (m.HasValue() && m.IsInRange(std::numeric_limits<int32_t>::min(),
-                                        std::numeric_limits<int32_t>::max()))
-      return (static_cast<int32_t>(m.Value()) == HeapObject::kMapOffset
-        || static_cast<int32_t>(m.Value()) == (HeapObject::kMapOffset - kHeapObjectTag));
+                                    std::numeric_limits<int32_t>::max()))
+      return (static_cast<int32_t>(m.Value()) == HeapObject::kMapOffset ||
+              static_cast<int32_t>(m.Value()) ==
+                  (HeapObject::kMapOffset - kHeapObjectTag));
     else
       return false;
   }
@@ -784,8 +785,7 @@ void CodeAssembler::OptimizedStoreFieldUnsafeNoWriteBarrier(
                                        WriteBarrierKind::kNoWriteBarrier);
 }
 
-void CodeAssembler::OptimizedStoreMapWord(TNode<HeapObject> object,
-                                          Node* map) {
+void CodeAssembler::OptimizedStoreMapWord(TNode<HeapObject> object, Node* map) {
   raw_assembler()->OptimizedStoreMap(object, map);
 }
 

@@ -53,7 +53,7 @@ class TaggedField : public AllStatic {
 
   static inline T Acquire_Load(HeapObject host, int offset = 0);
   static inline T Acquire_Load_No_Unpack(IsolateRoot isolate, HeapObject host,
-                               int offset = 0);
+                                         int offset = 0);
   static inline T Acquire_Load(IsolateRoot isolate, HeapObject host,
                                int offset = 0);
 

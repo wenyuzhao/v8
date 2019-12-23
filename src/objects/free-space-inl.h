@@ -52,7 +52,7 @@ bool FreeSpace::IsValid() {
       Isolate::FromHeap(heap)->root(RootIndex::kFreeSpaceMap);
   CHECK_IMPLIES(!map_slot().contains_map_value(free_space_map.ptr()),
                 !heap->deserialization_complete() &&
-                      map_slot().contains_map_value(kNullAddress));
+                    map_slot().contains_map_value(kNullAddress));
   CHECK_LE(kNextOffset + kTaggedSize, relaxed_read_size());
   return true;
 }

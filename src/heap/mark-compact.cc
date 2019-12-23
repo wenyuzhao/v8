@@ -213,9 +213,7 @@ class FullMarkingVerifier : public MarkingVerifier {
     return marking_state_->IsBlackOrGrey(object);
   }
 
-  void VerifyMap(Map map) override {
-    VerifyHeapObjectImpl(map);
-  }
+  void VerifyMap(Map map) override { VerifyHeapObjectImpl(map); }
 
   void VerifyPointers(ObjectSlot start, ObjectSlot end) override {
     VerifyPointersImpl(start, end);
@@ -238,8 +236,7 @@ class FullMarkingVerifier : public MarkingVerifier {
     DCHECK(RelocInfo::IsEmbeddedObjectMode(rinfo->rmode()));
     if (!host.IsWeakObject(rinfo->target_object())) {
       HeapObject object = rinfo->target_object();
-      if (!Internals::IsMapWord(object.ptr()))
-        VerifyHeapObjectImpl(object);
+      if (!Internals::IsMapWord(object.ptr())) VerifyHeapObjectImpl(object);
     }
   }
 
@@ -254,7 +251,8 @@ class FullMarkingVerifier : public MarkingVerifier {
     for (TSlot slot = start; slot < end; ++slot) {
       typename TSlot::TObject object = *slot;
       HeapObject heap_object;
-      if (!Internals::IsMapWord(heap_object.ptr()) && object.GetHeapObjectIfStrong(&heap_object)) {
+      if (!Internals::IsMapWord(heap_object.ptr()) &&
+          object.GetHeapObjectIfStrong(&heap_object)) {
         VerifyHeapObjectImpl(heap_object);
       }
     }
@@ -366,14 +364,13 @@ class FullEvacuationVerifier : public EvacuationVerifier {
     for (TSlot current = start; current < end; ++current) {
       typename TSlot::TObject object = *current;
       HeapObject heap_object;
-      if (object.GetHeapObjectIfStrong(&heap_object) && !Internals::IsMapWord(heap_object.ptr())) {
+      if (object.GetHeapObjectIfStrong(&heap_object) &&
+          !Internals::IsMapWord(heap_object.ptr())) {
         VerifyHeapObjectImpl(heap_object);
       }
     }
   }
-  void VerifyMap(Map map) override {
-    VerifyHeapObjectImpl(map);
-  }
+  void VerifyMap(Map map) override { VerifyHeapObjectImpl(map); }
   void VerifyPointers(ObjectSlot start, ObjectSlot end) override {
     VerifyPointersImpl(start, end);
   }
@@ -994,7 +991,6 @@ class MarkCompactCollector::RootMarkingVisitor final : public RootVisitor {
     for (FullObjectSlot p = start; p < end; ++p) MarkObjectByPointer(root, p);
   }
 
-
  private:
   V8_INLINE void MarkObjectByPointer(Root root, FullObjectSlot p) {
     if (!(*p).IsHeapObject()) return;
@@ -1031,7 +1027,8 @@ class MarkCompactCollector::CustomRootBodyMarkingVisitor final
   void VisitPointers(HeapObject host, ObjectSlot start, ObjectSlot end) final {
     for (ObjectSlot p = start; p < end; ++p) {
       if (!Internals::IsMapWord(p.Relaxed_Load().ptr())) {
-        CHECK(host.map_slot() != p); // don't blindly iterate over the map field
+        CHECK(host.map_slot() !=
+              p);  // don't blindly iterate over the map field
         DCHECK(!HasWeakHeapObjectTag(*p));
         MarkObject(host, *p);
       }
@@ -1352,7 +1349,7 @@ class EvacuateVisitorBase : public HeapObjectVisitor {
       if (mode != MigrationMode::kFast)
         base->ExecuteMigrationObservers(dest, src, dst, size);
     }
-    src.set_map_word(MapWord::FromForwardingAddress(dst)); // TODO correct?
+    src.set_map_word(MapWord::FromForwardingAddress(dst));  // TODO correct?
   }
 
   EvacuateVisitorBase(Heap* heap, EvacuationAllocator* local_allocator,
@@ -1482,7 +1479,8 @@ class EvacuateNewSpaceVisitor final : public EvacuateVisitorBase {
     if (map.visitor_id() == kVisitThinString) {
       HeapObject actual = ThinString::cast(object).unchecked_actual();
       if (MarkCompactCollector::IsOnEvacuationCandidate(actual)) return false;
-      object.set_map_word(MapWord::FromForwardingAddress(actual)); // TODO correct?
+      object.set_map_word(
+          MapWord::FromForwardingAddress(actual));  // TODO correct?
       return true;
     }
     // TODO(mlippautz): Handle ConsString.
@@ -4181,9 +4179,7 @@ class YoungGenerationMarkingVerifier : public MarkingVerifier {
   }
 
  protected:
-  void VerifyMap(Map map) override {
-    VerifyHeapObjectImpl(map);
-  }
+  void VerifyMap(Map map) override { VerifyHeapObjectImpl(map); }
 
   void VerifyPointers(ObjectSlot start, ObjectSlot end) override {
     VerifyPointersImpl(start, end);
@@ -4253,9 +4249,7 @@ class YoungGenerationEvacuationVerifier : public EvacuationVerifier {
       }
     }
   }
-  void VerifyMap(Map map) override {
-    VerifyHeapObjectImpl(map);
-  }
+  void VerifyMap(Map map) override { VerifyHeapObjectImpl(map); }
   void VerifyPointers(ObjectSlot start, ObjectSlot end) override {
     VerifyPointersImpl(start, end);
   }

@@ -3476,7 +3476,7 @@ class SlotCollectingVisitor final : public ObjectVisitor {
     UNREACHABLE();
   }
 
-  void VisitMapPointer(HeapObject object) override {} // do nothing
+  void VisitMapPointer(HeapObject object) override {}  // do nothing
 
   int number_of_slots() { return static_cast<int>(slots_.size()); }
 
@@ -4123,10 +4123,12 @@ class OldToNewSlotVerifyingVisitor : public SlotVerifyingVisitor {
         ephemeron_remembered_set_(ephemeron_remembered_set) {}
 
   bool ShouldHaveBeenRecorded(HeapObject host, MaybeObject target) override {
-    DCHECK_IMPLIES(target->IsStrongOrWeak() && !Internals::IsMapWord(target.ptr()) && Heap::InYoungGeneration(target),
+    DCHECK_IMPLIES(target->IsStrongOrWeak() &&
+                       !Internals::IsMapWord(target.ptr()) &&
+                       Heap::InYoungGeneration(target),
                    Heap::InToPage(target));
-    return target->IsStrongOrWeak() && !Internals::IsMapWord(target.ptr()) && Heap::InYoungGeneration(target) &&
-           !Heap::InYoungGeneration(host);
+    return target->IsStrongOrWeak() && !Internals::IsMapWord(target.ptr()) &&
+           Heap::InYoungGeneration(target) && !Heap::InYoungGeneration(host);
   }
 
   void VisitEphemeron(HeapObject host, int index, ObjectSlot key,
@@ -5848,7 +5850,8 @@ class UnreachableObjectsFilter : public HeapObjectsFilter {
       for (TSlot p = start; p < end; ++p) {
         typename TSlot::TObject object = p.load(isolate);
         HeapObject heap_object;
-        if (!Internals::IsMapWord(object.ptr()) && object.GetHeapObject(&heap_object)) {
+        if (!Internals::IsMapWord(object.ptr()) &&
+            object.GetHeapObject(&heap_object)) {
           MarkHeapObject(heap_object);
         }
       }
@@ -6313,9 +6316,9 @@ void VerifyPointersVisitor::VerifyPointersImpl(TSlot start, TSlot end) {
     typename TSlot::TObject object = slot.load(isolate);
     HeapObject heap_object;
     if (Internals::IsMapWord(object.ptr())) {
-//   Fix this, seeing map poiner with bogus address
-//      Object map (Internals::UnPackMapWord((*slot).ptr()));
-//      CHECK(Map::unchecked_cast(map).IsMap());
+      //   Fix this, seeing map poiner with bogus address
+      //      Object map (Internals::UnPackMapWord((*slot).ptr()));
+      //      CHECK(Map::unchecked_cast(map).IsMap());
     } else if (object.GetHeapObject(&heap_object)) {
       VerifyHeapObjectImpl(heap_object);
     } else {

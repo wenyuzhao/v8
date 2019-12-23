@@ -668,7 +668,7 @@ MaybeObjectSlot HeapObject::RawMaybeWeakField(int byte_offset) const {
 }
 
 MapWord MapWord::FromMap(const Map map) {
- DCHECK(map.is_null() || map.IsMap());
+  DCHECK(map.is_null() || map.IsMap());
   return FromMapNoCheck(map);
 }
 
@@ -784,7 +784,8 @@ void HeapObject::set_map_after_allocation(Map value, WriteBarrierMode mode) {
 #endif
 }
 
-void HeapObject::set_map_after_allocation_no_check(Map value, WriteBarrierMode mode) {
+void HeapObject::set_map_after_allocation_no_check(Map value,
+                                                   WriteBarrierMode mode) {
   set_map_word(MapWord::FromMapNoCheck(value));
 #ifndef V8_DISABLE_WRITE_BARRIERS
   if (mode != SKIP_WRITE_BARRIER) {
@@ -802,7 +803,7 @@ ObjectSlot HeapObject::map_slot() const {
 
 Object HeapObject::extract_map() {
   ObjectSlot p = map_slot();
-  Object o (Internals::UnPackMapWord((*p).ptr()));
+  Object o(Internals::UnPackMapWord((*p).ptr()));
   DCHECK(Map::unchecked_cast(o).IsMap());
   return o;
 }
@@ -816,7 +817,8 @@ void HeapObject::set_map_word(MapWord map_word) {  // TODO(steveblackburn)
 }
 
 DEF_GETTER(HeapObject, synchronized_map_word, MapWord) {
-  return MapField::Acquire_Load_No_Unpack(isolate, *this);  // TODO(steveblackburn)
+  return MapField::Acquire_Load_No_Unpack(isolate,
+                                          *this);  // TODO(steveblackburn)
 }
 
 void HeapObject::synchronized_set_map_word(

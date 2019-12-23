@@ -504,12 +504,12 @@ size_t FreeListCategory::SumFreeList() {
   while (!cur.is_null()) {
     // We can't use "cur->map()" here because both cur's map and the
     // root can be null during bootstrapping.
-    DCHECK(cur.map_slot().ontains_map_value(
-        Page::FromHeapObject(cur)
-            ->heap()
-            ->isolate()
-            ->root(RootIndex::kFreeSpaceMap)
-            .ptr()));
+    DCHECK(
+        cur.map_slot().contains_map_value(Page::FromHeapObject(cur)
+                                              ->heap()
+                                              ->isolate()
+                                              ->root(RootIndex::kFreeSpaceMap)
+                                              .ptr()));
     sum += cur.relaxed_read_size();
     cur = cur.next();
   }

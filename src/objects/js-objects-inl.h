@@ -429,11 +429,12 @@ Object JSObject::InObjectPropertyAtPut(int index, Object value,
   return value;
 }
 
-void JSObject::InitializeBody(Map map, int start_offset, bool use_object_filler, MapWord filler_map, Object undefined_filler) {
+void JSObject::InitializeBody(Map map, int start_offset, bool use_object_filler,
+                              MapWord filler_map, Object undefined_filler) {
   int size = map.instance_size();
   int offset = start_offset;
   if (use_object_filler) {
-     int end_of_pre_allocated_offset =
+    int end_of_pre_allocated_offset =
         size - (map.UnusedPropertyFields() * kTaggedSize);
     DCHECK_LE(kHeaderSize, end_of_pre_allocated_offset);
     // fill start with references to the undefined value object
@@ -704,7 +705,7 @@ DEF_GETTER(JSReceiver, property_array, PropertyArray) {
 }
 
 bool JSReceiver::MapOK() {
-  const Isolate* isolate = GetIsolateForPtrCompr(*this); 
+  const Isolate* isolate = GetIsolateForPtrCompr(*this);
   Map m = map(isolate);
   return m.IsMap();
 }

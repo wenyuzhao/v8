@@ -779,7 +779,7 @@ class MapWord {  // TODO(steveblackburn)
   inline HeapObject ToForwardingAddress();
 
   inline Address ptr() { return value_; }
-  
+
   explicit MapWord(Address value) : value_(value) {}
 
  private:

@@ -293,8 +293,8 @@ Reduction MemoryLowering::ReduceLoadFromObject(Node* node) {
   DCHECK_EQ(IrOpcode::kLoadFromObject, node->opcode());
   ObjectAccess const& access = ObjectAccessOf(node->op());
   NodeProperties::ChangeOp(node, machine()->Load(access.machine_type));
-  //Node* offset = node->InputAt(1);
-  //if (access == AccessBuilder::ForMap()) {
+  // Node* offset = node->InputAt(1);
+  // if (access == AccessBuilder::ForMap()) {
   // if (IsMapOffsetConstant(offset)) {
   //   node = __ WordXor(node, __ IntPtrConstant(Internals::kXorMask));
   // }
@@ -392,16 +392,16 @@ bool MemoryLowering::IsMapOffsetConstant(Node* node) {
   {
     Int64Matcher m(node);
     if (m.HasValue() && m.IsInRange(std::numeric_limits<int32_t>::min(),
-                                        std::numeric_limits<int32_t>::max()))
-      return (static_cast<int32_t>(m.Value()) == HeapObject::kMapOffset
-        || static_cast<int32_t>(m.Value()) == (HeapObject::kMapOffset - kHeapObjectTag));
+                                    std::numeric_limits<int32_t>::max()))
+      return (static_cast<int32_t>(m.Value()) == HeapObject::kMapOffset ||
+              static_cast<int32_t>(m.Value()) ==
+                  (HeapObject::kMapOffset - kHeapObjectTag));
     else
       return false;
   }
   DCHECK(false);
   return false;
 }
-
 
 Reduction MemoryLowering::ReduceStoreToObject(Node* node,
                                               AllocationState const* state) {
@@ -412,7 +412,8 @@ Reduction MemoryLowering::ReduceStoreToObject(Node* node,
   Node* value = node->InputAt(2);
   // TODO(steveblackburn) packing of map. See Internals::PackMapWord()
   if (IsMapOffsetConstant(offset)) {
-    node->ReplaceInput(2, __ WordXor(value, __ IntPtrConstant(Internals::kXorMask)));
+    node->ReplaceInput(
+        2, __ WordXor(value, __ IntPtrConstant(Internals::kXorMask)));
   }
   WriteBarrierKind write_barrier_kind = ComputeWriteBarrierKind(
       node, object, value, state, access.write_barrier_kind);
@@ -450,7 +451,8 @@ Reduction MemoryLowering::ReduceStoreField(Node* node,
   Node* value = node->InputAt(1);
   // TODO(steveblackburn) packing of map. See Internals::PackMapWord()
   if (access.offset == HeapObject::kMapOffset) {
-    node->ReplaceInput(1, __ WordXor(value, __ IntPtrConstant(Internals::kXorMask)));
+    node->ReplaceInput(
+        1, __ WordXor(value, __ IntPtrConstant(Internals::kXorMask)));
   }
   WriteBarrierKind write_barrier_kind = ComputeWriteBarrierKind(
       node, object, value, state, access.write_barrier_kind);
@@ -477,11 +479,11 @@ Reduction MemoryLowering::ReduceStore(Node* node,
         node, machine()->Store(StoreRepresentation(
                   representation.representation(), write_barrier_kind)));
     return Changed(node);
-  } 
+  }
   // if (IsMapOffsetConstant(offset)) {
   //   // this code is exercised (e.g. when the RecordWrite builtin is compiled)
-  //   node->ReplaceInput(2, __ WordXor(value, __ IntPtrConstant(Internals::kXorMask)));
-  //   return Changed(node);
+  //   node->ReplaceInput(2, __ WordXor(value, __
+  //   IntPtrConstant(Internals::kXorMask))); return Changed(node);
   // }
   return NoChange();
 }

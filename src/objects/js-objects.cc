@@ -2355,7 +2355,7 @@ Maybe<bool> JSObject::SetPropertyWithFailedAccessCheck(
 void JSObject::SetNormalizedProperty(Handle<JSObject> object, Handle<Name> name,
                                      Handle<Object> value,
                                      PropertyDetails details) {
-  DCHECK(object->MapOK());                   
+  DCHECK(object->MapOK());
   DCHECK(!object->HasFastProperties());
   DCHECK(name->IsUniqueName());
   Isolate* isolate = object->GetIsolate();
@@ -3012,16 +3012,16 @@ void JSObject::MigrateToMap(Isolate* isolate, Handle<JSObject> object,
     CHECK(new_map->is_dictionary_map());
 
     // Slow-to-slow migration is trivial.
-        DCHECK(object->MapOK());
+    DCHECK(object->MapOK());
 
     object->synchronized_set_map(*new_map);
-            DCHECK(object->MapOK());
+    DCHECK(object->MapOK());
 
   } else if (!new_map->is_dictionary_map()) {
-            DCHECK(object->MapOK());
+    DCHECK(object->MapOK());
 
     MigrateFastToFast(isolate, object, new_map);
-        DCHECK(object->MapOK());
+    DCHECK(object->MapOK());
 
     if (old_map->is_prototype_map()) {
       DCHECK(!old_map->is_stable());
