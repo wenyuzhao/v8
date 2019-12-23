@@ -250,6 +250,7 @@ class ConcurrentMarkingVisitor final
       ObjectSlot slot = snapshot.slot(i);
       Object object = snapshot.value(i);
       DCHECK(!HasWeakHeapObjectTag(object));
+      DCHECK(!Internals::IsMapWord(object.ptr()));
       if (!object.IsHeapObject()) continue;
       HeapObject heap_object = HeapObject::cast(object);
       MarkObject(host, heap_object);

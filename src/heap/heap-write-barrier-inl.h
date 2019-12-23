@@ -207,6 +207,7 @@ base::Optional<Heap*> WriteBarrier::GetHeapIfMarking(HeapObject object) {
 
 void WriteBarrier::Marking(HeapObject host, ObjectSlot slot, Object value) {
   DCHECK(!HasWeakHeapObjectTag(value));
+  DCHECK(!Internals::IsMapWord(value.ptr()));
   if (!value.IsHeapObject()) return;
   Marking(host, HeapObjectSlot(slot), HeapObject::cast(value));
 }
@@ -214,12 +215,14 @@ void WriteBarrier::Marking(HeapObject host, ObjectSlot slot, Object value) {
 void WriteBarrier::Marking(HeapObject host, MaybeObjectSlot slot,
                            MaybeObject value) {
   HeapObject value_heap_object;
+  DCHECK(!Internals::IsMapWord(value.ptr()));
   if (!value->GetHeapObject(&value_heap_object)) return;
   Marking(host, HeapObjectSlot(slot), value_heap_object);
 }
 
 void WriteBarrier::Marking(HeapObject host, HeapObjectSlot slot,
                            HeapObject value) {
+  DCHECK(!Internals::IsMapWord(value.ptr()));
   auto heap = GetHeapIfMarking(host);
   if (!heap) return;
   MarkingSlow(*heap, host, slot, value);

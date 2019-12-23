@@ -792,7 +792,7 @@ void HeapObject::set_map_after_allocation_no_check(Map value,
     DCHECK(!value.is_null());
     // TODO(1600) We are passing kNullAddress as a slot because maps can never
     // be on an evacuation candidate.
-    MarkingBarrier(*this, ObjectSlot(kNullAddress), value);
+    WriteBarrier::Marking(*this, ObjectSlot(kNullAddress), value);
   }
 #endif
 }

@@ -4062,7 +4062,7 @@ class SlotVerifyingVisitor : public ObjectVisitor {
                      ObjectSlot end) override {
 #ifdef DEBUG
     for (ObjectSlot slot = start; slot < end; ++slot) {
-      DCHECK(!HasWeakHeapObjectTag(*slot));
+      DCHECK(!Internals::IsMapWord(slot.Relaxed_Load().ptr()) || !HasWeakHeapObjectTag(*slot));
     }
 #endif  // DEBUG
     VisitPointers(host, MaybeObjectSlot(start), MaybeObjectSlot(end));
@@ -4071,7 +4071,7 @@ class SlotVerifyingVisitor : public ObjectVisitor {
   void VisitPointers(HeapObject host, MaybeObjectSlot start,
                      MaybeObjectSlot end) final {
     for (MaybeObjectSlot slot = start; slot < end; ++slot) {
-      if (ShouldHaveBeenRecorded(host, *slot)) {
+      if (!Internals::IsMapWord(slot.Relaxed_Load().ptr()) && ShouldHaveBeenRecorded(host, *slot)) {
         CHECK_GT(untyped_->count(slot.address()), 0);
       }
     }
