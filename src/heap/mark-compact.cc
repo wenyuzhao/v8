@@ -1185,13 +1185,16 @@ class RecordMigratedSlotVisitor : public ObjectVisitor {
 
   inline void VisitPointer(HeapObject host, ObjectSlot p)
       final {  // TODO(steveblackburn) do we need anything here?
+      if (!Internals::IsMapWord(p.Relaxed_Load().ptr())) {
     DCHECK(!HasWeakHeapObjectTag(*p));
     RecordMigratedSlot(host, MaybeObject::FromObject(*p), p.address());
+      }
   }
 
   inline void VisitPointer(HeapObject host, MaybeObjectSlot p)
       final {  // TODO(steveblackburn) do we need anything here?
-    RecordMigratedSlot(host, *p, p.address());
+      if (!Internals::IsMapWord(p.Relaxed_Load().ptr()))
+        RecordMigratedSlot(host, *p, p.address());
   }
 
   inline void VisitPointers(HeapObject host, ObjectSlot start,
