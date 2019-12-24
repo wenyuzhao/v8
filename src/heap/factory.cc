@@ -433,7 +433,8 @@ Handle<FeedbackVector> Factory::NewFeedbackVector(
   vector->set_closure_feedback_cell_array(*closure_feedback_cell_array);
 
   // TODO(leszeks): Initialize based on the feedback metadata.
-  MemsetTagged(ObjectSlot(vector->slots_start()), *undefined_value(), length);  // FIXME check
+  MemsetTagged(ObjectSlot(vector->slots_start()), *undefined_value(),
+               length);  // FIXME check
   return vector;
 }
 
@@ -1609,7 +1610,8 @@ Handle<T> Factory::CopyArrayAndGrow(Handle<T> src, int grow_by,
   WriteBarrierMode mode = obj.GetWriteBarrierMode(no_gc);
   result->CopyElements(isolate(), 0, *src, 0, old_len, mode);
   MemsetTagged(ObjectSlot(result->data_start() + old_len),
-               ReadOnlyRoots(isolate()).undefined_value(), grow_by);  // FIXME check
+               ReadOnlyRoots(isolate()).undefined_value(),
+               grow_by);  // FIXME check
   return result;
 }
 

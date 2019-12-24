@@ -174,8 +174,7 @@ class ConcurrentMarkingVisitor final
                        ObjectSlot end) override {
       for (ObjectSlot p = start; p < end; ++p) {
         Object object = p.Relaxed_Load();
-        if (!Internals::IsMapWord(object.ptr())) 
-          slot_snapshot_->add(p, object);
+        if (!Internals::IsMapWord(object.ptr())) slot_snapshot_->add(p, object);
       }
     }
 

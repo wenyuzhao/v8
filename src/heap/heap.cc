@@ -3079,7 +3079,8 @@ FixedArrayBase Heap::LeftTrimFixedArray(FixedArrayBase object,
   // Initialize header of the trimmed array. Since left trimming is only
   // performed on pages which are not concurrently swept creating a filler
   // object does not require synchronization.
-  RELAXED_WRITE_FIELD(object, bytes_to_trim, Object(Internals::PackMapWord(map.ptr())));
+  RELAXED_WRITE_FIELD(object, bytes_to_trim,
+                      Object(Internals::PackMapWord(map.ptr())));
   RELAXED_WRITE_FIELD(object, bytes_to_trim + kTaggedSize,
                       Smi::FromInt(len - elements_to_trim));
 
@@ -3467,8 +3468,7 @@ class SlotCollectingVisitor final : public ObjectVisitor {
   void VisitPointers(HeapObject host, MaybeObjectSlot start,
                      MaybeObjectSlot end) final {
     for (MaybeObjectSlot p = start; p < end; ++p) {
-      if (!Internals::IsMapWord(p.Relaxed_Load().ptr()))
-        slots_.push_back(p);
+      if (!Internals::IsMapWord(p.Relaxed_Load().ptr())) slots_.push_back(p);
     }
   }
 
@@ -4064,7 +4064,8 @@ class SlotVerifyingVisitor : public ObjectVisitor {
                      ObjectSlot end) override {
 #ifdef DEBUG
     for (ObjectSlot slot = start; slot < end; ++slot) {
-      DCHECK(!Internals::IsMapWord(slot.Relaxed_Load().ptr()) || !HasWeakHeapObjectTag(*slot));
+      DCHECK(!Internals::IsMapWord(slot.Relaxed_Load().ptr()) ||
+             !HasWeakHeapObjectTag(*slot));
     }
 #endif  // DEBUG
     VisitPointers(host, MaybeObjectSlot(start), MaybeObjectSlot(end));
@@ -4327,7 +4328,8 @@ class FixStaleLeftTrimmedHandlesVisitor : public RootVisitor {
     if (!(*p).IsHeapObject()) return;
     HeapObject current = HeapObject::cast(*p);
     const MapWord map_word = current.map_word();
-    DCHECK_IMPLIES(Internals::IsMapWord(p.Relaxed_Load().ptr()), current.IsFreeSpaceOrFiller());
+    DCHECK_IMPLIES(Internals::IsMapWord(p.Relaxed_Load().ptr()),
+                   current.IsFreeSpaceOrFiller());
     if (!map_word.IsForwardingAddress() && current.IsFreeSpaceOrFiller()) {
 #ifdef DEBUG
       // We need to find a FixedArrayBase map after walking the fillers.

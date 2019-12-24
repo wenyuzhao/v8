@@ -1185,16 +1185,16 @@ class RecordMigratedSlotVisitor : public ObjectVisitor {
 
   inline void VisitPointer(HeapObject host, ObjectSlot p)
       final {  // TODO(steveblackburn) do we need anything here?
-      if (!Internals::IsMapWord(p.Relaxed_Load().ptr())) {
-    DCHECK(!HasWeakHeapObjectTag(*p));
-    RecordMigratedSlot(host, MaybeObject::FromObject(*p), p.address());
-      }
+    if (!Internals::IsMapWord(p.Relaxed_Load().ptr())) {
+      DCHECK(!HasWeakHeapObjectTag(*p));
+      RecordMigratedSlot(host, MaybeObject::FromObject(*p), p.address());
+    }
   }
 
   inline void VisitPointer(HeapObject host, MaybeObjectSlot p)
       final {  // TODO(steveblackburn) do we need anything here?
-      if (!Internals::IsMapWord(p.Relaxed_Load().ptr()))
-        RecordMigratedSlot(host, *p, p.address());
+    if (!Internals::IsMapWord(p.Relaxed_Load().ptr()))
+      RecordMigratedSlot(host, *p, p.address());
   }
 
   inline void VisitPointers(HeapObject host, ObjectSlot start,
@@ -2784,14 +2784,14 @@ class PointersUpdatingVisitor : public ObjectVisitor, public RootVisitor {
 
   void VisitRootPointer(Root root, const char* description,
                         FullObjectSlot p) override {
-    if(!Internals::IsMapWord(p.Relaxed_Load().ptr()))
+    if (!Internals::IsMapWord(p.Relaxed_Load().ptr()))
       UpdateRootSlotInternal(isolate_, p);
   }
 
   void VisitRootPointers(Root root, const char* description,
                          FullObjectSlot start, FullObjectSlot end) override {
     for (FullObjectSlot p = start; p < end; ++p) {
-      if(!Internals::IsMapWord(p.Relaxed_Load().ptr()))
+      if (!Internals::IsMapWord(p.Relaxed_Load().ptr()))
         UpdateRootSlotInternal(isolate_, p);
     }
   }
@@ -4225,7 +4225,8 @@ class YoungGenerationMarkingVerifier : public MarkingVerifier {
       typename TSlot::TObject object = *slot;
       HeapObject heap_object;
       // Minor MC treats weak references as strong.
-      if (!Internals::IsMapWord(object.ptr()) && object.GetHeapObject(&heap_object)) {
+      if (!Internals::IsMapWord(object.ptr()) &&
+          object.GetHeapObject(&heap_object)) {
         VerifyHeapObjectImpl(heap_object);
       }
     }
@@ -4258,7 +4259,8 @@ class YoungGenerationEvacuationVerifier : public EvacuationVerifier {
     for (TSlot current = start; current < end; ++current) {
       typename TSlot::TObject object = *current;
       HeapObject heap_object;
-      if (!Internals::IsMapWord(object.ptr()) && object.GetHeapObject(&heap_object)) {
+      if (!Internals::IsMapWord(object.ptr()) &&
+          object.GetHeapObject(&heap_object)) {
         VerifyHeapObjectImpl(heap_object);
       }
     }
@@ -4340,8 +4342,7 @@ class YoungGenerationMarkingVisitor final
   template <typename TSlot>
   V8_INLINE void VisitPointersImpl(HeapObject host, TSlot start, TSlot end) {
     for (TSlot slot = start; slot < end; ++slot) {
-      if (!Internals::IsMapWord((*slot).ptr()))
-        VisitPointer(host, slot);
+      if (!Internals::IsMapWord((*slot).ptr())) VisitPointer(host, slot);
     }
   }
 
@@ -4534,8 +4535,7 @@ class MinorMarkCompactCollector::RootMarkingVisitor : public RootVisitor {
   void VisitRootPointers(Root root, const char* description,
                          FullObjectSlot start, FullObjectSlot end) final {
     for (FullObjectSlot p = start; p < end; ++p) {
-      if (!Internals::IsMapWord((*p).ptr()))
-        MarkObjectByPointer(p);
+      if (!Internals::IsMapWord((*p).ptr())) MarkObjectByPointer(p);
     }
   }
 

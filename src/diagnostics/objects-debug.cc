@@ -550,8 +550,7 @@ void PropertyArray::PropertyArrayVerify(Isolate* isolate) {
   CHECK_LT(0, length());
   for (int i = 0; i < length(); i++) {
     Object e = get(i);
-    if (!Internals::IsMapWord(e.ptr()))
-      Object::VerifyPointer(isolate, e);
+    if (!Internals::IsMapWord(e.ptr())) Object::VerifyPointer(isolate, e);
   }
 }
 
