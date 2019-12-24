@@ -4073,7 +4073,7 @@ class SlotVerifyingVisitor : public ObjectVisitor {
   void VisitPointers(HeapObject host, MaybeObjectSlot start,
                      MaybeObjectSlot end) final {
     for (MaybeObjectSlot slot = start; slot < end; ++slot) {
-      if (!Internals::IsMapWord(slot.Relaxed_Load().ptr()) && ShouldHaveBeenRecorded(host, *slot)) {
+      if (ShouldHaveBeenRecorded(host, *slot)) {
         CHECK_GT(untyped_->count(slot.address()), 0);
       }
     }
