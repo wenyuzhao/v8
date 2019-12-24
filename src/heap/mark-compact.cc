@@ -1359,7 +1359,8 @@ class EvacuateVisitorBase : public HeapObjectVisitor {
       if (mode != MigrationMode::kFast)
         base->ExecuteMigrationObservers(dest, src, dst, size);
     }
-    src.set_map_word(MapWord::FromForwardingAddress(dst));  // TODO correct?
+    src.set_map_word(
+        MapWord::FromForwardingAddress(dst));  // TODO(steveblackburn) correct?
   }
 
   EvacuateVisitorBase(Heap* heap, EvacuationAllocator* local_allocator,
@@ -1489,8 +1490,8 @@ class EvacuateNewSpaceVisitor final : public EvacuateVisitorBase {
     if (map.visitor_id() == kVisitThinString) {
       HeapObject actual = ThinString::cast(object).unchecked_actual();
       if (MarkCompactCollector::IsOnEvacuationCandidate(actual)) return false;
-      object.set_map_word(
-          MapWord::FromForwardingAddress(actual));  // TODO correct?
+      object.set_map_word(MapWord::FromForwardingAddress(
+          actual));  // TODO(steveblackburn) correct?
       return true;
     }
     // TODO(mlippautz): Handle ConsString.
