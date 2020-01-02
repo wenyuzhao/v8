@@ -254,7 +254,7 @@ class Internals {
   static const int kXorMask = 0x8ffffffc;  // ensure two low-order bits are
                                            // unchanged (tagging, weak ptr)
   static const uint64_t kMapWordSignature =
-      0xffff000000000000;  // these bits will be set only on a map word
+      0xffff000000000001;  // these bits will be set only on a map word
 
   V8_EXPORT static void CheckInitializedImpl(v8::Isolate* isolate);
   V8_INLINE static void CheckInitialized(v8::Isolate* isolate) {
