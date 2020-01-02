@@ -73,7 +73,7 @@ class IterateAndScavengePromotedObjectsVisitor final : public ObjectVisitor {
     for (TSlot slot = start; slot < end; ++slot) {
       typename TSlot::TObject object = *slot;
       HeapObject heap_object;
-      if (object.GetHeapObjectIfNotFiller(&heap_object)) {
+      if (object.GetHeapObjectIfNotFiller(&heap_object)) { // TODO(steveblackburn) performance!
         HandleSlot(host, THeapObjectSlot(slot), heap_object);
       }
     }
@@ -734,7 +734,7 @@ void Scavenger::AddEphemeronHashTable(EphemeronHashTable table) {
 void RootScavengeVisitor::VisitRootPointer(Root root, const char* description,
                                            FullObjectSlot p) {
   DCHECK(!HasWeakHeapObjectTag(*p));
-  if (!Internals::IsMapWord((*p).ptr())) { // TODO(steveblackburn) skip fillers
+  if (!Internals::IsMapWord((*p).ptr())) { // TODO(steveblackburn) performance!
     ScavengePointer(p);
   }
 }

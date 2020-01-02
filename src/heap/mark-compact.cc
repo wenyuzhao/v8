@@ -2770,7 +2770,7 @@ class PointersUpdatingVisitor : public ObjectVisitor, public RootVisitor {
   void VisitPointers(HeapObject host, ObjectSlot start,
                      ObjectSlot end) override {
     for (ObjectSlot p = start; p < end; ++p) {
-      if (!Internals::IsMapWord((*p).ptr()))
+      if (!Internals::IsMapWord((*p).ptr())) // TODO(steveblackburn) performance!
         UpdateStrongSlotInternal(isolate_, p);
     }
   }
