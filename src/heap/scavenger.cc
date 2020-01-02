@@ -734,7 +734,9 @@ void Scavenger::AddEphemeronHashTable(EphemeronHashTable table) {
 void RootScavengeVisitor::VisitRootPointer(Root root, const char* description,
                                            FullObjectSlot p) {
   DCHECK(!HasWeakHeapObjectTag(*p));
-  ScavengePointer(p);
+  if (!Internals::IsMapWord((*p).ptr())) { // TODO(steveblackburn) skip fillers
+    ScavengePointer(p);
+  }
 }
 
 void RootScavengeVisitor::VisitRootPointers(Root root, const char* description,
@@ -742,7 +744,6 @@ void RootScavengeVisitor::VisitRootPointers(Root root, const char* description,
                                             FullObjectSlot end) {
   // Copy all HeapObject pointers in [start, end)
   for (FullObjectSlot p = start; p < end; ++p) {
-    DCHECK(!Internals::IsMapWord(p.Relaxed_Load().ptr()));
     ScavengePointer(p);
   }
 }
@@ -750,6 +751,7 @@ void RootScavengeVisitor::VisitRootPointers(Root root, const char* description,
 void RootScavengeVisitor::ScavengePointer(FullObjectSlot p) {
   Object object = *p;
   DCHECK(!HasWeakHeapObjectTag(object));
+  DCHECK(!Internals::IsMapWord(object.ptr()));
   if (Heap::InYoungGeneration(object)) {
     scavenger_->ScavengeObject(FullHeapObjectSlot(p), HeapObject::cast(object));
   }
