@@ -93,6 +93,11 @@ class TaggedImpl {
     return kCanBeWeak ? HAS_STRONG_HEAP_OBJECT_TAG(ptr_) : !IsSmi();
   }
 
+  // Returns true if this tagged value is a filler object.
+  constexpr inline bool IsFiller() const {
+    return Internals::IsMapWord(ptr_);  // TODO(steveblackburn) False positives!
+  }
+
   // Returns true if this tagged value is a weak pointer to a HeapObject.
   constexpr inline bool IsWeak() const {
     return IsWeakOrCleared() && !IsCleared();
@@ -116,6 +121,11 @@ class TaggedImpl {
   // sets *result. Otherwise returns false.
   inline bool GetHeapObjectIfStrong(HeapObject* result) const;
   inline bool GetHeapObjectIfStrong(Isolate* isolate, HeapObject* result) const;
+  
+  // If this tagged value is not a filler, returns true and
+  // sets *result. Otherwise returns false.
+  inline bool GetHeapObjectIfNotFiller(HeapObject* result) const;
+  inline bool GetHeapObjectIfNotFiller(Isolate* isolate, HeapObject* result) const;
 
   // DCHECKs that this tagged value is a strong pointer to a HeapObject and
   // returns the HeapObject.

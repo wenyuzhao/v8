@@ -471,6 +471,7 @@ void ScavengeVisitor::VisitEmbeddedPointer(Code host, RelocInfo* rinfo) {
 
 template <typename TSlot>
 void ScavengeVisitor::VisitHeapObjectImpl(TSlot slot, HeapObject heap_object) {
+  DCHECK(!Internals::IsMapWord(heap_object.ptr()));
   if (Heap::InYoungGeneration(heap_object)) {
     using THeapObjectSlot = typename TSlot::THeapObjectSlot;
     scavenger_->ScavengeObject(THeapObjectSlot(slot), heap_object);
@@ -484,7 +485,7 @@ void ScavengeVisitor::VisitPointersImpl(HeapObject host, TSlot start,
     typename TSlot::TObject object = *slot;
     HeapObject heap_object;
     // Treat weak references as strong.
-    if (object.GetHeapObject(&heap_object)) {
+    if (object.GetHeapObjectIfNotFiller(&heap_object)) {
       VisitHeapObjectImpl(slot, heap_object);
     }
   }

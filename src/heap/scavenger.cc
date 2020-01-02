@@ -73,7 +73,7 @@ class IterateAndScavengePromotedObjectsVisitor final : public ObjectVisitor {
     for (TSlot slot = start; slot < end; ++slot) {
       typename TSlot::TObject object = *slot;
       HeapObject heap_object;
-      if (object.GetHeapObject(&heap_object)) {
+      if (object.GetHeapObjectIfNotFiller(&heap_object)) {
         HandleSlot(host, THeapObjectSlot(slot), heap_object);
       }
     }
