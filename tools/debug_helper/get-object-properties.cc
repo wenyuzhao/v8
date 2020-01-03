@@ -149,6 +149,7 @@ TypedObject GetTypedHeapObject(uintptr_t address, d::MemoryAccessor accessor,
             std::move(heap_object)};
   }
 
+  map_ptr.value = v8::internal::Internals::UnPackMapWord(map_ptr.value);
   Value<i::InstanceType> type =
       TqMap(map_ptr.value).GetInstanceTypeValue(accessor);
   if (type.validity == d::MemoryAccessResult::kOk) {
