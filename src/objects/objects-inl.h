@@ -86,6 +86,7 @@ IS_TYPE_FUNCTION_DEF(HashTableBase)
 IS_TYPE_FUNCTION_DEF(SmallOrderedHashTable)
 #undef IS_TYPE_FUNCTION_DEF
 
+// TODO(steveblackburn) need to deal with fillers gracefully here
 #define IS_TYPE_FUNCTION_DEF(Type, Value)                        \
   bool Object::Is##Type(Isolate* isolate) const {                \
     return Is##Type(ReadOnlyRoots(isolate));                     \
