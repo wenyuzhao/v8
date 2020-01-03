@@ -242,10 +242,11 @@ void LiveObjectRange<mode>::iterator::AdvanceToNextValidObject() {
           object = black_object;
         }
       } else if ((mode == kGreyObjects || mode == kAllLiveObjects)) {
-        Object map_object = ObjectSlot(addr).Acquire_Load();
+        object = HeapObject::FromAddress(addr);
+        Object map_object = object.extract_map();
         CHECK(map_object.IsMap());
         map = Map::cast(map_object);
-        object = HeapObject::FromAddress(addr);
+        DCHECK(map.IsMap());
         size = object.SizeFromMap(map);
         CHECK_LE(addr + size, chunk_->area_end());
       }
