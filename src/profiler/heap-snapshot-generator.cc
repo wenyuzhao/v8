@@ -756,9 +756,10 @@ class IndexedReferencesExtractor : public ObjectVisitor {
       Object child = Object(Internals::UnPackMapWord(heap_object.ptr()));
       generator_->SetHiddenReference(parent_obj_, parent_, next_index_++, child,
                                      field_index * kTaggedSize);
-    } else
+    } else {
       generator_->SetHiddenReference(parent_obj_, parent_, next_index_++,
                                      heap_object, field_index * kTaggedSize);
+    }
   }
 
   V8HeapExplorer* generator_;
