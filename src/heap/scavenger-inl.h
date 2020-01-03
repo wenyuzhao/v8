@@ -418,7 +418,7 @@ SlotCallbackResult Scavenger::CheckAndScavengeObject(Heap* heap, TSlot slot) {
       "Only FullMaybeObjectSlot and MaybeObjectSlot are expected here");
   using THeapObjectSlot = typename TSlot::THeapObjectSlot;
   MaybeObject object = *slot;
-  if (Internals::IsMapWord(object->ptr())) // TODO(steveblackburn) assumptions!
+  if (Internals::IsMapWord(object->ptr()))  // TODO(steveblackburn) assumptions!
     return REMOVE_SLOT;
   if (Heap::InFromPage(object)) {
     HeapObject heap_object = object->GetHeapObject();
@@ -487,7 +487,8 @@ void ScavengeVisitor::VisitPointersImpl(HeapObject host, TSlot start,
     typename TSlot::TObject object = *slot;
     HeapObject heap_object;
     // Treat weak references as strong.
-    if (object.GetHeapObjectIfNotFiller(&heap_object)) { // TODO(steveblackburn) performance!
+    if (object.GetHeapObjectIfNotFiller(
+            &heap_object)) {  // TODO(steveblackburn) performance!
       VisitHeapObjectImpl(slot, heap_object);
     }
   }

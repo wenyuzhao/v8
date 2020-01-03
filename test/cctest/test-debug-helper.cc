@@ -229,11 +229,10 @@ TEST(GetObjectProperties) {
   {
     heap_addresses.read_only_space_first_page = 0;
     uintptr_t map_ptr = props->properties[0]->address;
-    uintptr_t map_map_ptr = v8::internal::Internals::UnPackMapWord(*reinterpret_cast<i::Tagged_t*>(map_ptr));
+    uintptr_t map_map_ptr = v8::internal::Internals::UnPackMapWord(
+        *reinterpret_cast<i::Tagged_t*>(map_ptr));
     uintptr_t map_address =
-        d::GetObjectProperties(
-            map_map_ptr,
-            &ReadMemory, heap_addresses)
+        d::GetObjectProperties(map_map_ptr, &ReadMemory, heap_addresses)
             ->properties[0]
             ->address;
     MemoryFailureRegion failure(map_address, map_address + i::Map::kSize);

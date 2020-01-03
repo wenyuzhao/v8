@@ -110,8 +110,7 @@ class IncrementalMarkingRootMarkingVisitor : public RootVisitor {
 
   void VisitRootPointer(Root root, const char* description,
                         FullObjectSlot p) override {
-
-    if (!Internals::IsMapWord((*p).ptr())) // TODO(steveblackburn) performance!
+    if (!Internals::IsMapWord((*p).ptr()))  // TODO(steveblackburn) performance!
       MarkObjectByPointer(p);
   }
 

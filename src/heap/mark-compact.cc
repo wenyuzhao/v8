@@ -2702,7 +2702,8 @@ static inline SlotCallbackResult UpdateSlot(TSlot slot,
                 "Only [Full|OffHeap]ObjectSlot and [Full]MaybeObjectSlot are "
                 "expected here");
   if (Internals::IsMapWord(heap_obj.ptr())) {  // heap_obj is a (packed) map
-    heap_obj = Map::unchecked_cast(Object(Internals::UnPackMapWord(heap_obj.ptr())));
+    heap_obj =
+        Map::unchecked_cast(Object(Internals::UnPackMapWord(heap_obj.ptr())));
   }
   MapWord map_word = heap_obj.map_word();
   if (map_word.IsForwardingAddress()) {
@@ -2773,7 +2774,8 @@ class PointersUpdatingVisitor : public ObjectVisitor, public RootVisitor {
   void VisitPointers(HeapObject host, ObjectSlot start,
                      ObjectSlot end) override {
     for (ObjectSlot p = start; p < end; ++p) {
-      if (!Internals::IsMapWord((*p).ptr())) // TODO(steveblackburn) performance!
+      if (!Internals::IsMapWord(
+              (*p).ptr()))  // TODO(steveblackburn) performance!
         UpdateStrongSlotInternal(isolate_, p);
     }
   }

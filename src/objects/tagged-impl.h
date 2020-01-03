@@ -75,7 +75,9 @@ class TaggedImpl {
   constexpr inline bool IsHeapObject() const { return IsStrong(); }
 
   // Returns true if this tagged value is a strong pointer to a HeapObject.
-  constexpr inline bool IsHeapObjectNotFiller() const { return IsStrong() && !IsFiller(); }
+  constexpr inline bool IsHeapObjectNotFiller() const {
+    return IsStrong() && !IsFiller();
+  }
 
   // Returns true if this tagged value is a cleared weak reference.
   constexpr inline bool IsCleared() const {
@@ -124,11 +126,12 @@ class TaggedImpl {
   // sets *result. Otherwise returns false.
   inline bool GetHeapObjectIfStrong(HeapObject* result) const;
   inline bool GetHeapObjectIfStrong(Isolate* isolate, HeapObject* result) const;
-  
+
   // If this tagged value is not a filler, returns true and
   // sets *result. Otherwise returns false.
   inline bool GetHeapObjectIfNotFiller(HeapObject* result) const;
-  inline bool GetHeapObjectIfNotFiller(Isolate* isolate, HeapObject* result) const;
+  inline bool GetHeapObjectIfNotFiller(Isolate* isolate,
+                                       HeapObject* result) const;
 
   // DCHECKs that this tagged value is a strong pointer to a HeapObject and
   // returns the HeapObject.

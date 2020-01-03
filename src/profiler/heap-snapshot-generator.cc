@@ -751,13 +751,14 @@ class IndexedReferencesExtractor : public ObjectVisitor {
     // The last parameter {field_offset} is only used to check some well-known
     // skipped references, so passing -1 * kTaggedSize for objects embedded
     // into code is fine.
-    if (Internals::IsMapWord(heap_object.ptr())) { // TODO(steveblackburn) all fields?
-        Object child = Object(Internals::UnPackMapWord(heap_object.ptr()));
-        generator_->SetHiddenReference(parent_obj_, parent_, next_index_++,
-                                   child, field_index * kTaggedSize);
+    if (Internals::IsMapWord(
+            heap_object.ptr())) {  // TODO(steveblackburn) all fields?
+      Object child = Object(Internals::UnPackMapWord(heap_object.ptr()));
+      generator_->SetHiddenReference(parent_obj_, parent_, next_index_++, child,
+                                     field_index * kTaggedSize);
     } else
       generator_->SetHiddenReference(parent_obj_, parent_, next_index_++,
-                                   heap_object, field_index * kTaggedSize);
+                                     heap_object, field_index * kTaggedSize);
   }
 
   V8HeapExplorer* generator_;

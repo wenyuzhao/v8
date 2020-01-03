@@ -143,7 +143,6 @@ bool TaggedImpl<kRefType, StorageType>::GetHeapObjectIfNotFiller(
   return false;
 }
 
-
 //
 // TaggedImpl::GetHeapObjectAssumeStrong() implementation.
 //
