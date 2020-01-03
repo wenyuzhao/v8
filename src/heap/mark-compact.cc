@@ -2701,6 +2701,9 @@ static inline SlotCallbackResult UpdateSlot(TSlot slot,
                     std::is_same<TSlot, OffHeapObjectSlot>::value,
                 "Only [Full|OffHeap]ObjectSlot and [Full]MaybeObjectSlot are "
                 "expected here");
+  if (Internals::IsMapWord(heap_obj.ptr())) {  // heap_obj is a (packed) map
+    heap_obj = Map::unchecked_cast(Object(Internals::UnPackMapWord(heap_obj.ptr())));
+  }
   MapWord map_word = heap_obj.map_word();
   if (map_word.IsForwardingAddress()) {
     DCHECK_IMPLIES(!Heap::InFromPage(heap_obj),
