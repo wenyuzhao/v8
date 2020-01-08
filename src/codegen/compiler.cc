@@ -2709,6 +2709,7 @@ MaybeHandle<SharedFunctionInfo> Compiler::GetSharedFunctionInfoForScript(
       compilation_cache->PutScript(source, isolate->native_context(),
                                    language_mode, result);
     } else if (maybe_result.is_null() && natives != EXTENSION_CODE) {
+      DCHECK(!Internals::IsMapWord(isolate->thread_local_top()->pending_message_obj_.ptr()));
       isolate->ReportPendingMessages();
     }
   }
@@ -2786,6 +2787,7 @@ MaybeHandle<JSFunction> Compiler::GetWrappedFunction(
     Handle<SharedFunctionInfo> top_level;
     maybe_result = CompileToplevel(&parse_info, script, maybe_outer_scope_info,
                                    isolate, &is_compiled_scope);
+    DCHECK(!Internals::IsMapWord(isolate->thread_local_top()->pending_message_obj_.ptr()));
     if (maybe_result.is_null()) isolate->ReportPendingMessages();
     ASSIGN_RETURN_ON_EXCEPTION(isolate, top_level, maybe_result, JSFunction);
 
