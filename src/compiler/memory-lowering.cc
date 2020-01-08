@@ -450,7 +450,7 @@ Reduction MemoryLowering::ReduceStoreField(Node* node,
   Node* object = node->InputAt(0);
   Node* value = node->InputAt(1);
   // TODO(steveblackburn) packing of map. See Internals::PackMapWord()
-  if (access.offset == HeapObject::kMapOffset) {
+  if (access.offset == HeapObject::kMapOffset && access.base_is_tagged != kUntaggedBase) {
     node->ReplaceInput(
         1, __ WordXor(value, __ IntPtrConstant(Internals::kXorMask)));
   }
