@@ -1296,6 +1296,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
                            Label* if_cleared, Label* if_weak, Label* if_strong,
                            TVariable<Object>* extracted);
   // See MaybeObject for semantics of these functions.
+  TNode<BoolT> IsNotMapWord(SloppyTNode<Map> value);
   TNode<BoolT> IsNotMapOffset(SloppyTNode<IntPtrT> value);
   TNode<BoolT> IsStrong(TNode<MaybeObject> value);
   TNode<HeapObject> GetHeapObjectIfStrong(TNode<MaybeObject> value,
@@ -1524,6 +1525,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   template <class T>
   void StoreObjectFieldNoWriteBarrier(TNode<HeapObject> object, int offset,
                                       TNode<T> value) {
+    CSA_ASSERT(this, IsNotMapWord(SloppyTNode<Map>::UncheckedCast(object)));   // target must not be encoded
     if (CanBeTaggedPointer(MachineRepresentationOf<T>::value)) {
       OptimizedStoreFieldAssertNoWriteBarrier(MachineRepresentationOf<T>::value,
                                               object, offset, value);
