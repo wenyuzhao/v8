@@ -293,11 +293,9 @@ Reduction MemoryLowering::ReduceLoadFromObject(Node* node) {
   DCHECK_EQ(IrOpcode::kLoadFromObject, node->opcode());
   ObjectAccess const& access = ObjectAccessOf(node->op());
   NodeProperties::ChangeOp(node, machine()->Load(access.machine_type));
-  // Node* offset = node->InputAt(1);
-  // if (access == AccessBuilder::ForMap()) {
-  // if (IsMapOffsetConstant(offset)) {
-  //   node = __ WordXor(node, __ IntPtrConstant(Internals::kXorMask));
-  // }
+// if (IsMapOffsetConstant(node->InputAt(1))) {
+//   node = __ WordXor(node, __ IntPtrConstant(Internals::kXorMask));
+// }
   return Changed(node);
 }
 
@@ -381,10 +379,11 @@ Reduction MemoryLowering::ReduceLoadField(Node* node) {
   } else {
     DCHECK(!access.type.Is(Type::SandboxedExternalPointer()));
   }
-  // if (access == AccessBuilder::ForMap()) {
-  // if (access.offset == HeapObject::kMapOffset) {
-  //   node = __ WordXor(node, __ IntPtrConstant(Internals::kXorMask));
-  // }
+// if (access.offset == HeapObject::kMapOffset)  && access.base_is_tagged != kUntaggedBase) {
+// if (access == AccessBuilder::ForMap()) {
+// if (access.offset == HeapObject::kMapOffset) {
+//   node = __ WordXor(node, __ IntPtrConstant(Internals::kXorMask));
+// }
   return Changed(node);
 }
 
@@ -412,6 +411,7 @@ Reduction MemoryLowering::ReduceStoreToObject(Node* node,
   Node* value = node->InputAt(2);
   // TODO(steveblackburn) packing of map. See Internals::PackMapWord()
   if (IsMapOffsetConstant(offset)) {
+    DCHECK_EQ(access.write_barrier_kind, kMapWriteBarrier);
     node->ReplaceInput(
         2, __ WordXor(value, __ IntPtrConstant(Internals::kXorMask)));
   }
@@ -451,6 +451,7 @@ Reduction MemoryLowering::ReduceStoreField(Node* node,
   Node* value = node->InputAt(1);
   // TODO(steveblackburn) packing of map. See Internals::PackMapWord()
   if (access.offset == HeapObject::kMapOffset && access.base_is_tagged != kUntaggedBase) {
+    DCHECK(access.write_barrier_kind == kMapWriteBarrier || access.write_barrier_kind == kNoWriteBarrier || access.write_barrier_kind == kAssertNoWriteBarrier);
     node->ReplaceInput(
         1, __ WordXor(value, __ IntPtrConstant(Internals::kXorMask)));
   }
