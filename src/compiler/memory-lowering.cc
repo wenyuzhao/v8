@@ -293,9 +293,9 @@ Reduction MemoryLowering::ReduceLoadFromObject(Node* node) {
   DCHECK_EQ(IrOpcode::kLoadFromObject, node->opcode());
   ObjectAccess const& access = ObjectAccessOf(node->op());
   NodeProperties::ChangeOp(node, machine()->Load(access.machine_type));
-// if (IsMapOffsetConstant(node->InputAt(1))) {
-//   node = __ WordXor(node, __ IntPtrConstant(Internals::kXorMask));
-// }
+  // if (IsMapOffsetConstant(node->InputAt(1))) {
+  //   node = __ WordXor(node, __ IntPtrConstant(Internals::kXorMask));
+  // }
   return Changed(node);
 }
 
@@ -379,11 +379,12 @@ Reduction MemoryLowering::ReduceLoadField(Node* node) {
   } else {
     DCHECK(!access.type.Is(Type::SandboxedExternalPointer()));
   }
-// if (access.offset == HeapObject::kMapOffset)  && access.base_is_tagged != kUntaggedBase) {
-// if (access == AccessBuilder::ForMap()) {
-// if (access.offset == HeapObject::kMapOffset) {
-//   node = __ WordXor(node, __ IntPtrConstant(Internals::kXorMask));
-// }
+  // if (access.offset == HeapObject::kMapOffset && access.base_is_tagged != kUntaggedBase) {
+  //   DCHECK(false);
+  // //if (access == AccessBuilder::ForMap()) {
+  // //if (access.offset == HeapObject::kMapOffset) {
+  //   node = __ WordXor(node, __ IntPtrConstant(Internals::kXorMask));
+  // }
   return Changed(node);
 }
 
