@@ -1898,10 +1898,10 @@ void CodeStubAssembler::DispatchMaybeObject(TNode<MaybeObject> maybe_object,
 }
 
 TNode<BoolT> CodeStubAssembler::IsNotMapWord(SloppyTNode<Map> value) {
-  DCHECK(Is64()); // TODO(steveblackburn)
-  return Word64NotEqual(
-        Word64And(ReinterpretCast<Int64T>(value), Int64Constant(Internals::kMapWordSignature)),
-        Int64Constant(Internals::kMapWordSignature));
+  DCHECK(Is64());  // TODO(steveblackburn)
+  return Word64NotEqual(Word64And(ReinterpretCast<Int64T>(value),
+                                  Int64Constant(Internals::kMapWordSignature)),
+                        Int64Constant(Internals::kMapWordSignature));
 }
 
 TNode<BoolT> CodeStubAssembler::IsNotMapOffset(SloppyTNode<IntPtrT> value) {
@@ -2773,7 +2773,7 @@ void CodeStubAssembler::StoreObjectField(TNode<HeapObject> object,
                                          TNode<Object> value) {
   int const_offset;
   CSA_ASSERT(this, IsNotMapOffset(offset));  // Use StoreMap instead.
-  CSA_ASSERT(this, IsNotMapWord(SloppyTNode<Map>::UncheckedCast(object)));   // target must not be encoded
+  CSA_ASSERT(this, IsNotMapWord(SloppyTNode<Map>::UncheckedCast(object)));    // target must not be encoded
   if (ToInt32Constant(offset, &const_offset)) {
     StoreObjectField(object, const_offset, value);
   } else {

@@ -379,7 +379,8 @@ Reduction MemoryLowering::ReduceLoadField(Node* node) {
   } else {
     DCHECK(!access.type.Is(Type::SandboxedExternalPointer()));
   }
-  // if (access.offset == HeapObject::kMapOffset && access.base_is_tagged != kUntaggedBase) {
+  // if (access.offset == HeapObject::kMapOffset && access.base_is_tagged !=
+  // kUntaggedBase) {
   //   DCHECK(false);
   // //if (access == AccessBuilder::ForMap()) {
   // //if (access.offset == HeapObject::kMapOffset) {
@@ -451,8 +452,11 @@ Reduction MemoryLowering::ReduceStoreField(Node* node,
   Node* object = node->InputAt(0);
   Node* value = node->InputAt(1);
   // TODO(steveblackburn) packing of map. See Internals::PackMapWord()
-  if (access.offset == HeapObject::kMapOffset && access.base_is_tagged != kUntaggedBase) {
-    DCHECK(access.write_barrier_kind == kMapWriteBarrier || access.write_barrier_kind == kNoWriteBarrier || access.write_barrier_kind == kAssertNoWriteBarrier);
+  if (access.offset == HeapObject::kMapOffset &&
+      access.base_is_tagged != kUntaggedBase) {
+    DCHECK(access.write_barrier_kind == kMapWriteBarrier ||
+           access.write_barrier_kind == kNoWriteBarrier ||
+           access.write_barrier_kind == kAssertNoWriteBarrier);
     node->ReplaceInput(
         1, __ WordXor(value, __ IntPtrConstant(Internals::kXorMask)));
   }
