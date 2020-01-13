@@ -1143,8 +1143,9 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   TNode<T> LoadReference(Reference reference) {
     TNode<IntPtrT> offset =
         IntPtrSub(reference.offset, IntPtrConstant(kHeapObjectTag));
-    return CAST(
-        LoadFromObject(MachineTypeOf<T>::value, reference.object, offset));
+    Node *rtn = LoadFromObject(MachineTypeOf<T>::value, reference.object, offset);
+    CSA_ASSERT(this, IsNotMapWord(rtn));    // value must not be encoded map
+    return CAST(rtn);
   }
   template <class T,
             typename std::enable_if<
@@ -1154,8 +1155,9 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   TNode<T> LoadReference(Reference reference) {
     TNode<IntPtrT> offset =
         IntPtrSub(reference.offset, IntPtrConstant(kHeapObjectTag));
-    return UncheckedCast<T>(
-        LoadFromObject(MachineTypeOf<T>::value, reference.object, offset));
+    Node *rtn = LoadFromObject(MachineTypeOf<T>::value, reference.object, offset);
+//    CSA_ASSERT(this, IsNotMapWord(rtn));    // value must not be encoded map
+    return UncheckedCast<T>(rtn);
   }
   template <class T, typename std::enable_if<
                          std::is_convertible<TNode<T>, TNode<Object>>::value ||

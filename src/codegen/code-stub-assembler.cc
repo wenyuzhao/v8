@@ -2038,7 +2038,9 @@ TNode<TValue> CodeStubAssembler::LoadArrayElement(
   constexpr MachineType machine_type = MachineTypeOf<TValue>::value;
   // TODO(gsps): Remove the Load case once LoadFromObject supports poisoning
   if (needs_poisoning == LoadSensitivity::kSafe) {
-    return UncheckedCast<TValue>(LoadFromObject(machine_type, array, offset));
+    Node* rtn = LoadFromObject(machine_type, array, offset);
+    CSA_ASSERT(this, IsNotMapWord(rtn));    // value must not be encoded map
+    return UncheckedCast<TValue>(rtn);
   } else {
     return UncheckedCast<TValue>(
         Load(machine_type, array, offset, needs_poisoning));
