@@ -1904,6 +1904,15 @@ TNode<BoolT> CodeStubAssembler::IsNotMapWord(SloppyTNode<Map> value) {
                         Int64Constant(Internals::kMapWordSignature));
 }
 
+TNode<BoolT> CodeStubAssembler::ContainsPackedMap(TNode<HeapObject> object) {
+  DCHECK(Is64());  // TODO(steveblackburn)
+  // LoadFromObject will unpack the value, so result of this load should be clean
+  Node* mapvalue = LoadFromObject(MachineType::Pointer(), object, IntPtrConstant(HeapObject::kMapOffset-kHeapObjectTag));
+  return Word64NotEqual(Word64And(ReinterpretCast<Int64T>(mapvalue),
+                               Int64Constant(Internals::kMapWordSignature)),
+                     Int64Constant(Internals::kMapWordSignature));
+}
+
 TNode<BoolT> CodeStubAssembler::IsNotMapOffset(SloppyTNode<IntPtrT> value) {
   return Word32NotEqual(TruncateIntPtrToInt32(value),
                         Int32Constant(HeapObject::kMapOffset));
@@ -2029,6 +2038,7 @@ TNode<TValue> CodeStubAssembler::LoadArrayElement(
                 "Only Smi, UintPtrT or IntPtrT indices are allowed");
   CSA_ASSERT(this, IntPtrGreaterThanOrEqual(ParameterToIntPtr(index_node),
                                             IntPtrConstant(0)));
+//  CSA_ASSERT(this, ContainsPackedMap(array));
   DCHECK(IsAligned(additional_offset, kTaggedSize));
   int32_t header_size = array_header_size + additional_offset - kHeapObjectTag;
   TNode<IntPtrT> offset =
@@ -2792,6 +2802,7 @@ void CodeStubAssembler::UnsafeStoreObjectFieldNoWriteBarrier(
 
 void CodeStubAssembler::StoreMap(TNode<HeapObject> object, TNode<Map> map) {
   OptimizedStoreMapWord(object, map);
+  CSA_ASSERT(this, ContainsPackedMap(object));
 }
 
 void CodeStubAssembler::StoreMapNoWriteBarrier(TNode<HeapObject> object,
@@ -2801,9 +2812,9 @@ void CodeStubAssembler::StoreMapNoWriteBarrier(TNode<HeapObject> object,
 
 void CodeStubAssembler::StoreMapNoWriteBarrier(TNode<HeapObject> object,
                                                TNode<Map> map) {
-  CSA_SLOW_ASSERT(this, IsMap(map));
   OptimizedStoreFieldAssertNoWriteBarrier(MachineRepresentation::kTaggedPointer,
                                           object, HeapObject::kMapOffset, map);
+  CSA_ASSERT(this, ContainsPackedMap(UncheckedCast<HeapObject>(object)));
 }
 
 void CodeStubAssembler::StoreObjectFieldRoot(TNode<HeapObject> object,

@@ -1300,6 +1300,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   // See MaybeObject for semantics of these functions.
   TNode<BoolT> IsNotMapWord(SloppyTNode<Map> value);
   TNode<BoolT> IsNotMapOffset(SloppyTNode<IntPtrT> value);
+  TNode<BoolT> ContainsPackedMap(TNode<HeapObject> object);
   TNode<BoolT> IsStrong(TNode<MaybeObject> value);
   TNode<HeapObject> GetHeapObjectIfStrong(TNode<MaybeObject> value,
                                           Label* if_not_strong);

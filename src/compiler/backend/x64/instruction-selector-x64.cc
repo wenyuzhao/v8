@@ -312,14 +312,14 @@ ArchOpcode GetStoreOpcode(StoreRepresentation store_rep) {
     case MachineRepresentation::kCompressedPointer:  // Fall through.
     case MachineRepresentation::kCompressed:
 #ifdef V8_COMPRESS_POINTERS
-      return kX64MovqCompressTagged;
+      return store_rep.store_to_header() ? kX64MapToHeader : kX64MovqCompressTagged;
 #else
       UNREACHABLE();
 #endif
     case MachineRepresentation::kTaggedSigned:   // Fall through.
     case MachineRepresentation::kTaggedPointer:  // Fall through.
     case MachineRepresentation::kTagged:
-      return kX64MovqCompressTagged;
+      return store_rep.store_to_header() ? kX64MapToHeader : kX64MovqCompressTagged;
     case MachineRepresentation::kWord64:
       return kX64Movq;
     case MachineRepresentation::kSimd128:  // Fall through.

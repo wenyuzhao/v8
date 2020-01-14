@@ -256,6 +256,32 @@ void TurboAssembler::StoreTaggedField(Operand dst_field_operand,
   }
 }
 
+void TurboAssembler::StoreMapToHeader(Operand dst_field_operand,
+                                      Immediate value) {
+  // TODO(steveblackburn) packing of map. See Internals::PackMapWord()
+  if (COMPRESS_POINTERS_BOOL) {
+    movl(dst_field_operand, value);
+  } else {
+    movq(dst_field_operand, value);
+  }
+  UNREACHABLE(); // unimplemented
+}
+
+void TurboAssembler::StoreMapToHeader(Operand dst_field_operand,
+                                      Register value) {
+  // TODO(steveblackburn) packing of map. See Internals::PackMapWord()
+  RecordComment("[ StoreMapToHeader");
+  if (COMPRESS_POINTERS_BOOL) {
+    movl(dst_field_operand, value);
+    UNREACHABLE(); // unimplemented
+  } else {
+    xorq(value, Immediate(Internals::kXorMask));
+    movq(dst_field_operand, value);
+    xorq(value, Immediate(Internals::kXorMask));
+  }
+  RecordComment("]");
+}
+
 void TurboAssembler::DecompressTaggedSigned(Register destination,
                                             Operand field_operand) {
   RecordComment("[ DecompressTaggedSigned");
