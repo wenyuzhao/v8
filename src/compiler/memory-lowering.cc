@@ -6,6 +6,7 @@
 
 #include "src/codegen/interface-descriptors.h"
 #include "src/common/external-pointer.h"
+#include "src/compiler/access-builder.h"
 #include "src/compiler/js-graph.h"
 #include "src/compiler/linkage.h"
 #include "src/compiler/node-matchers.h"
@@ -463,6 +464,8 @@ Reduction MemoryLowering::ReduceStoreField(Node* node,
            access.write_barrier_kind == kAssertNoWriteBarrier);
     // node->ReplaceInput(
     //     1, __ WordXor(value, __ IntPtrConstant(Internals::kXorMask)));
+  } else {
+    DCHECK_IMPLIES((access == AccessBuilder::ForMap()), false);
   }
   WriteBarrierKind write_barrier_kind = ComputeWriteBarrierKind(
       node, object, value, state, access.write_barrier_kind);
