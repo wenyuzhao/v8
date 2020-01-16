@@ -249,11 +249,13 @@ void TurboAssembler::StoreTaggedField(Operand dst_field_operand,
 
 void TurboAssembler::StoreTaggedField(Operand dst_field_operand,
                                       Register value) {
+  RecordComment("[ StoreTaggedField");
   if (COMPRESS_POINTERS_BOOL) {
     movl(dst_field_operand, value);
   } else {
     movq(dst_field_operand, value);
   }
+  RecordComment("]");
 }
 
 void TurboAssembler::StoreMapToHeader(Operand dst_field_operand,
