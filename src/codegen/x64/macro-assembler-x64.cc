@@ -277,9 +277,9 @@ void TurboAssembler::StoreMapToHeader(Operand dst_field_operand,
     movl(dst_field_operand, value);
     UNREACHABLE(); // unimplemented
   } else {
-    xorq(value, Immediate(Internals::kXorMask));
+//    xorq(value, Immediate(Internals::kXorMask));
     movq(dst_field_operand, value);
-    xorq(value, Immediate(Internals::kXorMask));
+//    xorq(value, Immediate(Internals::kXorMask));
   }
   RecordComment("]");
 }

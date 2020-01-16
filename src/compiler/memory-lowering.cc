@@ -417,8 +417,8 @@ Reduction MemoryLowering::ReduceStoreToObject(Node* node,
   if (IsMapOffsetConstant(offset)) {
     store_to_header = true;
     DCHECK_EQ(access.write_barrier_kind, kMapWriteBarrier);
-    // node->ReplaceInput(
-    //     2, __ WordXor(value, __ IntPtrConstant(Internals::kXorMask)));
+    node->ReplaceInput(
+        2, __ WordXor(value, __ IntPtrConstant(Internals::kXorMask)));
   }
   WriteBarrierKind write_barrier_kind = ComputeWriteBarrierKind(
       node, object, value, state, access.write_barrier_kind);
@@ -462,8 +462,8 @@ Reduction MemoryLowering::ReduceStoreField(Node* node,
     DCHECK(access.write_barrier_kind == kMapWriteBarrier ||
            access.write_barrier_kind == kNoWriteBarrier ||
            access.write_barrier_kind == kAssertNoWriteBarrier);
-    // node->ReplaceInput(
-    //     1, __ WordXor(value, __ IntPtrConstant(Internals::kXorMask)));
+    node->ReplaceInput(
+        1, __ WordXor(value, __ IntPtrConstant(Internals::kXorMask)));
   } else {
     DCHECK_IMPLIES((access == AccessBuilder::ForMap()), false);
   }
