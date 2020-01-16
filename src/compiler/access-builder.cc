@@ -37,7 +37,7 @@ AccessBuilder::ForMap() {  // TODO(steveblackburn) --> this should be covered in
                            // with kMapOffset are intercepted.
   FieldAccess access = {kTaggedBase,           HeapObject::kMapOffset,
                         MaybeHandle<Name>(),   MaybeHandle<Map>(),
-                        Type::OtherInternal(), MachineType::TaggedPointer(),
+                        Type::OtherInternal(), MachineType::MapPointerInHeader(),
                         kMapWriteBarrier};
   return access;
 }

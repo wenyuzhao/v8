@@ -188,19 +188,23 @@ void TurboAssembler::CompareRoot(Operand with, RootIndex index) {
   }
 }
 
-void TurboAssembler::LoadMapFromHeader(Register destination, Register object) {
-  LoadTaggedPointerField(destination,
-                         FieldOperand(object, HeapObject::kMapOffset));
-  xorq(destination, Immediate(Internals::kXorMask));
-}
-
 void TurboAssembler::LoadTaggedPointerField(Register destination,
                                             Operand field_operand) {
+  RecordComment("[ LoadTaggedPointerField");
   if (COMPRESS_POINTERS_BOOL) {
     DecompressTaggedPointer(destination, field_operand);
   } else {
     mov_tagged(destination, field_operand);
   }
+  RecordComment("]");
+}
+
+void TurboAssembler::LoadMapFromHeader(Register destination, Register object) {
+  RecordComment("[ LoadMapFromHeader");
+  LoadTaggedPointerField(destination,
+                         FieldOperand(object, HeapObject::kMapOffset));
+  xorq(destination, Immediate(Internals::kXorMask));
+  RecordComment("]");
 }
 
 void TurboAssembler::LoadAnyTaggedField(Register destination,

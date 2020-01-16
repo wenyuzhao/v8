@@ -594,6 +594,7 @@ ShiftKind ShiftKindOf(Operator const* op) {
   V(Pointer)                 \
   V(TaggedSigned)            \
   V(TaggedPointer)           \
+  V(MapPointerInHeader)      \
   V(AnyTagged)               \
   V(CompressedPointer)       \
   V(AnyCompressed)

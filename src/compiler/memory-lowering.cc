@@ -412,13 +412,16 @@ Reduction MemoryLowering::ReduceStoreToObject(Node* node,
   Node* object = node->InputAt(0);
   Node* offset = node->InputAt(1);
   Node* value = node->InputAt(2);
+  MachineType m_type = access.machine_type;
   bool store_to_header = IsMapOffsetConstant(offset);
+  // DCHECK_IMPLIES(store_to_header, m_type == MachineType::MapPointerInHeader());
+  if (store_to_header) m_type = MachineType::MapPointerInHeader();
   DCHECK_IMPLIES(store_to_header, access.write_barrier_kind == kMapWriteBarrier);
   WriteBarrierKind write_barrier_kind = ComputeWriteBarrierKind(
       node, object, value, state, access.write_barrier_kind);
   NodeProperties::ChangeOp(
       node, machine()->Store(StoreRepresentation(
-                access.machine_type.representation(), write_barrier_kind, store_to_header)));
+                m_type.representation(), write_barrier_kind, m_type.in_header())));
   return Changed(node);
 }
 
@@ -446,22 +449,24 @@ Reduction MemoryLowering::ReduceStoreField(Node* node,
   DCHECK_IMPLIES(V8_HEAP_SANDBOX_BOOL,
                  !access.type.Is(Type::ExternalPointer()) &&
                      !access.type.Is(Type::SandboxedExternalPointer()));
+  MachineType m_type = access.machine_type;
   Node* object = node->InputAt(0);
   Node* value = node->InputAt(1);
   bool store_to_header = (access.offset == HeapObject::kMapOffset &&
       access.base_is_tagged != kUntaggedBase);
-  DCHECK_IMPLIES(store_to_header, 
+  // DCHECK_IMPLIES(store_to_header, m_type == MachineType::MapPointerInHeader());
+  if (store_to_header) m_type = MachineType::MapPointerInHeader();
+  DCHECK_IMPLIES(m_type.in_header(), 
           (access.write_barrier_kind == kMapWriteBarrier ||
            access.write_barrier_kind == kNoWriteBarrier ||
            access.write_barrier_kind == kAssertNoWriteBarrier));
-  DCHECK_IMPLIES(access == AccessBuilder::ForMap(), store_to_header);
   WriteBarrierKind write_barrier_kind = ComputeWriteBarrierKind(
       node, object, value, state, access.write_barrier_kind);
   Node* offset = __ IntPtrConstant(access.offset - access.tag());
   node->InsertInput(graph_zone(), 1, offset);
   NodeProperties::ChangeOp(
       node, machine()->Store(StoreRepresentation(
-                access.machine_type.representation(), write_barrier_kind, store_to_header)));
+                m_type.representation(), write_barrier_kind, m_type.in_header())));
   return Changed(node);
 }
 
