@@ -412,14 +412,8 @@ Reduction MemoryLowering::ReduceStoreToObject(Node* node,
   Node* object = node->InputAt(0);
   Node* offset = node->InputAt(1);
   Node* value = node->InputAt(2);
-  bool store_to_header = false;
-  // TODO(steveblackburn) packing of map. See Internals::PackMapWord()
-  if (IsMapOffsetConstant(offset)) {
-    store_to_header = true;
-    DCHECK_EQ(access.write_barrier_kind, kMapWriteBarrier);
-    node->ReplaceInput(
-        2, __ WordXor(value, __ IntPtrConstant(Internals::kXorMask)));
-  }
+  bool store_to_header = IsMapOffsetConstant(offset);
+  DCHECK_IMPLIES(store_to_header, access.write_barrier_kind == kMapWriteBarrier);
   WriteBarrierKind write_barrier_kind = ComputeWriteBarrierKind(
       node, object, value, state, access.write_barrier_kind);
   NodeProperties::ChangeOp(
@@ -454,19 +448,13 @@ Reduction MemoryLowering::ReduceStoreField(Node* node,
                      !access.type.Is(Type::SandboxedExternalPointer()));
   Node* object = node->InputAt(0);
   Node* value = node->InputAt(1);
-  bool store_to_header = false;
-  // TODO(steveblackburn) packing of map. See Internals::PackMapWord()
-  if (access.offset == HeapObject::kMapOffset &&
-      access.base_is_tagged != kUntaggedBase) {
-    store_to_header = true;
-    DCHECK(access.write_barrier_kind == kMapWriteBarrier ||
+  bool store_to_header = (access.offset == HeapObject::kMapOffset &&
+      access.base_is_tagged != kUntaggedBase);
+  DCHECK_IMPLIES(store_to_header, 
+          (access.write_barrier_kind == kMapWriteBarrier ||
            access.write_barrier_kind == kNoWriteBarrier ||
-           access.write_barrier_kind == kAssertNoWriteBarrier);
-    node->ReplaceInput(
-        1, __ WordXor(value, __ IntPtrConstant(Internals::kXorMask)));
-  } else {
-    DCHECK_IMPLIES((access == AccessBuilder::ForMap()), false);
-  }
+           access.write_barrier_kind == kAssertNoWriteBarrier));
+  DCHECK_IMPLIES(access == AccessBuilder::ForMap(), store_to_header);
   WriteBarrierKind write_barrier_kind = ComputeWriteBarrierKind(
       node, object, value, state, access.write_barrier_kind);
   Node* offset = __ IntPtrConstant(access.offset - access.tag());
