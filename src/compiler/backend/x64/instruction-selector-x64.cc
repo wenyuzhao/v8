@@ -286,7 +286,8 @@ ArchOpcode GetLoadOpcode(LoadRepresentation load_rep) {
     case MachineRepresentation::kTagged:         // Fall through.
 #endif
     case MachineRepresentation::kWord64:
-      opcode = load_rep.in_header() ? kX64MapFromHeader : kX64Movq;
+      // opcode = load_rep.in_header() ? kX64MapFromHeader : kX64Movq;
+      opcode = kX64Movq;
       break;
     case MachineRepresentation::kSimd128:  // Fall through.
       opcode = kX64Movdqu;
