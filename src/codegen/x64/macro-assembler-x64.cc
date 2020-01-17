@@ -200,9 +200,12 @@ void TurboAssembler::LoadTaggedPointerField(Register destination,
 }
 
 void TurboAssembler::LoadMapFromHeader(Register destination, Register object) {
+  LoadMapFromHeader(destination, FieldOperand(object, HeapObject::kMapOffset));
+}
+
+void TurboAssembler::LoadMapFromHeader(Register destination, Operand field_operand) {
   RecordComment("[ LoadMapFromHeader");
-  LoadTaggedPointerField(destination,
-                         FieldOperand(object, HeapObject::kMapOffset));
+  LoadTaggedPointerField(destination, field_operand);
   xorq(destination, Immediate(Internals::kXorMask));
   RecordComment("]");
 }

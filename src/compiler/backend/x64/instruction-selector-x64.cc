@@ -269,6 +269,7 @@ ArchOpcode GetLoadOpcode(LoadRepresentation load_rep) {
 #else
       UNREACHABLE();
 #endif
+
 #ifdef V8_COMPRESS_POINTERS
     case MachineRepresentation::kTaggedSigned:
       opcode = kX64MovqDecompressTaggedSigned;
@@ -285,7 +286,7 @@ ArchOpcode GetLoadOpcode(LoadRepresentation load_rep) {
     case MachineRepresentation::kTagged:         // Fall through.
 #endif
     case MachineRepresentation::kWord64:
-      opcode = kX64Movq;
+      opcode = load_rep.in_header() ? kX64MapFromHeader : kX64Movq;
       break;
     case MachineRepresentation::kSimd128:  // Fall through.
       opcode = kX64Movdqu;

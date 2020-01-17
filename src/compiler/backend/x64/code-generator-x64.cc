@@ -2161,6 +2161,12 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       }
       EmitWordLoadPoisoningIfNeeded(this, opcode, instr, i);
       break;
+    case kX64MapFromHeader:
+      CHECK(instr->HasOutput());
+      EmitOOLTrapIfNeeded(zone(), this, opcode, instr, __ pc_offset());
+      __ LoadMapFromHeader(i.OutputRegister(), i.MemoryOperand());
+      EmitWordLoadPoisoningIfNeeded(this, opcode, instr, i);
+      break;
     case kX64Movss:
       EmitOOLTrapIfNeeded(zone(), this, opcode, instr, __ pc_offset());
       if (instr->HasOutput()) {

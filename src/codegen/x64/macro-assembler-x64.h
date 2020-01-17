@@ -421,6 +421,7 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   }
 
   void LoadMapFromHeader(Register destination, Register object);
+  void LoadMapFromHeader(Register destination, Operand field_operand);
 
   void Move(Register dst, Smi source);
 
