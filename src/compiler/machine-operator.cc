@@ -1299,7 +1299,7 @@ const Operator* MachineOperatorBuilder::StackSlot(MachineRepresentation rep,
 }
 
 const Operator* MachineOperatorBuilder::Store(StoreRepresentation store_rep) {
-  // TODO (steveblackburn) this hack to dodge macro above (line 688)
+  // TODO(steveblackburn) this hack to dodge macro above (line 688)
   if (store_rep.store_to_header())
     return new (zone_) Operator1<StoreRepresentation>(
         IrOpcode::kStore,
