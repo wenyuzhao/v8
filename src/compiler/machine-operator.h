@@ -107,16 +107,17 @@ V8_EXPORT_PRIVATE LoadLaneParameters const& LoadLaneParametersOf(
 // header word, so that the value can be packed, if necessary.
 class StoreRepresentation final {
  public:
-   StoreRepresentation(MachineRepresentation representation,
+  StoreRepresentation(MachineRepresentation representation,
                       WriteBarrierKind write_barrier_kind)
       : representation_(representation),
-        write_barrier_kind_(write_barrier_kind) { store_to_header_ = false; }
-   StoreRepresentation(MachineRepresentation representation,
-                      WriteBarrierKind write_barrier_kind,
-                      bool store_to_header)
+        write_barrier_kind_(write_barrier_kind) {
+    store_to_header_ = false;
+  }
+  StoreRepresentation(MachineRepresentation representation,
+                      WriteBarrierKind write_barrier_kind, bool store_to_header)
       : representation_(representation),
         write_barrier_kind_(write_barrier_kind),
-        store_to_header_(store_to_header) { }
+        store_to_header_(store_to_header) {}
 
   MachineRepresentation representation() const { return representation_; }
   WriteBarrierKind write_barrier_kind() const { return write_barrier_kind_; }

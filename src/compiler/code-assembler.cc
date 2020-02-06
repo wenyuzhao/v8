@@ -698,8 +698,8 @@ Node* CodeAssembler::AtomicLoad(MachineType type, Node* base, Node* offset) {
 
 Node* CodeAssembler::LoadFromObject(MachineType type, TNode<HeapObject> object,
                                     TNode<IntPtrT> offset) {
-Node* value = raw_assembler()->LoadFromObject(type, object, offset);
-   if (IsMapOffsetConstant(offset))
+  Node* value = raw_assembler()->LoadFromObject(type, object, offset);
+  if (IsMapOffsetConstant(offset))
     return WordXor(value, IntPtrConstant(Internals::kXorMask));
   else
     return value;

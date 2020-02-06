@@ -1906,11 +1906,14 @@ TNode<BoolT> CodeStubAssembler::IsNotMapWord(SloppyTNode<Map> value) {
 
 TNode<BoolT> CodeStubAssembler::ContainsPackedMap(TNode<HeapObject> object) {
   DCHECK(Is64());  // TODO(steveblackburn)
-  // LoadFromObject will unpack the value, so result of this load should be clean
-  Node* mapvalue = LoadFromObject(MachineType::Pointer(), object, IntPtrConstant(HeapObject::kMapOffset-kHeapObjectTag));
+  // LoadFromObject will unpack the value, so result of this load should be
+  // clean
+  Node* mapvalue =
+      LoadFromObject(MachineType::Pointer(), object,
+                     IntPtrConstant(HeapObject::kMapOffset - kHeapObjectTag));
   return Word64NotEqual(Word64And(ReinterpretCast<Int64T>(mapvalue),
-                               Int64Constant(Internals::kMapWordSignature)),
-                     Int64Constant(Internals::kMapWordSignature));
+                                  Int64Constant(Internals::kMapWordSignature)),
+                        Int64Constant(Internals::kMapWordSignature));
 }
 
 TNode<BoolT> CodeStubAssembler::IsNotMapOffset(SloppyTNode<IntPtrT> value) {
@@ -2038,7 +2041,7 @@ TNode<TValue> CodeStubAssembler::LoadArrayElement(
                 "Only Smi, UintPtrT or IntPtrT indices are allowed");
   CSA_ASSERT(this, IntPtrGreaterThanOrEqual(ParameterToIntPtr(index_node),
                                             IntPtrConstant(0)));
-//  CSA_ASSERT(this, ContainsPackedMap(array));
+  //  CSA_ASSERT(this, ContainsPackedMap(array));
   DCHECK(IsAligned(additional_offset, kTaggedSize));
   int32_t header_size = array_header_size + additional_offset - kHeapObjectTag;
   TNode<IntPtrT> offset =
@@ -2049,7 +2052,7 @@ TNode<TValue> CodeStubAssembler::LoadArrayElement(
   // TODO(gsps): Remove the Load case once LoadFromObject supports poisoning
   if (needs_poisoning == LoadSensitivity::kSafe) {
     Node* rtn = LoadFromObject(machine_type, array, offset);
-    CSA_ASSERT(this, IsNotMapWord(rtn));    // value must not be encoded map
+    CSA_ASSERT(this, IsNotMapWord(rtn));  // value must not be encoded map
     return UncheckedCast<TValue>(rtn);
   } else {
     return UncheckedCast<TValue>(

@@ -203,7 +203,8 @@ void TurboAssembler::LoadMapFromHeader(Register destination, Register object) {
   LoadMapFromHeader(destination, FieldOperand(object, HeapObject::kMapOffset));
 }
 
-void TurboAssembler::LoadMapFromHeader(Register destination, Operand field_operand) {
+void TurboAssembler::LoadMapFromHeader(Register destination,
+                                       Operand field_operand) {
   RecordComment("[ LoadMapFromHeader");
   LoadTaggedPointerField(destination, field_operand);
   xorq(destination, Immediate(Internals::kXorMask));
@@ -271,7 +272,7 @@ void TurboAssembler::StoreMapToHeader(Operand dst_field_operand,
   RecordComment("[ StoreMapToHeader");
   StoreTaggedField(dst_field_operand, value);
   RecordComment("]");
-  UNREACHABLE(); // unimplemented
+  UNREACHABLE();  // unimplemented
 }
 
 void TurboAssembler::StoreMapToHeader(Operand dst_field_operand,

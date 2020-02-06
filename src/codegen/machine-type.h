@@ -62,18 +62,22 @@ class MachineType {
  public:
   constexpr MachineType()
       : representation_(MachineRepresentation::kNone),
-        semantic_(MachineSemantic::kNone), in_header_(false) {}
+        semantic_(MachineSemantic::kNone),
+        in_header_(false) {}
   constexpr MachineType(MachineRepresentation representation,
                         MachineSemantic semantic)
-      : representation_(representation), semantic_(semantic), in_header_(false) {}
+      : representation_(representation),
+        semantic_(semantic),
+        in_header_(false) {}
   constexpr MachineType(MachineRepresentation representation,
                         MachineSemantic semantic, bool in_header)
-       : representation_(representation), semantic_(semantic), in_header_(in_header) {}
+      : representation_(representation),
+        semantic_(semantic),
+        in_header_(in_header) {}
 
   constexpr bool operator==(MachineType other) const {
     return representation() == other.representation() &&
-           semantic() == other.semantic() &&
-           in_header() == other.in_header();
+           semantic() == other.semantic() && in_header() == other.in_header();
   }
 
   constexpr bool operator!=(MachineType other) const {

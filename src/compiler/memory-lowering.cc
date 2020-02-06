@@ -414,14 +414,16 @@ Reduction MemoryLowering::ReduceStoreToObject(Node* node,
   Node* value = node->InputAt(2);
   MachineType m_type = access.machine_type;
   bool store_to_header = IsMapOffsetConstant(offset);
-  // DCHECK_IMPLIES(store_to_header, m_type == MachineType::MapPointerInHeader());
+  // DCHECK_IMPLIES(store_to_header, m_type ==
+  // MachineType::MapPointerInHeader());
   if (store_to_header) m_type = MachineType::MapPointerInHeader();
-  DCHECK_IMPLIES(store_to_header, access.write_barrier_kind == kMapWriteBarrier);
+  DCHECK_IMPLIES(store_to_header,
+                 access.write_barrier_kind == kMapWriteBarrier);
   WriteBarrierKind write_barrier_kind = ComputeWriteBarrierKind(
       node, object, value, state, access.write_barrier_kind);
-  NodeProperties::ChangeOp(
-      node, machine()->Store(StoreRepresentation(
-                m_type.representation(), write_barrier_kind, m_type.in_header())));
+  NodeProperties::ChangeOp(node, machine()->Store(StoreRepresentation(
+                                     m_type.representation(),
+                                     write_barrier_kind, m_type.in_header())));
   return Changed(node);
 }
 
@@ -435,9 +437,9 @@ Reduction MemoryLowering::ReduceStoreElement(Node* node,
   node->ReplaceInput(1, ComputeIndex(access, index));
   WriteBarrierKind write_barrier_kind = ComputeWriteBarrierKind(
       node, object, value, state, access.write_barrier_kind);
-  NodeProperties::ChangeOp(
-      node, machine()->Store(StoreRepresentation(
-                access.machine_type.representation(), write_barrier_kind, false)));
+  NodeProperties::ChangeOp(node, machine()->Store(StoreRepresentation(
+                                     access.machine_type.representation(),
+                                     write_barrier_kind, false)));
   return Changed(node);
 }
 
@@ -453,20 +455,21 @@ Reduction MemoryLowering::ReduceStoreField(Node* node,
   Node* object = node->InputAt(0);
   Node* value = node->InputAt(1);
   bool store_to_header = (access.offset == HeapObject::kMapOffset &&
-      access.base_is_tagged != kUntaggedBase);
-  // DCHECK_IMPLIES(store_to_header, m_type == MachineType::MapPointerInHeader());
+                          access.base_is_tagged != kUntaggedBase);
+  // DCHECK_IMPLIES(store_to_header, m_type ==
+  // MachineType::MapPointerInHeader());
   if (store_to_header) m_type = MachineType::MapPointerInHeader();
-  DCHECK_IMPLIES(m_type.in_header(), 
-          (access.write_barrier_kind == kMapWriteBarrier ||
-           access.write_barrier_kind == kNoWriteBarrier ||
-           access.write_barrier_kind == kAssertNoWriteBarrier));
+  DCHECK_IMPLIES(m_type.in_header(),
+                 (access.write_barrier_kind == kMapWriteBarrier ||
+                  access.write_barrier_kind == kNoWriteBarrier ||
+                  access.write_barrier_kind == kAssertNoWriteBarrier));
   WriteBarrierKind write_barrier_kind = ComputeWriteBarrierKind(
       node, object, value, state, access.write_barrier_kind);
   Node* offset = __ IntPtrConstant(access.offset - access.tag());
   node->InsertInput(graph_zone(), 1, offset);
-  NodeProperties::ChangeOp(
-      node, machine()->Store(StoreRepresentation(
-                m_type.representation(), write_barrier_kind, m_type.in_header())));
+  NodeProperties::ChangeOp(node, machine()->Store(StoreRepresentation(
+                                     m_type.representation(),
+                                     write_barrier_kind, m_type.in_header())));
   return Changed(node);
 }
 

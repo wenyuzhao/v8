@@ -35,10 +35,11 @@ FieldAccess
 AccessBuilder::ForMap() {  // TODO(steveblackburn) --> this should be covered in
                            // the Graph assembler, where all loads and stores
                            // with kMapOffset are intercepted.
-  FieldAccess access = {kTaggedBase,           HeapObject::kMapOffset,
-                        MaybeHandle<Name>(),   MaybeHandle<Map>(),
-                        Type::OtherInternal(), MachineType::MapPointerInHeader(),
-                        kMapWriteBarrier};
+  FieldAccess access = {
+      kTaggedBase,           HeapObject::kMapOffset,
+      MaybeHandle<Name>(),   MaybeHandle<Map>(),
+      Type::OtherInternal(), MachineType::MapPointerInHeader(),
+      kMapWriteBarrier};
   return access;
 }
 
