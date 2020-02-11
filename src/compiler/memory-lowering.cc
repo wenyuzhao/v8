@@ -416,7 +416,11 @@ Reduction MemoryLowering::ReduceStoreToObject(Node* node,
   bool store_to_header = IsMapOffsetConstant(offset);
   // DCHECK_IMPLIES(store_to_header, m_type ==
   // MachineType::MapPointerInHeader());
-  if (store_to_header) m_type = MachineType::MapPointerInHeader();
+  if (store_to_header) {
+    CHECK_EQ(m_type.representation(), MachineRepresentation::kTaggedPointer);
+    CHECK_EQ(m_type.semantic(), MachineSemantic::kAny);
+    m_type = MachineType::MapPointerInHeader();
+  }
   DCHECK_IMPLIES(store_to_header,
                  access.write_barrier_kind == kMapWriteBarrier);
   WriteBarrierKind write_barrier_kind = ComputeWriteBarrierKind(
