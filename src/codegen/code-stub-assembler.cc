@@ -1899,9 +1899,9 @@ void CodeStubAssembler::DispatchMaybeObject(TNode<MaybeObject> maybe_object,
 
 TNode<BoolT> CodeStubAssembler::IsNotMapWord(SloppyTNode<Map> value) {
   DCHECK(Is64());  // TODO(steveblackburn)
-  return Word64NotEqual(Word64And(ReinterpretCast<Int64T>(value),
-                                  Int64Constant(Internals::kMapWordSignature)),
-                        Int64Constant(Internals::kMapWordSignature));
+  return WordNotEqual(WordAnd(BitcastTaggedToWord(value),
+                              IntPtrConstant(Internals::kMapWordSignature)),
+                      IntPtrConstant(Internals::kMapWordSignature));
 }
 
 TNode<BoolT> CodeStubAssembler::ContainsPackedMap(TNode<HeapObject> object) {
@@ -1909,11 +1909,11 @@ TNode<BoolT> CodeStubAssembler::ContainsPackedMap(TNode<HeapObject> object) {
   // LoadFromObject will unpack the value, so result of this load should be
   // clean
   Node* mapvalue =
-      LoadFromObject(MachineType::Pointer(), object,
+      LoadFromObject(MachineType::TaggedPointer(), object,
                      IntPtrConstant(HeapObject::kMapOffset - kHeapObjectTag));
-  return Word64NotEqual(Word64And(ReinterpretCast<Int64T>(mapvalue),
-                                  Int64Constant(Internals::kMapWordSignature)),
-                        Int64Constant(Internals::kMapWordSignature));
+  return WordNotEqual(WordAnd(BitcastTaggedToWord(mapvalue),
+                              IntPtrConstant(Internals::kMapWordSignature)),
+                      IntPtrConstant(Internals::kMapWordSignature));
 }
 
 TNode<BoolT> CodeStubAssembler::IsNotMapOffset(SloppyTNode<IntPtrT> value) {
