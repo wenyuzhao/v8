@@ -66,8 +66,9 @@ class X64OperandGenerator final : public OperandGenerator {
     if (effect_level != selector()->GetEffectLevel(input)) {
       return false;
     }
-    MachineRepresentation rep =
-        LoadRepresentationOf(input->op()).representation();
+    auto load_rep = LoadRepresentationOf(input->op());
+    if (load_rep.in_header()) return false;
+    MachineRepresentation rep = load_rep.representation();
     switch (opcode) {
       case kX64And:
       case kX64Or:
@@ -286,8 +287,8 @@ ArchOpcode GetLoadOpcode(LoadRepresentation load_rep) {
     case MachineRepresentation::kTagged:         // Fall through.
 #endif
     case MachineRepresentation::kWord64:
-      // opcode = load_rep.in_header() ? kX64MapFromHeader : kX64Movq;
-      opcode = kX64Movq;
+      opcode = load_rep.in_header() ? kX64MapFromHeader : kX64Movq;
+      // opcode = kX64Movq;
       break;
     case MachineRepresentation::kSimd128:  // Fall through.
       opcode = kX64Movdqu;

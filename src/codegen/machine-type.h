@@ -183,6 +183,10 @@ class MachineType {
     return MachineType(MachineRepresentation::kTaggedPointer,
                        MachineSemantic::kAny, true);
   }
+  constexpr static MachineType MapInHeader() {
+    return MachineType(MachineRepresentation::kTagged,
+                       MachineSemantic::kAny, true);
+  }
   constexpr static MachineType TaggedSigned() {
     return MachineType(MachineRepresentation::kTaggedSigned,
                        MachineSemantic::kInt32);

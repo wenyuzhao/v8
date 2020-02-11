@@ -316,26 +316,26 @@ TNode<Float64T> CodeAssembler::Float64Constant(double value) {
 }
 
 bool CodeAssembler::IsMapOffsetConstant(Node* node) {
-  {
-    Int64Matcher m(node);
-    if (m.HasValue() && m.IsInRange(std::numeric_limits<int32_t>::min(),
-                                    std::numeric_limits<int32_t>::max()))
-      return (static_cast<int32_t>(m.Value()) == HeapObject::kMapOffset ||
-              static_cast<int32_t>(m.Value()) ==
-                  (HeapObject::kMapOffset - kHeapObjectTag));
-    else
-      return false;
+  Int64Matcher m(node);
+  if (m.HasValue() && m.IsInRange(std::numeric_limits<int32_t>::min(),
+                                  std::numeric_limits<int32_t>::max())) {
+    return static_cast<int32_t>(m.Value()) == HeapObject::kMapOffset;
+  } else {
+    return false;
   }
-
-  /*
-  {
-    Int32Matcher m(node);
-    DCHECK(m.HasValue());
-    return m.Value() == HeapObject::kMapOffset;
-  }*/
-  DCHECK(false);
-  return false;
 }
+
+bool CodeAssembler::IsMapOffsetConstantMinusTag(Node* node) {
+  Int64Matcher m(node);
+  if (m.HasValue() && m.IsInRange(std::numeric_limits<int32_t>::min(),
+                                  std::numeric_limits<int32_t>::max())) {
+    return static_cast<int32_t>(m.Value()) ==
+                HeapObject::kMapOffset - kHeapObjectTag;
+  } else {
+    return false;
+  }
+}
+
 
 bool CodeAssembler::ToInt32Constant(Node* node, int32_t* out_value) {
   {
@@ -686,26 +686,40 @@ TNode<Object> CodeAssembler::LoadFullTagged(Node* base,
 
 TNode<Object> CodeAssembler::LoadFullTagged(Node* base, Node* offset,
                                             LoadSensitivity needs_poisoning) {
-  DCHECK(!IsMapOffsetConstant(offset));
+  DCHECK(!IsMapOffsetConstantMinusTag(offset));
   return BitcastWordToTagged(
       Load(MachineType::Pointer(), base, offset, needs_poisoning));
 }
 
 Node* CodeAssembler::AtomicLoad(MachineType type, Node* base, Node* offset) {
-  DCHECK(!IsMapOffsetConstant(offset));
+  DCHECK(!IsMapOffsetConstantMinusTag(offset));
   return raw_assembler()->AtomicLoad(type, base, offset);
 }
 
 Node* CodeAssembler::LoadFromObject(MachineType type, TNode<HeapObject> object,
                                     TNode<IntPtrT> offset) {
-  Node* value = raw_assembler()->LoadFromObject(type, object, offset);
-  if (IsMapOffsetConstant(offset))
-    return WordXor(value, IntPtrConstant(Internals::kXorMask));
-  else
-    return value;
-  // if (IsMapOffsetConstant(offset))
-  //   type = MachineType::MapPointerInHeader();
-  // return raw_assembler()->LoadFromObject(type, object, offset);
+  //Node* value = raw_assembler()->LoadFromObject(type, object, offset);
+  //if (IsMapOffsetConstant(offset)) {
+  //  if (IsAnyTagged(type.representation())) {
+  //    value = BitcastTaggedToWord(value);
+  //  }
+  //  value = WordXor(value, IntPtrConstant(Internals::kXorMask));
+  //  if (IsAnyTagged(type.representation())) {
+  //    value = BitcastWordToTagged(value);
+  //  }
+  //}
+  //return value;
+  if (IsMapOffsetConstantMinusTag(offset)) {
+    CHECK(IsAnyTagged(type.representation()));
+    if (type == MachineType::TaggedPointer()) {
+      type = MachineType::MapPointerInHeader();
+    } else if (type == MachineType::AnyTagged()) {
+      type = MachineType::MapInHeader();
+    } else {
+      UNREACHABLE();
+    }
+  }
+  return raw_assembler()->LoadFromObject(type, object, offset);
 }
 
 Node* CodeAssembler::LoadFiller(RootIndex root_index) {
@@ -713,7 +727,9 @@ Node* CodeAssembler::LoadFiller(RootIndex root_index) {
   Handle<Object> root = isolate()->root_handle(root_index);
   Node* map = HeapConstant(Handle<HeapObject>::cast(root));
   // TODO(steveblackburn) would be nice to use the xor'd constant
-  return WordXor(map, IntPtrConstant(Internals::kXorMask));
+  map = BitcastTaggedToWord(map);
+  map = WordXor(map, IntPtrConstant(Internals::kXorMask));
+  return BitcastWordToTagged(map);
 }
 
 TNode<Object> CodeAssembler::LoadRoot(RootIndex root_index) {
@@ -795,13 +811,13 @@ void CodeAssembler::OptimizedStoreMapWord(TNode<HeapObject> object, Node* map) {
 }
 
 Node* CodeAssembler::Store(Node* base, Node* offset, Node* value) {
-  DCHECK(!IsMapOffsetConstant(offset));
+  DCHECK(!IsMapOffsetConstantMinusTag(offset));
   return raw_assembler()->Store(MachineRepresentation::kTagged, base, offset,
                                 value, kFullWriteBarrier);
 }
 
 Node* CodeAssembler::StoreEphemeronKey(Node* base, Node* offset, Node* value) {
-  DCHECK(!IsMapOffsetConstant(offset));
+  DCHECK(!IsMapOffsetConstantMinusTag(offset));
   return raw_assembler()->Store(MachineRepresentation::kTagged, base, offset,
                                 value, kEphemeronKeyWriteBarrier);
 }
@@ -816,7 +832,7 @@ Node* CodeAssembler::StoreNoWriteBarrier(MachineRepresentation rep, Node* base,
 
 Node* CodeAssembler::StoreNoWriteBarrier(MachineRepresentation rep, Node* base,
                                          Node* offset, Node* value) {
-  DCHECK(!IsMapOffsetConstant(offset));
+  DCHECK(!IsMapOffsetConstantMinusTag(offset));
   return raw_assembler()->Store(
       rep, base, offset, value,
       CanBeTaggedPointer(rep) ? kAssertNoWriteBarrier : kNoWriteBarrier);
@@ -830,7 +846,7 @@ Node* CodeAssembler::UnsafeStoreNoWriteBarrier(MachineRepresentation rep,
 Node* CodeAssembler::UnsafeStoreNoWriteBarrier(MachineRepresentation rep,
                                                Node* base, Node* offset,
                                                Node* value) {
-  DCHECK(!IsMapOffsetConstant(offset));
+  DCHECK(!IsMapOffsetConstantMinusTag(offset));
   return raw_assembler()->Store(rep, base, offset, value, kNoWriteBarrier);
 }
 
@@ -842,14 +858,14 @@ Node* CodeAssembler::StoreFullTaggedNoWriteBarrier(Node* base,
 
 Node* CodeAssembler::StoreFullTaggedNoWriteBarrier(Node* base, Node* offset,
                                                    Node* tagged_value) {
-  DCHECK(!IsMapOffsetConstant(offset));
+  DCHECK(!IsMapOffsetConstantMinusTag(offset));
   return StoreNoWriteBarrier(MachineType::PointerRepresentation(), base, offset,
                              BitcastTaggedToWord(tagged_value));
 }
 
 Node* CodeAssembler::AtomicStore(MachineRepresentation rep, Node* base,
                                  Node* offset, Node* value, Node* value_high) {
-  DCHECK(!IsMapOffsetConstant(offset));
+  DCHECK(!IsMapOffsetConstantMinusTag(offset));
   return raw_assembler()->AtomicStore(rep, base, offset, value, value_high);
 }
 
