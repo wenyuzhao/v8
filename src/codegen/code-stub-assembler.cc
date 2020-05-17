@@ -10332,6 +10332,7 @@ void CodeStubAssembler::TrapAllocationMemento(TNode<JSObject> object,
   BIND(&map_check);
   {
     TNode<Object> memento_map = LoadObjectField(object, kMementoMapOffset);
+    memento_map = BitcastWordToTagged(WordXor(BitcastTaggedToWord(memento_map), IntPtrConstant(Internals::kXorMask)));
     Branch(TaggedEqual(memento_map, AllocationMementoMapConstant()),
            memento_found, &no_memento_found);
   }
