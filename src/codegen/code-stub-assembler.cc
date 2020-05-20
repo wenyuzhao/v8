@@ -2052,7 +2052,8 @@ TNode<TValue> CodeStubAssembler::LoadArrayElement(
   // TODO(gsps): Remove the Load case once LoadFromObject supports poisoning
   if (needs_poisoning == LoadSensitivity::kSafe) {
     Node* rtn = LoadFromObject(machine_type, array, offset);
-    CSA_ASSERT(this, IsNotMapWord(rtn));  // value must not be encoded map
+    // FIXME(wenyuzhao): This CSA_ASSERT prevents some constant-folding optimizations
+    // CSA_ASSERT(this, IsNotMapWord(rtn));  // value must not be encoded map
     return UncheckedCast<TValue>(rtn);
   } else {
     return UncheckedCast<TValue>(
@@ -2787,8 +2788,9 @@ void CodeStubAssembler::StoreObjectField(TNode<HeapObject> object,
                                          TNode<IntPtrT> offset,
                                          TNode<Object> value) {
   int const_offset;
-  CSA_ASSERT(this, IsNotMapOffset(offset));  // Use StoreMap instead.
-  CSA_ASSERT(this, IsNotMapWord(SloppyTNode<Map>::UncheckedCast(object)));    // target must not be encoded
+  // FIXME(wenyuzhao): This CSA_ASSERT prevents some constant-folding optimizations
+  // CSA_ASSERT(this, IsNotMapOffset(offset));  // Use StoreMap instead.
+  // CSA_ASSERT(this, IsNotMapWord(SloppyTNode<Map>::UncheckedCast(object)));    // target must not be encoded
   if (ToInt32Constant(offset, &const_offset)) {
     StoreObjectField(object, const_offset, value);
   } else {

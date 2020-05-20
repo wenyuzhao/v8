@@ -1145,7 +1145,8 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
         IntPtrSub(reference.offset, IntPtrConstant(kHeapObjectTag));
     Node* rtn =
         LoadFromObject(MachineTypeOf<T>::value, reference.object, offset);
-    CSA_ASSERT(this, IsNotMapWord(rtn));  // value must not be encoded map
+    // FIXME(wenyuzhao): This CSA_ASSERT prevents some constant-folding optimizations
+    // CSA_ASSERT(this, IsNotMapWord(rtn));  // value must not be encoded map
     return CAST(rtn);
   }
   template <class T,
@@ -1531,7 +1532,8 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   template <class T>
   void StoreObjectFieldNoWriteBarrier(TNode<HeapObject> object, int offset,
                                       TNode<T> value) {
-    CSA_ASSERT(this, IsNotMapWord(SloppyTNode<Map>::UncheckedCast(object)));   // target must not be encoded
+    // FIXME(wenyuzhao): This CSA_ASSERT prevents some constant-folding optimizations
+    // CSA_ASSERT(this, IsNotMapWord(SloppyTNode<Map>::UncheckedCast(object)));   // target must not be encoded
     if (CanBeTaggedPointer(MachineRepresentationOf<T>::value)) {
       OptimizedStoreFieldAssertNoWriteBarrier(MachineRepresentationOf<T>::value,
                                               object, offset, value);
