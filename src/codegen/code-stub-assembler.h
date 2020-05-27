@@ -1141,6 +1141,14 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
                          std::is_convertible<TNode<T>, TNode<Object>>::value,
                          int>::type = 0>
   TNode<T> LoadReference(Reference reference) {
+    // FIXME(wenyuzhao): Figure out how can a zero offset being passed here
+    // FIXME(wenyuzhao):
+    //      This filtering logic could be put later in the pipeline after
+    //      basic optimizations (like removing such useless phis)
+    if (IsMapOffsetConstant(reference.offset)) {
+      return TNode<T>::UncheckedCast(LoadMap(reference.object));
+    }
+
     TNode<IntPtrT> offset =
         IntPtrSub(reference.offset, IntPtrConstant(kHeapObjectTag));
     Node* rtn =
