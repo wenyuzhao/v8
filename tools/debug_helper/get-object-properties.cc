@@ -482,6 +482,7 @@ class AddInfoVisitor : public TqObjectVisitor {
     if (map_ptr.validity != d::MemoryAccessResult::kOk) {
       return;  // Can't read the JSObject. Nothing useful to do.
     }
+    map_ptr.value = v8::internal::Internals::UnPackMapWord(map_ptr.value);
     TqMap map(map_ptr.value);
 
     // On JSObject instances, this value is the start of in-object properties.

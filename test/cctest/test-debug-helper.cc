@@ -338,7 +338,7 @@ TEST(GetObjectProperties) {
   // Verify the result for a heap object field which is itself a struct: the
   // "descriptors" field on a DescriptorArray.
   // Start by getting the object's map and the map's descriptor array.
-  props = d::GetObjectProperties(ReadProp<i::Tagged_t>(*props, "map"),
+  props = d::GetObjectProperties(i::Internals::UnPackMapWord(ReadProp<i::Tagged_t>(*props, "map")),
                                  &ReadMemory, heap_addresses);
   props = d::GetObjectProperties(
       ReadProp<i::Tagged_t>(*props, "instance_descriptors"), &ReadMemory,
