@@ -777,12 +777,24 @@ const Operator* MachineOperatorBuilder::Word64Sar(ShiftKind kind) {
   }
 }
 
-template <MachineRepresentation rep, MachineSemantic sem>
+template <MachineRepresentation rep, MachineSemantic sem, bool in_header>
 struct LoadOperator : public Operator1<LoadRepresentation> {
   LoadOperator()
       : Operator1(IrOpcode::kLoad, Operator::kEliminatable, "Load", 2, 1, 1, 1,
-                  1, 0, LoadRepresentation(rep, sem)) {}
+                  1, 0, LoadRepresentation(rep, sem, in_header)) {}
 };
+
+template <MachineRepresentation rep, MachineSemantic sem>
+const Operator* GetCachedLoadOperator(bool in_header) {
+  STATIC_ASSERT(
+      (std::is_trivially_destructible<LoadOperator<rep, sem, true>>::value));
+  STATIC_ASSERT(
+      (std::is_trivially_destructible<LoadOperator<rep, sem, false>>::value));
+  static const LoadOperator<rep, sem, true> op_header;
+  static const LoadOperator<rep, sem, false> op_non_header;
+  return in_header ? (const Operator*)&op_header
+                   : (const Operator*)&op_non_header;
+}
 
 template <MachineRepresentation rep, MachineSemantic sem>
 struct PoisonedLoadOperator : public Operator1<LoadRepresentation> {
@@ -1159,11 +1171,12 @@ MACHINE_PURE_OP_LIST(PURE)
 #undef PURE
 
 const Operator* MachineOperatorBuilder::Load(LoadRepresentation rep) {
-#define LOAD(Type)                                         \
-  if (rep == MachineType::Type()) {                        \
-    return GetCachedOperator<                              \
-        LoadOperator<MachineType::Type().representation(), \
-                     MachineType::Type().semantic()>>();   \
+#define LOAD(Type)                                                     \
+  if (rep == MachineType::Type()) {                                    \
+    return GetCachedLoadOperator<MachineType::Type().representation(), \
+                                 MachineType::Type().semantic()>(      \
+        rep == MachineType::MapInHeader() ||                           \
+        rep == MachineType::MapPointerInHeader());                     \
   }
   MACHINE_TYPE_LIST(LOAD)
 #undef LOAD
