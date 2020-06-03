@@ -358,11 +358,11 @@ class Internals {
     return *reinterpret_cast<const T*>(addr);
   }
 
-  V8_INLINE static internal::Address PackMapWord(internal::Address map) {
+  V8_INLINE static constexpr internal::Address PackMapWord(internal::Address map) {
     return map ^ kXorMask;
   }
 
-  V8_INLINE static internal::Address UnPackMapWord(internal::Address mapword) {
+  V8_INLINE static constexpr internal::Address UnPackMapWord(internal::Address mapword) {
     return mapword ^ kXorMask;
   }
 
