@@ -218,7 +218,6 @@ void WriteBarrier::Marking(HeapObject host, ObjectSlot slot, Object value) {
 void WriteBarrier::Marking(HeapObject host, MaybeObjectSlot slot,
                            MaybeObject value) {
   HeapObject value_heap_object;
-  DCHECK(!Internals::IsMapWord(value.ptr()));
   if (!value->GetHeapObject(&value_heap_object)) return;
   Marking(host, HeapObjectSlot(slot), value_heap_object);
 }

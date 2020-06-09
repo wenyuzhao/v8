@@ -681,15 +681,15 @@ Map MapWord::ToMap() const {
   return Map::unchecked_cast(Object(Internals::UnPackMapWord(value_)));
 }
 
-bool MapWord::IsForwardingAddress() const { return HAS_SMI_TAG(value_); }
+bool MapWord::IsForwardingAddress() const { return (value_ & kForwardingMask) == kForwardingTag; }
 
 MapWord MapWord::FromForwardingAddress(HeapObject object) {
-  return MapWord(object.ptr() - kHeapObjectTag);
+  return MapWord((object.ptr() - kHeapObjectTag) | kForwardingTag);
 }
 
 HeapObject MapWord::ToForwardingAddress() {
   DCHECK(IsForwardingAddress());
-  return HeapObject::FromAddress(value_);
+  return HeapObject::FromAddress(value_ & ~kForwardingTag);
 }
 
 #ifdef VERIFY_HEAP

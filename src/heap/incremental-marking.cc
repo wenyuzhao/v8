@@ -117,7 +117,6 @@ class IncrementalMarkingRootMarkingVisitor : public RootVisitor {
   void VisitRootPointers(Root root, const char* description,
                          FullObjectSlot start, FullObjectSlot end) override {
     for (FullObjectSlot p = start; p < end; ++p) {
-      DCHECK(!Internals::IsMapWord((*p).ptr()));
       MarkObjectByPointer(p);  // FIXME check
     }
   }
