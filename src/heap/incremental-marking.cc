@@ -110,8 +110,9 @@ class IncrementalMarkingRootMarkingVisitor : public RootVisitor {
 
   void VisitRootPointer(Root root, const char* description,
                         FullObjectSlot p) override {
-    if (!Internals::IsMapWord((*p).ptr()))  // TODO(steveblackburn) performance!
-      MarkObjectByPointer(p);
+    // TODO(steveblackburn) can we have fillers here?
+    DCHECK(!Internals::IsMapWord((*p).ptr()));
+    MarkObjectByPointer(p);
   }
 
   void VisitRootPointers(Root root, const char* description,
