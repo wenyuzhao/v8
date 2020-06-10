@@ -752,6 +752,7 @@ void RootScavengeVisitor::VisitRootPointers(Root root, const char* description,
 void RootScavengeVisitor::ScavengePointer(FullObjectSlot p) {
   Object object = *p;
   DCHECK(!HasWeakHeapObjectTag(object));
+  DCHECK(!Internals::IsMapWord(object.ptr()));
   if (Heap::InYoungGeneration(object)) {
     scavenger_->ScavengeObject(FullHeapObjectSlot(p), HeapObject::cast(object));
   }

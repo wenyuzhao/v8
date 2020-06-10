@@ -38,9 +38,11 @@ const int kApiInt64Size = sizeof(int64_t);
 const int kHeapObjectTag = 1;
 const int kWeakHeapObjectTag = 3;
 const int kHeapObjectTagSize = 2;
-const intptr_t kForwardingTag = 0b10;
-const intptr_t kForwardingMask = 0b11;
 const intptr_t kHeapObjectTagMask = (1 << kHeapObjectTagSize) - 1;
+
+const int kForwardingTag = 0;
+const int kForwardingTagSize = 2;
+const intptr_t kForwardingTagMask = (1 << kForwardingTagSize) - 1;
 
 // Tag information for Smi.
 const int kSmiTag = 0;
@@ -253,10 +255,10 @@ class Internals {
   // incremental GC once the external memory reaches this limit.
   static constexpr int kExternalAllocationSoftLimit = 64 * 1024 * 1024;
 
-  static const int kXorMask = 0x8ffffffc + 1;  // ensure two low-order bits are
-                                           // unchanged (tagging, weak ptr)
+  static const int kXorMask = 0x8fffffff;  // ensure two low-order bits are
+                                           // 0b10 (looks like a smi)
   static const uint64_t kMapWordSignature =
-      0xffff000000000000;  // these bits will be set only on a map word
+      0xffff000000000002;  // these bits will be set only on a map word
 
   V8_EXPORT static void CheckInitializedImpl(v8::Isolate* isolate);
   V8_INLINE static void CheckInitialized(v8::Isolate* isolate) {
