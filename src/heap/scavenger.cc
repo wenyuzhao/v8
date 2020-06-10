@@ -735,9 +735,9 @@ void Scavenger::AddEphemeronHashTable(EphemeronHashTable table) {
 void RootScavengeVisitor::VisitRootPointer(Root root, const char* description,
                                            FullObjectSlot p) {
   DCHECK(!HasWeakHeapObjectTag(*p));
-  if (!Internals::IsMapWord((*p).ptr())) {  // TODO(steveblackburn) performance!
-    ScavengePointer(p);
-  }
+  // TODO(steveblackburn) can we have fillers here?
+  DCHECK(!Internals::IsMapWord((*p).ptr()));
+  ScavengePointer(p);
 }
 
 void RootScavengeVisitor::VisitRootPointers(Root root, const char* description,
