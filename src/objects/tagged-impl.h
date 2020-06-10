@@ -103,6 +103,8 @@ class TaggedImpl {
     return Internals::IsMapWord(ptr_);  // TODO(steveblackburn) False positives!
   }
 
+  inline bool IsFillerMap(Isolate* isolate) const;
+
   // Returns true if this tagged value is a weak pointer to a HeapObject.
   constexpr inline bool IsWeak() const {
     return IsWeakOrCleared() && !IsCleared();

@@ -172,9 +172,15 @@ class ConcurrentMarkingVisitor final
 
     void VisitPointers(HeapObject host, ObjectSlot start,
                        ObjectSlot end) override {
+      Isolate* isolate;
+      auto success = GetIsolateFromHeapObject(host, &isolate);
+      DCHECK(success);
       for (ObjectSlot p = start; p < end; ++p) {
         Object object = p.Relaxed_Load();
-        if (!Internals::IsMapWord(object.ptr())) slot_snapshot_->add(p, object);
+        if (!object.IsFillerMap(isolate)) {
+          DCHECK(!Internals::IsMapWord(object.ptr()));
+          slot_snapshot_->add(p, object);
+        }
       }
     }
 
