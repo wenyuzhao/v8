@@ -418,8 +418,6 @@ SlotCallbackResult Scavenger::CheckAndScavengeObject(Heap* heap, TSlot slot) {
       "Only FullMaybeObjectSlot and MaybeObjectSlot are expected here");
   using THeapObjectSlot = typename TSlot::THeapObjectSlot;
   MaybeObject object = *slot;
-  if (Internals::IsMapWord(object->ptr()))  // TODO(steveblackburn) assumptions!
-    return REMOVE_SLOT;
   if (Heap::InFromPage(object)) {
     HeapObject heap_object = object->GetHeapObject();
 
