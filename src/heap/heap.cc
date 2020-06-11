@@ -3468,7 +3468,8 @@ class SlotCollectingVisitor final : public ObjectVisitor {
   void VisitPointers(HeapObject host, MaybeObjectSlot start,
                      MaybeObjectSlot end) final {
     for (MaybeObjectSlot p = start; p < end; ++p) {
-      if (!Internals::IsMapWord(p.Relaxed_Load().ptr())) slots_.push_back(p);
+      DCHECK(!Internals::IsMapWord(p.Relaxed_Load().ptr()));
+      slots_.push_back(p);
     }
   }
 
@@ -4130,7 +4131,9 @@ class OldToNewSlotVerifyingVisitor : public SlotVerifyingVisitor {
                        !Internals::IsMapWord(target.ptr()) &&
                        Heap::InYoungGeneration(target),
                    Heap::InToPage(target));
-    return target->IsStrongOrWeak() && !Internals::IsMapWord(target.ptr()) &&
+    DCHECK_IMPLIES(target->IsStrongOrWeak(),
+                   !Internals::IsMapWord(target.ptr()));
+    return target->IsStrongOrWeak() &&
            Heap::InYoungGeneration(target) && !Heap::InYoungGeneration(host);
   }
 
@@ -5857,8 +5860,8 @@ class UnreachableObjectsFilter : public HeapObjectsFilter {
       for (TSlot p = start; p < end; ++p) {
         typename TSlot::TObject object = p.load(isolate);
         HeapObject heap_object;
-        if (!Internals::IsMapWord(object.ptr()) &&
-            object.GetHeapObject(&heap_object)) {
+        if (object.GetHeapObject(&heap_object)) {
+          DCHECK(!Internals::IsMapWord(object.ptr()));
           MarkHeapObject(heap_object);
         }
       }
@@ -6322,11 +6325,7 @@ void VerifyPointersVisitor::VerifyPointersImpl(TSlot start, TSlot end) {
   for (TSlot slot = start; slot < end; ++slot) {
     typename TSlot::TObject object = slot.load(isolate);
     HeapObject heap_object;
-    if (Internals::IsMapWord(object.ptr())) {
-      //   Fix this, seeing map poiner with bogus address
-      //      Object map (Internals::UnPackMapWord((*slot).ptr()));
-      //      CHECK(Map::unchecked_cast(map).IsMap());
-    } else if (object.GetHeapObject(&heap_object)) {
+    if (object.GetHeapObject(&heap_object)) {
       VerifyHeapObjectImpl(heap_object);
     } else {
       CHECK(object.IsSmi() || object.IsCleared());
