@@ -175,6 +175,7 @@ class ConcurrentMarkingVisitor final
       Isolate* isolate;
       auto success = GetIsolateFromHeapObject(host, &isolate);
       DCHECK(success);
+      USE(success);
       for (ObjectSlot p = start; p < end; ++p) {
         Object object = p.Relaxed_Load();
         if (!object.IsFillerMap(isolate)) {
