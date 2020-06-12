@@ -485,8 +485,8 @@ void ScavengeVisitor::VisitPointersImpl(HeapObject host, TSlot start,
     typename TSlot::TObject object = *slot;
     HeapObject heap_object;
     // Treat weak references as strong.
-    if (object.GetHeapObjectIfNotFiller(
-            &heap_object)) {  // TODO(steveblackburn) performance!
+    if (object.GetHeapObject(&heap_object)) {
+      DCHECK(!Internals::IsMapWord(object.ptr()));
       VisitHeapObjectImpl(slot, heap_object);
     }
   }

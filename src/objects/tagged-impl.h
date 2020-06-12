@@ -124,12 +124,6 @@ class TaggedImpl {
   inline bool GetHeapObjectIfStrong(HeapObject* result) const;
   inline bool GetHeapObjectIfStrong(Isolate* isolate, HeapObject* result) const;
 
-  // If this tagged value is not a filler, returns true and
-  // sets *result. Otherwise returns false.
-  inline bool GetHeapObjectIfNotFiller(HeapObject* result) const;
-  inline bool GetHeapObjectIfNotFiller(Isolate* isolate,
-                                       HeapObject* result) const;
-
   // DCHECKs that this tagged value is a strong pointer to a HeapObject and
   // returns the HeapObject.
   inline HeapObject GetHeapObjectAssumeStrong() const;
