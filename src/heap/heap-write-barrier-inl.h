@@ -130,8 +130,8 @@ inline void GenerationalBarrier(HeapObject object, ObjectSlot slot,
                                 Object value) {
   if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) return;
   DCHECK(!HasWeakHeapObjectTag(value));
-  if (!value.IsHeapObjectNotFiller())
-    return; // TODO(steveblackburn) performance!
+  DCHECK(!Internals::IsMapWord(value.ptr()));
+  if (!value.IsHeapObject()) return;
   GenerationalBarrier(object, slot, HeapObject::cast(value));
 }
 
@@ -139,8 +139,7 @@ inline void GenerationalBarrier(HeapObject object, ObjectSlot slot,
                                 HeapObject value) {
   if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) return;
   DCHECK(!HasWeakHeapObjectTag(*slot));
-  if (!value.IsHeapObjectNotFiller())
-    return; // TODO(steveblackburn) performance!
+  DCHECK(!Internals::IsMapWord(value.ptr()));
   heap_internals::GenerationalBarrierInternal(object, slot.address(),
                                               HeapObject::cast(value));
 }
@@ -210,8 +209,8 @@ base::Optional<Heap*> WriteBarrier::GetHeapIfMarking(HeapObject object) {
 
 void WriteBarrier::Marking(HeapObject host, ObjectSlot slot, Object value) {
   DCHECK(!HasWeakHeapObjectTag(value));
-  if (!value.IsHeapObjectNotFiller())
-    return; // TODO(steveblackburn) performance!
+  DCHECK(!Internals::IsMapWord(value.ptr()));
+  if (!value.IsHeapObject()) return;
   Marking(host, HeapObjectSlot(slot), HeapObject::cast(value));
 }
 
@@ -225,8 +224,6 @@ void WriteBarrier::Marking(HeapObject host, MaybeObjectSlot slot,
 
 void WriteBarrier::Marking(HeapObject host, HeapObjectSlot slot,
                            HeapObject value) {
-  if (!value.IsHeapObjectNotFiller())
-    return; // TODO(steveblackburn) performance!
   DCHECK(!Internals::IsMapWord(value.ptr()));
   auto heap = GetHeapIfMarking(host);
   if (!heap) return;

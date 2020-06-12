@@ -74,11 +74,6 @@ class TaggedImpl {
   // Returns true if this tagged value is a strong pointer to a HeapObject.
   constexpr inline bool IsHeapObject() const { return IsStrong(); }
 
-  // Returns true if this tagged value is a strong pointer to a HeapObject.
-  constexpr inline bool IsHeapObjectNotFiller() const {
-    return IsStrong() && !IsFiller();
-  }
-
   // Returns true if this tagged value is a cleared weak reference.
   constexpr inline bool IsCleared() const {
     return kCanBeWeak &&
