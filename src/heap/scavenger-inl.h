@@ -418,6 +418,7 @@ SlotCallbackResult Scavenger::CheckAndScavengeObject(Heap* heap, TSlot slot) {
       "Only FullMaybeObjectSlot and MaybeObjectSlot are expected here");
   using THeapObjectSlot = typename TSlot::THeapObjectSlot;
   MaybeObject object = *slot;
+  DCHECK_IMPLIES(object->IsHeapObject(), !Internals::IsMapWord(object->ptr()));
   if (Heap::InFromPage(object)) {
     HeapObject heap_object = object->GetHeapObject();
 

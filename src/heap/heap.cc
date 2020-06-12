@@ -6326,6 +6326,7 @@ void VerifyPointersVisitor::VerifyPointersImpl(TSlot start, TSlot end) {
     typename TSlot::TObject object = slot.load(isolate);
     HeapObject heap_object;
     if (object.GetHeapObject(&heap_object)) {
+      DCHECK(!Internals::IsMapWord(object.ptr()));
       VerifyHeapObjectImpl(heap_object);
     } else {
       CHECK(object.IsSmi() || object.IsCleared());
