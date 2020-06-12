@@ -93,11 +93,6 @@ class TaggedImpl {
     return kCanBeWeak ? HAS_STRONG_HEAP_OBJECT_TAG(ptr_) : !IsSmi();
   }
 
-  // Returns true if this tagged value is a filler object.
-  constexpr inline bool IsFiller() const {
-    return Internals::IsMapWord(ptr_);  // TODO(steveblackburn) False positives!
-  }
-
   inline bool IsFillerMap(Isolate* isolate) const;
 
   // Returns true if this tagged value is a weak pointer to a HeapObject.
