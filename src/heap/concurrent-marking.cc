@@ -165,20 +165,16 @@ class ConcurrentMarkingVisitor final
   // Helper class for collecting in-object slot addresses and values.
   class SlotSnapshottingVisitor final : public ObjectVisitor {
    public:
-    explicit SlotSnapshottingVisitor(SlotSnapshot* slot_snapshot)
-        : slot_snapshot_(slot_snapshot) {
+    explicit SlotSnapshottingVisitor(Isolate* isolate, SlotSnapshot* slot_snapshot)
+        : slot_snapshot_(slot_snapshot), isolate_(isolate) {
       slot_snapshot_->clear();
     }
 
     void VisitPointers(HeapObject host, ObjectSlot start,
                        ObjectSlot end) override {
-      Isolate* isolate;
-      auto success = GetIsolateFromHeapObject(host, &isolate);
-      DCHECK(success);
-      USE(success);
       for (ObjectSlot p = start; p < end; ++p) {
         Object object = p.Relaxed_Load();
-        if (!object.IsFillerMap(isolate)) {
+        if (!object.IsFillerMap(isolate_)) {
           DCHECK(!Internals::IsMapWord(object.ptr()));
           slot_snapshot_->add(p, object);
         }
@@ -217,6 +213,7 @@ class ConcurrentMarkingVisitor final
 
    private:
     SlotSnapshot* slot_snapshot_;
+    Isolate* isolate_;
   };
 
   template <typename T>
@@ -283,7 +280,7 @@ class ConcurrentMarkingVisitor final
 
   template <typename T, typename TBodyDescriptor>
   const SlotSnapshot& MakeSlotSnapshot(Map map, T object, int size) {
-    SlotSnapshottingVisitor visitor(&slot_snapshot_);
+    SlotSnapshottingVisitor visitor(heap_->isolate(), &slot_snapshot_);
     visitor.VisitMapPointer(object);
     TBodyDescriptor::IterateBody(map, object, size, &visitor);
     return slot_snapshot_;
