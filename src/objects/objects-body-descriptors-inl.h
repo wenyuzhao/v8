@@ -134,14 +134,9 @@ DISABLE_CFI_PERF void BodyDescriptorBase::IteratePointers(HeapObject obj,
 template <typename ObjectVisitor>
 void BodyDescriptorBase::IteratePointer(HeapObject obj, int offset,
                                         ObjectVisitor* v) {
-  // DCHECK(offset != HeapObject::kMapOffset);  // TODO(steveblackburn) do we need
+  DCHECK(offset != HeapObject::kMapOffset);  // TODO(steveblackburn) do we need
                                              // anything here?
-  // TODO(wenyuzhao): seems we do need something here
-  if (offset == HeapObject::kMapOffset) {
-    v->VisitMapPointer(obj);
-  } else {
-    v->VisitPointer(obj, obj.RawField(offset));
-  }
+  v->VisitPointer(obj, obj.RawField(offset));
 }
 
 template <typename ObjectVisitor>
