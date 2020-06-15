@@ -674,11 +674,19 @@ MapWord MapWord::FromMap(const Map map) {
 }
 
 MapWord MapWord::FromMapNoCheck(const Map map) {
+#ifdef V8_MAP_PACKING
   return MapWord(Internals::PackMapWord(map.ptr()));
+#else
+  return MapWord(map.ptr());
+#endif
 }
 
 Map MapWord::ToMap() const {
+#ifdef V8_MAP_PACKING
   return Map::unchecked_cast(Object(Internals::UnPackMapWord(value_)));
+#else
+  return Map::unchecked_cast(Object(value_));
+#endif
 }
 
 bool MapWord::IsForwardingAddress() const { return (value_ & kForwardingTagMask) == kForwardingTag; }
@@ -803,10 +811,9 @@ ObjectSlot HeapObject::map_slot() const {
 }
 
 Object HeapObject::extract_map() {
-  ObjectSlot p = map_slot();
-  Object o(Internals::UnPackMapWord((*p).ptr()));
-  DCHECK(Map::unchecked_cast(o).IsMap());
-  return o;
+  auto map = map_slot().load_map();
+  DCHECK(map.IsMap());
+  return map;
 }
 
 DEF_GETTER(HeapObject, map_word, MapWord) {

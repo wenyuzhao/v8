@@ -258,7 +258,7 @@ Object TaggedImpl<kRefType, StorageType>::GetHeapObjectOrSmi(
 template <HeapObjectReferenceType kRefType, typename StorageType>
 bool TaggedImpl<kRefType, StorageType>::IsFillerMap(Isolate* isolate) const {
   auto roots = ReadOnlyRoots(isolate);
-  auto m = Internals::UnPackMapWord(static_cast<Address>(ptr_));
+  auto m = MapWord(static_cast<Address>(ptr_)).ToMap().ptr();
   return m == roots.one_pointer_filler_map().ptr() || m == roots.two_pointer_filler_map().ptr() || m == roots.free_space_map().ptr();
 }
 

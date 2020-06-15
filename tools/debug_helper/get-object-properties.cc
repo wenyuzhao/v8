@@ -149,7 +149,7 @@ TypedObject GetTypedHeapObject(uintptr_t address, d::MemoryAccessor accessor,
             std::move(heap_object)};
   }
 
-  map_ptr.value = v8::internal::Internals::UnPackMapWord(map_ptr.value);
+  DCHECK(!v8::internal::Internals::IsMapWord(map_ptr.value));
   Value<i::InstanceType> type =
       TqMap(map_ptr.value).GetInstanceTypeValue(accessor);
   if (type.validity == d::MemoryAccessResult::kOk) {
@@ -300,7 +300,7 @@ class ReadStringVisitor : public TqObjectVisitor {
     // The safest way to get the instance type is to use known map pointers, in
     // case the map data is not available.
     auto map_ptr = object->GetMapValue(accessor_);
-    map_ptr.value = v8::internal::Internals::UnPackMapWord(map_ptr.value);
+    DCHECK_IMPLIES(map_ptr.validity == d::MemoryAccessResult::kOk, !v8::internal::Internals::IsMapWord(map_ptr.value));
     uintptr_t map = GetOrFinish(map_ptr);
     if (done_) return false;
     auto instance_types = FindKnownMapInstanceTypes(map, heap_addresses_);
@@ -484,7 +484,7 @@ class AddInfoVisitor : public TqObjectVisitor {
     if (map_ptr.validity != d::MemoryAccessResult::kOk) {
       return;  // Can't read the JSObject. Nothing useful to do.
     }
-    map_ptr.value = v8::internal::Internals::UnPackMapWord(map_ptr.value);
+    DCHECK(!v8::internal::Internals::IsMapWord(map_ptr.value));
     TqMap map(map_ptr.value);
 
     // On JSObject instances, this value is the start of in-object properties.

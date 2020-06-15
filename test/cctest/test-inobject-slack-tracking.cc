@@ -105,7 +105,7 @@ bool IsObjectShrinkable(JSObject obj) {
   int unused = obj.map().UnusedPropertyFields();
   if (unused == 0) return false;
 
-  Address packed_filler = Internals::PackMapWord(filler_map->ptr());
+  Address packed_filler = MapWord(filler_map->ptr()).ToMap().ptr();
   for (int i = inobject_properties - unused; i < inobject_properties; i++) {
     if (packed_filler != GetFieldValue(obj, i).ptr()) {
       return false;

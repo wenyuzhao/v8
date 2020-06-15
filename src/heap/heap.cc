@@ -2860,7 +2860,7 @@ HeapObject CreateFillerObjectAtImpl(ReadOnlyRoots roots, Address addr, int size,
 
   // At this point, we may be deserializing the heap from a snapshot, and
   // none of the maps have been created yet and are nullptr.
-  DCHECK((filler.map_slot().contains_value(Internals::PackMapWord(kNullAddress)) &&
+  DCHECK((filler.map_slot().contains_map_value(kNullAddress) &&
           !Heap::FromWritableHeapObject(filler)->deserialization_complete()) ||
          filler.map().IsMap());
 
@@ -3080,7 +3080,7 @@ FixedArrayBase Heap::LeftTrimFixedArray(FixedArrayBase object,
   // performed on pages which are not concurrently swept creating a filler
   // object does not require synchronization.
   RELAXED_WRITE_FIELD(object, bytes_to_trim,
-                      Object(Internals::PackMapWord(map.ptr())));
+                      Object(MapWord::FromMapNoCheck(map).ptr()));
   RELAXED_WRITE_FIELD(object, bytes_to_trim + kTaggedSize,
                       Smi::FromInt(len - elements_to_trim));
 
