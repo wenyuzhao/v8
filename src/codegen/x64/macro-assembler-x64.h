@@ -420,6 +420,11 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
     j(less, dest);
   }
 
+#ifdef V8_MAP_PACKING
+  void PackMapWord(Register r);
+  void UnPackMapWord(Register r);
+#endif
+
   void LoadMapFromHeader(Register destination, Register object);
   void LoadMapFromHeader(Register destination, Operand field_operand);
 

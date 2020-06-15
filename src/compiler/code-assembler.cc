@@ -731,13 +731,24 @@ Node* CodeAssembler::LoadFromObject(MachineType type, TNode<HeapObject> object,
   return raw_assembler()->LoadFromObject(type, object, offset);
 }
 
+#ifdef V8_MAP_PACKING
+Node* CodeAssembler::PackMapWord(Node* value) {
+  return WordXor(value, IntPtrConstant(Internals::kXorMask));
+}
+
+Node* CodeAssembler::UnPackMapWord(Node* value) {
+  return WordXor(value, IntPtrConstant(Internals::kXorMask));
+}
+#endif
+
 Node* CodeAssembler::LoadFiller(RootIndex root_index) {
   DCHECK(root_index == RootIndex::kOnePointerFillerMap);
   Handle<Object> root = isolate()->root_handle(root_index);
   Node* map = HeapConstant(Handle<HeapObject>::cast(root));
   // TODO(steveblackburn) would be nice to use the xor'd constant
-  map = BitcastTaggedToWord(map);
-  map = WordXor(map, IntPtrConstant(Internals::kXorMask));
+#ifdef V8_MAP_PACKING
+  map = PackMapWord(map);
+#endif
   return BitcastWordToTagged(map);
 }
 

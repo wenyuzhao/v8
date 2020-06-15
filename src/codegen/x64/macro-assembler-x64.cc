@@ -199,6 +199,15 @@ void TurboAssembler::LoadTaggedPointerField(Register destination,
   RecordComment("]");
 }
 
+#ifdef V8_MAP_PACKING
+  void TurboAssembler::PackMapWord(Register r) {
+    xorq(r, Immediate(Internals::kXorMask));
+  }
+  void TurboAssembler::UnPackMapWord(Register r) {
+    xorq(r, Immediate(Internals::kXorMask));
+  }
+#endif
+
 void TurboAssembler::LoadMapFromHeader(Register destination, Register object) {
   LoadMapFromHeader(destination, FieldOperand(object, HeapObject::kMapOffset));
 }
@@ -207,7 +216,9 @@ void TurboAssembler::LoadMapFromHeader(Register destination,
                                        Operand field_operand) {
   RecordComment("[ LoadMapFromHeader");
   LoadTaggedPointerField(destination, field_operand);
-  xorq(destination, Immediate(Internals::kXorMask));
+#ifdef V8_MAP_PACKING
+  UnPackMapWord(destination);
+#endif
   RecordComment("]");
 }
 
@@ -279,9 +290,13 @@ void TurboAssembler::StoreMapToHeader(Operand dst_field_operand,
                                       Register value) {
   // TODO(steveblackburn) packing of map. See Internals::PackMapWord()
   RecordComment("[ StoreMapToHeader");
-  xorq(value, Immediate(Internals::kXorMask));
+#ifdef V8_MAP_PACKING
+  PackMapWord(value);
+#endif
   StoreTaggedField(dst_field_operand, value);
-  xorq(value, Immediate(Internals::kXorMask));
+#ifdef V8_MAP_PACKING
+  UnPackMapWord(value);
+#endif
   RecordComment("]");
 }
 

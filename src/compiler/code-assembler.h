@@ -744,6 +744,11 @@ class V8_EXPORT_PRIVATE CodeAssembler {
   Node* LoadFromObject(MachineType type, TNode<HeapObject> object,
                        TNode<IntPtrT> offset);
 
+#ifdef V8_MAP_PACKING
+  Node* PackMapWord(Node* value);
+  Node* UnPackMapWord(Node* value);
+#endif
+
   // Load a value from the root array.
   Node* LoadFiller(RootIndex root_index);
   TNode<Object> LoadRoot(RootIndex root_index);
