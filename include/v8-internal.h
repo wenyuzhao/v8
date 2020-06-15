@@ -285,8 +285,10 @@ class Internals {
 
   V8_INLINE static int GetInstanceType(const internal::Address obj) {
     typedef internal::Address A;
-    A mapword = ReadTaggedPointerField(obj, kHeapObjectMapOffset);
-    A map = UnPackMapWord(mapword);
+    A map = ReadTaggedPointerField(obj, kHeapObjectMapOffset);
+#ifdef V8_MAP_PACKING
+    map = UnPackMapWord(map);
+#endif
     return ReadRawField<uint16_t>(map, kMapInstanceTypeOffset);
   }
 
@@ -362,6 +364,7 @@ class Internals {
     return *reinterpret_cast<const T*>(addr);
   }
 
+#ifdef V8_MAP_PACKING
   V8_INLINE static constexpr internal::Address PackMapWord(internal::Address map) {
     return map ^ kXorMask;
   }
@@ -369,6 +372,7 @@ class Internals {
   V8_INLINE static constexpr internal::Address UnPackMapWord(internal::Address mapword) {
     return mapword ^ kXorMask;
   }
+#endif
 
   V8_INLINE static bool IsMapWord(internal::Address mw) {
     return (mw & kMapWordSignature) == kMapWordSignature;

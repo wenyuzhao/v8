@@ -283,6 +283,9 @@ declare_args() {
   # Experimental feature for always keeping prototypes in dict/"slow" mode
   # Sets -DV8_DICT_MODE_PROTOTYPES
   v8_dict_mode_prototypes = false
+
+  # Enable map packing & unpacking (sets -dV8_MAP_PACKING).
+  v8_enable_map_packing = true
 }
 
 # Derived defaults.
@@ -507,6 +510,9 @@ config("v8_header_features") {
 
   defines = []
 
+  if (v8_enable_map_packing) {
+    defines += [ "V8_MAP_PACKING" ]
+  }
   if (v8_enable_v8_checks) {
     defines += [ "V8_ENABLE_CHECKS" ]  # Used in "include/v8.h".
   }
