@@ -200,12 +200,12 @@ void TurboAssembler::LoadTaggedPointerField(Register destination,
 }
 
 #ifdef V8_MAP_PACKING
-  void TurboAssembler::PackMapWord(Register r) {
-    xorq(r, Immediate(Internals::kXorMask));
-  }
-  void TurboAssembler::UnPackMapWord(Register r) {
-    xorq(r, Immediate(Internals::kXorMask));
-  }
+void TurboAssembler::PackMapWord(Register r) {
+  xorq(r, Immediate(Internals::kXorMask));
+}
+void TurboAssembler::UnPackMapWord(Register r) {
+  xorq(r, Immediate(Internals::kXorMask));
+}
 #endif
 
 void TurboAssembler::LoadMapFromHeader(Register destination, Register object) {

@@ -4133,8 +4133,8 @@ class OldToNewSlotVerifyingVisitor : public SlotVerifyingVisitor {
                    Heap::InToPage(target));
     DCHECK_IMPLIES(target->IsStrongOrWeak(),
                    !Internals::IsMapWord(target.ptr()));
-    return target->IsStrongOrWeak() &&
-           Heap::InYoungGeneration(target) && !Heap::InYoungGeneration(host);
+    return target->IsStrongOrWeak() && Heap::InYoungGeneration(target) &&
+           !Heap::InYoungGeneration(host);
   }
 
   void VisitEphemeron(HeapObject host, int index, ObjectSlot key,

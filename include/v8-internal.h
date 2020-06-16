@@ -365,11 +365,13 @@ class Internals {
   }
 
 #ifdef V8_MAP_PACKING
-  V8_INLINE static constexpr internal::Address PackMapWord(internal::Address map) {
+  V8_INLINE static constexpr internal::Address PackMapWord(
+      internal::Address map) {
     return map ^ kXorMask;
   }
 
-  V8_INLINE static constexpr internal::Address UnPackMapWord(internal::Address mapword) {
+  V8_INLINE static constexpr internal::Address UnPackMapWord(
+      internal::Address mapword) {
     return mapword ^ kXorMask;
   }
 #endif

@@ -300,7 +300,8 @@ class ReadStringVisitor : public TqObjectVisitor {
     // The safest way to get the instance type is to use known map pointers, in
     // case the map data is not available.
     auto map_ptr = object->GetMapValue(accessor_);
-    DCHECK_IMPLIES(map_ptr.validity == d::MemoryAccessResult::kOk, !v8::internal::Internals::IsMapWord(map_ptr.value));
+    DCHECK_IMPLIES(map_ptr.validity == d::MemoryAccessResult::kOk,
+                   !v8::internal::Internals::IsMapWord(map_ptr.value));
     uintptr_t map = GetOrFinish(map_ptr);
     if (done_) return false;
     auto instance_types = FindKnownMapInstanceTypes(map, heap_addresses_);

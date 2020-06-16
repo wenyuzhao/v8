@@ -114,7 +114,7 @@ class FullObjectSlot : public SlotBase<FullObjectSlot, Address> {
   inline Object load(IsolateRoot isolate) const;
   inline void store(Object value) const;
   inline void store_map(Object value) const;
-  
+
   inline Map load_map() const;
 
   inline Object Acquire_Load() const;

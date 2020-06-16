@@ -689,7 +689,9 @@ Map MapWord::ToMap() const {
 #endif
 }
 
-bool MapWord::IsForwardingAddress() const { return (value_ & kForwardingTagMask) == kForwardingTag; }
+bool MapWord::IsForwardingAddress() const {
+  return (value_ & kForwardingTagMask) == kForwardingTag;
+}
 
 MapWord MapWord::FromForwardingAddress(HeapObject object) {
   return MapWord(object.ptr() - kHeapObjectTag);

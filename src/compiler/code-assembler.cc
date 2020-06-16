@@ -339,12 +339,11 @@ bool CodeAssembler::IsMapOffsetConstantMinusTag(Node* node) {
   if (m.HasValue() && m.IsInRange(std::numeric_limits<int32_t>::min(),
                                   std::numeric_limits<int32_t>::max())) {
     return static_cast<int32_t>(m.Value()) ==
-                HeapObject::kMapOffset - kHeapObjectTag;
+           HeapObject::kMapOffset - kHeapObjectTag;
   } else {
     return false;
   }
 }
-
 
 bool CodeAssembler::ToInt32Constant(Node* node, int32_t* out_value) {
   {
@@ -707,8 +706,8 @@ Node* CodeAssembler::AtomicLoad(MachineType type, Node* base, Node* offset) {
 
 Node* CodeAssembler::LoadFromObject(MachineType type, TNode<HeapObject> object,
                                     TNode<IntPtrT> offset) {
-  //Node* value = raw_assembler()->LoadFromObject(type, object, offset);
-  //if (IsMapOffsetConstant(offset)) {
+  // Node* value = raw_assembler()->LoadFromObject(type, object, offset);
+  // if (IsMapOffsetConstant(offset)) {
   //  if (IsAnyTagged(type.representation())) {
   //    value = BitcastTaggedToWord(value);
   //  }
@@ -717,7 +716,7 @@ Node* CodeAssembler::LoadFromObject(MachineType type, TNode<HeapObject> object,
   //    value = BitcastWordToTagged(value);
   //  }
   //}
-  //return value;
+  // return value;
   if (IsMapOffsetConstantMinusTag(offset)) {
     CHECK(IsAnyTagged(type.representation()));
     if (type == MachineType::TaggedPointer()) {

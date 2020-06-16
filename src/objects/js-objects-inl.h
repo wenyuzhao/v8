@@ -359,11 +359,13 @@ void JSObject::RawFastPropertyAtPut(FieldIndex index, Object value,
   }
 }
 
-void JSObject::RawFastPropertyAtPutNoWriteBarrier(FieldIndex index, Object value) {
+void JSObject::RawFastPropertyAtPutNoWriteBarrier(FieldIndex index,
+                                                  Object value) {
   if (index.is_inobject()) {
     RawFastInobjectPropertyAtPut(index, value, SKIP_WRITE_BARRIER);
   } else {
-    property_array().set(index.outobject_array_index(), value, SKIP_WRITE_BARRIER);
+    property_array().set(index.outobject_array_index(), value,
+                         SKIP_WRITE_BARRIER);
   }
 }
 

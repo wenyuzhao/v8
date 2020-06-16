@@ -165,7 +165,8 @@ class ConcurrentMarkingVisitor final
   // Helper class for collecting in-object slot addresses and values.
   class SlotSnapshottingVisitor final : public ObjectVisitor {
    public:
-    explicit SlotSnapshottingVisitor(Isolate* isolate, SlotSnapshot* slot_snapshot)
+    explicit SlotSnapshottingVisitor(Isolate* isolate,
+                                     SlotSnapshot* slot_snapshot)
         : slot_snapshot_(slot_snapshot), isolate_(isolate) {
       slot_snapshot_->clear();
     }
