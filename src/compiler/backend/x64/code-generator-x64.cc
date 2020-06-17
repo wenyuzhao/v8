@@ -297,6 +297,51 @@ class OutOfLineRecordWrite final : public OutOfLineCode {
   Zone* zone_;
 };
 
+class OutOfLineMapRecordWrite final : public OutOfLineCode {
+ public:
+  OutOfLineMapRecordWrite(CodeGenerator* gen, Register object, Operand operand,
+                       Register value, Register scratch0, Register scratch1,
+                       RecordWriteMode mode, StubCallMode stub_mode)
+      : OutOfLineCode(gen),
+        object_(object),
+        operand_(operand),
+        value_(value),
+        scratch0_(scratch0),
+        scratch1_(scratch1),
+        mode_(mode),
+        stub_mode_(stub_mode),
+        zone_(gen->zone()) {}
+
+  void Generate() final {
+    DCHECK(mode_ == RecordWriteMode::kValueIsMap);
+    if (COMPRESS_POINTERS_BOOL) {
+      __ DecompressTaggedPointer(value_, value_);
+    }
+    __ CheckPageFlag(value_, scratch0_,
+                     MemoryChunk::kPointersToHereAreInterestingMask, zero,
+                     exit());
+    __ leaq(scratch1_, operand_);
+
+    RememberedSetAction const remembered_set_action = OMIT_REMEMBERED_SET;
+    SaveFPRegsMode const save_fp_mode =
+        frame()->DidAllocateDoubleRegisters() ? kSaveFPRegs : kDontSaveFPRegs;
+    DCHECK(mode_ != RecordWriteMode::kValueIsEphemeronKey);
+    DCHECK(stub_mode_ != StubCallMode::kCallWasmRuntimeStub);
+    __ CallMapRecordWriteStub(object_, scratch1_, remembered_set_action,
+                              save_fp_mode);
+  }
+
+ private:
+  Register const object_;
+  Operand const operand_;
+  Register const value_;
+  Register const scratch0_;
+  Register const scratch1_;
+  RecordWriteMode const mode_;
+  StubCallMode const stub_mode_;
+  Zone* zone_;
+};
+
 class WasmOutOfLineTrap : public OutOfLineCode {
  public:
   WasmOutOfLineTrap(CodeGenerator* gen, Instruction* instr)
@@ -1182,16 +1227,14 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       Register value = i.InputRegister(index);
       Register scratch0 = i.TempRegister(0);
       Register scratch1 = i.TempRegister(1);
-      // TODO(wenyuzhao): Remove double stores
-      __ StoreTaggedField(operand, value);
+      __ StoreMapToHeader(operand, value);
       auto ool = new (zone())
-          OutOfLineRecordWrite(this, object, operand, value, scratch0, scratch1,
+          OutOfLineMapRecordWrite(this, object, operand, value, scratch0, scratch1,
                                mode, DetermineStubCallMode());
       __ CheckPageFlag(object, scratch0,
                        MemoryChunk::kPointersFromHereAreInterestingMask,
                        not_zero, ool->entry());
       __ bind(ool->exit());
-      __ StoreMapToHeader(operand, value);
       break;
     }
     case kArchWordPoisonOnSpeculation:

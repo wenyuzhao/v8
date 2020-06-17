@@ -102,6 +102,7 @@ bool IsUnexpectedCodeObject(Isolate* isolate, HeapObject obj) {
     case Builtins::kCEntry_Return1_DontSaveFPRegs_ArgvOnStack_NoBuiltinExit:
     case Builtins::kInterpreterEntryTrampoline:
     case Builtins::kRecordWrite:
+    case Builtins::kMapRecordWrite:
       return false;
     default:
       return true;

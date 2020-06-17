@@ -226,6 +226,7 @@ class StatsCounter;
   V(wasm_memory_copy, "wasm::memory_copy")                                     \
   V(wasm_memory_fill, "wasm::memory_fill")                                     \
   V(write_barrier_marking_from_code_function, "WriteBarrier::MarkingFromCode") \
+  V(write_barrier_map_marking_from_code_function, "WriteBarrier::MapMarkingFromCode") \
   V(call_enqueue_microtask_function, "MicrotaskQueue::CallEnqueueMicrotask")   \
   V(call_enter_context_function, "call_enter_context_function")                \
   V(atomic_pair_load_function, "atomic_pair_load_function")                    \

@@ -81,6 +81,7 @@ namespace internal {
   V(LoadWithReceiverAndVector)           \
   V(NoContext)                           \
   V(RecordWrite)                         \
+  V(MapRecordWrite)                      \
   V(ResumeGenerator)                     \
   V(RunMicrotasks)                       \
   V(RunMicrotasksEntry)                  \
@@ -893,6 +894,19 @@ class RecordWriteDescriptor final : public CallInterfaceDescriptor {
 
   DECLARE_DESCRIPTOR(RecordWriteDescriptor, CallInterfaceDescriptor)
 };
+
+#ifdef V8_TARGET_ARCH_X64
+class MapRecordWriteDescriptor final : public CallInterfaceDescriptor {
+ public:
+  DEFINE_PARAMETERS_NO_CONTEXT(kObject, kSlot, kRememberedSet, kFPMode)
+  DEFINE_PARAMETER_TYPES(MachineType::TaggedPointer(),  // kObject
+                         MachineType::Pointer(),        // kSlot
+                         MachineType::TaggedSigned(),   // kRememberedSet
+                         MachineType::TaggedSigned())   // kFPMode
+
+  DECLARE_DESCRIPTOR(MapRecordWriteDescriptor, CallInterfaceDescriptor)
+};
+#endif
 
 class EphemeronKeyBarrierDescriptor final : public CallInterfaceDescriptor {
  public:

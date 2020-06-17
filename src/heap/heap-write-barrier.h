@@ -54,6 +54,7 @@ class V8_EXPORT_PRIVATE WriteBarrier {
   static inline void Marking(DescriptorArray, int number_of_own_descriptors);
   // It is invoked from generated code and has to take raw addresses.
   static int MarkingFromCode(Address raw_host, Address raw_slot);
+  static int MapMarkingFromCode(Address raw_host, Address raw_slot);
 
   static void SetForThread(MarkingBarrier*);
   static void ClearForThread(MarkingBarrier*);

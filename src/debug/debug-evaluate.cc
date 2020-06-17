@@ -1026,6 +1026,7 @@ static bool TransitivelyCalledBuiltinHasNoSideEffect(Builtins::Name caller,
     case Builtins::kProxyIsExtensible:
     case Builtins::kProxyGetPrototypeOf:
     case Builtins::kRecordWrite:
+    case Builtins::kMapRecordWrite:
     case Builtins::kStringAdd_CheckNone:
     case Builtins::kStringEqual:
     case Builtins::kStringIndexOf:

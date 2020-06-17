@@ -34,6 +34,7 @@ namespace internal {
 #define BUILTIN_LIST_BASE(CPP, TFJ, TFC, TFS, TFH, ASM)                        \
   /* GC write barrirer */                                                      \
   TFC(RecordWrite, RecordWrite)                                                \
+  TFC(MapRecordWrite, MapRecordWrite)                                          \
   TFC(EphemeronKeyBarrier, EphemeronKeyBarrier)                                \
                                                                                \
   /* Adaptor for CPP builtin */                                                \

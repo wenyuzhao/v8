@@ -491,6 +491,58 @@ void TurboAssembler::CallRecordWriteStub(
   RestoreRegisters(registers);
 }
 
+void TurboAssembler::CallMapRecordWriteStub(
+    Register object, Register address,
+    RememberedSetAction remembered_set_action, SaveFPRegsMode fp_mode) {
+  CallMapRecordWriteStub(
+      object, address, remembered_set_action, fp_mode,
+      isolate()->builtins()->builtin_handle(Builtins::kMapRecordWrite),
+      kNullAddress);
+}
+
+void TurboAssembler::CallMapRecordWriteStub(
+    Register object, Register address,
+    RememberedSetAction remembered_set_action, SaveFPRegsMode fp_mode,
+    Handle<Code> code_target, Address wasm_target) {
+  DCHECK_NE(code_target.is_null(), wasm_target == kNullAddress);
+
+  MapRecordWriteDescriptor descriptor;
+  RegList registers = descriptor.allocatable_registers();
+
+  SaveRegisters(registers);
+
+  Register object_parameter(
+      descriptor.GetRegisterParameter(MapRecordWriteDescriptor::kObject));
+  Register slot_parameter(
+      descriptor.GetRegisterParameter(MapRecordWriteDescriptor::kSlot));
+  Register remembered_set_parameter(
+      descriptor.GetRegisterParameter(MapRecordWriteDescriptor::kRememberedSet));
+  Register fp_mode_parameter(
+      descriptor.GetRegisterParameter(MapRecordWriteDescriptor::kFPMode));
+
+  // Prepare argument registers for calling RecordWrite
+  // slot_parameter   <= address
+  // object_parameter <= object
+  MovePair(slot_parameter, address, object_parameter, object);
+
+  Smi smi_rsa = Smi::FromEnum(remembered_set_action);
+  Smi smi_fm = Smi::FromEnum(fp_mode);
+  Move(remembered_set_parameter, smi_rsa);
+  if (smi_rsa != smi_fm) {
+    Move(fp_mode_parameter, smi_fm);
+  } else {
+    movq(fp_mode_parameter, remembered_set_parameter);
+  }
+  if (code_target.is_null()) {
+    // Use {near_call} for direct Wasm call within a module.
+    near_call(wasm_target, RelocInfo::WASM_STUB_CALL);
+  } else {
+    Call(code_target, RelocInfo::CODE_TARGET);
+  }
+
+  RestoreRegisters(registers);
+}
+
 void MacroAssembler::RecordWrite(Register object, Register address,
                                  Register value, SaveFPRegsMode fp_mode,
                                  RememberedSetAction remembered_set_action,

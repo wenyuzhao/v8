@@ -68,5 +68,13 @@ int WriteBarrier::MarkingFromCode(Address raw_host, Address raw_slot) {
   return 0;
 }
 
+int WriteBarrier::MapMarkingFromCode(Address raw_host, Address raw_slot) {
+  HeapObject host = HeapObject::cast(Object(raw_host));
+  FullObjectSlot slot(raw_slot);
+  WriteBarrier::Marking(host, slot, slot.load_map());
+  // Called by RecordWriteCodeStubAssembler, which doesnt accept void type
+  return 0;
+}
+
 }  // namespace internal
 }  // namespace v8
