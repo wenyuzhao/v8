@@ -413,6 +413,7 @@ TF_BUILTIN(MapRecordWrite, RecordWriteCodeStubAssembler) {
   TNode<Smi> remembered_set =
       UncheckedCast<Smi>(Parameter(Descriptor::kRememberedSet));
   CSA_ASSERT(this, Word32BinaryNot(ShouldEmitRememberSet(remembered_set)));
+  USE(remembered_set);
 
   // BIND(&incremental_wb);
   {
