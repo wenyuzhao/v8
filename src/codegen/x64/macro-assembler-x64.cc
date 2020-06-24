@@ -515,8 +515,8 @@ void TurboAssembler::CallMapRecordWriteStub(
       descriptor.GetRegisterParameter(MapRecordWriteDescriptor::kObject));
   Register slot_parameter(
       descriptor.GetRegisterParameter(MapRecordWriteDescriptor::kSlot));
-  Register remembered_set_parameter(
-      descriptor.GetRegisterParameter(MapRecordWriteDescriptor::kRememberedSet));
+  Register remembered_set_parameter(descriptor.GetRegisterParameter(
+      MapRecordWriteDescriptor::kRememberedSet));
   Register fp_mode_parameter(
       descriptor.GetRegisterParameter(MapRecordWriteDescriptor::kFPMode));
 

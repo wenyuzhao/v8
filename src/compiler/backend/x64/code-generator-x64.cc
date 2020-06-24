@@ -300,8 +300,8 @@ class OutOfLineRecordWrite final : public OutOfLineCode {
 class OutOfLineMapRecordWrite final : public OutOfLineCode {
  public:
   OutOfLineMapRecordWrite(CodeGenerator* gen, Register object, Operand operand,
-                       Register value, Register scratch0, Register scratch1,
-                       RecordWriteMode mode, StubCallMode stub_mode)
+                          Register value, Register scratch0, Register scratch1,
+                          RecordWriteMode mode, StubCallMode stub_mode)
       : OutOfLineCode(gen),
         object_(object),
         operand_(operand),
@@ -1231,8 +1231,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       Register scratch1 = i.TempRegister(1);
       __ StoreMapToHeader(operand, value);
       auto ool = new (zone())
-          OutOfLineMapRecordWrite(this, object, operand, value, scratch0, scratch1,
-                               mode, DetermineStubCallMode());
+          OutOfLineMapRecordWrite(this, object, operand, value, scratch0,
+                                  scratch1, mode, DetermineStubCallMode());
       __ CheckPageFlag(object, scratch0,
                        MemoryChunk::kPointersFromHereAreInterestingMask,
                        not_zero, ool->entry());

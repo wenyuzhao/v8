@@ -106,10 +106,10 @@ class MarkingVerifier : public ObjectVisitor, public RootVisitor {
   }
 
   void VisitMapPointer(HeapObject object) override {
-
     Map map = Map::unchecked_cast(object.extract_map());
     VerifyMap(map);
-    // TODO(wenyuzhao): The following line does not work. `map` may lives in ReadOnlySpace
+    // TODO(wenyuzhao): The following line does not work. `map` may lives in
+    // ReadOnlySpace
     // CHECK_IMPLIES(IsBlackOrGrey(object), IsBlackOrGrey(map));
   }
 
@@ -2777,10 +2777,9 @@ class PointersUpdatingVisitor : public ObjectVisitor, public RootVisitor {
   void VisitPointers(HeapObject host, ObjectSlot start,
                      ObjectSlot end) override {
     for (ObjectSlot p = start; p < end; ++p) {
-      DCHECK_IMPLIES(
-        !p.Relaxed_Load().IsFillerMap(internal::GetIsolateFromWritableObject(host)),
-        !Internals::IsMapWord((*p).ptr())
-      );
+      DCHECK_IMPLIES(!p.Relaxed_Load().IsFillerMap(
+                         internal::GetIsolateFromWritableObject(host)),
+                     !Internals::IsMapWord((*p).ptr()));
       UpdateStrongSlotInternal(isolate_, p);
     }
   }
@@ -4353,10 +4352,9 @@ class YoungGenerationMarkingVisitor final
   template <typename TSlot>
   V8_INLINE void VisitPointersImpl(HeapObject host, TSlot start, TSlot end) {
     for (TSlot slot = start; slot < end; ++slot) {
-      DCHECK_IMPLIES(
-        !slot.Relaxed_Load().IsFillerMap(internal::GetIsolateFromWritableObject(host)),
-        !Internals::IsMapWord((*slot).ptr())
-      );
+      DCHECK_IMPLIES(!slot.Relaxed_Load().IsFillerMap(
+                         internal::GetIsolateFromWritableObject(host)),
+                     !Internals::IsMapWord((*slot).ptr()));
       VisitPointer(host, slot);
     }
   }

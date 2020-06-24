@@ -630,8 +630,8 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
                            RememberedSetAction remembered_set_action,
                            SaveFPRegsMode fp_mode, Address wasm_target);
   void CallMapRecordWriteStub(Register object, Register address,
-                           RememberedSetAction remembered_set_action,
-                           SaveFPRegsMode fp_mode);
+                              RememberedSetAction remembered_set_action,
+                              SaveFPRegsMode fp_mode);
   void CallEphemeronKeyBarrier(Register object, Register address,
                                SaveFPRegsMode fp_mode);
 
@@ -734,9 +734,9 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
                            Address wasm_target);
 
   void CallMapRecordWriteStub(Register object, Register address,
-                           RememberedSetAction remembered_set_action,
-                           SaveFPRegsMode fp_mode, Handle<Code> code_target,
-                           Address wasm_target);
+                              RememberedSetAction remembered_set_action,
+                              SaveFPRegsMode fp_mode, Handle<Code> code_target,
+                              Address wasm_target);
 };
 
 // MacroAssembler implements a collection of frequently used macros.
