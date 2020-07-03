@@ -293,10 +293,16 @@ Reduction MemoryLowering::ReduceAllocateRaw(
 Reduction MemoryLowering::ReduceLoadFromObject(Node* node) {
   DCHECK_EQ(IrOpcode::kLoadFromObject, node->opcode());
   ObjectAccess const& access = ObjectAccessOf(node->op());
-  NodeProperties::ChangeOp(node, machine()->Load(access.machine_type));
-  // if (IsMapOffsetConstant(node->InputAt(1))) {
-  //   node = __ WordXor(node, __ IntPtrConstant(Internals::kXorMask));
-  // }
+
+  MachineType m_type = access.machine_type;
+  bool load_from_header = IsMapOffsetConstant(node->InputAt(1));
+  if (load_from_header) {
+    DCHECK(IsAnyTagged(m_type.representation()));
+    CHECK_EQ(m_type.semantic(), MachineSemantic::kAny);
+    m_type = MachineType::MapPointerInHeader();
+  }
+
+  NodeProperties::ChangeOp(node, machine()->Load(m_type));
   return Changed(node);
 }
 

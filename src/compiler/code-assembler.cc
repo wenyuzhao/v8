@@ -706,27 +706,6 @@ Node* CodeAssembler::AtomicLoad(MachineType type, Node* base, Node* offset) {
 
 Node* CodeAssembler::LoadFromObject(MachineType type, TNode<HeapObject> object,
                                     TNode<IntPtrT> offset) {
-  // Node* value = raw_assembler()->LoadFromObject(type, object, offset);
-  // if (IsMapOffsetConstant(offset)) {
-  //  if (IsAnyTagged(type.representation())) {
-  //    value = BitcastTaggedToWord(value);
-  //  }
-  //  value = WordXor(value, IntPtrConstant(Internals::kXorMask));
-  //  if (IsAnyTagged(type.representation())) {
-  //    value = BitcastWordToTagged(value);
-  //  }
-  //}
-  // return value;
-  if (IsMapOffsetConstantMinusTag(offset)) {
-    CHECK(IsAnyTagged(type.representation()));
-    if (type == MachineType::TaggedPointer()) {
-      type = MachineType::MapPointerInHeader();
-    } else if (type == MachineType::AnyTagged()) {
-      type = MachineType::MapInHeader();
-    } else {
-      UNREACHABLE();
-    }
-  }
   return raw_assembler()->LoadFromObject(type, object, offset);
 }
 
