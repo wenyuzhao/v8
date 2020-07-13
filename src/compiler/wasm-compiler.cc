@@ -5688,7 +5688,7 @@ Node* WasmGraphBuilder::RefTest(Node* object, Node* rtt,
     need_done_label = true;
   }
 
-  Node* map = gasm_->Load(MachineType::TaggedPointer(), object,
+  Node* map = gasm_->Load(MachineType::MapPointerInHeader(), object,
                           HeapObject::kMapOffset - kHeapObjectTag);
   // TODO(7748): Add a fast path for map == rtt.
   Node* subtype_check = BuildChangeSmiToInt32(CALL_BUILTIN(
@@ -5721,7 +5721,7 @@ Node* WasmGraphBuilder::RefCast(Node* object, Node* rtt,
     TrapIfTrue(wasm::kTrapIllegalCast, gasm_->WordEqual(object, RefNull()),
                position);
   }
-  Node* map = gasm_->Load(MachineType::TaggedPointer(), object,
+  Node* map = gasm_->Load(MachineType::MapPointerInHeader(), object,
                           HeapObject::kMapOffset - kHeapObjectTag);
   // TODO(7748): Add a fast path for map == rtt.
   Node* check_result = BuildChangeSmiToInt32(CALL_BUILTIN(
