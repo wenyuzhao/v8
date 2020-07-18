@@ -67,7 +67,9 @@ class X64OperandGenerator final : public OperandGenerator {
       return false;
     }
     auto load_rep = LoadRepresentationOf(input->op());
+#ifdef V8_MAP_PACKING
     if (load_rep.in_header()) return false;
+#endif
     MachineRepresentation rep = load_rep.representation();
     switch (opcode) {
       case kX64And:
