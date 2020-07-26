@@ -421,12 +421,12 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   }
 
 #ifdef V8_MAP_PACKING
-  void PackMapWord(Register r);
-  void UnPackMapWord(Register r);
+  void PackMapWord(Register r, Register temp);
+  void UnPackMapWord(Register r, Register temp);
 #endif
 
-  void LoadMapFromHeader(Register destination, Register object);
-  void LoadMapFromHeader(Register destination, Operand field_operand);
+  void LoadMapFromHeader(Register destination, Register object, Register temp);
+  void LoadMapFromHeader(Register destination, Operand field_operand, Register temp);
 
   void Move(Register dst, Smi source);
 
@@ -705,7 +705,7 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   void StoreTaggedField(Operand dst_field_operand, Immediate immediate);
   void StoreTaggedField(Operand dst_field_operand, Register value);
   void StoreMapToHeader(Operand dst_field_operand, Immediate immediate);
-  void StoreMapToHeader(Operand dst_field_operand, Register value);
+  void StoreMapToHeader(Operand dst_field_operand, Register value, Register temp);
 
   // The following macros work even when pointer compression is not enabled.
   void DecompressTaggedSigned(Register destination, Operand field_operand);

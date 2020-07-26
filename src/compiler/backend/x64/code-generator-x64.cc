@@ -1229,7 +1229,17 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       Register value = i.InputRegister(index);
       Register scratch0 = i.TempRegister(0);
       Register scratch1 = i.TempRegister(1);
-      __ StoreMapToHeader(operand, value);
+      Register r = rax;
+      if ((operand.AddressUsesRegister(rax) && value == rbx) || (operand.AddressUsesRegister(rbx) && value == rax)) {
+        r = rcx;
+      } else if (operand.AddressUsesRegister(rax) || value == rax) {
+        r = rbx;
+      } else {
+        r = rax;
+      }
+      __ pushq(r);
+      __ StoreMapToHeader(operand, value, r);
+      __ popq(r);
       auto ool = zone()->New<OutOfLineMapRecordWrite>(this, object, operand, value,
                                                    scratch0, scratch1, mode,
                                                    DetermineStubCallMode());
@@ -2189,7 +2199,18 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       if (HasImmediateInput(instr, index)) {
         __ StoreMapToHeader(operand, i.InputImmediate(index));
       } else {
-        __ StoreMapToHeader(operand, i.InputRegister(index));
+        Register dst = i.InputRegister(index);
+        Register r = rax;
+        if ((operand.AddressUsesRegister(rax) && dst == rbx) || (operand.AddressUsesRegister(rbx) && dst == rax)) {
+          r = rcx;
+        } else if (operand.AddressUsesRegister(rax) || dst == rax) {
+          r = rbx;
+        } else {
+          r = rax;
+        }
+        __ pushq(r);
+        __ StoreMapToHeader(operand, dst, r);
+        __ popq(r);
       }
       break;
     }
@@ -2208,14 +2229,18 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       }
       EmitWordLoadPoisoningIfNeeded(this, opcode, instr, i);
       break;
-    case kX64MapFromHeader:
+    case kX64MapFromHeader: {
       CHECK(instr->HasOutput());
       EmitOOLTrapIfNeeded(zone(), this, opcode, instr, __ pc_offset());
       // __ movq(i.OutputRegister(), i.MemoryOperand());
-      __ LoadMapFromHeader(i.OutputRegister(), i.MemoryOperand());
+      Register r = i.OutputRegister() == rax ? rbx : rax;
+      __ pushq(r);
+      __ LoadMapFromHeader(i.OutputRegister(), i.MemoryOperand(), r);
+      __ popq(r);
       EmitWordLoadPoisoningIfNeeded(this, opcode, instr, i);
       // UNREACHABLE();
       break;
+    }
     case kX64Movss:
       EmitOOLTrapIfNeeded(zone(), this, opcode, instr, __ pc_offset());
       if (instr->HasOutput()) {

@@ -711,11 +711,13 @@ Node* CodeAssembler::LoadFromObject(MachineType type, TNode<HeapObject> object,
 
 #ifdef V8_MAP_PACKING
 Node* CodeAssembler::PackMapWord(Node* value) {
-  return WordXor(value, IntPtrConstant(Internals::kXorMask));
+  // return WordXor(value, IntPtrConstant(Internals::kXorMask));
+  return WordOr(WordXor(value, IntPtrConstant(Internals::kXorMask)), IntPtrConstant(1ull << 48));
 }
 
 Node* CodeAssembler::UnPackMapWord(Node* value) {
-  return WordXor(value, IntPtrConstant(Internals::kXorMask));
+  // return WordXor(value, IntPtrConstant(Internals::kXorMask));
+  return WordXor(WordAnd(value, IntPtrConstant(~(1ull << 48))), IntPtrConstant(Internals::kXorMask));
 }
 #endif
 

@@ -1102,7 +1102,9 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
   Label push_stack_frame;
   // Check if feedback vector is valid. If valid, check for optimized code
   // and update invocation count. Otherwise, setup the stack frame.
-  __ LoadMapFromHeader(rcx, feedback_vector);
+  __ pushq(rax);
+  __ LoadMapFromHeader(rcx, feedback_vector, rax);
+  __ popq(rax);
   __ CmpInstanceType(rcx, FEEDBACK_VECTOR_TYPE);
   __ j(not_equal, &push_stack_frame);
 
@@ -2035,7 +2037,9 @@ void Builtins::Generate_CallOrConstructVarargs(MacroAssembler* masm,
     Label ok, fail;
     __ AssertNotSmi(rbx);
     Register map = r9;
-    __ LoadMapFromHeader(map, rbx);
+    __ pushq(rax);
+    __ LoadMapFromHeader(map, rbx, rax);
+    __ popq(rax);
     __ CmpInstanceType(map, FIXED_ARRAY_TYPE);
     __ j(equal, &ok);
     __ CmpInstanceType(map, FIXED_DOUBLE_ARRAY_TYPE);
@@ -2122,7 +2126,9 @@ void Builtins::Generate_CallOrConstructForwardVarargs(MacroAssembler* masm,
   if (mode == CallOrConstructMode::kConstruct) {
     Label new_target_constructor, new_target_not_constructor;
     __ JumpIfSmi(rdx, &new_target_not_constructor, Label::kNear);
-    __ LoadMapFromHeader(rbx, rdx);
+    __ pushq(rax);
+    __ LoadMapFromHeader(rbx, rdx, rax);
+    __ popq(rax);
     __ testb(FieldOperand(rbx, Map::kBitFieldOffset),
              Immediate(Map::Bits1::IsConstructorBit::kMask));
     __ j(not_zero, &new_target_constructor, Label::kNear);
@@ -2575,7 +2581,9 @@ void Builtins::Generate_Construct(MacroAssembler* masm) {
   __ JumpIfSmi(rdi, &non_constructor);
 
   // Check if target has a [[Construct]] internal method.
-  __ LoadMapFromHeader(rcx, rdi);
+  __ pushq(rax);
+  __ LoadMapFromHeader(rcx, rdi, rax);
+  __ popq(rax);
   __ testb(FieldOperand(rcx, Map::kBitFieldOffset),
            Immediate(Map::Bits1::IsConstructorBit::kMask));
   __ j(zero, &non_constructor);
@@ -3805,7 +3813,9 @@ void CallApiFunctionAndReturn(MacroAssembler* masm, Register function_address,
   Register map = rcx;
 
   __ JumpIfSmi(return_value, &ok, Label::kNear);
-  __ LoadMapFromHeader(map, return_value);
+  __ pushq(rbx);
+  __ LoadMapFromHeader(map, return_value, rbx);
+  __ popq(rbx);
   __ CmpInstanceType(map, LAST_NAME_TYPE);
   __ j(below_equal, &ok, Label::kNear);
 

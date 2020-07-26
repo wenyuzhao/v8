@@ -255,7 +255,7 @@ class Internals {
   // incremental GC once the external memory reaches this limit.
   static constexpr int kExternalAllocationSoftLimit = 64 * 1024 * 1024;
 
-  static const int kXorMask = 0x8fffffff;  // ensure two low-order bits are
+  static const int kXorMask = 0b11;  // ensure two low-order bits are
                                            // 0b10 (looks like a smi)
   static const uint64_t kMapWordSignature =
       0xffff000000000002;  // these bits will be set only on a map word
@@ -367,12 +367,14 @@ class Internals {
 #ifdef V8_MAP_PACKING
   V8_INLINE static constexpr internal::Address PackMapWord(
       internal::Address map) {
-    return map ^ kXorMask;
+    // return map ^ kXorMask;
+    return (map ^ kXorMask) | (1ull << 48);
   }
 
   V8_INLINE static constexpr internal::Address UnPackMapWord(
       internal::Address mapword) {
-    return mapword ^ kXorMask;
+    // return mapword ^ kXorMask;
+    return (mapword & ~(1ull << 48)) ^ kXorMask;
   }
 #endif
 
