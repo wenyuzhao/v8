@@ -5769,7 +5769,7 @@ Node* WasmGraphBuilder::BrOnCast(Node* object, Node* rtt,
   }
 
   // At this point, {object} is neither null nor an i31ref/Smi.
-  Node* map = gasm_->Load(MachineType::TaggedPointer(), object,
+  Node* map = gasm_->Load(MachineType::MapPointerInHeader(), object,
                           HeapObject::kMapOffset - kHeapObjectTag);
   // TODO(7748): Add a fast path for map == rtt.
   Node* subtype_check = BuildChangeSmiToInt32(CALL_BUILTIN(
