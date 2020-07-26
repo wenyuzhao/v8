@@ -1230,9 +1230,9 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       Register scratch0 = i.TempRegister(0);
       Register scratch1 = i.TempRegister(1);
       __ StoreMapToHeader(operand, value);
-      auto ool = new (zone())
-          OutOfLineMapRecordWrite(this, object, operand, value, scratch0,
-                                  scratch1, mode, DetermineStubCallMode());
+      auto ool = zone()->New<OutOfLineMapRecordWrite>(this, object, operand, value,
+                                                   scratch0, scratch1, mode,
+                                                   DetermineStubCallMode());
       __ CheckPageFlag(object, scratch0,
                        MemoryChunk::kPointersFromHereAreInterestingMask,
                        not_zero, ool->entry());
