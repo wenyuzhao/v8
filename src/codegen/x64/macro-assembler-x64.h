@@ -57,6 +57,18 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
  public:
   using TurboAssemblerBase::TurboAssemblerBase;
 
+#ifdef V8_MAP_PACKING
+  static constexpr size_t kMapPackingTempRegisters = 2;
+  static constexpr size_t kMapUnpackingTempRegisters = 1;
+  static constexpr size_t kMapLoadTempRegisters = 1;
+  static constexpr size_t kMapStoreTempRegisters = 2;
+#else
+  static constexpr size_t kMapPackingTempRegisters = 0;
+  static constexpr size_t kMapUnpackingTempRegisters = 0;
+  static constexpr size_t kMapLoadTempRegisters = 0;
+  static constexpr size_t kMapStoreTempRegisters = 0;
+#endif
+
   template <typename Dst, typename... Args>
   struct AvxHelper {
     Assembler* assm;
@@ -421,12 +433,12 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   }
 
 #ifdef V8_MAP_PACKING
-  void PackMapWord(Register r, Register temp);
-  void UnPackMapWord(Register r, Register temp);
+  void PackMapWord(Register r, const std::array<Register, kMapPackingTempRegisters>& temp);
+  void UnPackMapWord(Register r, const std::array<Register, kMapUnpackingTempRegisters>& temp);
 #endif
 
-  void LoadMapFromHeader(Register destination, Register object, Register temp);
-  void LoadMapFromHeader(Register destination, Operand field_operand, Register temp);
+  void LoadMapFromHeader(Register destination, Register object, const std::array<Register, kMapLoadTempRegisters>& temp);
+  void LoadMapFromHeader(Register destination, Operand field_operand, const std::array<Register, kMapLoadTempRegisters>& temp);
 
   void Move(Register dst, Smi source);
 
@@ -705,7 +717,7 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   void StoreTaggedField(Operand dst_field_operand, Immediate immediate);
   void StoreTaggedField(Operand dst_field_operand, Register value);
   void StoreMapToHeader(Operand dst_field_operand, Immediate immediate);
-  void StoreMapToHeader(Operand dst_field_operand, Register value, Register temp);
+  void StoreMapToHeader(Operand dst_field_operand, Register value, const std::array<Register, kMapStoreTempRegisters>& temp);
 
   // The following macros work even when pointer compression is not enabled.
   void DecompressTaggedSigned(Register destination, Operand field_operand);

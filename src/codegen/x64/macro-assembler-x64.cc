@@ -200,34 +200,34 @@ void TurboAssembler::LoadTaggedPointerField(Register destination,
 }
 
 #ifdef V8_MAP_PACKING
-void TurboAssembler::PackMapWord(Register r, Register temp) {
+void TurboAssembler::PackMapWord(Register r, const std::array<Register, kMapPackingTempRegisters>& temp) {
   // xorq(r, Immediate(Internals::kXorMask));
 
-  movq(temp, Immediate64(Internals::kXorMask));
-  xorq(r, temp);
-  movq(temp, Immediate64(1ull << 48));
-  orq(r, temp);
+  movq(temp[0], Immediate64(Internals::kXorMask));
+  xorq(r, temp[0]);
+  movq(temp[0], Immediate64(1ull << 48));
+  orq(r, temp[0]);
 }
-void TurboAssembler::UnPackMapWord(Register r, Register temp) {
+void TurboAssembler::UnPackMapWord(Register r, const std::array<Register, kMapUnpackingTempRegisters>& temp) {
   // xorq(r, Immediate(Internals::kXorMask));
 
-  movq(temp, Immediate64(~(1ull << 48)));
-  andq(r, temp);
-  movq(temp, Immediate64(Internals::kXorMask));
-  xorq(r, temp);
+  movq(temp[0], Immediate64(~(1ull << 48)));
+  andq(r, temp[0]);
+  movq(temp[0], Immediate64(Internals::kXorMask));
+  xorq(r, temp[0]);
 }
 #endif
 
-void TurboAssembler::LoadMapFromHeader(Register destination, Register object, Register temp) {
-  LoadMapFromHeader(destination, FieldOperand(object, HeapObject::kMapOffset), temp);
+void TurboAssembler::LoadMapFromHeader(Register destination, Register object, const std::array<Register, kMapLoadTempRegisters>& temps) {
+  LoadMapFromHeader(destination, FieldOperand(object, HeapObject::kMapOffset), temps);
 }
 
 void TurboAssembler::LoadMapFromHeader(Register destination,
-                                       Operand field_operand, Register temp) {
+                                       Operand field_operand, const std::array<Register, kMapLoadTempRegisters>& temps) {
   RecordComment("[ LoadMapFromHeader");
   LoadTaggedPointerField(destination, field_operand);
 #ifdef V8_MAP_PACKING
-  UnPackMapWord(destination, temp);
+  UnPackMapWord(destination, temps);
 #endif
   RecordComment("]");
 }
@@ -297,15 +297,15 @@ void TurboAssembler::StoreMapToHeader(Operand dst_field_operand,
 }
 
 void TurboAssembler::StoreMapToHeader(Operand dst_field_operand,
-                                      Register value, Register temp) {
+                                      Register value, const std::array<Register, kMapStoreTempRegisters>& temps) {
   // TODO(steveblackburn) packing of map. See Internals::PackMapWord()
   RecordComment("[ StoreMapToHeader");
 #ifdef V8_MAP_PACKING
-  PackMapWord(value, temp);
+  PackMapWord(value, temps);
 #endif
   StoreTaggedField(dst_field_operand, value);
 #ifdef V8_MAP_PACKING
-  UnPackMapWord(value, temp);
+  UnPackMapWord(value, { temps[0] });
 #endif
   RecordComment("]");
 }
@@ -2260,7 +2260,7 @@ void TurboAssembler::Ret(int bytes_dropped, Register scratch) {
 
 void MacroAssembler::CmpObjectType(Register heap_object, InstanceType type,
                                    Register map) {
-  Register r = rax; 
+  Register r = rax;
   if ((heap_object == rax && map == rbx) || (heap_object == rbx && map == rax)) {
     r = rcx;
   } else if (heap_object == rax || map == rax) {
@@ -2269,7 +2269,7 @@ void MacroAssembler::CmpObjectType(Register heap_object, InstanceType type,
     r = rax;
   }
   Push(r);
-  LoadMapFromHeader(map, heap_object, r);
+  LoadMapFromHeader(map, heap_object, {r});
   Pop(r);
   CmpInstanceType(map, type);
 }
@@ -2315,7 +2315,7 @@ void MacroAssembler::AssertConstructor(Register object) {
     Push(object);
     Register r = object == rax ? rbx : rax;
     Push(r);
-    LoadMapFromHeader(object, object, r);
+    LoadMapFromHeader(object, object, {r});
     Pop(r);
     testb(FieldOperand(object, Map::kBitFieldOffset),
           Immediate(Map::Bits1::IsConstructorBit::kMask));
@@ -2356,7 +2356,7 @@ void MacroAssembler::AssertGeneratorObject(Register object) {
   Push(object);
   Register r = object == rax ? rbx : rax;
   Push(r);
-  LoadMapFromHeader(map, object, r);
+  LoadMapFromHeader(map, object, {r});
   Pop(r);
 
   Label do_check;
@@ -2387,7 +2387,7 @@ void MacroAssembler::AssertUndefinedOrAllocationSite(Register object) {
     Push(object);
     Register r = object == rax ? rbx : rax;
     Push(r);
-    LoadMapFromHeader(map, object, r);
+    LoadMapFromHeader(map, object, {r});
     Pop(r);
     Cmp(map, isolate()->factory()->allocation_site_map());
     Pop(object);
@@ -2883,7 +2883,7 @@ void MacroAssembler::LoadNativeContextSlot(int index, Register dst) {
   // Load native context.
   Register r = dst == rax ? rbx : rax;
   Push(r);
-  LoadMapFromHeader(dst, rsi, r);
+  LoadMapFromHeader(dst, rsi, {r});
   Pop(r);
   LoadTaggedPointerField(
       dst,

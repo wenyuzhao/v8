@@ -460,7 +460,13 @@ void InstructionSelector::VisitLoad(Node* node, Node* value,
     CHECK_NE(poisoning_level_, PoisoningMitigationLevel::kDontPoison);
     code |= MiscField::encode(kMemoryAccessPoisoned);
   }
-  Emit(code, 1, outputs, input_count, inputs);
+  InstructionOperand temps[TurboAssembler::kMapLoadTempRegisters];
+  if (opcode == kX64MapFromHeader) {
+    for (size_t i = 0; i < TurboAssembler::kMapLoadTempRegisters; i++) {
+      temps[i] = g.TempRegister();
+    }
+  }
+  Emit(code, 1, outputs, input_count, inputs, opcode == kX64MapFromHeader ? arraysize(temps) : 0, temps);
 }
 
 void InstructionSelector::VisitLoad(Node* node) {
@@ -496,13 +502,20 @@ void InstructionSelector::VisitStore(Node* node) {
         g.UseUniqueRegister(value)};
     RecordWriteMode record_write_mode =
         WriteBarrierKindToRecordWriteMode(write_barrier_kind);
-    InstructionOperand temps[] = {g.TempRegister(), g.TempRegister()};
+    constexpr size_t kMinTempRegisters = 2;
+    constexpr size_t kTempRegisters = TurboAssembler::kMapStoreTempRegisters > kMinTempRegisters ? TurboAssembler::kMapStoreTempRegisters : kMinTempRegisters;
+    InstructionOperand temps[kTempRegisters] = { g.TempRegister(), g.TempRegister() };
+    if (store_rep.store_to_header()) {
+      for (size_t i = 2; i < kTempRegisters; i++) {
+        temps[i] = g.TempRegister();
+      }
+    }
     InstructionCode code = store_rep.store_to_header()
                                ? kArchStoreMapToHeaderWithWriteBarrier
                                : kArchStoreWithWriteBarrier;
     code |= AddressingModeField::encode(addressing_mode);
     code |= MiscField::encode(static_cast<int>(record_write_mode));
-    Emit(code, 0, nullptr, arraysize(inputs), inputs, arraysize(temps), temps);
+    Emit(code, 0, nullptr, arraysize(inputs), inputs, store_rep.store_to_header() ? kTempRegisters : kMinTempRegisters, temps);;
   } else {
     ArchOpcode opcode = GetStoreOpcode(store_rep);
     InstructionOperand inputs[4];
@@ -517,10 +530,16 @@ void InstructionSelector::VisitStore(Node* node) {
       value = value->InputAt(0);
     }
     InstructionOperand value_operand =
-        g.CanBeImmediate(value) ? g.UseImmediate(value) : g.UseRegister(value);
+        g.CanBeImmediate(value) ? g.UseImmediate(value) : g.UseUniqueRegister(value);
     inputs[input_count++] = value_operand;
+    InstructionOperand temps[TurboAssembler::kMapStoreTempRegisters];
+    if (opcode == kX64MapToHeader) {
+      for (size_t i = 0; i < TurboAssembler::kMapStoreTempRegisters; i++) {
+        temps[i] = g.TempRegister();
+      }
+    }
     Emit(code, 0, static_cast<InstructionOperand*>(nullptr), input_count,
-         inputs);
+         inputs, opcode == kX64MapToHeader ? arraysize(temps) : 0, temps);
   }
 }
 

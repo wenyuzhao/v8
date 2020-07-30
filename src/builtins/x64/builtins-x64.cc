@@ -1103,7 +1103,7 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
   // Check if feedback vector is valid. If valid, check for optimized code
   // and update invocation count. Otherwise, setup the stack frame.
   __ pushq(rax);
-  __ LoadMapFromHeader(rcx, feedback_vector, rax);
+  __ LoadMapFromHeader(rcx, feedback_vector, {rax});
   __ popq(rax);
   __ CmpInstanceType(rcx, FEEDBACK_VECTOR_TYPE);
   __ j(not_equal, &push_stack_frame);
@@ -2038,7 +2038,7 @@ void Builtins::Generate_CallOrConstructVarargs(MacroAssembler* masm,
     __ AssertNotSmi(rbx);
     Register map = r9;
     __ pushq(rax);
-    __ LoadMapFromHeader(map, rbx, rax);
+    __ LoadMapFromHeader(map, rbx, {rax});
     __ popq(rax);
     __ CmpInstanceType(map, FIXED_ARRAY_TYPE);
     __ j(equal, &ok);
@@ -2127,7 +2127,7 @@ void Builtins::Generate_CallOrConstructForwardVarargs(MacroAssembler* masm,
     Label new_target_constructor, new_target_not_constructor;
     __ JumpIfSmi(rdx, &new_target_not_constructor, Label::kNear);
     __ pushq(rax);
-    __ LoadMapFromHeader(rbx, rdx, rax);
+    __ LoadMapFromHeader(rbx, rdx, {rax});
     __ popq(rax);
     __ testb(FieldOperand(rbx, Map::kBitFieldOffset),
              Immediate(Map::Bits1::IsConstructorBit::kMask));
@@ -2582,7 +2582,7 @@ void Builtins::Generate_Construct(MacroAssembler* masm) {
 
   // Check if target has a [[Construct]] internal method.
   __ pushq(rax);
-  __ LoadMapFromHeader(rcx, rdi, rax);
+  __ LoadMapFromHeader(rcx, rdi, {rax});
   __ popq(rax);
   __ testb(FieldOperand(rcx, Map::kBitFieldOffset),
            Immediate(Map::Bits1::IsConstructorBit::kMask));
@@ -3814,7 +3814,7 @@ void CallApiFunctionAndReturn(MacroAssembler* masm, Register function_address,
 
   __ JumpIfSmi(return_value, &ok, Label::kNear);
   __ pushq(rbx);
-  __ LoadMapFromHeader(map, return_value, rbx);
+  __ LoadMapFromHeader(map, return_value, {rbx});
   __ popq(rbx);
   __ CmpInstanceType(map, LAST_NAME_TYPE);
   __ j(below_equal, &ok, Label::kNear);
