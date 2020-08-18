@@ -204,7 +204,7 @@ void TurboAssembler::PackMapWord(Register r, const std::array<Register, kMapPack
   xorq(r, Immediate(Internals::kXorMask));
 }
 void TurboAssembler::UnPackMapWord(Register r, const std::array<Register, kMapUnpackingTempRegisters>& temp) {
-  movq(temp[0], Immediate64(~(1ull << 48)));
+  movq(temp[0], Immediate64(~Internals::kMapWordMetadataMask));
   andq(r, temp[0]);
   xorq(r, Immediate(Internals::kXorMask));
 }

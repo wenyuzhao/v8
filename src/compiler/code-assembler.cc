@@ -716,7 +716,7 @@ Node* CodeAssembler::PackMapWord(Node* value) {
 
 Node* CodeAssembler::UnPackMapWord(Node* value) {
   // return WordXor(value, IntPtrConstant(Internals::kXorMask));
-  return WordXor(WordAnd(value, IntPtrConstant(~(1ull << 48))), IntPtrConstant(Internals::kXorMask));
+  return WordXor(WordAnd(value, IntPtrConstant(~Internals::kMapWordMetadataMask)), IntPtrConstant(Internals::kXorMask));
 }
 #endif
 
