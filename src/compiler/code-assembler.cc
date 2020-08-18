@@ -711,8 +711,7 @@ Node* CodeAssembler::LoadFromObject(MachineType type, TNode<HeapObject> object,
 
 #ifdef V8_MAP_PACKING
 Node* CodeAssembler::PackMapWord(Node* value) {
-  // return WordXor(value, IntPtrConstant(Internals::kXorMask));
-  return WordOr(WordXor(value, IntPtrConstant(Internals::kXorMask)), IntPtrConstant(1ull << 48));
+  return WordXor(value, IntPtrConstant(Internals::kXorMask));
 }
 
 Node* CodeAssembler::UnPackMapWord(Node* value) {

@@ -466,7 +466,7 @@ void InstructionSelector::VisitLoad(Node* node, Node* value,
       temps[i] = g.TempRegister();
     }
   }
-  Emit(code, 1, outputs, input_count, inputs, opcode == kX64MapFromHeader ? arraysize(temps) : 0, temps);
+  Emit(code, 1, outputs, input_count, inputs, opcode == kX64MapFromHeader ? TurboAssembler::kMapLoadTempRegisters : 0, temps);
 }
 
 void InstructionSelector::VisitLoad(Node* node) {
@@ -539,7 +539,7 @@ void InstructionSelector::VisitStore(Node* node) {
       }
     }
     Emit(code, 0, static_cast<InstructionOperand*>(nullptr), input_count,
-         inputs, opcode == kX64MapToHeader ? arraysize(temps) : 0, temps);
+         inputs, opcode == kX64MapToHeader ? TurboAssembler::kMapStoreTempRegisters : 0, temps);
   }
 }
 

@@ -201,12 +201,7 @@ void TurboAssembler::LoadTaggedPointerField(Register destination,
 
 #ifdef V8_MAP_PACKING
 void TurboAssembler::PackMapWord(Register r, const std::array<Register, kMapPackingTempRegisters>& temp) {
-  // xorq(r, Immediate(Internals::kXorMask));
-
-  movq(temp[0], Immediate64(Internals::kXorMask));
-  xorq(r, temp[0]);
-  movq(temp[0], Immediate64(1ull << 48));
-  orq(r, temp[0]);
+  xorq(r, Immediate(Internals::kXorMask));
 }
 void TurboAssembler::UnPackMapWord(Register r, const std::array<Register, kMapUnpackingTempRegisters>& temp) {
   // xorq(r, Immediate(Internals::kXorMask));
@@ -2260,6 +2255,7 @@ void TurboAssembler::Ret(int bytes_dropped, Register scratch) {
 
 void MacroAssembler::CmpObjectType(Register heap_object, InstanceType type,
                                    Register map) {
+#ifdef V8_MAP_PACKING
   Register r = rax;
   if ((heap_object == rax && map == rbx) || (heap_object == rbx && map == rax)) {
     r = rcx;
@@ -2271,6 +2267,9 @@ void MacroAssembler::CmpObjectType(Register heap_object, InstanceType type,
   Push(r);
   LoadMapFromHeader(map, heap_object, {r});
   Pop(r);
+#else
+  LoadMapFromHeader(map, heap_object, {});
+#endif
   CmpInstanceType(map, type);
 }
 
@@ -2313,10 +2312,14 @@ void MacroAssembler::AssertConstructor(Register object) {
     testb(object, Immediate(kSmiTagMask));
     Check(not_equal, AbortReason::kOperandIsASmiAndNotAConstructor);
     Push(object);
+#ifdef V8_MAP_PACKING
     Register r = object == rax ? rbx : rax;
     Push(r);
     LoadMapFromHeader(object, object, {r});
     Pop(r);
+#else
+    LoadMapFromHeader(object, object, {});
+#endif
     testb(FieldOperand(object, Map::kBitFieldOffset),
           Immediate(Map::Bits1::IsConstructorBit::kMask));
     Pop(object);
@@ -2354,10 +2357,14 @@ void MacroAssembler::AssertGeneratorObject(Register object) {
   // Load map
   Register map = object;
   Push(object);
+#ifdef V8_MAP_PACKING
   Register r = object == rax ? rbx : rax;
   Push(r);
   LoadMapFromHeader(map, object, {r});
   Pop(r);
+#else
+  LoadMapFromHeader(map, object, {});
+#endif
 
   Label do_check;
   // Check if JSGeneratorObject
@@ -2385,10 +2392,14 @@ void MacroAssembler::AssertUndefinedOrAllocationSite(Register object) {
     j(equal, &done_checking);
     Register map = object;
     Push(object);
+#ifdef V8_MAP_PACKING
     Register r = object == rax ? rbx : rax;
     Push(r);
     LoadMapFromHeader(map, object, {r});
     Pop(r);
+#else
+    LoadMapFromHeader(map, object, {});
+#endif
     Cmp(map, isolate()->factory()->allocation_site_map());
     Pop(object);
     Assert(equal, AbortReason::kExpectedUndefinedOrCell);
@@ -2881,10 +2892,14 @@ static const int kRegisterPassedArguments = 6;
 
 void MacroAssembler::LoadNativeContextSlot(int index, Register dst) {
   // Load native context.
+#ifdef V8_MAP_PACKING
   Register r = dst == rax ? rbx : rax;
   Push(r);
   LoadMapFromHeader(dst, rsi, {r});
   Pop(r);
+#else
+  LoadMapFromHeader(dst, rsi, {});
+#endif
   LoadTaggedPointerField(
       dst,
       FieldOperand(dst, Map::kConstructorOrBackPointerOrNativeContextOffset));

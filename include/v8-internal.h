@@ -367,8 +367,7 @@ class Internals {
 #ifdef V8_MAP_PACKING
   V8_INLINE static constexpr internal::Address PackMapWord(
       internal::Address map) {
-    // return map ^ kXorMask;
-    return (map ^ kXorMask) | (1ull << 48);
+    return map ^ kXorMask;
   }
 
   V8_INLINE static constexpr internal::Address UnPackMapWord(
