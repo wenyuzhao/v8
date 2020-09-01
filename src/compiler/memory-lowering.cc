@@ -418,6 +418,11 @@ Reduction MemoryLowering::ReduceStoreToObject(Node* node,
   Node* object = node->InputAt(0);
   Node* offset = node->InputAt(1);
   Node* value = node->InputAt(2);
+
+  Node* effect = NodeProperties::GetEffectInput(node);
+  Node* control = NodeProperties::GetControlInput(node);
+  __ InitializeEffectControl(effect, control);
+
   MachineType m_type = access.machine_type;
   bool store_to_header = IsMapOffsetConstant(offset);
   // DCHECK_IMPLIES(store_to_header, m_type ==
@@ -431,6 +436,12 @@ Reduction MemoryLowering::ReduceStoreToObject(Node* node,
                  access.write_barrier_kind == kMapWriteBarrier);
   WriteBarrierKind write_barrier_kind = ComputeWriteBarrierKind(
       node, object, value, state, access.write_barrier_kind);
+#ifdef V8_MAP_PACKING_IR_LEVEL
+  if (store_to_header) {
+    auto mapword = __ PackMapWord(TNode<Map>::UncheckedCast(value));
+    node->ReplaceInput(2, mapword);
+  }
+#endif
   NodeProperties::ChangeOp(node, machine()->Store(StoreRepresentation(
                                      m_type.representation(),
                                      write_barrier_kind, m_type.in_header())));
@@ -464,6 +475,11 @@ Reduction MemoryLowering::ReduceStoreField(Node* node,
   MachineType m_type = access.machine_type;
   Node* object = node->InputAt(0);
   Node* value = node->InputAt(1);
+
+  Node* effect = NodeProperties::GetEffectInput(node);
+  Node* control = NodeProperties::GetControlInput(node);
+  __ InitializeEffectControl(effect, control);
+
   bool store_to_header = (access.offset == HeapObject::kMapOffset &&
                           access.base_is_tagged != kUntaggedBase);
   // DCHECK_IMPLIES(store_to_header, m_type ==
@@ -477,6 +493,12 @@ Reduction MemoryLowering::ReduceStoreField(Node* node,
       node, object, value, state, access.write_barrier_kind);
   Node* offset = __ IntPtrConstant(access.offset - access.tag());
   node->InsertInput(graph_zone(), 1, offset);
+#ifdef V8_MAP_PACKING_IR_LEVEL
+  if (store_to_header) {
+    auto mapword =  __ PackMapWord(TNode<Map>::UncheckedCast(value));
+    node->ReplaceInput(2, mapword);
+  }
+#endif
   NodeProperties::ChangeOp(node, machine()->Store(StoreRepresentation(
                                      m_type.representation(),
                                      write_barrier_kind, m_type.in_header())));

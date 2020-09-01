@@ -292,11 +292,11 @@ void TurboAssembler::StoreMapToHeader(Operand dst_field_operand,
                                       Register value, const std::array<Register, kMapStoreTempRegisters>& temps) {
   // TODO(steveblackburn) packing of map. See Internals::PackMapWord()
   RecordComment("[ StoreMapToHeader");
-#ifdef V8_MAP_PACKING
+#if defined(V8_MAP_PACKING) && !defined(V8_MAP_PACKING_IR_LEVEL)
   PackMapWord(value, temps);
 #endif
   StoreTaggedField(dst_field_operand, value);
-#ifdef V8_MAP_PACKING
+#if defined(V8_MAP_PACKING) && !defined(V8_MAP_PACKING_IR_LEVEL)
   UnPackMapWord(value, { temps[0] });
 #endif
   RecordComment("]");

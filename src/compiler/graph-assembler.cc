@@ -536,6 +536,12 @@ Node* JSGraphAssembler::StoreField(FieldAccess const& access, Node* object,
                                   value, effect(), control()));
 }
 
+#ifdef V8_MAP_PACKING_IR_LEVEL
+Node* JSGraphAssembler::PackMapWord(TNode<Map> map) {
+  return WordXor(map, IntPtrConstant(Internals::kXorMask));
+}
+#endif
+
 Node* JSGraphAssembler::StoreElement(ElementAccess const& access, Node* object,
                                      Node* index, Node* value) {
   return AddNode(graph()->NewNode(simplified()->StoreElement(access), object,

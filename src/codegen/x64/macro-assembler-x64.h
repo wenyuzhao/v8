@@ -58,14 +58,18 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   using TurboAssemblerBase::TurboAssemblerBase;
 
 #ifdef V8_MAP_PACKING
-  static constexpr size_t kMapPackingTempRegisters = 1;
   static constexpr size_t kMapUnpackingTempRegisters = 1;
   static constexpr size_t kMapLoadTempRegisters = 1;
+#else
+  static constexpr size_t kMapUnpackingTempRegisters = 0;
+  static constexpr size_t kMapLoadTempRegisters = 0;
+#endif
+
+#if defined(V8_MAP_PACKING) && !defined(V8_MAP_PACKING_IR_LEVEL)
+  static constexpr size_t kMapPackingTempRegisters = 1;
   static constexpr size_t kMapStoreTempRegisters = 1;
 #else
   static constexpr size_t kMapPackingTempRegisters = 0;
-  static constexpr size_t kMapUnpackingTempRegisters = 0;
-  static constexpr size_t kMapLoadTempRegisters = 0;
   static constexpr size_t kMapStoreTempRegisters = 0;
 #endif
 

@@ -811,6 +811,10 @@ class V8_EXPORT_PRIVATE JSGraphAssembler : public GraphAssembler {
   JSGRAPH_SINGLETON_CONSTANT_LIST(SINGLETON_CONST_TEST_DECL)
 #undef SINGLETON_CONST_TEST_DECL
 
+#ifdef V8_MAP_PACKING_IR_LEVEL
+  Node* PackMapWord(TNode<Map> map);
+#endif
+
   Node* Allocate(AllocationType allocation, Node* size);
   Node* LoadField(FieldAccess const&, Node* object);
   template <typename T>
