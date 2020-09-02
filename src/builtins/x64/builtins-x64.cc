@@ -1103,9 +1103,9 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
   // Check if feedback vector is valid. If valid, check for optimized code
   // and update invocation count. Otherwise, setup the stack frame.
 #ifdef V8_MAP_PACKING
-  __ pushq(rax);
-  __ LoadMapFromHeader(rcx, feedback_vector, {rax});
-  __ popq(rax);
+  // __ pushq(rax);
+  __ LoadMapFromHeader(rcx, feedback_vector, {});
+  // __ popq(rax);
 #else
   __ LoadMapFromHeader(rcx, feedback_vector, {});
 #endif
@@ -2042,9 +2042,9 @@ void Builtins::Generate_CallOrConstructVarargs(MacroAssembler* masm,
     __ AssertNotSmi(rbx);
     Register map = r9;
 #ifdef V8_MAP_PACKING
-    __ pushq(rax);
-    __ LoadMapFromHeader(map, rbx, {rax});
-    __ popq(rax);
+    // __ pushq(rax);
+    __ LoadMapFromHeader(map, rbx, {});
+    // __ popq(rax);
 #else
     __ LoadMapFromHeader(map, rbx, {});
 #endif
@@ -2135,9 +2135,9 @@ void Builtins::Generate_CallOrConstructForwardVarargs(MacroAssembler* masm,
     Label new_target_constructor, new_target_not_constructor;
     __ JumpIfSmi(rdx, &new_target_not_constructor, Label::kNear);
 #ifdef V8_MAP_PACKING
-    __ pushq(rax);
-    __ LoadMapFromHeader(rbx, rdx, {rax});
-    __ popq(rax);
+    // __ pushq(rax);
+    __ LoadMapFromHeader(rbx, rdx, {});
+    // __ popq(rax);
 #else
     __ LoadMapFromHeader(rbx, rdx, {});
 #endif
@@ -2594,9 +2594,9 @@ void Builtins::Generate_Construct(MacroAssembler* masm) {
 
   // Check if target has a [[Construct]] internal method.
 #ifdef V8_MAP_PACKING
-  __ pushq(rax);
-  __ LoadMapFromHeader(rcx, rdi, {rax});
-  __ popq(rax);
+  // __ pushq(rax);
+  __ LoadMapFromHeader(rcx, rdi, {});
+  // __ popq(rax);
 #else
   __ LoadMapFromHeader(rcx, rdi, {});
 #endif
@@ -3830,9 +3830,9 @@ void CallApiFunctionAndReturn(MacroAssembler* masm, Register function_address,
 
   __ JumpIfSmi(return_value, &ok, Label::kNear);
 #ifdef V8_MAP_PACKING
-  __ pushq(rbx);
-  __ LoadMapFromHeader(map, return_value, {rbx});
-  __ popq(rbx);
+  // __ pushq(rbx);
+  __ LoadMapFromHeader(map, return_value, {});
+  // __ popq(rbx);
 #else
   __ LoadMapFromHeader(map, return_value, {});
 #endif

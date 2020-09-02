@@ -204,8 +204,8 @@ void TurboAssembler::PackMapWord(Register r, const std::array<Register, kMapPack
   xorq(r, Immediate(Internals::kXorMask));
 }
 void TurboAssembler::UnPackMapWord(Register r, const std::array<Register, kMapUnpackingTempRegisters>& temp) {
-  movq(temp[0], Immediate64(~Internals::kMapWordMetadataMask));
-  andq(r, temp[0]);
+  shlq(r, Immediate(8));
+  shrq(r, Immediate(8));
   xorq(r, Immediate(Internals::kXorMask));
 }
 #endif
@@ -2253,17 +2253,17 @@ void TurboAssembler::Ret(int bytes_dropped, Register scratch) {
 void MacroAssembler::CmpObjectType(Register heap_object, InstanceType type,
                                    Register map) {
 #ifdef V8_MAP_PACKING
-  Register r = rax;
-  if ((heap_object == rax && map == rbx) || (heap_object == rbx && map == rax)) {
-    r = rcx;
-  } else if (heap_object == rax || map == rax) {
-    r = rbx;
-  } else {
-    r = rax;
-  }
-  Push(r);
-  LoadMapFromHeader(map, heap_object, {r});
-  Pop(r);
+  // Register r = rax;
+  // if ((heap_object == rax && map == rbx) || (heap_object == rbx && map == rax)) {
+  //   r = rcx;
+  // } else if (heap_object == rax || map == rax) {
+  //   r = rbx;
+  // } else {
+  //   r = rax;
+  // }
+  // Push(r);
+  LoadMapFromHeader(map, heap_object, {});
+  // Pop(r);
 #else
   LoadMapFromHeader(map, heap_object, {});
 #endif
@@ -2310,10 +2310,10 @@ void MacroAssembler::AssertConstructor(Register object) {
     Check(not_equal, AbortReason::kOperandIsASmiAndNotAConstructor);
     Push(object);
 #ifdef V8_MAP_PACKING
-    Register r = object == rax ? rbx : rax;
-    Push(r);
-    LoadMapFromHeader(object, object, {r});
-    Pop(r);
+    // Register r = object == rax ? rbx : rax;
+    // Push(r);
+    LoadMapFromHeader(object, object, {});
+    // Pop(r);
 #else
     LoadMapFromHeader(object, object, {});
 #endif
@@ -2355,10 +2355,10 @@ void MacroAssembler::AssertGeneratorObject(Register object) {
   Register map = object;
   Push(object);
 #ifdef V8_MAP_PACKING
-  Register r = object == rax ? rbx : rax;
-  Push(r);
-  LoadMapFromHeader(map, object, {r});
-  Pop(r);
+  // Register r = object == rax ? rbx : rax;
+  // Push(r);
+  LoadMapFromHeader(map, object, {});
+  // Pop(r);
 #else
   LoadMapFromHeader(map, object, {});
 #endif
@@ -2390,10 +2390,10 @@ void MacroAssembler::AssertUndefinedOrAllocationSite(Register object) {
     Register map = object;
     Push(object);
 #ifdef V8_MAP_PACKING
-    Register r = object == rax ? rbx : rax;
-    Push(r);
-    LoadMapFromHeader(map, object, {r});
-    Pop(r);
+    // Register r = object == rax ? rbx : rax;
+    // Push(r);
+    LoadMapFromHeader(map, object, {});
+    // Pop(r);
 #else
     LoadMapFromHeader(map, object, {});
 #endif
@@ -2890,10 +2890,10 @@ static const int kRegisterPassedArguments = 6;
 void MacroAssembler::LoadNativeContextSlot(int index, Register dst) {
   // Load native context.
 #ifdef V8_MAP_PACKING
-  Register r = dst == rax ? rbx : rax;
-  Push(r);
-  LoadMapFromHeader(dst, rsi, {r});
-  Pop(r);
+  // Register r = dst == rax ? rbx : rax;
+  // Push(r);
+  LoadMapFromHeader(dst, rsi, {});
+  // Pop(r);
 #else
   LoadMapFromHeader(dst, rsi, {});
 #endif
