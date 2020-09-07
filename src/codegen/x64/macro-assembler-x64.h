@@ -628,9 +628,6 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   void CallRecordWriteStub(Register object, Register address,
                            RememberedSetAction remembered_set_action,
                            SaveFPRegsMode fp_mode, Address wasm_target);
-  void CallMapRecordWriteStub(Register object, Register address,
-                              RememberedSetAction remembered_set_action,
-                              SaveFPRegsMode fp_mode);
   void CallEphemeronKeyBarrier(Register object, Register address,
                                SaveFPRegsMode fp_mode);
 
@@ -703,8 +700,6 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   // location.
   void StoreTaggedField(Operand dst_field_operand, Immediate immediate);
   void StoreTaggedField(Operand dst_field_operand, Register value);
-  void StoreMapToHeader(Operand dst_field_operand, Immediate immediate);
-  void StoreMapToHeader(Operand dst_field_operand, Register value);
 
   // The following macros work even when pointer compression is not enabled.
   void DecompressTaggedSigned(Register destination, Operand field_operand);
@@ -731,11 +726,6 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
                            RememberedSetAction remembered_set_action,
                            SaveFPRegsMode fp_mode, Handle<Code> code_target,
                            Address wasm_target);
-
-  void CallMapRecordWriteStub(Register object, Register address,
-                              RememberedSetAction remembered_set_action,
-                              SaveFPRegsMode fp_mode, Handle<Code> code_target,
-                              Address wasm_target);
 };
 
 // MacroAssembler implements a collection of frequently used macros.

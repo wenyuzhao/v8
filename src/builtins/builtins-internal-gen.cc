@@ -405,60 +405,6 @@ TF_BUILTIN(RecordWrite, RecordWriteCodeStubAssembler) {
   Return(TrueConstant());
 }
 
-TF_BUILTIN(MapRecordWrite, RecordWriteCodeStubAssembler) {
-  Label generational_wb(this);
-  Label incremental_wb(this);
-  Label exit(this);
-
-  TNode<Smi> remembered_set =
-      UncheckedCast<Smi>(Parameter(Descriptor::kRememberedSet));
-  CSA_ASSERT(this, Word32BinaryNot(ShouldEmitRememberSet(remembered_set)));
-  USE(remembered_set);
-
-  // BIND(&incremental_wb);
-  {
-    Label call_incremental_wb(this);
-
-    TNode<IntPtrT> slot = UncheckedCast<IntPtrT>(Parameter(Descriptor::kSlot));
-    TNode<IntPtrT> value =
-        BitcastTaggedToWord(Load(MachineType::TaggedPointer(), slot));
-#ifdef V8_MAP_PACKING
-    value = TNode<IntPtrT>::UncheckedCast(UnPackMapWord(value));
-#endif
-    // There are two cases we need to call incremental write barrier.
-    // 1) value_is_white
-    GotoIf(IsWhite(value), &call_incremental_wb);
-
-    // 2) is_compacting && value_in_EC && obj_isnt_skip
-    // is_compacting = true when is_marking = true
-    GotoIfNot(IsPageFlagSet(value, MemoryChunk::kEvacuationCandidateMask),
-              &exit);
-
-    TNode<IntPtrT> object = BitcastTaggedToWord(Parameter(Descriptor::kObject));
-    Branch(
-        IsPageFlagSet(object, MemoryChunk::kSkipEvacuationSlotsRecordingMask),
-        &exit, &call_incremental_wb);
-
-    BIND(&call_incremental_wb);
-    {
-      TNode<ExternalReference> function = ExternalConstant(
-          ExternalReference::write_barrier_map_marking_from_code_function());
-      TNode<ExternalReference> isolate_constant =
-          ExternalConstant(ExternalReference::isolate_address(isolate()));
-      TNode<Smi> fp_mode = UncheckedCast<Smi>(Parameter(Descriptor::kFPMode));
-      TNode<IntPtrT> object =
-          BitcastTaggedToWord(Parameter(Descriptor::kObject));
-      CallCFunction3WithCallerSavedRegistersMode<Int32T, IntPtrT, IntPtrT,
-                                                 ExternalReference>(
-          function, object, slot, isolate_constant, fp_mode, &exit);
-    }
-  }
-
-  BIND(&exit);
-  IncrementCounter(isolate()->counters()->write_barriers(), 1);
-  Return(TrueConstant());
-}
-
 TF_BUILTIN(EphemeronKeyBarrier, RecordWriteCodeStubAssembler) {
   Label exit(this);
 

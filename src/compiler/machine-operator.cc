@@ -594,7 +594,6 @@ ShiftKind ShiftKindOf(Operator const* op) {
   V(Pointer)                 \
   V(TaggedSigned)            \
   V(TaggedPointer)           \
-  V(MapPointerInHeader)      \
   V(MapInHeader)             \
   V(AnyTagged)               \
   V(CompressedPointer)       \
@@ -1175,8 +1174,7 @@ const Operator* MachineOperatorBuilder::Load(LoadRepresentation rep) {
   if (rep == MachineType::Type()) {                                    \
     return GetCachedLoadOperator<MachineType::Type().representation(), \
                                  MachineType::Type().semantic()>(      \
-        rep == MachineType::MapInHeader() ||                           \
-        rep == MachineType::MapPointerInHeader());                     \
+        rep == MachineType::MapInHeader());                            \
   }
   MACHINE_TYPE_LIST(LOAD)
 #undef LOAD

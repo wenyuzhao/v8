@@ -38,7 +38,7 @@ AccessBuilder::ForMap() {  // TODO(steveblackburn) --> this should be covered in
   FieldAccess access = {
       kTaggedBase,           HeapObject::kMapOffset,
       MaybeHandle<Name>(),   MaybeHandle<Map>(),
-      Type::OtherInternal(), MachineType::MapPointerInHeader(),
+      Type::OtherInternal(), MachineType::MapInHeader(),
       kMapWriteBarrier};
   return access;
 }

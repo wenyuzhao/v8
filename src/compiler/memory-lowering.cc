@@ -299,7 +299,7 @@ Reduction MemoryLowering::ReduceLoadFromObject(Node* node) {
   if (load_from_header) {
     DCHECK(IsAnyTagged(m_type.representation()));
     CHECK_EQ(m_type.semantic(), MachineSemantic::kAny);
-    m_type = MachineType::MapPointerInHeader();
+    m_type = MachineType::MapInHeader();
   }
 
   NodeProperties::ChangeOp(node, machine()->Load(m_type));
@@ -430,7 +430,7 @@ Reduction MemoryLowering::ReduceStoreToObject(Node* node,
   if (store_to_header) {
     CHECK_EQ(m_type.representation(), MachineRepresentation::kTaggedPointer);
     CHECK_EQ(m_type.semantic(), MachineSemantic::kAny);
-    m_type = MachineType::MapPointerInHeader();
+    m_type = MachineType::MapInHeader();
   }
   DCHECK_IMPLIES(store_to_header,
                  access.write_barrier_kind == kMapWriteBarrier);
@@ -484,7 +484,7 @@ Reduction MemoryLowering::ReduceStoreField(Node* node,
                           access.base_is_tagged != kUntaggedBase);
   // DCHECK_IMPLIES(store_to_header, m_type ==
   // MachineType::MapPointerInHeader());
-  if (store_to_header) m_type = MachineType::MapPointerInHeader();
+  if (store_to_header) m_type = MachineType::MapInHeader();
   DCHECK_IMPLIES(m_type.in_header(),
                  (access.write_barrier_kind == kMapWriteBarrier ||
                   access.write_barrier_kind == kNoWriteBarrier ||

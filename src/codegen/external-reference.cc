@@ -223,8 +223,6 @@ struct IsValidExternalReferenceType<Result (Class::*)(Args...)> {
 
 FUNCTION_REFERENCE(write_barrier_marking_from_code_function,
                    WriteBarrier::MarkingFromCode)
-FUNCTION_REFERENCE(write_barrier_map_marking_from_code_function,
-                   WriteBarrier::MapMarkingFromCode)
 
 FUNCTION_REFERENCE(insert_remembered_set_function,
                    Heap::InsertIntoRememberedSetFromCode)

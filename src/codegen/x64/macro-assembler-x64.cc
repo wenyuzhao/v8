@@ -190,13 +190,11 @@ void TurboAssembler::CompareRoot(Operand with, RootIndex index) {
 
 void TurboAssembler::LoadTaggedPointerField(Register destination,
                                             Operand field_operand) {
-  RecordComment("[ LoadTaggedPointerField");
   if (COMPRESS_POINTERS_BOOL) {
     DecompressTaggedPointer(destination, field_operand);
   } else {
     mov_tagged(destination, field_operand);
   }
-  RecordComment("]");
 }
 
 #ifdef V8_MAP_PACKING
@@ -213,12 +211,10 @@ void TurboAssembler::LoadMapFromHeader(Register destination, Register object) {
 
 void TurboAssembler::LoadMapFromHeader(Register destination,
                                        Operand field_operand) {
-  RecordComment("[ LoadMapFromHeader");
   LoadTaggedPointerField(destination, field_operand);
 #ifdef V8_MAP_PACKING
   UnpackMapWord(destination);
 #endif
-  RecordComment("]");
 }
 
 void TurboAssembler::LoadAnyTaggedField(Register destination,
@@ -267,30 +263,11 @@ void TurboAssembler::StoreTaggedField(Operand dst_field_operand,
 
 void TurboAssembler::StoreTaggedField(Operand dst_field_operand,
                                       Register value) {
-  RecordComment("[ StoreTaggedField");
   if (COMPRESS_POINTERS_BOOL) {
     movl(dst_field_operand, value);
   } else {
     movq(dst_field_operand, value);
   }
-  RecordComment("]");
-}
-
-void TurboAssembler::StoreMapToHeader(Operand dst_field_operand,
-                                      Immediate value) {
-  // TODO(steveblackburn) packing of map. See Internals::PackMapWord()
-  RecordComment("[ StoreMapToHeader");
-  StoreTaggedField(dst_field_operand, value);
-  RecordComment("]");
-  UNREACHABLE();  // unimplemented
-}
-
-void TurboAssembler::StoreMapToHeader(Operand dst_field_operand,
-                                      Register value) {
-  // TODO(steveblackburn) packing of map. See Internals::PackMapWord()
-  RecordComment("[ StoreMapToHeader");
-  StoreTaggedField(dst_field_operand, value);
-  RecordComment("]");
 }
 
 void TurboAssembler::DecompressTaggedSigned(Register destination,
@@ -460,58 +437,6 @@ void TurboAssembler::CallRecordWriteStub(
       descriptor.GetRegisterParameter(RecordWriteDescriptor::kRememberedSet));
   Register fp_mode_parameter(
       descriptor.GetRegisterParameter(RecordWriteDescriptor::kFPMode));
-
-  // Prepare argument registers for calling RecordWrite
-  // slot_parameter   <= address
-  // object_parameter <= object
-  MovePair(slot_parameter, address, object_parameter, object);
-
-  Smi smi_rsa = Smi::FromEnum(remembered_set_action);
-  Smi smi_fm = Smi::FromEnum(fp_mode);
-  Move(remembered_set_parameter, smi_rsa);
-  if (smi_rsa != smi_fm) {
-    Move(fp_mode_parameter, smi_fm);
-  } else {
-    movq(fp_mode_parameter, remembered_set_parameter);
-  }
-  if (code_target.is_null()) {
-    // Use {near_call} for direct Wasm call within a module.
-    near_call(wasm_target, RelocInfo::WASM_STUB_CALL);
-  } else {
-    Call(code_target, RelocInfo::CODE_TARGET);
-  }
-
-  RestoreRegisters(registers);
-}
-
-void TurboAssembler::CallMapRecordWriteStub(
-    Register object, Register address,
-    RememberedSetAction remembered_set_action, SaveFPRegsMode fp_mode) {
-  CallMapRecordWriteStub(
-      object, address, remembered_set_action, fp_mode,
-      isolate()->builtins()->builtin_handle(Builtins::kMapRecordWrite),
-      kNullAddress);
-}
-
-void TurboAssembler::CallMapRecordWriteStub(
-    Register object, Register address,
-    RememberedSetAction remembered_set_action, SaveFPRegsMode fp_mode,
-    Handle<Code> code_target, Address wasm_target) {
-  DCHECK_NE(code_target.is_null(), wasm_target == kNullAddress);
-
-  MapRecordWriteDescriptor descriptor;
-  RegList registers = descriptor.allocatable_registers();
-
-  SaveRegisters(registers);
-
-  Register object_parameter(
-      descriptor.GetRegisterParameter(MapRecordWriteDescriptor::kObject));
-  Register slot_parameter(
-      descriptor.GetRegisterParameter(MapRecordWriteDescriptor::kSlot));
-  Register remembered_set_parameter(descriptor.GetRegisterParameter(
-      MapRecordWriteDescriptor::kRememberedSet));
-  Register fp_mode_parameter(
-      descriptor.GetRegisterParameter(MapRecordWriteDescriptor::kFPMode));
 
   // Prepare argument registers for calling RecordWrite
   // slot_parameter   <= address
@@ -2243,21 +2168,7 @@ void TurboAssembler::Ret(int bytes_dropped, Register scratch) {
 
 void MacroAssembler::CmpObjectType(Register heap_object, InstanceType type,
                                    Register map) {
-#ifdef V8_MAP_PACKING
-  // Register r = rax;
-  // if ((heap_object == rax && map == rbx) || (heap_object == rbx && map == rax)) {
-  //   r = rcx;
-  // } else if (heap_object == rax || map == rax) {
-  //   r = rbx;
-  // } else {
-  //   r = rax;
-  // }
-  // Push(r);
   LoadMapFromHeader(map, heap_object);
-  // Pop(r);
-#else
-  LoadMapFromHeader(map, heap_object);
-#endif
   CmpInstanceType(map, type);
 }
 
@@ -2300,14 +2211,7 @@ void MacroAssembler::AssertConstructor(Register object) {
     testb(object, Immediate(kSmiTagMask));
     Check(not_equal, AbortReason::kOperandIsASmiAndNotAConstructor);
     Push(object);
-#ifdef V8_MAP_PACKING
-    // Register r = object == rax ? rbx : rax;
-    // Push(r);
     LoadMapFromHeader(object, object);
-    // Pop(r);
-#else
-    LoadMapFromHeader(object, object);
-#endif
     testb(FieldOperand(object, Map::kBitFieldOffset),
           Immediate(Map::Bits1::IsConstructorBit::kMask));
     Pop(object);
@@ -2345,14 +2249,7 @@ void MacroAssembler::AssertGeneratorObject(Register object) {
   // Load map
   Register map = object;
   Push(object);
-#ifdef V8_MAP_PACKING
-  // Register r = object == rax ? rbx : rax;
-  // Push(r);
   LoadMapFromHeader(map, object);
-  // Pop(r);
-#else
-  LoadMapFromHeader(map, object);
-#endif
 
   Label do_check;
   // Check if JSGeneratorObject
@@ -2380,14 +2277,7 @@ void MacroAssembler::AssertUndefinedOrAllocationSite(Register object) {
     j(equal, &done_checking);
     Register map = object;
     Push(object);
-#ifdef V8_MAP_PACKING
-    // Register r = object == rax ? rbx : rax;
-    // Push(r);
     LoadMapFromHeader(map, object);
-    // Pop(r);
-#else
-    LoadMapFromHeader(map, object);
-#endif
     Cmp(map, isolate()->factory()->allocation_site_map());
     Pop(object);
     Assert(equal, AbortReason::kExpectedUndefinedOrCell);
@@ -2880,14 +2770,7 @@ static const int kRegisterPassedArguments = 6;
 
 void MacroAssembler::LoadNativeContextSlot(int index, Register dst) {
   // Load native context.
-#ifdef V8_MAP_PACKING
-  // Register r = dst == rax ? rbx : rax;
-  // Push(r);
   LoadMapFromHeader(dst, rsi);
-  // Pop(r);
-#else
-  LoadMapFromHeader(dst, rsi);
-#endif
   LoadTaggedPointerField(
       dst,
       FieldOperand(dst, Map::kConstructorOrBackPointerOrNativeContextOffset));

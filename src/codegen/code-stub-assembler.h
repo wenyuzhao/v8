@@ -1153,9 +1153,6 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
         IntPtrSub(reference.offset, IntPtrConstant(kHeapObjectTag));
     Node* rtn =
         LoadFromObject(MachineTypeOf<T>::value, reference.object, offset);
-    // FIXME(wenyuzhao): This CSA_ASSERT prevents some constant-folding
-    // optimizations CSA_ASSERT(this, IsNotMapWord(rtn));  // value must not be
-    // encoded map
     return CAST(rtn);
   }
   template <class T,
@@ -1166,11 +1163,8 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   TNode<T> LoadReference(Reference reference) {
     TNode<IntPtrT> offset =
         IntPtrSub(reference.offset, IntPtrConstant(kHeapObjectTag));
-    Node* rtn =
-        LoadFromObject(MachineTypeOf<T>::value, reference.object, offset);
-    //    CSA_ASSERT(this, IsNotMapWord(rtn));    // value must not be encoded
-    //    map
-    return UncheckedCast<T>(rtn);
+    return UncheckedCast<T>(
+        LoadFromObject(MachineTypeOf<T>::value, reference.object, offset));
   }
   template <class T, typename std::enable_if<
                          std::is_convertible<TNode<T>, TNode<Object>>::value ||
@@ -1541,10 +1535,6 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   template <class T>
   void StoreObjectFieldNoWriteBarrier(TNode<HeapObject> object, int offset,
                                       TNode<T> value) {
-    // FIXME(wenyuzhao): This CSA_ASSERT prevents some constant-folding
-    // optimizations CSA_ASSERT(this,
-    // IsNotMapWord(SloppyTNode<Map>::UncheckedCast(object)));   // target must
-    // not be encoded
     if (CanBeTaggedPointer(MachineRepresentationOf<T>::value)) {
       OptimizedStoreFieldAssertNoWriteBarrier(MachineRepresentationOf<T>::value,
                                               object, offset, value);
@@ -1556,6 +1546,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
 
   void UnsafeStoreObjectFieldNoWriteBarrier(TNode<HeapObject> object,
                                             int offset, TNode<Object> value);
+
   // Store the Map of an HeapObject.
   void StoreMap(TNode<HeapObject> object, TNode<Map> map);
   void StoreMapNoWriteBarrier(TNode<HeapObject> object,

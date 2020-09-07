@@ -322,15 +322,15 @@ class OutOfLineMapRecordWrite final : public OutOfLineCode {
                      exit());
     __ leaq(scratch1_, operand_);
 
-    RememberedSetAction const remembered_set_action = OMIT_REMEMBERED_SET;
-    SaveFPRegsMode const save_fp_mode =
-        frame()->DidAllocateDoubleRegisters() ? kSaveFPRegs : kDontSaveFPRegs;
+    // RememberedSetAction const remembered_set_action = OMIT_REMEMBERED_SET;
+    // SaveFPRegsMode const save_fp_mode =
+        // frame()->DidAllocateDoubleRegisters() ? kSaveFPRegs : kDontSaveFPRegs;
     DCHECK(mode_ != RecordWriteMode::kValueIsEphemeronKey);
     USE(mode_);
     DCHECK(stub_mode_ != StubCallMode::kCallWasmRuntimeStub);
     USE(stub_mode_);
-    __ CallMapRecordWriteStub(object_, scratch1_, remembered_set_action,
-                              save_fp_mode);
+    // __ CallMapRecordWriteStub(object_, scratch1_, remembered_set_action,
+    //                           save_fp_mode);
   }
 
  private:

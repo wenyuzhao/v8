@@ -5688,7 +5688,7 @@ Node* WasmGraphBuilder::RefTest(Node* object, Node* rtt,
     need_done_label = true;
   }
 
-  Node* map = gasm_->Load(MachineType::MapPointerInHeader(), object,
+  Node* map = gasm_->Load(MachineType::MapInHeader(), object,
                           HeapObject::kMapOffset - kHeapObjectTag);
   // TODO(7748): Add a fast path for map == rtt.
   Node* subtype_check = BuildChangeSmiToInt32(CALL_BUILTIN(
@@ -5721,7 +5721,7 @@ Node* WasmGraphBuilder::RefCast(Node* object, Node* rtt,
     TrapIfTrue(wasm::kTrapIllegalCast, gasm_->WordEqual(object, RefNull()),
                position);
   }
-  Node* map = gasm_->Load(MachineType::MapPointerInHeader(), object,
+  Node* map = gasm_->Load(MachineType::MapInHeader(), object,
                           HeapObject::kMapOffset - kHeapObjectTag);
   // TODO(7748): Add a fast path for map == rtt.
   Node* check_result = BuildChangeSmiToInt32(CALL_BUILTIN(
@@ -5769,7 +5769,7 @@ Node* WasmGraphBuilder::BrOnCast(Node* object, Node* rtt,
   }
 
   // At this point, {object} is neither null nor an i31ref/Smi.
-  Node* map = gasm_->Load(MachineType::MapPointerInHeader(), object,
+  Node* map = gasm_->Load(MachineType::MapInHeader(), object,
                           HeapObject::kMapOffset - kHeapObjectTag);
   // TODO(7748): Add a fast path for map == rtt.
   Node* subtype_check = BuildChangeSmiToInt32(CALL_BUILTIN(
