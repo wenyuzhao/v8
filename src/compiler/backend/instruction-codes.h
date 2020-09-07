@@ -98,7 +98,6 @@ inline RecordWriteMode WriteBarrierKindToRecordWriteMode(
   V(ArchParentFramePointer)                                                \
   V(ArchTruncateDoubleToI)                                                 \
   V(ArchStoreWithWriteBarrier)                                             \
-  V(ArchStoreMapToHeaderWithWriteBarrier)                                  \
   V(ArchStackSlot)                                                         \
   V(ArchWordPoisonOnSpeculation)                                           \
   V(ArchStackPointerGreaterThan)                                           \

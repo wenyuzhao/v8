@@ -436,7 +436,7 @@ Reduction MemoryLowering::ReduceStoreToObject(Node* node,
                  access.write_barrier_kind == kMapWriteBarrier);
   WriteBarrierKind write_barrier_kind = ComputeWriteBarrierKind(
       node, object, value, state, access.write_barrier_kind);
-#ifdef V8_MAP_PACKING_IR_LEVEL
+#ifdef V8_MAP_PACKING
   if (store_to_header) {
     auto mapword = __ PackMapWord(TNode<Map>::UncheckedCast(value));
     node->ReplaceInput(2, mapword);
@@ -493,7 +493,7 @@ Reduction MemoryLowering::ReduceStoreField(Node* node,
       node, object, value, state, access.write_barrier_kind);
   Node* offset = __ IntPtrConstant(access.offset - access.tag());
   node->InsertInput(graph_zone(), 1, offset);
-#ifdef V8_MAP_PACKING_IR_LEVEL
+#ifdef V8_MAP_PACKING
   if (store_to_header) {
     auto mapword =  __ PackMapWord(TNode<Map>::UncheckedCast(value));
     node->ReplaceInput(2, mapword);

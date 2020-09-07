@@ -1220,25 +1220,25 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ bind(ool->exit());
       break;
     }
-    case kArchStoreMapToHeaderWithWriteBarrier: {
-      RecordWriteMode mode =
-          static_cast<RecordWriteMode>(MiscField::decode(instr->opcode()));
-      Register object = i.InputRegister(0);
-      size_t index = 0;
-      Operand operand = i.MemoryOperand(&index);
-      Register value = i.InputRegister(index);
-      Register scratch0 = i.TempRegister(0);
-      Register scratch1 = i.TempRegister(1);
-      __ StoreMapToHeader(operand, value);
-      auto ool = zone()->New<OutOfLineMapRecordWrite>(this, object, operand, value,
-                                                   scratch0, scratch1, mode,
-                                                   DetermineStubCallMode());
-      __ CheckPageFlag(object, scratch0,
-                       MemoryChunk::kPointersFromHereAreInterestingMask,
-                       not_zero, ool->entry());
-      __ bind(ool->exit());
-      break;
-    }
+    // case kArchStoreMapToHeaderWithWriteBarrier: {
+    //   RecordWriteMode mode =
+    //       static_cast<RecordWriteMode>(MiscField::decode(instr->opcode()));
+    //   Register object = i.InputRegister(0);
+    //   size_t index = 0;
+    //   Operand operand = i.MemoryOperand(&index);
+    //   Register value = i.InputRegister(index);
+    //   Register scratch0 = i.TempRegister(0);
+    //   Register scratch1 = i.TempRegister(1);
+    //   __ StoreMapToHeader(operand, value);
+    //   auto ool = zone()->New<OutOfLineMapRecordWrite>(this, object, operand, value,
+    //                                                scratch0, scratch1, mode,
+    //                                                DetermineStubCallMode());
+    //   __ CheckPageFlag(object, scratch0,
+    //                    MemoryChunk::kPointersFromHereAreInterestingMask,
+    //                    not_zero, ool->entry());
+    //   __ bind(ool->exit());
+    //   break;
+    // }
     case kArchWordPoisonOnSpeculation:
       DCHECK_EQ(i.OutputRegister(), i.InputRegister(0));
       __ andq(i.InputRegister(0), kSpeculationPoisonRegister);
@@ -2182,18 +2182,18 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       }
       break;
     }
-    case kX64MapToHeader: {
-      CHECK(!instr->HasOutput());
-      size_t index = 0;
-      Operand operand = i.MemoryOperand(&index);
-      if (HasImmediateInput(instr, index)) {
-        __ StoreMapToHeader(operand, i.InputImmediate(index));
-      } else {
-        Register dst = i.InputRegister(index);
-        __ StoreMapToHeader(operand, dst);
-      }
-      break;
-    }
+    // case kX64MapToHeader: {
+    //   CHECK(!instr->HasOutput());
+    //   size_t index = 0;
+    //   Operand operand = i.MemoryOperand(&index);
+    //   if (HasImmediateInput(instr, index)) {
+    //     __ StoreMapToHeader(operand, i.InputImmediate(index));
+    //   } else {
+    //     Register dst = i.InputRegister(index);
+    //     __ StoreMapToHeader(operand, dst);
+    //   }
+    //   break;
+    // }
     case kX64Movq:
       EmitOOLTrapIfNeeded(zone(), this, opcode, instr, __ pc_offset());
       if (instr->HasOutput()) {
