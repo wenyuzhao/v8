@@ -433,8 +433,7 @@ Handle<FeedbackVector> Factory::NewFeedbackVector(
   vector->set_closure_feedback_cell_array(*closure_feedback_cell_array);
 
   // TODO(leszeks): Initialize based on the feedback metadata.
-  MemsetTagged(ObjectSlot(vector->slots_start()), *undefined_value(),
-               length);  // FIXME check
+  MemsetTagged(ObjectSlot(vector->slots_start()), *undefined_value(), length);
   return vector;
 }
 
@@ -1039,7 +1038,7 @@ Handle<Context> Factory::NewContext(Handle<Map> map, int size,
     ObjectSlot start = context->RawField(Context::kTodoHeaderSize);
     ObjectSlot end = context->RawField(size);
     size_t slot_count = end - start;
-    MemsetTagged(start, *undefined_value(), slot_count);  // FIXME check
+    MemsetTagged(start, *undefined_value(), slot_count);
   }
   return context;
 }
@@ -1611,7 +1610,7 @@ Handle<T> Factory::CopyArrayAndGrow(Handle<T> src, int grow_by,
   result->CopyElements(isolate(), 0, *src, 0, old_len, mode);
   MemsetTagged(ObjectSlot(result->data_start() + old_len),
                ReadOnlyRoots(isolate()).undefined_value(),
-               grow_by);  // FIXME check
+               grow_by);
   return result;
 }
 
@@ -1669,7 +1668,7 @@ Handle<WeakArrayList> Factory::CopyWeakArrayListAndGrow(
   WriteBarrierMode mode = result->GetWriteBarrierMode(no_gc);
   result->CopyElements(isolate(), 0, *src, 0, old_len, mode);
   MemsetTagged(ObjectSlot(result->data_start() + old_len),
-               ReadOnlyRoots(isolate()).undefined_value(),  // FIXME check
+               ReadOnlyRoots(isolate()).undefined_value(),
                new_capacity - old_len);
   return result;
 }

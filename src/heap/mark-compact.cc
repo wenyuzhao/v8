@@ -108,9 +108,6 @@ class MarkingVerifier : public ObjectVisitor, public RootVisitor {
   void VisitMapPointer(HeapObject object) override {
     Map map = Map::unchecked_cast(object.extract_map());
     VerifyMap(map);
-    // TODO(wenyuzhao): The following line does not work. `map` may lives in
-    // ReadOnlySpace
-    // CHECK_IMPLIES(IsBlackOrGrey(object), IsBlackOrGrey(map));
   }
 
   void VerifyRoots();
@@ -1188,8 +1185,7 @@ class RecordMigratedSlotVisitor : public ObjectVisitor {
       : collector_(collector),
         ephemeron_remembered_set_(ephemeron_remembered_set) {}
 
-  inline void VisitPointer(HeapObject host, ObjectSlot p)
-      final {  // TODO(steveblackburn) do we need anything here?
+  inline void VisitPointer(HeapObject host, ObjectSlot p) final {
     if (!p.Relaxed_Load().IsFillerMap(collector_->isolate())) {
       DCHECK(!Internals::IsMapWord(p.Relaxed_Load().ptr()));
       DCHECK(!HasWeakHeapObjectTag(*p));
@@ -1197,8 +1193,7 @@ class RecordMigratedSlotVisitor : public ObjectVisitor {
     }
   }
 
-  inline void VisitPointer(HeapObject host, MaybeObjectSlot p)
-      final {  // TODO(steveblackburn) do we need anything here?
+  inline void VisitPointer(HeapObject host, MaybeObjectSlot p) final {
     DCHECK(!Internals::IsMapWord(p.Relaxed_Load().ptr()));
     RecordMigratedSlot(host, *p, p.address());
   }
@@ -1365,8 +1360,7 @@ class EvacuateVisitorBase : public HeapObjectVisitor {
       if (mode != MigrationMode::kFast)
         base->ExecuteMigrationObservers(dest, src, dst, size);
     }
-    src.set_map_word(
-        MapWord::FromForwardingAddress(dst));  // TODO(steveblackburn) correct?
+    src.set_map_word(MapWord::FromForwardingAddress(dst));
   }
 
   EvacuateVisitorBase(Heap* heap, EvacuationAllocator* local_allocator,
@@ -1496,8 +1490,7 @@ class EvacuateNewSpaceVisitor final : public EvacuateVisitorBase {
     if (map.visitor_id() == kVisitThinString) {
       HeapObject actual = ThinString::cast(object).unchecked_actual();
       if (MarkCompactCollector::IsOnEvacuationCandidate(actual)) return false;
-      object.set_map_word(MapWord::FromForwardingAddress(
-          actual));  // TODO(steveblackburn) correct?
+      object.set_map_word(MapWord::FromForwardingAddress(actual));
       return true;
     }
     // TODO(mlippautz): Handle ConsString.
@@ -2765,13 +2758,11 @@ class PointersUpdatingVisitor : public ObjectVisitor, public RootVisitor {
   explicit PointersUpdatingVisitor(IsolateRoot isolate) : isolate_(isolate) {}
 
   void VisitPointer(HeapObject host, ObjectSlot p) override {
-    UpdateStrongSlotInternal(isolate_,
-        p);// TODO(steveblackburn) do we need anything here?
+    UpdateStrongSlotInternal(isolate_, p);
   }
 
   void VisitPointer(HeapObject host, MaybeObjectSlot p) override {
-    UpdateSlotInternal(isolate_,
-        p);// TODO(steveblackburn) do we need anything here?
+    UpdateSlotInternal(isolate_, p);
   }
 
   void VisitPointers(HeapObject host, ObjectSlot start,

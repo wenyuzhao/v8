@@ -3479,7 +3479,7 @@ class SlotCollectingVisitor final : public ObjectVisitor {
     UNREACHABLE();
   }
 
-  void VisitMapPointer(HeapObject object) override {}  // do nothing
+  void VisitMapPointer(HeapObject object) override {}  // do nothing by default
 
   int number_of_slots() { return static_cast<int>(slots_.size()); }
 
@@ -4139,10 +4139,9 @@ class OldToNewSlotVerifyingVisitor : public SlotVerifyingVisitor {
 
   void VisitEphemeron(HeapObject host, int index, ObjectSlot key,
                       ObjectSlot target) override {
-    // TODO(steveblackburn) do we need anything here?
+    DCHECK(target != host.map_slot());
     VisitPointer(host, target);
 #ifdef ENABLE_MINOR_MC
-    // TODO(steveblackburn) do we need anything here?
     if (FLAG_minor_mc) return VisitPointer(host, target);
 #endif
     // Keys are handled separately and should never appear in this set.

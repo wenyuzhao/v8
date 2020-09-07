@@ -187,8 +187,6 @@ void TaggedField<T, kFieldOffset>::Release_Store(HeapObject host, int offset,
 template <typename T, int kFieldOffset>
 Tagged_t TaggedField<T, kFieldOffset>::Release_CompareAndSwap(HeapObject host,
                                                               T old, T value) {
-  // DCHECK(kFieldOffset != HeapObject::kMapOffset);   // this could be
-  // forwarding ptr
   Tagged_t old_value = full_to_tagged(old.ptr());
   Tagged_t new_value = full_to_tagged(value.ptr());
   Tagged_t result = AsAtomicTagged::Release_CompareAndSwap(

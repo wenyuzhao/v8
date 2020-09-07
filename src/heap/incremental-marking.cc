@@ -110,7 +110,6 @@ class IncrementalMarkingRootMarkingVisitor : public RootVisitor {
 
   void VisitRootPointer(Root root, const char* description,
                         FullObjectSlot p) override {
-    // TODO(steveblackburn) can we have fillers here?
     DCHECK(!Internals::IsMapWord((*p).ptr()));
     MarkObjectByPointer(p);
   }
@@ -119,7 +118,7 @@ class IncrementalMarkingRootMarkingVisitor : public RootVisitor {
                          FullObjectSlot start, FullObjectSlot end) override {
     for (FullObjectSlot p = start; p < end; ++p) {
       DCHECK(!Internals::IsMapWord((*p).ptr()));
-      MarkObjectByPointer(p);  // FIXME check
+      MarkObjectByPointer(p);
     }
   }
 

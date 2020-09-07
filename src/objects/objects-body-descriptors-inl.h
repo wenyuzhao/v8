@@ -134,8 +134,7 @@ DISABLE_CFI_PERF void BodyDescriptorBase::IteratePointers(HeapObject obj,
 template <typename ObjectVisitor>
 void BodyDescriptorBase::IteratePointer(HeapObject obj, int offset,
                                         ObjectVisitor* v) {
-  DCHECK(offset != HeapObject::kMapOffset);  // TODO(steveblackburn) do we need
-                                             // anything here?
+  DCHECK(offset != HeapObject::kMapOffset);
   v->VisitPointer(obj, obj.RawField(offset));
 }
 
@@ -149,8 +148,7 @@ DISABLE_CFI_PERF void BodyDescriptorBase::IterateMaybeWeakPointers(
 template <typename ObjectVisitor>
 void BodyDescriptorBase::IterateMaybeWeakPointer(HeapObject obj, int offset,
                                                  ObjectVisitor* v) {
-  DCHECK(offset != HeapObject::kMapOffset);  // TODO(steveblackburn) do we need
-                                             // anything here?
+  DCHECK(offset != HeapObject::kMapOffset);
   v->VisitPointer(obj, obj.RawMaybeWeakField(offset));
 }
 
@@ -1138,7 +1136,6 @@ ReturnType BodyDescriptorApply(InstanceType type, T1 p1, T2 p2, T3 p3, T4 p4) {
 template <typename ObjectVisitor>
 void HeapObject::IterateFast(ObjectVisitor* v) {
   v->VisitMapPointer(*this);
-  //  BodyDescriptorBase::IteratePointer(*this, kMapOffset, v);
   IterateBodyFast(v);
 }
 
