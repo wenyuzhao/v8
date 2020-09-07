@@ -1829,8 +1829,6 @@ void EffectControlLinearizer::LowerCheckMaps(Node* node, Node* frame_state) {
 
     // Perform the map checks.
     for (size_t i = 0; i < map_count; ++i) {
-      // TODO(steveblackburn) The following loads are presumably clean, so no
-      // mask required.
       Node* map = __ HeapConstant(maps[i]);
       Node* check = __ TaggedEqual(value_map, map);
       if (i == map_count - 1) {

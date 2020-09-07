@@ -719,7 +719,6 @@ template <typename SlotAccessor>
 int Deserializer::ReadRepeatedObject(SlotAccessor slot_accessor,
                                      int repeat_count) {
   CHECK_LE(2, repeat_count);
-  // TODO(steveblackburn) Assumption: this can't / won't include map word
 
   Handle<HeapObject> heap_object = ReadObject();
   DCHECK(!Heap::InYoungGeneration(*heap_object));

@@ -1311,12 +1311,6 @@ const Operator* MachineOperatorBuilder::StackSlot(MachineRepresentation rep,
 }
 
 const Operator* MachineOperatorBuilder::Store(StoreRepresentation store_rep) {
-  // TODO(steveblackburn) this hack to dodge macro above (line 688)
-  if (store_rep.store_to_header())
-    return zone_->New<Operator1<StoreRepresentation>>(
-        IrOpcode::kStore,
-        Operator::kNoDeopt | Operator::kNoRead | Operator::kNoThrow, "Store", 3,
-        1, 1, 0, 1, 0, store_rep);
   switch (store_rep.representation()) {
 #define STORE(kRep)                                                           \
   case MachineRepresentation::kRep:                                           \

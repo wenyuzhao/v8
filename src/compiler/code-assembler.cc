@@ -823,7 +823,6 @@ Node* CodeAssembler::StoreEphemeronKey(Node* base, Node* offset, Node* value) {
 
 Node* CodeAssembler::StoreNoWriteBarrier(MachineRepresentation rep, Node* base,
                                          Node* value) {
-  // FIXME what's happening here?
   return raw_assembler()->Store(
       rep, base, value,
       CanBeTaggedPointer(rep) ? kAssertNoWriteBarrier : kNoWriteBarrier);

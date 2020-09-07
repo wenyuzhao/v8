@@ -147,7 +147,6 @@ void TaggedIndex::TaggedIndexVerify(Isolate* isolate) {
 }
 
 void HeapObject::HeapObjectVerify(Isolate* isolate) {
-  // TODO(steveblackburn) this may be an issue, like the other in this file
   TorqueGeneratedClassVerifiers::HeapObjectVerify(*this, isolate);
 
   switch (map().instance_type()) {

@@ -272,7 +272,6 @@ ArchOpcode GetLoadOpcode(LoadRepresentation load_rep) {
 #else
       UNREACHABLE();
 #endif
-
 #ifdef V8_COMPRESS_POINTERS
     case MachineRepresentation::kTaggedSigned:
       opcode = kX64MovqDecompressTaggedSigned;
@@ -290,7 +289,6 @@ ArchOpcode GetLoadOpcode(LoadRepresentation load_rep) {
 #endif
     case MachineRepresentation::kWord64:
       opcode = load_rep.in_header() ? kX64MapFromHeader : kX64Movq;
-      // opcode = kX64Movq;
       break;
     case MachineRepresentation::kSimd128:  // Fall through.
       opcode = kX64Movdqu;
@@ -494,11 +492,11 @@ void InstructionSelector::VisitStore(Node* node) {
         g.UseUniqueRegister(value)};
     RecordWriteMode record_write_mode =
         WriteBarrierKindToRecordWriteMode(write_barrier_kind);
-    InstructionOperand temps[] = { g.TempRegister(), g.TempRegister() };
+    InstructionOperand temps[] = {g.TempRegister(), g.TempRegister()};
     InstructionCode code = kArchStoreWithWriteBarrier;
     code |= AddressingModeField::encode(addressing_mode);
     code |= MiscField::encode(static_cast<int>(record_write_mode));
-    Emit(code, 0, nullptr, arraysize(inputs), inputs, arraysize(temps), temps);;
+    Emit(code, 0, nullptr, arraysize(inputs), inputs, arraysize(temps), temps);
   } else {
     ArchOpcode opcode = GetStoreOpcode(store_rep);
     InstructionOperand inputs[4];

@@ -386,13 +386,6 @@ Reduction MemoryLowering::ReduceLoadField(Node* node) {
   } else {
     DCHECK(!access.type.Is(Type::SandboxedExternalPointer()));
   }
-  // if (access.offset == HeapObject::kMapOffset && access.base_is_tagged !=
-  // kUntaggedBase) {
-  //   DCHECK(false);
-  // //if (access == AccessBuilder::ForMap()) {
-  // //if (access.offset == HeapObject::kMapOffset) {
-  //   node = __ WordXor(node, __ IntPtrConstant(Internals::kXorMask));
-  // }
   return Changed(node);
 }
 
@@ -425,8 +418,6 @@ Reduction MemoryLowering::ReduceStoreToObject(Node* node,
 
   MachineType m_type = access.machine_type;
   bool store_to_header = IsMapOffsetConstant(offset);
-  // DCHECK_IMPLIES(store_to_header, m_type ==
-  // MachineType::MapPointerInHeader());
   if (store_to_header) {
     CHECK_EQ(m_type.representation(), MachineRepresentation::kTaggedPointer);
     CHECK_EQ(m_type.semantic(), MachineSemantic::kAny);
@@ -510,7 +501,6 @@ Reduction MemoryLowering::ReduceStore(Node* node,
   DCHECK_EQ(IrOpcode::kStore, node->opcode());
   StoreRepresentation representation = StoreRepresentationOf(node->op());
   Node* object = node->InputAt(0);
-  // Node* offset = node->InputAt(1);
   Node* value = node->InputAt(2);
 
   WriteBarrierKind write_barrier_kind = ComputeWriteBarrierKind(
@@ -521,11 +511,6 @@ Reduction MemoryLowering::ReduceStore(Node* node,
                   representation.representation(), write_barrier_kind, false)));
     return Changed(node);
   }
-  // if (IsMapOffsetConstant(offset)) {
-  //   // this code is exercised (e.g. when the RecordWrite builtin is compiled)
-  //   node->ReplaceInput(2, __ WordXor(value, __
-  //   IntPtrConstant(Internals::kXorMask))); return Changed(node);
-  // }
   return NoChange();
 }
 

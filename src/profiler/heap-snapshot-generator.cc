@@ -1544,8 +1544,6 @@ bool V8HeapExplorer::IterateAndExtractReferences(
 
     HeapEntry* entry = GetEntry(obj);
     ExtractReferences(entry, obj);
-
-    // FIXME check out the call below.   It 'seems' OK, but is a bit worriesome.
     SetInternalReference(entry, "map", obj.map(), HeapObject::kMapOffset);
     // Extract unvisited fields as hidden references and restore tags
     // of visited fields.
