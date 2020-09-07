@@ -1229,10 +1229,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       Register value = i.InputRegister(index);
       Register scratch0 = i.TempRegister(0);
       Register scratch1 = i.TempRegister(1);
-      std::array<Register, TurboAssembler::kMapStoreTempRegisters> temps = base::make_array<TurboAssembler::kMapStoreTempRegisters>(
-        [&](size_t j) { return i.TempRegister(j); }
-      );
-      __ StoreMapToHeader(operand, value, temps);
+      __ StoreMapToHeader(operand, value);
       auto ool = zone()->New<OutOfLineMapRecordWrite>(this, object, operand, value,
                                                    scratch0, scratch1, mode,
                                                    DetermineStubCallMode());
@@ -2193,10 +2190,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
         __ StoreMapToHeader(operand, i.InputImmediate(index));
       } else {
         Register dst = i.InputRegister(index);
-        std::array<Register, TurboAssembler::kMapStoreTempRegisters> temps = base::make_array<TurboAssembler::kMapStoreTempRegisters>(
-          [&](size_t j) { return i.TempRegister(j); }
-        );
-        __ StoreMapToHeader(operand, dst, temps);
+        __ StoreMapToHeader(operand, dst);
       }
       break;
     }
@@ -2218,10 +2212,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     case kX64MapFromHeader: {
       CHECK(instr->HasOutput());
       EmitOOLTrapIfNeeded(zone(), this, opcode, instr, __ pc_offset());
-      std::array<Register, TurboAssembler::kMapLoadTempRegisters> temps = base::make_array<TurboAssembler::kMapLoadTempRegisters>(
-        [&](size_t j) { return i.TempRegister(j); }
-      );
-      __ LoadMapFromHeader(i.OutputRegister(), i.MemoryOperand(), temps);
+      __ LoadMapFromHeader(i.OutputRegister(), i.MemoryOperand());
       EmitWordLoadPoisoningIfNeeded(this, opcode, instr, i);
       // UNREACHABLE();
       break;

@@ -200,26 +200,23 @@ void TurboAssembler::LoadTaggedPointerField(Register destination,
 }
 
 #ifdef V8_MAP_PACKING
-void TurboAssembler::PackMapWord(Register r, const std::array<Register, kMapPackingTempRegisters>& temp) {
-  xorq(r, Immediate(Internals::kXorMask));
-}
-void TurboAssembler::UnPackMapWord(Register r, const std::array<Register, kMapUnpackingTempRegisters>& temp) {
+void TurboAssembler::UnpackMapWord(Register r) {
   shlq(r, Immediate(8));
   shrq(r, Immediate(8));
   xorq(r, Immediate(Internals::kXorMask));
 }
 #endif
 
-void TurboAssembler::LoadMapFromHeader(Register destination, Register object, const std::array<Register, kMapLoadTempRegisters>& temps) {
-  LoadMapFromHeader(destination, FieldOperand(object, HeapObject::kMapOffset), temps);
+void TurboAssembler::LoadMapFromHeader(Register destination, Register object) {
+  LoadMapFromHeader(destination, FieldOperand(object, HeapObject::kMapOffset));
 }
 
 void TurboAssembler::LoadMapFromHeader(Register destination,
-                                       Operand field_operand, const std::array<Register, kMapLoadTempRegisters>& temps) {
+                                       Operand field_operand) {
   RecordComment("[ LoadMapFromHeader");
   LoadTaggedPointerField(destination, field_operand);
 #ifdef V8_MAP_PACKING
-  UnPackMapWord(destination, temps);
+  UnpackMapWord(destination);
 #endif
   RecordComment("]");
 }
@@ -289,16 +286,10 @@ void TurboAssembler::StoreMapToHeader(Operand dst_field_operand,
 }
 
 void TurboAssembler::StoreMapToHeader(Operand dst_field_operand,
-                                      Register value, const std::array<Register, kMapStoreTempRegisters>& temps) {
+                                      Register value) {
   // TODO(steveblackburn) packing of map. See Internals::PackMapWord()
   RecordComment("[ StoreMapToHeader");
-#if defined(V8_MAP_PACKING) && !defined(V8_MAP_PACKING_IR_LEVEL)
-  PackMapWord(value, temps);
-#endif
   StoreTaggedField(dst_field_operand, value);
-#if defined(V8_MAP_PACKING) && !defined(V8_MAP_PACKING_IR_LEVEL)
-  UnPackMapWord(value, { temps[0] });
-#endif
   RecordComment("]");
 }
 
@@ -2262,10 +2253,10 @@ void MacroAssembler::CmpObjectType(Register heap_object, InstanceType type,
   //   r = rax;
   // }
   // Push(r);
-  LoadMapFromHeader(map, heap_object, {});
+  LoadMapFromHeader(map, heap_object);
   // Pop(r);
 #else
-  LoadMapFromHeader(map, heap_object, {});
+  LoadMapFromHeader(map, heap_object);
 #endif
   CmpInstanceType(map, type);
 }
@@ -2312,10 +2303,10 @@ void MacroAssembler::AssertConstructor(Register object) {
 #ifdef V8_MAP_PACKING
     // Register r = object == rax ? rbx : rax;
     // Push(r);
-    LoadMapFromHeader(object, object, {});
+    LoadMapFromHeader(object, object);
     // Pop(r);
 #else
-    LoadMapFromHeader(object, object, {});
+    LoadMapFromHeader(object, object);
 #endif
     testb(FieldOperand(object, Map::kBitFieldOffset),
           Immediate(Map::Bits1::IsConstructorBit::kMask));
@@ -2357,10 +2348,10 @@ void MacroAssembler::AssertGeneratorObject(Register object) {
 #ifdef V8_MAP_PACKING
   // Register r = object == rax ? rbx : rax;
   // Push(r);
-  LoadMapFromHeader(map, object, {});
+  LoadMapFromHeader(map, object);
   // Pop(r);
 #else
-  LoadMapFromHeader(map, object, {});
+  LoadMapFromHeader(map, object);
 #endif
 
   Label do_check;
@@ -2392,10 +2383,10 @@ void MacroAssembler::AssertUndefinedOrAllocationSite(Register object) {
 #ifdef V8_MAP_PACKING
     // Register r = object == rax ? rbx : rax;
     // Push(r);
-    LoadMapFromHeader(map, object, {});
+    LoadMapFromHeader(map, object);
     // Pop(r);
 #else
-    LoadMapFromHeader(map, object, {});
+    LoadMapFromHeader(map, object);
 #endif
     Cmp(map, isolate()->factory()->allocation_site_map());
     Pop(object);
@@ -2892,10 +2883,10 @@ void MacroAssembler::LoadNativeContextSlot(int index, Register dst) {
 #ifdef V8_MAP_PACKING
   // Register r = dst == rax ? rbx : rax;
   // Push(r);
-  LoadMapFromHeader(dst, rsi, {});
+  LoadMapFromHeader(dst, rsi);
   // Pop(r);
 #else
-  LoadMapFromHeader(dst, rsi, {});
+  LoadMapFromHeader(dst, rsi);
 #endif
   LoadTaggedPointerField(
       dst,

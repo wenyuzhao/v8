@@ -1104,10 +1104,10 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
   // and update invocation count. Otherwise, setup the stack frame.
 #ifdef V8_MAP_PACKING
   // __ pushq(rax);
-  __ LoadMapFromHeader(rcx, feedback_vector, {});
+  __ LoadMapFromHeader(rcx, feedback_vector);
   // __ popq(rax);
 #else
-  __ LoadMapFromHeader(rcx, feedback_vector, {});
+  __ LoadMapFromHeader(rcx, feedback_vector);
 #endif
   __ CmpInstanceType(rcx, FEEDBACK_VECTOR_TYPE);
   __ j(not_equal, &push_stack_frame);
@@ -2043,10 +2043,10 @@ void Builtins::Generate_CallOrConstructVarargs(MacroAssembler* masm,
     Register map = r9;
 #ifdef V8_MAP_PACKING
     // __ pushq(rax);
-    __ LoadMapFromHeader(map, rbx, {});
+    __ LoadMapFromHeader(map, rbx);
     // __ popq(rax);
 #else
-    __ LoadMapFromHeader(map, rbx, {});
+    __ LoadMapFromHeader(map, rbx);
 #endif
     __ CmpInstanceType(map, FIXED_ARRAY_TYPE);
     __ j(equal, &ok);
@@ -2136,10 +2136,10 @@ void Builtins::Generate_CallOrConstructForwardVarargs(MacroAssembler* masm,
     __ JumpIfSmi(rdx, &new_target_not_constructor, Label::kNear);
 #ifdef V8_MAP_PACKING
     // __ pushq(rax);
-    __ LoadMapFromHeader(rbx, rdx, {});
+    __ LoadMapFromHeader(rbx, rdx);
     // __ popq(rax);
 #else
-    __ LoadMapFromHeader(rbx, rdx, {});
+    __ LoadMapFromHeader(rbx, rdx);
 #endif
     __ testb(FieldOperand(rbx, Map::kBitFieldOffset),
              Immediate(Map::Bits1::IsConstructorBit::kMask));
@@ -2595,10 +2595,10 @@ void Builtins::Generate_Construct(MacroAssembler* masm) {
   // Check if target has a [[Construct]] internal method.
 #ifdef V8_MAP_PACKING
   // __ pushq(rax);
-  __ LoadMapFromHeader(rcx, rdi, {});
+  __ LoadMapFromHeader(rcx, rdi);
   // __ popq(rax);
 #else
-  __ LoadMapFromHeader(rcx, rdi, {});
+  __ LoadMapFromHeader(rcx, rdi);
 #endif
   __ testb(FieldOperand(rcx, Map::kBitFieldOffset),
            Immediate(Map::Bits1::IsConstructorBit::kMask));
@@ -3831,10 +3831,10 @@ void CallApiFunctionAndReturn(MacroAssembler* masm, Register function_address,
   __ JumpIfSmi(return_value, &ok, Label::kNear);
 #ifdef V8_MAP_PACKING
   // __ pushq(rbx);
-  __ LoadMapFromHeader(map, return_value, {});
+  __ LoadMapFromHeader(map, return_value);
   // __ popq(rbx);
 #else
-  __ LoadMapFromHeader(map, return_value, {});
+  __ LoadMapFromHeader(map, return_value);
 #endif
   __ CmpInstanceType(map, LAST_NAME_TYPE);
   __ j(below_equal, &ok, Label::kNear);
