@@ -302,8 +302,14 @@ void MemoryOptimizer::VisitAllocateRaw(Node* node,
 void MemoryOptimizer::VisitLoadFromObject(Node* node,
                                           AllocationState const* state) {
   DCHECK_EQ(IrOpcode::kLoadFromObject, node->opcode());
-  memory_lowering()->ReduceLoadFromObject(node);
+  auto reduction = memory_lowering()->ReduceLoadFromObject(node);
   EnqueueUses(node, state);
+  if (reduction.replacement() != node) {
+    NodeProperties::ReplaceUses(node, reduction.replacement(),
+                                graph_assembler_.effect(),
+                                graph_assembler_.control());
+    node->Kill();
+  }
 }
 
 void MemoryOptimizer::VisitStoreToObject(Node* node,
@@ -330,8 +336,8 @@ void MemoryOptimizer::VisitLoadField(Node* node, AllocationState const* state) {
 
   // Node can be replaced only when V8_HEAP_SANDBOX_BOOL is enabled and
   // when loading an external pointer value.
-  DCHECK_IMPLIES(!V8_HEAP_SANDBOX_BOOL, reduction.replacement() == node);
-  if (V8_HEAP_SANDBOX_BOOL && reduction.replacement() != node) {
+  // DCHECK_IMPLIES(!V8_HEAP_SANDBOX_BOOL, reduction.replacement() == node);
+  if (reduction.replacement() != node) {
     // Replace all uses of node and kill the node to make sure we don't leave
     // dangling dead uses.
     NodeProperties::ReplaceUses(node, reduction.replacement(),

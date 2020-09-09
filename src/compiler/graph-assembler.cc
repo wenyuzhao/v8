@@ -527,10 +527,26 @@ Node* JSGraphAssembler::StoreField(FieldAccess const& access, Node* object,
 }
 
 #ifdef V8_MAP_PACKING
-Node* JSGraphAssembler::PackMapWord(TNode<Map> map) {
+TNode<Map> GraphAssembler::UnpackMapWord(Node* map_word) {
+  // Node* map_word_copy = AddNode(graph()->CloneNode(map_word));
+  auto map = WordXor(WordAnd(map_word, IntPtrConstant(~Internals::kMapWordMetadataMask)), IntPtrConstant(Internals::kXorMask));
+  return TNode<Map>::UncheckedCast(map);
+}
+
+Node* GraphAssembler::PackMapWord(TNode<Map> map) {
   return WordXor(map, IntPtrConstant(Internals::kXorMask));
 }
 #endif
+
+TNode<Map> GraphAssembler::LoadMap(Node* object) {
+  Node* map_word = Load(MachineType::TaggedPointer(), object,
+                               HeapObject::kMapOffset - kHeapObjectTag);
+#ifdef V8_MAP_PACKING
+  return UnpackMapWord(map_word);
+#else
+  return TNode<Map>::UncheckedCast(map_word);
+#endif
+}
 
 Node* JSGraphAssembler::StoreElement(ElementAccess const& access, Node* object,
                                      Node* index, Node* value) {

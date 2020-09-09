@@ -288,6 +288,7 @@ ArchOpcode GetLoadOpcode(LoadRepresentation load_rep) {
     case MachineRepresentation::kTagged:         // Fall through.
 #endif
     case MachineRepresentation::kWord64:
+      DCHECK(!load_rep.in_header());
       opcode = load_rep.in_header() ? kX64MapFromHeader : kX64Movq;
       break;
     case MachineRepresentation::kSimd128:  // Fall through.
@@ -461,6 +462,7 @@ void InstructionSelector::VisitLoad(Node* node, Node* value,
 
 void InstructionSelector::VisitLoad(Node* node) {
   LoadRepresentation load_rep = LoadRepresentationOf(node->op());
+  DCHECK(!load_rep.in_header());
   VisitLoad(node, node, GetLoadOpcode(load_rep));
 }
 

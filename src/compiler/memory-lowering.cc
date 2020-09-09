@@ -296,10 +296,10 @@ Reduction MemoryLowering::ReduceLoadFromObject(Node* node) {
 
   MachineType m_type = access.machine_type;
   bool load_from_header = IsMapOffsetConstant(node->InputAt(1));
-  if (load_from_header) {
+  if (load_from_header || m_type.in_header()) {
     DCHECK(IsAnyTagged(m_type.representation()));
     CHECK_EQ(m_type.semantic(), MachineSemantic::kAny);
-    m_type = MachineType::MapInHeader();
+    return Replace(DecodeMapWord(node));
   }
 
   NodeProperties::ChangeOp(node, machine()->Load(m_type));
@@ -312,6 +312,7 @@ Reduction MemoryLowering::ReduceLoadElement(Node* node) {
   Node* index = node->InputAt(1);
   node->ReplaceInput(1, ComputeIndex(access, index));
   MachineType type = access.machine_type;
+  DCHECK(!type.in_header());
   if (NeedsPoisoning(access.load_sensitivity)) {
     NodeProperties::ChangeOp(node, machine()->PoisonedLoad(type));
   } else {
@@ -358,6 +359,19 @@ Node* MemoryLowering::DecodeExternalPointer(
 #endif  // V8_HEAP_SANDBOX
 }
 
+Node* MemoryLowering::DecodeMapWord(Node* node) {
+  Node* effect = NodeProperties::GetEffectInput(node);
+  Node* control = NodeProperties::GetControlInput(node);
+  __ InitializeEffectControl(effect, control);
+
+  Node* node_copy = __ AddNode(graph()->CloneNode(node));
+
+  auto m_type = MachineType::TaggedPointer();
+  NodeProperties::ChangeOp(node_copy, machine()->Load(m_type));
+
+  return __ UnpackMapWord(node_copy);
+}
+
 Reduction MemoryLowering::ReduceLoadField(Node* node) {
   DCHECK_EQ(IrOpcode::kLoadField, node->opcode());
   FieldAccess const& access = FieldAccessOf(node->op());
@@ -374,8 +388,10 @@ Reduction MemoryLowering::ReduceLoadField(Node* node) {
   } else {
     NodeProperties::ChangeOp(node, machine()->Load(type));
   }
-  if (V8_HEAP_SANDBOX_BOOL &&
-      access.type.Is(Type::SandboxedExternalPointer())) {
+  if (type.in_header()) {
+    return Replace(DecodeMapWord(node));
+  } else if (V8_HEAP_SANDBOX_BOOL &&
+             access.type.Is(Type::SandboxedExternalPointer())) {
 #ifdef V8_HEAP_SANDBOX
     ExternalPointerTag tag = access.external_pointer_tag;
 #else
