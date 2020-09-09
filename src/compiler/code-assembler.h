@@ -1204,6 +1204,8 @@ class V8_EXPORT_PRIVATE CodeAssembler {
 
   bool IsJSFunctionCall() const;
 
+  RawMachineAssembler* raw_assembler() const;
+
  private:
   void HandleException(Node* result);
 
@@ -1249,7 +1251,6 @@ class V8_EXPORT_PRIVATE CodeAssembler {
   TNode<Int32T> Signed(TNode<Int32T> x);
   TNode<Uint32T> Unsigned(TNode<Uint32T> x);
 
-  RawMachineAssembler* raw_assembler() const;
   JSGraph* jsgraph() const;
 
   // Calls respective callback registered in the state.

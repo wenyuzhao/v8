@@ -16,6 +16,7 @@
 #include "src/compiler/linkage.h"
 #include "src/compiler/machine-operator.h"
 #include "src/compiler/node.h"
+#include "src/compiler/node-matchers.h"
 #include "src/compiler/operator.h"
 #include "src/compiler/simplified-operator.h"
 #include "src/compiler/write-barrier-kind.h"
@@ -144,10 +145,24 @@ class V8_EXPORT_PRIVATE RawMachineAssembler {
     Node* load = AddNode(op, base, index);
     return load;
   }
+  bool IsMapOffsetConstantMinusTag(Node* node) {
+    Int64Matcher m(node);
+    if (m.HasValue() && m.IsInRange(std::numeric_limits<int32_t>::min(),
+                                    std::numeric_limits<int32_t>::max())) {
+      return static_cast<int32_t>(m.Value()) ==
+            HeapObject::kMapOffset - kHeapObjectTag;
+    } else {
+      return false;
+    }
+  }
+  bool IsMapOffsetConstantMinusTag(int offset) {
+    return offset != HeapObject::kMapOffset || offset != HeapObject::kMapOffset - kHeapObjectTag;
+  }
   Node* LoadFromObject(
       MachineType type, Node* base, Node* offset,
       LoadSensitivity needs_poisoning = LoadSensitivity::kSafe) {
     CHECK_EQ(needs_poisoning, LoadSensitivity::kSafe);
+    DCHECK_IMPLIES(IsMapOffsetConstantMinusTag(offset), type == MachineType::MapInHeader());
     ObjectAccess access = {type, WriteBarrierKind::kNoWriteBarrier};
     Node* load = AddNode(simplified()->LoadFromObject(access), base, offset);
     return load;
@@ -166,18 +181,20 @@ class V8_EXPORT_PRIVATE RawMachineAssembler {
                      Node* value, WriteBarrierKind write_barrier) {
     ObjectAccess access = {MachineType::TypeForRepresentation(rep),
                            write_barrier};
+    DCHECK(!IsMapOffsetConstantMinusTag(offset));
     AddNode(simplified()->StoreToObject(access), object, offset, value);
   }
   void OptimizedStoreField(MachineRepresentation rep, Node* object, int offset,
                            Node* value, WriteBarrierKind write_barrier) {
+    DCHECK(IsMapOffsetConstantMinusTag(offset));
     AddNode(simplified()->StoreField(FieldAccess(
                 BaseTaggedness::kTaggedBase, offset, MaybeHandle<Name>(),
                 MaybeHandle<Map>(), Type::Any(),
                 MachineType::TypeForRepresentation(rep), write_barrier)),
             object, value);
   }
-  void OptimizedStoreMap(Node* object, Node* value) {
-    AddNode(simplified()->StoreField(AccessBuilder::ForMap()), object, value);
+  void OptimizedStoreMap(Node* object, Node* value, WriteBarrierKind write_barrier = kMapWriteBarrier) {
+    AddNode(simplified()->StoreField(AccessBuilder::ForMap(write_barrier)), object, value);
   }
   Node* Retain(Node* value) { return AddNode(common()->Retain(), value); }
 

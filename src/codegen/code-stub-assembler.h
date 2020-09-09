@@ -1141,7 +1141,6 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
                          std::is_convertible<TNode<T>, TNode<Object>>::value,
                          int>::type = 0>
   TNode<T> LoadReference(Reference reference) {
-    // FIXME(wenyuzhao): Figure out how can a zero offset being passed here
     // FIXME(wenyuzhao):
     //      This filtering logic could be put later in the pipeline after
     //      basic optimizations (like removing such useless phis)
@@ -1161,6 +1160,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
                     std::is_same<T, MaybeObject>::value,
                 int>::type = 0>
   TNode<T> LoadReference(Reference reference) {
+    DCHECK(!IsMapOffsetConstant(reference.offset));
     TNode<IntPtrT> offset =
         IntPtrSub(reference.offset, IntPtrConstant(kHeapObjectTag));
     return UncheckedCast<T>(
@@ -1178,6 +1178,9 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
     } else if (std::is_same<T, Map>::value) {
       write_barrier = StoreToObjectWriteBarrier::kMap;
     }
+    if (IsMapOffsetConstant(reference.offset)) {
+      return StoreMap(reference.object, TNode<Map>::UncheckedCast(value));
+    }
     TNode<IntPtrT> offset =
         IntPtrSub(reference.offset, IntPtrConstant(kHeapObjectTag));
     StoreToObject(rep, reference.object, offset, value, write_barrier);
@@ -1186,6 +1189,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
                          std::is_convertible<TNode<T>, TNode<UntaggedT>>::value,
                          int>::type = 0>
   void StoreReference(Reference reference, TNode<T> value) {
+    DCHECK(!IsMapOffsetConstant(reference.offset));
     TNode<IntPtrT> offset =
         IntPtrSub(reference.offset, IntPtrConstant(kHeapObjectTag));
     StoreToObject(MachineRepresentationOf<T>::value, reference.object, offset,

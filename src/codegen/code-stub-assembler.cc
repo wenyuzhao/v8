@@ -9,6 +9,7 @@
 #include "src/codegen/code-factory.h"
 #include "src/codegen/tnode.h"
 #include "src/common/globals.h"
+#include "src/compiler/raw-machine-assembler.h"
 #include "src/execution/frames-inl.h"
 #include "src/execution/frames.h"
 #include "src/execution/protectors.h"
@@ -1912,9 +1913,7 @@ TNode<BoolT> CodeStubAssembler::ContainsPackedMap(TNode<HeapObject> object) {
   DCHECK(Is64());  // TODO(steveblackburn)
   // LoadFromObject will unpack the value, so result of this load should be
   // clean
-  Node* mapvalue =
-      LoadFromObject(MachineType::TaggedPointer(), object,
-                     IntPtrConstant(HeapObject::kMapOffset - kHeapObjectTag));
+  Node* mapvalue = LoadMap(object);
   return WordNotEqual(WordAnd(BitcastTaggedToWord(mapvalue),
                               IntPtrConstant(Internals::kMapWordSignature)),
                       IntPtrConstant(Internals::kMapWordSignature));
@@ -2815,14 +2814,15 @@ void CodeStubAssembler::StoreMapNoWriteBarrier(TNode<HeapObject> object,
 
 void CodeStubAssembler::StoreMapNoWriteBarrier(TNode<HeapObject> object,
                                                TNode<Map> map) {
-  OptimizedStoreFieldAssertNoWriteBarrier(MachineRepresentation::kTaggedPointer,
-                                          object, HeapObject::kMapOffset, map);
+  raw_assembler()->OptimizedStoreMap(object, map, compiler::WriteBarrierKind::kAssertNoWriteBarrier);
   CSA_ASSERT(this, ContainsPackedMap(UncheckedCast<HeapObject>(object)));
 }
 
 void CodeStubAssembler::StoreObjectFieldRoot(TNode<HeapObject> object,
                                              int offset, RootIndex root_index) {
-  if (RootsTable::IsImmortalImmovable(root_index)) {
+  if (offset == HeapObject::kMapOffset) {
+    StoreMap(object, TNode<Map>::UncheckedCast(LoadRoot(root_index)));
+  } else if (RootsTable::IsImmortalImmovable(root_index)) {
     StoreObjectFieldNoWriteBarrier(object, offset, LoadRoot(root_index));
   } else {
     StoreObjectField(object, offset, LoadRoot(root_index));
@@ -10333,7 +10333,7 @@ void CodeStubAssembler::TrapAllocationMemento(TNode<JSObject> object,
   {
     auto memento_object_start = IntPtrAdd(BitcastTaggedToWord(object), IntPtrConstant(kMementoMapOffset));
     auto memento_object = TNode<HeapObject>::UncheckedCast(memento_object_start);
-    TNode<Object> memento_map = LoadObjectField(memento_object, HeapObject::kMapOffset);
+    TNode<Object> memento_map = TNode<Object>::UncheckedCast(LoadObjectField(memento_object, HeapObject::kMapOffset, MachineType::MapInHeader()));
     Branch(TaggedEqual(memento_map, AllocationMementoMapConstant()),
            memento_found, &no_memento_found);
   }

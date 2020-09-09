@@ -295,8 +295,7 @@ Reduction MemoryLowering::ReduceLoadFromObject(Node* node) {
   ObjectAccess const& access = ObjectAccessOf(node->op());
 
   MachineType m_type = access.machine_type;
-  bool load_from_header = IsMapOffsetConstant(node->InputAt(1));
-  if (load_from_header || m_type.in_header()) {
+  if (m_type.in_header()) {
     DCHECK(IsAnyTagged(m_type.representation()));
     CHECK_EQ(m_type.semantic(), MachineSemantic::kAny);
     return Replace(DecodeMapWord(node));
@@ -405,27 +404,11 @@ Reduction MemoryLowering::ReduceLoadField(Node* node) {
   return Changed(node);
 }
 
-bool MemoryLowering::IsMapOffsetConstant(Node* node) {
-  {
-    Int64Matcher m(node);
-    if (m.HasValue() && m.IsInRange(std::numeric_limits<int32_t>::min(),
-                                    std::numeric_limits<int32_t>::max()))
-      return (static_cast<int32_t>(m.Value()) == HeapObject::kMapOffset ||
-              static_cast<int32_t>(m.Value()) ==
-                  (HeapObject::kMapOffset - kHeapObjectTag));
-    else
-      return false;
-  }
-  DCHECK(false);
-  return false;
-}
-
 Reduction MemoryLowering::ReduceStoreToObject(Node* node,
                                               AllocationState const* state) {
   DCHECK_EQ(IrOpcode::kStoreToObject, node->opcode());
   ObjectAccess const& access = ObjectAccessOf(node->op());
   Node* object = node->InputAt(0);
-  Node* offset = node->InputAt(1);
   Node* value = node->InputAt(2);
 
   Node* effect = NodeProperties::GetEffectInput(node);
@@ -433,22 +416,9 @@ Reduction MemoryLowering::ReduceStoreToObject(Node* node,
   __ InitializeEffectControl(effect, control);
 
   MachineType m_type = access.machine_type;
-  bool store_to_header = IsMapOffsetConstant(offset);
-  if (store_to_header) {
-    CHECK_EQ(m_type.representation(), MachineRepresentation::kTaggedPointer);
-    CHECK_EQ(m_type.semantic(), MachineSemantic::kAny);
-    m_type = MachineType::MapInHeader();
-  }
-  DCHECK_IMPLIES(store_to_header,
-                 access.write_barrier_kind == kMapWriteBarrier);
   WriteBarrierKind write_barrier_kind = ComputeWriteBarrierKind(
       node, object, value, state, access.write_barrier_kind);
-#ifdef V8_MAP_PACKING
-  if (store_to_header) {
-    auto mapword = __ PackMapWord(TNode<Map>::UncheckedCast(value));
-    node->ReplaceInput(2, mapword);
-  }
-#endif
+  DCHECK(!m_type.in_header());
   NodeProperties::ChangeOp(node, machine()->Store(StoreRepresentation(
                                      m_type.representation(),
                                      write_barrier_kind, m_type.in_header())));
@@ -487,11 +457,9 @@ Reduction MemoryLowering::ReduceStoreField(Node* node,
   Node* control = NodeProperties::GetControlInput(node);
   __ InitializeEffectControl(effect, control);
 
-  bool store_to_header = (access.offset == HeapObject::kMapOffset &&
-                          access.base_is_tagged != kUntaggedBase);
-  // DCHECK_IMPLIES(store_to_header, m_type ==
-  // MachineType::MapPointerInHeader());
-  if (store_to_header) m_type = MachineType::MapInHeader();
+  DCHECK_IMPLIES(m_type.in_header(),
+                access.offset == HeapObject::kMapOffset &&
+                access.base_is_tagged != kUntaggedBase);
   DCHECK_IMPLIES(m_type.in_header(),
                  (access.write_barrier_kind == kMapWriteBarrier ||
                   access.write_barrier_kind == kNoWriteBarrier ||
@@ -501,7 +469,8 @@ Reduction MemoryLowering::ReduceStoreField(Node* node,
   Node* offset = __ IntPtrConstant(access.offset - access.tag());
   node->InsertInput(graph_zone(), 1, offset);
 #ifdef V8_MAP_PACKING
-  if (store_to_header) {
+  if (m_type.in_header()) {
+    m_type = MachineType::TaggedPointer();
     auto mapword =  __ PackMapWord(TNode<Map>::UncheckedCast(value));
     node->ReplaceInput(2, mapword);
   }
