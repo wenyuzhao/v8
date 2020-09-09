@@ -424,7 +424,7 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   void UnpackMapWord(Register r);
 #endif
 
-  void LoadMapFromHeader(Register destination, Register object);
+  void LoadMap(Register destination, Register object);
 
   void Move(Register dst, Smi source);
 
