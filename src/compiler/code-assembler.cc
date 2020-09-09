@@ -713,11 +713,6 @@ Node* CodeAssembler::LoadFromObject(MachineType type, TNode<HeapObject> object,
 Node* CodeAssembler::PackMapWord(Node* value) {
   return WordXor(value, IntPtrConstant(Internals::kXorMask));
 }
-
-Node* CodeAssembler::UnPackMapWord(Node* value) {
-  // return WordXor(value, IntPtrConstant(Internals::kXorMask));
-  return WordXor(WordAnd(value, IntPtrConstant(~Internals::kMapWordMetadataMask)), IntPtrConstant(Internals::kXorMask));
-}
 #endif
 
 Node* CodeAssembler::LoadFiller(RootIndex root_index) {

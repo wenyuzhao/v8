@@ -746,7 +746,6 @@ class V8_EXPORT_PRIVATE CodeAssembler {
 
 #ifdef V8_MAP_PACKING
   Node* PackMapWord(Node* value);
-  Node* UnPackMapWord(Node* value);
 #endif
 
   // Load a value from the root array.
