@@ -66,11 +66,8 @@ class X64OperandGenerator final : public OperandGenerator {
     if (effect_level != selector()->GetEffectLevel(input)) {
       return false;
     }
-    auto load_rep = LoadRepresentationOf(input->op());
-#ifdef V8_MAP_PACKING
-    if (load_rep.in_header()) return false;
-#endif
-    MachineRepresentation rep = load_rep.representation();
+    MachineRepresentation rep =
+        LoadRepresentationOf(input->op()).representation();
     switch (opcode) {
       case kX64And:
       case kX64Or:
@@ -289,7 +286,7 @@ ArchOpcode GetLoadOpcode(LoadRepresentation load_rep) {
 #endif
     case MachineRepresentation::kWord64:
       DCHECK(!load_rep.in_header());
-      opcode = load_rep.in_header() ? kX64MapFromHeader : kX64Movq;
+      opcode = kX64Movq;
       break;
     case MachineRepresentation::kSimd128:  // Fall through.
       opcode = kX64Movdqu;
@@ -316,6 +313,7 @@ ArchOpcode GetStoreOpcode(StoreRepresentation store_rep) {
     case MachineRepresentation::kCompressedPointer:  // Fall through.
     case MachineRepresentation::kCompressed:
 #ifdef V8_COMPRESS_POINTERS
+      DCHECK(!store_rep.store_to_header());
       return kX64MovqCompressTagged;
 #else
       UNREACHABLE();
@@ -323,6 +321,7 @@ ArchOpcode GetStoreOpcode(StoreRepresentation store_rep) {
     case MachineRepresentation::kTaggedSigned:   // Fall through.
     case MachineRepresentation::kTaggedPointer:  // Fall through.
     case MachineRepresentation::kTagged:
+      DCHECK(!store_rep.store_to_header());
       return kX64MovqCompressTagged;
     case MachineRepresentation::kWord64:
       return kX64Movq;
@@ -495,6 +494,7 @@ void InstructionSelector::VisitStore(Node* node) {
     RecordWriteMode record_write_mode =
         WriteBarrierKindToRecordWriteMode(write_barrier_kind);
     InstructionOperand temps[] = {g.TempRegister(), g.TempRegister()};
+    DCHECK(!store_rep.store_to_header());
     InstructionCode code = kArchStoreWithWriteBarrier;
     code |= AddressingModeField::encode(addressing_mode);
     code |= MiscField::encode(static_cast<int>(record_write_mode));
@@ -513,7 +513,7 @@ void InstructionSelector::VisitStore(Node* node) {
       value = value->InputAt(0);
     }
     InstructionOperand value_operand =
-        g.CanBeImmediate(value) ? g.UseImmediate(value) : g.UseUniqueRegister(value);
+        g.CanBeImmediate(value) ? g.UseImmediate(value) : g.UseRegister(value);
     inputs[input_count++] = value_operand;
     Emit(code, 0, static_cast<InstructionOperand*>(nullptr), input_count,
          inputs);

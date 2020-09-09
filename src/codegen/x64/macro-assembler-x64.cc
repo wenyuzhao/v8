@@ -206,12 +206,9 @@ void TurboAssembler::UnpackMapWord(Register r) {
 #endif
 
 void TurboAssembler::LoadMapFromHeader(Register destination, Register object) {
-  LoadMapFromHeader(destination, FieldOperand(object, HeapObject::kMapOffset));
-}
-
-void TurboAssembler::LoadMapFromHeader(Register destination,
-                                       Operand field_operand) {
-  LoadTaggedPointerField(destination, field_operand);
+  // LoadMapFromHeader(destination, FieldOperand(object, HeapObject::kMapOffset));
+  LoadTaggedPointerField(destination,
+                         FieldOperand(object, HeapObject::kMapOffset));
 #ifdef V8_MAP_PACKING
   UnpackMapWord(destination);
 #endif

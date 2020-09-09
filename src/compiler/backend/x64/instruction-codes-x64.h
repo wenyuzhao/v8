@@ -140,7 +140,6 @@ namespace compiler {
   V(X64MovqDecompressAnyTagged)           \
   V(X64MovqCompressTagged)                \
   V(X64Movq)                              \
-  V(X64MapFromHeader)                     \
   V(X64Movsd)                             \
   V(X64Movss)                             \
   V(X64Movdqu)                            \
