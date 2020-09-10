@@ -458,8 +458,8 @@ Reduction MemoryLowering::ReduceStoreField(Node* node,
   __ InitializeEffectControl(effect, control);
 
   DCHECK_IMPLIES(m_type.in_header(),
-                access.offset == HeapObject::kMapOffset &&
-                access.base_is_tagged != kUntaggedBase);
+                 access.offset == HeapObject::kMapOffset &&
+                     access.base_is_tagged != kUntaggedBase);
   DCHECK_IMPLIES(m_type.in_header(),
                  (access.write_barrier_kind == kMapWriteBarrier ||
                   access.write_barrier_kind == kNoWriteBarrier ||
@@ -471,7 +471,7 @@ Reduction MemoryLowering::ReduceStoreField(Node* node,
 #ifdef V8_MAP_PACKING
   if (m_type.in_header()) {
     m_type = MachineType::TaggedPointer();
-    auto mapword =  __ PackMapWord(TNode<Map>::UncheckedCast(value));
+    auto mapword = __ PackMapWord(TNode<Map>::UncheckedCast(value));
     node->ReplaceInput(2, mapword);
   }
 #endif

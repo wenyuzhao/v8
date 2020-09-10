@@ -2814,7 +2814,8 @@ void CodeStubAssembler::StoreMapNoWriteBarrier(TNode<HeapObject> object,
 
 void CodeStubAssembler::StoreMapNoWriteBarrier(TNode<HeapObject> object,
                                                TNode<Map> map) {
-  raw_assembler()->OptimizedStoreMap(object, map, compiler::WriteBarrierKind::kAssertNoWriteBarrier);
+  raw_assembler()->OptimizedStoreMap(
+      object, map, compiler::WriteBarrierKind::kAssertNoWriteBarrier);
   CSA_ASSERT(this, ContainsPackedMap(UncheckedCast<HeapObject>(object)));
 }
 
@@ -10331,9 +10332,12 @@ void CodeStubAssembler::TrapAllocationMemento(TNode<JSObject> object,
   // Memento map check.
   BIND(&map_check);
   {
-    auto memento_object_start = IntPtrAdd(BitcastTaggedToWord(object), IntPtrConstant(kMementoMapOffset));
-    auto memento_object = TNode<HeapObject>::UncheckedCast(memento_object_start);
-    TNode<Object> memento_map = TNode<Object>::UncheckedCast(LoadObjectField(memento_object, HeapObject::kMapOffset, MachineType::MapInHeader()));
+    auto memento_object_start = IntPtrAdd(BitcastTaggedToWord(object),
+                                          IntPtrConstant(kMementoMapOffset));
+    auto memento_object =
+        TNode<HeapObject>::UncheckedCast(memento_object_start);
+    TNode<Object> memento_map = TNode<Object>::UncheckedCast(LoadObjectField(
+        memento_object, HeapObject::kMapOffset, MachineType::MapInHeader()));
     Branch(TaggedEqual(memento_map, AllocationMementoMapConstant()),
            memento_found, &no_memento_found);
   }

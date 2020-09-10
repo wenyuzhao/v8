@@ -15,8 +15,8 @@
 #include "src/compiler/graph.h"
 #include "src/compiler/linkage.h"
 #include "src/compiler/machine-operator.h"
-#include "src/compiler/node.h"
 #include "src/compiler/node-matchers.h"
+#include "src/compiler/node.h"
 #include "src/compiler/operator.h"
 #include "src/compiler/simplified-operator.h"
 #include "src/compiler/write-barrier-kind.h"
@@ -150,19 +150,21 @@ class V8_EXPORT_PRIVATE RawMachineAssembler {
     if (m.HasValue() && m.IsInRange(std::numeric_limits<int32_t>::min(),
                                     std::numeric_limits<int32_t>::max())) {
       return static_cast<int32_t>(m.Value()) ==
-            HeapObject::kMapOffset - kHeapObjectTag;
+             HeapObject::kMapOffset - kHeapObjectTag;
     } else {
       return false;
     }
   }
   bool IsMapOffsetConstantMinusTag(int offset) {
-    return offset != HeapObject::kMapOffset || offset != HeapObject::kMapOffset - kHeapObjectTag;
+    return offset != HeapObject::kMapOffset ||
+           offset != HeapObject::kMapOffset - kHeapObjectTag;
   }
   Node* LoadFromObject(
       MachineType type, Node* base, Node* offset,
       LoadSensitivity needs_poisoning = LoadSensitivity::kSafe) {
     CHECK_EQ(needs_poisoning, LoadSensitivity::kSafe);
-    DCHECK_IMPLIES(IsMapOffsetConstantMinusTag(offset), type == MachineType::MapInHeader());
+    DCHECK_IMPLIES(IsMapOffsetConstantMinusTag(offset),
+                   type == MachineType::MapInHeader());
     ObjectAccess access = {type, WriteBarrierKind::kNoWriteBarrier};
     Node* load = AddNode(simplified()->LoadFromObject(access), base, offset);
     return load;
@@ -193,8 +195,10 @@ class V8_EXPORT_PRIVATE RawMachineAssembler {
                 MachineType::TypeForRepresentation(rep), write_barrier)),
             object, value);
   }
-  void OptimizedStoreMap(Node* object, Node* value, WriteBarrierKind write_barrier = kMapWriteBarrier) {
-    AddNode(simplified()->StoreField(AccessBuilder::ForMap(write_barrier)), object, value);
+  void OptimizedStoreMap(Node* object, Node* value,
+                         WriteBarrierKind write_barrier = kMapWriteBarrier) {
+    AddNode(simplified()->StoreField(AccessBuilder::ForMap(write_barrier)),
+            object, value);
   }
   Node* Retain(Node* value) { return AddNode(common()->Retain(), value); }
 

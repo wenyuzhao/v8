@@ -1609,8 +1609,7 @@ Handle<T> Factory::CopyArrayAndGrow(Handle<T> src, int grow_by,
   WriteBarrierMode mode = obj.GetWriteBarrierMode(no_gc);
   result->CopyElements(isolate(), 0, *src, 0, old_len, mode);
   MemsetTagged(ObjectSlot(result->data_start() + old_len),
-               ReadOnlyRoots(isolate()).undefined_value(),
-               grow_by);
+               ReadOnlyRoots(isolate()).undefined_value(), grow_by);
   return result;
 }
 
