@@ -63,7 +63,12 @@ void WriteBarrier::MarkingSlow(Heap* heap, DescriptorArray descriptor_array,
 int WriteBarrier::MarkingFromCode(Address raw_host, Address raw_slot) {
   HeapObject host = HeapObject::cast(Object(raw_host));
   MaybeObjectSlot slot(raw_slot);
-  WriteBarrier::Marking(host, slot, *slot);
+  Address map = (*slot).ptr();
+#ifdef V8_MAP_PACKING
+  // Unconditionally clear metadata bits and fix object tag.
+  map = (map & ~Internals::kMapWordSignature) | (unsigned long)kHeapObjectTag;
+#endif
+  WriteBarrier::Marking(host, slot, MaybeObject(map));
   // Called by RecordWriteCodeStubAssembler, which doesnt accept void type
   return 0;
 }
