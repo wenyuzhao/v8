@@ -9,7 +9,6 @@
 #include "src/codegen/code-factory.h"
 #include "src/codegen/tnode.h"
 #include "src/common/globals.h"
-#include "src/compiler/raw-machine-assembler.h"
 #include "src/execution/frames-inl.h"
 #include "src/execution/frames.h"
 #include "src/execution/protectors.h"
@@ -2803,7 +2802,7 @@ void CodeStubAssembler::UnsafeStoreObjectFieldNoWriteBarrier(
 }
 
 void CodeStubAssembler::StoreMap(TNode<HeapObject> object, TNode<Map> map) {
-  OptimizedStoreMapWord(object, map);
+  OptimizedStoreMap(object, map);
   CSA_ASSERT(this, ContainsPackedMap(object));
 }
 
@@ -2814,8 +2813,7 @@ void CodeStubAssembler::StoreMapNoWriteBarrier(TNode<HeapObject> object,
 
 void CodeStubAssembler::StoreMapNoWriteBarrier(TNode<HeapObject> object,
                                                TNode<Map> map) {
-  raw_assembler()->OptimizedStoreMap(
-      object, map, compiler::WriteBarrierKind::kAssertNoWriteBarrier);
+  OptimizedStoreMap(object, map);
   CSA_ASSERT(this, ContainsPackedMap(UncheckedCast<HeapObject>(object)));
 }
 

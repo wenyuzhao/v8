@@ -800,7 +800,7 @@ void CodeAssembler::OptimizedStoreFieldUnsafeNoWriteBarrier(
                                        WriteBarrierKind::kNoWriteBarrier);
 }
 
-void CodeAssembler::OptimizedStoreMapWord(TNode<HeapObject> object, Node* map) {
+void CodeAssembler::OptimizedStoreMap(TNode<HeapObject> object, TNode<Map> map) {
   raw_assembler()->OptimizedStoreMap(object, map);
 }
 
