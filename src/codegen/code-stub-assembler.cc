@@ -1528,8 +1528,9 @@ TNode<Map> CodeStubAssembler::LoadMap(SloppyTNode<HeapObject> object) {
   // TODO(v8:9637): Do a proper LoadObjectField<Map> and remove UncheckedCast
   // when we can avoid making Large code objects due to TNodification.
   CSA_ASSERT(this, IsStrong(object));
-  auto mapword = LoadFromObject(MachineType::MapInHeader(), object,
-                        IntPtrConstant(HeapObject::kMapOffset - kHeapObjectTag));
+  auto mapword =
+      LoadFromObject(MachineType::MapInHeader(), object,
+                     IntPtrConstant(HeapObject::kMapOffset - kHeapObjectTag));
   auto map = UncheckedCast<Map>(mapword);
   CSA_ASSERT(this, IsNotMapWord(map));
   return map;
