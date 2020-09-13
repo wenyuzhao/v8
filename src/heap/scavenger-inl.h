@@ -119,12 +119,12 @@ void Scavenger::PageMemoryFence(MaybeObject object) {
 bool Scavenger::MigrateObject(Map map, HeapObject source, HeapObject target,
                               int size) {
   // Copy the content of source to target.
-  target.set_map_word(MapWord::FromMap(map));
+  target.set_map_word(map.ToMapWord());
   heap()->CopyBlock(target.address() + kTaggedSize,
                     source.address() + kTaggedSize, size - kTaggedSize);
 
   if (!source.release_compare_and_swap_map_word(
-          MapWord::FromMap(map), MapWord::FromForwardingAddress(target))) {
+          map.ToMapWord(), MapWord::FromForwardingAddress(target))) {
     // Other task migrated the object.
     return false;
   }
@@ -229,7 +229,7 @@ bool Scavenger::HandleLargeObject(Map map, HeapObject object, int object_size,
     DCHECK_EQ(NEW_LO_SPACE,
               MemoryChunk::FromHeapObject(object)->owner_identity());
     if (object.release_compare_and_swap_map_word(
-            MapWord::FromMap(map), MapWord::FromForwardingAddress(object))) {
+            map.ToMapWord(), MapWord::FromForwardingAddress(object))) {
       surviving_new_large_objects_.insert({object, map});
       promoted_size_ += object_size;
       if (object_fields == ObjectFields::kMaybePointers) {
@@ -359,7 +359,7 @@ SlotCallbackResult Scavenger::EvacuateObject(THeapObjectSlot slot, Map map,
                     std::is_same<THeapObjectSlot, HeapObjectSlot>::value,
                 "Only FullHeapObjectSlot and HeapObjectSlot are expected here");
   SLOW_DCHECK(Heap::InFromPage(source));
-  SLOW_DCHECK(!MapWord::FromMap(map).IsForwardingAddress());
+  SLOW_DCHECK(!map.ToMapWord().IsForwardingAddress());
   int size = source.SizeFromMap(map);
   // Cannot use ::cast() below because that would add checks in debug mode
   // that require re-reading the map.

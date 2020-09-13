@@ -3080,7 +3080,7 @@ FixedArrayBase Heap::LeftTrimFixedArray(FixedArrayBase object,
   // performed on pages which are not concurrently swept creating a filler
   // object does not require synchronization.
   RELAXED_WRITE_FIELD(object, bytes_to_trim,
-                      Object(MapWord::FromMapNoCheck(map).ptr()));
+                      Object(map.ToMapWordUnchecked().ptr()));
   RELAXED_WRITE_FIELD(object, bytes_to_trim + kTaggedSize,
                       Smi::FromInt(len - elements_to_trim));
 
@@ -3511,7 +3511,7 @@ void Heap::VerifyObjectLayoutChange(HeapObject object, Map new_map) {
       object.IterateFast(&old_visitor);
       MapWord old_map_word = object.map_word();
       // Temporarily set the new map to iterate new slots.
-      object.set_map_word(MapWord::FromMap(new_map));
+      object.set_map_word(new_map.ToMapWord());
       SlotCollectingVisitor new_visitor;
       object.IterateFast(&new_visitor);
       // Restore the old map.

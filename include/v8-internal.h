@@ -288,7 +288,7 @@ class Internals {
     typedef internal::Address A;
     A map = ReadTaggedPointerField(obj, kHeapObjectMapOffset);
 #ifdef V8_MAP_PACKING
-    map = UnPackMapWord(map);
+    map = UnpackMapWord(map);
 #endif
     return ReadRawField<uint16_t>(map, kMapInstanceTypeOffset);
   }
@@ -371,7 +371,7 @@ class Internals {
     return map ^ kXorMask;
   }
 
-  V8_INLINE static constexpr internal::Address UnPackMapWord(
+  V8_INLINE static constexpr internal::Address UnpackMapWord(
       internal::Address mapword) {
     // return mapword ^ kXorMask;
     return (mapword & ~kMapWordMetadataMask) ^ kXorMask;

@@ -298,7 +298,7 @@ Reduction MemoryLowering::ReduceLoadFromObject(Node* node) {
   if (m_type.in_header()) {
     DCHECK(IsAnyTagged(m_type.representation()));
     CHECK_EQ(m_type.semantic(), MachineSemantic::kAny);
-    return Replace(DecodeMapWord(node));
+    return DecodeMapWord(node);
   }
 
   NodeProperties::ChangeOp(node, machine()->Load(m_type));
@@ -358,17 +358,19 @@ Node* MemoryLowering::DecodeExternalPointer(
 #endif  // V8_HEAP_SANDBOX
 }
 
-Node* MemoryLowering::DecodeMapWord(Node* node) {
+Reduction MemoryLowering::DecodeMapWord(Node* node) {
   Node* effect = NodeProperties::GetEffectInput(node);
   Node* control = NodeProperties::GetControlInput(node);
   __ InitializeEffectControl(effect, control);
 
-  Node* node_copy = __ AddNode(graph()->CloneNode(node));
+  NodeProperties::ChangeOp(node, machine()->Load(MachineType::TaggedPointer()));
 
-  auto m_type = MachineType::TaggedPointer();
-  NodeProperties::ChangeOp(node_copy, machine()->Load(m_type));
-
-  return __ UnpackMapWord(node_copy);
+#ifdef V8_MAP_PACKING
+  node = __ AddNode(graph()->CloneNode(node));
+  return Replace(__ UnpackMapWord(node));
+#else
+  return Changed(node);
+#endif
 }
 
 Reduction MemoryLowering::ReduceLoadField(Node* node) {
@@ -388,7 +390,7 @@ Reduction MemoryLowering::ReduceLoadField(Node* node) {
     NodeProperties::ChangeOp(node, machine()->Load(type));
   }
   if (type.in_header()) {
-    return Replace(DecodeMapWord(node));
+    return DecodeMapWord(node);
   } else if (V8_HEAP_SANDBOX_BOOL &&
              access.type.Is(Type::SandboxedExternalPointer())) {
 #ifdef V8_HEAP_SANDBOX

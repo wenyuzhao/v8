@@ -30,11 +30,7 @@ bool FullObjectSlot::contains_value(Address raw_value) const {
 }
 
 bool FullObjectSlot::contains_map_value(Address raw_value) const {
-  Address read_value = base::AsAtomicPointer::Relaxed_Load(location());
-#ifdef V8_MAP_PACKING
-  read_value = Internals::UnPackMapWord(read_value);
-#endif
-  return read_value == raw_value;
+  return load_map().ptr() == raw_value;
 }
 
 Object FullObjectSlot::operator*() const { return Object(*location()); }
@@ -43,17 +39,13 @@ Object FullObjectSlot::load(IsolateRoot isolate) const { return **this; }
 
 void FullObjectSlot::store(Object value) const { *location() = value.ptr(); }
 
-void FullObjectSlot::store_map(Object value) const {
-#ifdef V8_MAP_PACKING
-  *location() = Internals::PackMapWord(value.ptr());
-#else
-  *location() = value.ptr();
-#endif
+void FullObjectSlot::store_map(Map map) const {
+  *location() = map.ToMapWord().ptr();
 }
 
 Map FullObjectSlot::load_map() const {
 #ifdef V8_MAP_PACKING
-  return Map::unchecked_cast(Object(Internals::UnPackMapWord(*location())));
+  return Map::unchecked_cast(Object(Internals::UnpackMapWord(*location())));
 #else
   return Map::unchecked_cast(Object(*location()));
 #endif

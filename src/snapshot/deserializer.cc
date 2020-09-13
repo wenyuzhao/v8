@@ -63,12 +63,9 @@ class SlotAccessorForHeapObject {
   // Writes the given value to this slot, optionally with an offset (e.g. for
   // repeat writes). Returns the number of slots written (which is one).
   int Write(MaybeObject value, int slot_offset = 0) {
-#ifdef V8_MAP_PACKING
     if (slot_offset == 0 && offset() == 0) {
-      // can't assert that value is a map because during bootstrap it may not be
-      value = MaybeObject(Internals::PackMapWord(value.ptr()));
+      value = MaybeObject(MapWord(value.ptr()).ToMap().ptr());
     }
-#endif
     MaybeObjectSlot current_slot = slot() + slot_offset;
     current_slot.Relaxed_Store(value);
     WriteBarrier::Marking(*object_, current_slot, value);
@@ -125,12 +122,9 @@ class SlotAccessorForRootSlots {
   // Writes the given value to this slot, optionally with an offset (e.g. for
   // repeat writes). Returns the number of slots written (which is one).
   int Write(MaybeObject value, int slot_offset = 0) {
-#ifdef V8_MAP_PACKING
     if (slot_offset == 0 && offset() == 0) {
-      // can't assert that value is a map because during bootstrap it may not be
-      value = MaybeObject(Internals::PackMapWord(value.ptr()));
+      value = MaybeObject(MapWord(value.ptr()).ToMap().ptr());
     }
-#endif
     FullMaybeObjectSlot current_slot = slot() + slot_offset;
     current_slot.Relaxed_Store(value);
     return 1;
