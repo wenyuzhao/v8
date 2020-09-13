@@ -66,7 +66,7 @@ int WriteBarrier::MarkingFromCode(Address raw_host, Address raw_slot) {
   Address map = (*slot).ptr();
 #ifdef V8_MAP_PACKING
   // Unconditionally clear metadata bits and fix object tag.
-  map = (map & ~Internals::kMapWordSignature) | (unsigned long)kHeapObjectTag;
+  map = (map & ~Internals::kMapWordSignature) | (uint64_t) kHeapObjectTag;
 #endif
   WriteBarrier::Marking(host, slot, MaybeObject(map));
   // Called by RecordWriteCodeStubAssembler, which doesnt accept void type
