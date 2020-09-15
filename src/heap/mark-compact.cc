@@ -1087,7 +1087,7 @@ class InternalizedStringTableCleaner : public RootVisitor {
     for (OffHeapObjectSlot p = start; p < end; ++p) {
       Object o = p.load(isolate);
       if (o.IsHeapObject()) {
-        DCHECK(!Internals::IsMapWord(p.Acquire_Load().ptr()));
+        DCHECK(!Internals::IsMapWord(p.Relaxed_Load(isolate).ptr()));
         HeapObject heap_object = HeapObject::cast(o);
         DCHECK(!Heap::InYoungGeneration(heap_object));
         if (marking_state->IsWhite(heap_object)) {

@@ -141,6 +141,7 @@ Node* EffectPhiForPhi(Node* phi) {
 
 void WriteBarrierAssertFailed(Node* node, Node* object, const char* name,
                               Zone* temp_zone) {
+  node->Print(3);
   std::stringstream str;
   str << "MemoryOptimizer could not remove write barrier for node #"
       << node->id() << "\n";
@@ -304,12 +305,16 @@ void MemoryOptimizer::VisitLoadFromObject(Node* node,
   DCHECK_EQ(IrOpcode::kLoadFromObject, node->opcode());
   auto reduction = memory_lowering()->ReduceLoadFromObject(node);
   EnqueueUses(node, state);
+#ifdef V8_MAP_PACKING
   if (reduction.replacement() != node) {
     NodeProperties::ReplaceUses(node, reduction.replacement(),
                                 graph_assembler_.effect(),
                                 graph_assembler_.control());
     node->Kill();
   }
+#else
+  USE(reduction);
+#endif
 }
 
 void MemoryOptimizer::VisitStoreToObject(Node* node,

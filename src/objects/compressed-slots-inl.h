@@ -28,6 +28,10 @@ bool CompressedObjectSlot::contains_value(Address raw_value) const {
          static_cast<uint32_t>(static_cast<Tagged_t>(raw_value));
 }
 
+bool CompressedObjectSlot::contains_map_value(Address raw_value) const {
+  return load_map().ptr() == raw_value;
+}
+
 Object CompressedObjectSlot::operator*() const {
   Tagged_t value = *location();
   return Object(DecompressTaggedAny(address(), value));
@@ -40,6 +44,14 @@ Object CompressedObjectSlot::load(IsolateRoot isolate) const {
 
 void CompressedObjectSlot::store(Object value) const {
   *location() = CompressTagged(value.ptr());
+}
+
+void CompressedObjectSlot::store_map(Map map) const {
+  store(map);
+}
+
+Map CompressedObjectSlot::load_map() const {
+  return Map::unchecked_cast(Relaxed_Load());
 }
 
 Object CompressedObjectSlot::Acquire_Load() const {

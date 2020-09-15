@@ -257,9 +257,14 @@ class Internals {
 
   static const int kXorMask = 0b11;  // ensure two low-order bits are
                                      // 0b10 (looks like a smi)
-  static const size_t kMapWordMetadataMask = 1ull << 48;
-  static const uint64_t kMapWordSignature =
+  static const intptr_t kMapWordMetadataMask = ((intptr_t) 1) << 48;
+
+#ifdef V8_MAP_PACKING
+  static const intptr_t kMapWordSignature =
       0xffff000000000002;  // these bits will be set only on a map word
+#else
+  static const intptr_t kMapWordSignature = 0;
+#endif
 
   V8_EXPORT static void CheckInitializedImpl(v8::Isolate* isolate);
   V8_INLINE static void CheckInitialized(v8::Isolate* isolate) {
@@ -379,7 +384,11 @@ class Internals {
 #endif
 
   V8_INLINE static bool IsMapWord(internal::Address mw) {
-    return (mw & kMapWordSignature) == kMapWordSignature;
+#ifdef V8_MAP_PACKING
+    return (static_cast<intptr_t>(mw) & kMapWordSignature) == kMapWordSignature;
+#else
+    return false;
+#endif
   }
 
   V8_INLINE static internal::Address ReadTaggedPointerField(

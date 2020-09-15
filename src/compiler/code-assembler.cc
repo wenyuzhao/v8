@@ -716,20 +716,23 @@ Node* CodeAssembler::PackMapWord(Node* value) {
 #endif
 
 Node* CodeAssembler::LoadFiller(RootIndex root_index) {
+#ifdef V8_MAP_PACKING
   DCHECK(root_index == RootIndex::kOnePointerFillerMap);
   Handle<Object> root = isolate()->root_handle(root_index);
   Node* map = HeapConstant(Handle<HeapObject>::cast(root));
-  // TODO(steveblackburn) would be nice to use the xor'd constant
-#ifdef V8_MAP_PACKING
   map = PackMapWord(map);
-#endif
   return BitcastWordToTagged(map);
+#else
+  return LoadRoot(root_index);
+#endif
 }
 
 TNode<Object> CodeAssembler::LoadRoot(RootIndex root_index) {
+#ifdef V8_MAP_PACKING
   DCHECK(root_index != RootIndex::kOnePointerFillerMap);
   DCHECK(root_index != RootIndex::kTwoPointerFillerMap);
   DCHECK(root_index != RootIndex::kFreeSpaceMap);
+#endif
 
   if (RootsTable::IsImmortalImmovable(root_index)) {
     Handle<Object> root = isolate()->root_handle(root_index);

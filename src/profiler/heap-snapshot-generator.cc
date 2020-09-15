@@ -1817,7 +1817,7 @@ class GlobalObjectsEnumerator : public RootVisitor {
   void VisitRootPointersImpl(Root root, const char* description, TSlot start,
                              TSlot end) {
     for (TSlot p = start; p < end; ++p) {
-      DCHECK(!Internals::IsMapWord(p.Acquire_Load().ptr()));
+      DCHECK(!Internals::IsMapWord(p.Relaxed_Load(isolate_).ptr()));
       Object o = p.load(isolate_);
       if (!o.IsNativeContext(isolate_)) continue;
       JSObject proxy = Context::cast(o).global_proxy();

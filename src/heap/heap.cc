@@ -1870,7 +1870,7 @@ class StringTableVerifier : public RootVisitor {
     for (OffHeapObjectSlot p = start; p < end; ++p) {
       Object o = p.load(isolate_);
       DCHECK(!HasWeakHeapObjectTag(o));
-      DCHECK(!Internals::IsMapWord(p.Acquire_Load().ptr()));
+      DCHECK(!Internals::IsMapWord(p.Relaxed_Load(isolate_).ptr()));
       if (o.IsHeapObject()) {
         HeapObject object = HeapObject::cast(o);
         // Check that the string is actually internalized.

@@ -1903,13 +1903,18 @@ void CodeStubAssembler::DispatchMaybeObject(TNode<MaybeObject> maybe_object,
 }
 
 TNode<BoolT> CodeStubAssembler::IsNotMapWord(SloppyTNode<Map> value) {
+#ifdef V8_MAP_PACKING
   DCHECK(Is64());  // TODO(steveblackburn)
   return WordNotEqual(WordAnd(BitcastTaggedToWord(value),
                               IntPtrConstant(Internals::kMapWordSignature)),
                       IntPtrConstant(Internals::kMapWordSignature));
+#else
+  return BoolConstant(true);
+#endif
 }
 
 TNode<BoolT> CodeStubAssembler::ContainsPackedMap(TNode<HeapObject> object) {
+#ifdef V8_MAP_PACKING
   DCHECK(Is64());  // TODO(steveblackburn)
   // LoadFromObject will unpack the value, so result of this load should be
   // clean
@@ -1917,6 +1922,9 @@ TNode<BoolT> CodeStubAssembler::ContainsPackedMap(TNode<HeapObject> object) {
   return WordNotEqual(WordAnd(BitcastTaggedToWord(mapvalue),
                               IntPtrConstant(Internals::kMapWordSignature)),
                       IntPtrConstant(Internals::kMapWordSignature));
+#else
+  return BoolConstant(true);
+#endif
 }
 
 TNode<BoolT> CodeStubAssembler::IsNotMapOffset(SloppyTNode<IntPtrT> value) {
