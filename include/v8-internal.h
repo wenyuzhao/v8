@@ -257,7 +257,7 @@ class Internals {
 
   static const int kXorMask = 0b11;  // ensure two low-order bits are
                                      // 0b10 (looks like a smi)
-  static const intptr_t kMapWordMetadataMask = ((intptr_t) 1) << 48;
+  static const intptr_t kMapWordMetadataMask = ((intptr_t)1) << 48;
 
 #ifdef V8_MAP_PACKING
   static const intptr_t kMapWordSignature =

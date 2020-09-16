@@ -46,9 +46,7 @@ void CompressedObjectSlot::store(Object value) const {
   *location() = CompressTagged(value.ptr());
 }
 
-void CompressedObjectSlot::store_map(Map map) const {
-  store(map);
-}
+void CompressedObjectSlot::store_map(Map map) const { store(map); }
 
 Map CompressedObjectSlot::load_map() const {
   return Map::unchecked_cast(Relaxed_Load());
