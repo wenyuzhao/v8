@@ -13,6 +13,7 @@
 #include "src/objects/maybe-object.h"
 #include "src/objects/objects.h"
 #include "src/objects/slots.h"
+#include "src/objects/map.h"
 #include "src/utils/memcopy.h"
 
 namespace v8 {

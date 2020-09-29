@@ -711,7 +711,9 @@ Node* CodeAssembler::LoadFromObject(MachineType type, TNode<HeapObject> object,
 
 #ifdef V8_MAP_PACKING
 Node* CodeAssembler::PackMapWord(Node* value) {
-  return WordXor(value, IntPtrConstant(Internals::kXorMask));
+  Node* map_word = BitcastTaggedToWordForTagAndSmiBits(value);
+  Node* packed = WordXor(map_word, IntPtrConstant(Internals::kXorMask));
+  return BitcastWordToTaggedSigned(packed);
 }
 #endif
 
@@ -721,7 +723,7 @@ Node* CodeAssembler::LoadFiller(RootIndex root_index) {
   Handle<Object> root = isolate()->root_handle(root_index);
   Node* map = HeapConstant(Handle<HeapObject>::cast(root));
   map = PackMapWord(map);
-  return BitcastWordToTagged(map);
+  return map;
 #else
   return LoadRoot(root_index);
 #endif
