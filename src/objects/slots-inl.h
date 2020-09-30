@@ -10,10 +10,10 @@
 #include "src/common/ptr-compr-inl.h"
 #include "src/objects/compressed-slots.h"
 #include "src/objects/heap-object.h"
+#include "src/objects/map.h"
 #include "src/objects/maybe-object.h"
 #include "src/objects/objects.h"
 #include "src/objects/slots.h"
-#include "src/objects/map.h"
 #include "src/utils/memcopy.h"
 
 namespace v8 {

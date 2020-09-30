@@ -10341,8 +10341,8 @@ void CodeStubAssembler::TrapAllocationMemento(TNode<JSObject> object,
   {
     auto memento_object_start = IntPtrAdd(BitcastTaggedToWord(object),
                                           IntPtrConstant(kMementoMapOffset));
-    auto memento_object =
-        TNode<HeapObject>::UncheckedCast(BitcastWordToTaggedSigned(memento_object_start));
+    auto memento_object = TNode<HeapObject>::UncheckedCast(
+        BitcastWordToTaggedSigned(memento_object_start));
     TNode<Object> memento_map = TNode<Object>::UncheckedCast(LoadObjectField(
         memento_object, HeapObject::kMapOffset, MachineType::MapInHeader()));
     Branch(TaggedEqual(memento_map, AllocationMementoMapConstant()),
