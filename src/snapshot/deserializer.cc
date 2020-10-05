@@ -63,9 +63,6 @@ class SlotAccessorForHeapObject {
   // Writes the given value to this slot, optionally with an offset (e.g. for
   // repeat writes). Returns the number of slots written (which is one).
   int Write(MaybeObject value, int slot_offset = 0) {
-    if (slot_offset == 0 && offset() == 0) {
-      value = MaybeObject(MapWord(value.ptr()).ToMap().ptr());
-    }
     MaybeObjectSlot current_slot = slot() + slot_offset;
     current_slot.Relaxed_Store(value);
     WriteBarrier::Marking(*object_, current_slot, value);
@@ -122,9 +119,6 @@ class SlotAccessorForRootSlots {
   // Writes the given value to this slot, optionally with an offset (e.g. for
   // repeat writes). Returns the number of slots written (which is one).
   int Write(MaybeObject value, int slot_offset = 0) {
-    if (slot_offset == 0 && offset() == 0) {
-      value = MaybeObject(MapWord(value.ptr()).ToMap().ptr());
-    }
     FullMaybeObjectSlot current_slot = slot() + slot_offset;
     current_slot.Relaxed_Store(value);
     return 1;
