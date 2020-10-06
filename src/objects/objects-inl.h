@@ -816,6 +816,9 @@ DEF_GETTER(HeapObject, map_word, MapWord) {
 }
 
 void HeapObject::set_map_word(MapWord map_word) {
+  if (MemoryChunk::FromHeapObject(*this)->InReadOnlySpace()) {
+    map_word = MapWord(map_word.ptr() | (0b11L << 48));
+  }
   MapField::Relaxed_Store_No_Pack(*this, map_word);
 }
 

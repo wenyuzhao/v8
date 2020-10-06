@@ -32,8 +32,8 @@ class MarkingStateBase {
 
   // {addr} may be tagged or aligned.
   V8_INLINE MarkBit MarkBitFrom(BasicMemoryChunk* p, Address addr) {
-    return static_cast<ConcreteState*>(this)->bitmap(p)->MarkBitFromIndex(
-        p->AddressToMarkbitIndex(addr));
+    if ((addr & 1) != 0) addr = addr - 1;
+    return MarkBit((uint32_t*) (addr + 4), 1 << (48 - 32));
   }
 
   Marking::ObjectColor Color(HeapObject obj) {

@@ -3442,6 +3442,7 @@ void LiveObjectVisitor::RecomputeLiveBytes(MemoryChunk* chunk,
        LiveObjectRange<kAllLiveObjects>(chunk, marking_state->bitmap(chunk))) {
     new_live_size += object_and_size.second;
   }
+  printf("SetLiveBytes %d\n", new_live_size);
   marking_state->SetLiveBytes(chunk, new_live_size);
 }
 

@@ -128,6 +128,7 @@ class LiveObjectRange {
     MarkBitCellIterator it_;
     Address cell_base_;
     MarkBit::CellType current_cell_;
+    Address cursor_;
     HeapObject current_object_;
     int current_size_;
   };

@@ -435,10 +435,10 @@ void PagedSpace::FreeLinearAllocationArea() {
         MemoryChunk::FromAddress(current_top));
   }
 
-  DCHECK_IMPLIES(
-      current_limit - current_top >= 2 * kTaggedSize,
-      heap()->incremental_marking()->non_atomic_marking_state()->IsWhite(
-          HeapObject::FromAddress(current_top)));
+  // DCHECK_IMPLIES(
+  //     current_limit - current_top >= 2 * kTaggedSize,
+  //     heap()->incremental_marking()->non_atomic_marking_state()->IsWhite(
+  //         HeapObject::FromAddress(current_top)));
   Free(current_top, current_limit - current_top,
        SpaceAccountingMode::kSpaceAccounted);
 }
