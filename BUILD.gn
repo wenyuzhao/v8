@@ -137,7 +137,7 @@ declare_args() {
 
   # Controls the default values of v8_enable_atomic_object_field_writes and
   # v8_enable_concurrent_marking_state. See the default setting code below.
-  v8_enable_concurrent_marking = true
+  v8_enable_concurrent_marking = false
 
   # Runs mksnapshot with --turbo-profiling. After building in this
   # configuration, any subsequent run of d8 will output information about usage
