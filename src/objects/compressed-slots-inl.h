@@ -29,7 +29,7 @@ bool CompressedObjectSlot::contains_value(Address raw_value) const {
 }
 
 bool CompressedObjectSlot::contains_map_value(Address raw_value) const {
-  return load_map().ptr() == raw_value;
+  return contains_value(raw_value);
 }
 
 Object CompressedObjectSlot::operator*() const {
