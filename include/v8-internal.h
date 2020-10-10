@@ -262,7 +262,7 @@ class Internals {
                                             // 0b10 (looks like a smi)
 
 #ifdef V8_MAP_PACKING
-  static const intptr_t kMapWordMetadataMask = ((intptr_t)0b11) << 48;
+  static const intptr_t kMapWordMetadataMask = ((intptr_t)0b111) << 48;
   static const intptr_t kMapWordSignature =
       0xffff000000000002;  // these bits will be set only on a map word
 #else

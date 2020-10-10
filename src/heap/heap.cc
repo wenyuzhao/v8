@@ -823,6 +823,7 @@ void Heap::IncrementDeferredCount(v8::Isolate::UseCounterFeature feature) {
 bool Heap::UncommitFromSpace() { return new_space_->UncommitFromSpace(); }
 
 void Heap::GarbageCollectionPrologue() {
+  Marking::UpdateMarkState();
   TRACE_GC(tracer(), GCTracer::Scope::HEAP_PROLOGUE);
 
   // Reset GC statistics.
@@ -1943,6 +1944,7 @@ void Heap::UpdateSurvivalStatistics(int start_new_space_size) {
 
 size_t Heap::PerformGarbageCollection(
     GarbageCollector collector, const v8::GCCallbackFlags gc_callback_flags) {
+  printf("PerformGarbageCollection\n");
   DisallowJavascriptExecution no_js(isolate());
   base::Optional<SafepointScope> optional_safepoint_scope;
 

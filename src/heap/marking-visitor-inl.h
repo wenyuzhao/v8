@@ -24,7 +24,6 @@ void MarkingVisitorBase<ConcreteVisitor, MarkingState>::MarkObject(
     HeapObject host, HeapObject object) {
   concrete_visitor()->SynchronizePageAccess(object);
   if (concrete_visitor()->marking_state()->WhiteToGrey(object)) {
-    printf("marked %p\n", (void*) object.ptr());
     local_marking_worklists_->Push(object);
     if (V8_UNLIKELY(concrete_visitor()->retaining_path_mode() ==
                     TraceRetainingPathMode::kEnabled)) {

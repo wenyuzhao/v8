@@ -33,7 +33,7 @@ class MarkingStateBase {
   // {addr} may be tagged or aligned.
   V8_INLINE MarkBit MarkBitFrom(BasicMemoryChunk* p, Address addr) {
     if ((addr & 1) != 0) addr = addr - 1;
-    return MarkBit((uint32_t*) (addr + 4), 1 << (48 - 32));
+    return MarkBit((uint32_t*) (addr + 4), 1 << (48 - 32), p->InReadOnlySpace());
   }
 
   Marking::ObjectColor Color(HeapObject obj) {

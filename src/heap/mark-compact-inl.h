@@ -191,9 +191,6 @@ void LiveObjectRange<mode>::iterator::AdvanceToNextValidObject() {
     ) {
       current_object_ = obj;
       current_size_ = size;
-      if (cursor_ >> 19 == 0x18bdb4e80000 >> 19) {
-        printf("obj: %p\n", (void*) obj.ptr());
-      }
       return;
     }
   }

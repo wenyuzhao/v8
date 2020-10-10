@@ -137,5 +137,7 @@ bool ConcurrentBitmap<AccessMode::NON_ATOMIC>::IsClean() {
   return true;
 }
 
+std::pair<bool, bool> Marking::mark_state = std::make_pair(true, true);
+
 }  // namespace internal
 }  // namespace v8
