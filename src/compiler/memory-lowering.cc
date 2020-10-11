@@ -489,7 +489,6 @@ Reduction MemoryLowering::ReduceStore(Node* node,
   StoreRepresentation representation = StoreRepresentationOf(node->op());
   Node* object = node->InputAt(0);
   Node* value = node->InputAt(2);
-
   WriteBarrierKind write_barrier_kind = ComputeWriteBarrierKind(
       node, object, value, state, representation.write_barrier_kind());
   if (write_barrier_kind != representation.write_barrier_kind()) {

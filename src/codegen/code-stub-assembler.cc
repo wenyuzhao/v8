@@ -2050,7 +2050,7 @@ TNode<TValue> CodeStubAssembler::LoadArrayElement(
                 "Only Smi, UintPtrT or IntPtrT indices are allowed");
   CSA_ASSERT(this, IntPtrGreaterThanOrEqual(ParameterToIntPtr(index_node),
                                             IntPtrConstant(0)));
-  //  CSA_ASSERT(this, ContainsPackedMap(array));
+  CSA_ASSERT(this, ContainsPackedMap(array));
   DCHECK(IsAligned(additional_offset, kTaggedSize));
   int32_t header_size = array_header_size + additional_offset - kHeapObjectTag;
   TNode<IntPtrT> offset =

@@ -141,7 +141,6 @@ Node* EffectPhiForPhi(Node* phi) {
 
 void WriteBarrierAssertFailed(Node* node, Node* object, const char* name,
                               Zone* temp_zone) {
-  node->Print(3);
   std::stringstream str;
   str << "MemoryOptimizer could not remove write barrier for node #"
       << node->id() << "\n";
@@ -341,8 +340,12 @@ void MemoryOptimizer::VisitLoadField(Node* node, AllocationState const* state) {
 
   // Node can be replaced only when V8_HEAP_SANDBOX_BOOL is enabled and
   // when loading an external pointer value.
-  // DCHECK_IMPLIES(!V8_HEAP_SANDBOX_BOOL, reduction.replacement() == node);
+#ifndef V8_MAP_PACKING
+  DCHECK_IMPLIES(!V8_HEAP_SANDBOX_BOOL, reduction.replacement() == node);
+  if (V8_HEAP_SANDBOX_BOOL && reduction.replacement() != node) {
+#else
   if (reduction.replacement() != node) {
+#endif
     // Replace all uses of node and kill the node to make sure we don't leave
     // dangling dead uses.
     NodeProperties::ReplaceUses(node, reduction.replacement(),

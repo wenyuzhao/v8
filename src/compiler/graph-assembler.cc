@@ -528,7 +528,6 @@ Node* JSGraphAssembler::StoreField(FieldAccess const& access, Node* object,
 
 #ifdef V8_MAP_PACKING
 TNode<Map> GraphAssembler::UnpackMapWord(Node* map_word) {
-  // Node* map_word_copy = AddNode(graph()->CloneNode(map_word));
   map_word = BitcastTaggedToWordForTagAndSmiBits(map_word);
   auto map = WordXor(
       WordAnd(map_word, IntPtrConstant(~Internals::kMapWordMetadataMask)),
