@@ -667,6 +667,19 @@ MaybeObjectSlot HeapObject::RawMaybeWeakField(int byte_offset) const {
   return MaybeObjectSlot(field_address(byte_offset));
 }
 
+MapWord MapWord::FromMap(const Map map) {
+  DCHECK(map.is_null() || !Internals::IsMapWord(map.ptr()));
+  return FromMapUnchecked(map);
+}
+
+MapWord MapWord::FromMapUnchecked(const Map map) {
+#ifdef V8_MAP_PACKING
+  return MapWord(Internals::PackMapWord(map.ptr()));
+#else
+  return MapWord(map.ptr());
+#endif
+}
+
 Map MapWord::ToMap() const {
 #ifdef V8_MAP_PACKING
   return Map::unchecked_cast(Object(Internals::UnpackMapWord(value_)));
@@ -728,7 +741,7 @@ void HeapObject::set_map(Map value) {
     GetHeapFromWritableObject(*this)->VerifyObjectLayoutChange(*this, value);
   }
 #endif
-  set_map_word(value.ToMapWord());
+  set_map_word(MapWord::FromMap(value));
 #ifndef V8_DISABLE_WRITE_BARRIERS
   if (!value.is_null()) {
     // TODO(1600) We are passing kNullAddress as a slot because maps can never
@@ -748,7 +761,7 @@ void HeapObject::synchronized_set_map(Map value) {
     GetHeapFromWritableObject(*this)->VerifyObjectLayoutChange(*this, value);
   }
 #endif
-  synchronized_set_map_word(value.ToMapWord());
+  synchronized_set_map_word(MapWord::FromMap(value));
 #ifndef V8_DISABLE_WRITE_BARRIERS
   if (!value.is_null()) {
     // TODO(1600) We are passing kNullAddress as a slot because maps can never
@@ -765,11 +778,11 @@ void HeapObject::set_map_no_write_barrier(Map value) {
     GetHeapFromWritableObject(*this)->VerifyObjectLayoutChange(*this, value);
   }
 #endif
-  set_map_word(value.ToMapWord());
+  set_map_word(MapWord::FromMap(value));
 }
 
 void HeapObject::set_map_after_allocation(Map value, WriteBarrierMode mode) {
-  MapWord mapword = value.ToMapWord();
+  MapWord mapword = MapWord::FromMap(value);
   set_map_word(mapword);
 #ifndef V8_DISABLE_WRITE_BARRIERS
   if (mode != SKIP_WRITE_BARRIER) {
@@ -783,7 +796,7 @@ void HeapObject::set_map_after_allocation(Map value, WriteBarrierMode mode) {
 
 void HeapObject::set_map_after_allocation_no_check(Map value,
                                                    WriteBarrierMode mode) {
-  set_map_word(value.ToMapWordUnchecked());
+  set_map_word(MapWord::FromMapUnchecked(value));
 #ifndef V8_DISABLE_WRITE_BARRIERS
   if (mode != SKIP_WRITE_BARRIER) {
     DCHECK(!value.is_null());

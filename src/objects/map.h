@@ -251,17 +251,6 @@ class Map : public HeapObject {
   inline void AccountAddedPropertyField();
   inline void AccountAddedOutOfObjectPropertyField(
       int unused_in_property_array);
-  inline MapWord ToMapWord() const {
-    DCHECK(is_null() || !Internals::IsMapWord(ptr()));
-    return ToMapWordUnchecked();
-  }
-  inline MapWord ToMapWordUnchecked() const {
-#ifdef V8_MAP_PACKING
-    return MapWord(Internals::PackMapWord(ptr()));
-#else
-    return MapWord(ptr());
-#endif
-  }
 
   //
   // Bit field.

@@ -41,7 +41,11 @@ Object FullObjectSlot::load(IsolateRoot isolate) const { return **this; }
 void FullObjectSlot::store(Object value) const { *location() = value.ptr(); }
 
 void FullObjectSlot::store_map(Map map) const {
-  *location() = map.ToMapWord().ptr();
+#ifdef V8_MAP_PACKING
+  *location() = Internals::PackMapWord(map.ptr());
+#else
+  store(map);
+#endif
 }
 
 Map FullObjectSlot::load_map() const {
