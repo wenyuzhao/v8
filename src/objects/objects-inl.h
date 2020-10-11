@@ -86,7 +86,6 @@ IS_TYPE_FUNCTION_DEF(HashTableBase)
 IS_TYPE_FUNCTION_DEF(SmallOrderedHashTable)
 #undef IS_TYPE_FUNCTION_DEF
 
-// TODO(steveblackburn) need to deal with fillers gracefully here
 #define IS_TYPE_FUNCTION_DEF(Type, Value)                        \
   bool Object::Is##Type(Isolate* isolate) const {                \
     return Is##Type(ReadOnlyRoots(isolate));                     \
@@ -809,23 +808,20 @@ DEF_GETTER(HeapObject, map_word, MapWord) {
   return MapField::Acquire_Load_No_Unpack(isolate, *this);
 }
 
-void HeapObject::set_map_word(MapWord map_word) {  // TODO(steveblackburn)
+void HeapObject::set_map_word(MapWord map_word) {
   MapField::Relaxed_Store_No_Pack(*this, map_word);
 }
 
 DEF_GETTER(HeapObject, synchronized_map_word, MapWord) {
-  return MapField::Acquire_Load_No_Unpack(isolate,
-                                          *this);  // TODO(steveblackburn)
+  return MapField::Acquire_Load_No_Unpack(isolate, *this);
 }
 
-void HeapObject::synchronized_set_map_word(
-    MapWord map_word) {  // TODO(steveblackburn)
+void HeapObject::synchronized_set_map_word(MapWord map_word) {
   MapField::Release_Store_No_Pack(*this, map_word);
 }
 
-bool HeapObject::release_compare_and_swap_map_word(
-    MapWord old_map_word,
-    MapWord new_map_word) {  // TODO(steveblackburn)
+bool HeapObject::release_compare_and_swap_map_word(MapWord old_map_word,
+                                                   MapWord new_map_word) {
   Tagged_t result =
       MapField::Release_CompareAndSwap(*this, old_map_word, new_map_word);
   return result == static_cast<Tagged_t>(old_map_word.ptr());

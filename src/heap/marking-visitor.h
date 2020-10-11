@@ -134,9 +134,8 @@ class MarkingVisitorBase : public HeapVisitor<int, ConcreteVisitor> {
 
   // ObjectVisitor overrides.
   V8_INLINE void VisitMapPointer(HeapObject host) final {
-    // TODO(steveblackburn) note that we are skipping the
-    // recording the slot because map objects can't move, so this
-    // is safe (see ProcessStrongHeapObject for comparison)
+    // Note that we are skipping the recording the slot because map objects
+    // can't move, so this is safe (see ProcessStrongHeapObject for comparison)
     MarkObject(host, HeapObject::cast(host.extract_map()));
   }
   V8_INLINE void VisitPointer(HeapObject host, ObjectSlot p) final {
