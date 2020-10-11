@@ -106,7 +106,7 @@ class MarkingVerifier : public ObjectVisitor, public RootVisitor {
   }
 
   void VisitMapPointer(HeapObject object) override {
-    Map map = Map::unchecked_cast(object.extract_map());
+    Map map = Map::unchecked_cast(object.map());
     VerifyMap(map);
   }
 
@@ -284,7 +284,7 @@ class EvacuationVerifier : public ObjectVisitor, public RootVisitor {
   }
 
   void VisitMapPointer(HeapObject object) override {
-    Map map = Map::unchecked_cast(object.extract_map());
+    Map map = Map::unchecked_cast(object.map());
     VerifyMap(map);
   }
 
@@ -1030,7 +1030,7 @@ class MarkCompactCollector::CustomRootBodyMarkingVisitor final
   }
 
   void VisitMapPointer(HeapObject host) final {
-    MarkObject(host, host.extract_map());
+    MarkObject(host, host.map());
   }
 
   void VisitPointers(HeapObject host, ObjectSlot start, ObjectSlot end) final {

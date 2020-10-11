@@ -184,7 +184,7 @@ class ConcurrentMarkingVisitor final
 
     void VisitMapPointer(HeapObject object) override {
       ObjectSlot p = object.map_slot();
-      Map map = Map::unchecked_cast(object.extract_map());
+      Map map = Map::unchecked_cast(object.map());
       slot_snapshot_->add(p, map);
     }
 

@@ -211,7 +211,7 @@ void LiveObjectRange<mode>::iterator::AdvanceToNextValidObject() {
         // make sure that we skip all set bits in the black area until the
         // object ends.
         HeapObject black_object = HeapObject::FromAddress(addr);
-        Object map_object = black_object.extract_map();
+        Object map_object = black_object.map();
         CHECK(map_object.IsMap());
         map = Map::cast(map_object);
         DCHECK(map.IsMap());
@@ -243,7 +243,7 @@ void LiveObjectRange<mode>::iterator::AdvanceToNextValidObject() {
         }
       } else if ((mode == kGreyObjects || mode == kAllLiveObjects)) {
         object = HeapObject::FromAddress(addr);
-        Object map_object = object.extract_map();
+        Object map_object = object.map();
         CHECK(map_object.IsMap());
         map = Map::cast(map_object);
         DCHECK(map.IsMap());

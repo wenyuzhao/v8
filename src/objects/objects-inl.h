@@ -798,12 +798,6 @@ ObjectSlot HeapObject::map_slot() const {
   return ObjectSlot(MapField::address(*this));
 }
 
-Object HeapObject::extract_map() {
-  auto map = map_slot().load_map();
-  DCHECK(map.IsMap());
-  return map;
-}
-
 DEF_GETTER(HeapObject, map_word, MapWord) {
   return MapField::Acquire_Load_No_Unpack(isolate, *this);
 }
