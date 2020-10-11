@@ -145,6 +145,24 @@ class V8_EXPORT_PRIVATE RawMachineAssembler {
     Node* load = AddNode(op, base, index);
     return load;
   }
+  bool IsMapOffsetConstant(Node* node) {
+    // Test if `node` is a `Int64Constant(0)`
+    Int64Matcher m(node);
+    if (m.HasValue() && m.IsInRange(std::numeric_limits<int32_t>::min(),
+                                    std::numeric_limits<int32_t>::max())) {
+      return static_cast<int32_t>(m.Value()) == HeapObject::kMapOffset;
+    }
+    // Test if `node` is a `Phi(Int64Constant(0))`
+    if (node->opcode() == IrOpcode::kPhi) {
+      auto c = node->InputAt(0);
+      Int64Matcher m(c);
+      if (m.HasValue()) {
+        return static_cast<int32_t>(m.Value()) == HeapObject::kMapOffset;
+      }
+    }
+    // Not a constant map offset
+    return false;
+  }
   bool IsMapOffsetConstantMinusTag(Node* node) {
     Int64Matcher m(node);
     if (m.HasValue() && m.IsInRange(std::numeric_limits<int32_t>::min(),
@@ -156,8 +174,7 @@ class V8_EXPORT_PRIVATE RawMachineAssembler {
     }
   }
   bool IsMapOffsetConstantMinusTag(int offset) {
-    return offset != HeapObject::kMapOffset ||
-           offset != HeapObject::kMapOffset - kHeapObjectTag;
+    return offset != HeapObject::kMapOffset - kHeapObjectTag;
   }
   Node* LoadFromObject(
       MachineType type, Node* base, Node* offset,
@@ -257,6 +274,7 @@ class V8_EXPORT_PRIVATE RawMachineAssembler {
 
   Node* AtomicStore(MachineRepresentation rep, Node* base, Node* index,
                     Node* value, Node* value_high) {
+    DCHECK(!IsMapOffsetConstantMinusTag(index));
     if (rep == MachineRepresentation::kWord64) {
       if (machine()->Is64()) {
         DCHECK_NULL(value_high);

@@ -550,7 +550,6 @@ class V8_EXPORT_PRIVATE CodeAssembler {
   }
 
   bool IsMapOffsetConstant(Node* node);
-  bool IsMapOffsetConstantMinusTag(Node* node);
 
   bool ToInt32Constant(Node* node, int32_t* out_value);
   bool ToInt64Constant(Node* node, int64_t* out_value);
