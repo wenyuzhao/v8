@@ -1029,9 +1029,7 @@ class MarkCompactCollector::CustomRootBodyMarkingVisitor final
     MarkObject(host, *p);
   }
 
-  void VisitMapPointer(HeapObject host) final {
-    MarkObject(host, host.map());
-  }
+  void VisitMapPointer(HeapObject host) final { MarkObject(host, host.map()); }
 
   void VisitPointers(HeapObject host, ObjectSlot start, ObjectSlot end) final {
     for (ObjectSlot p = start; p < end; ++p) {
