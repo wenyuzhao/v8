@@ -109,7 +109,7 @@ class MemoryLowering final : public Reducer {
                                            AllocationState const* state,
                                            WriteBarrierKind);
   Node* DecodeExternalPointer(Node* encoded_pointer, ExternalPointerTag tag);
-  Reduction DecodeMapWord(Node* encoded_pointer);
+  Reduction UnpackMapWord(Node* encoded_pointer);
   Node* ComputeIndex(ElementAccess const& access, Node* node);
   bool NeedsPoisoning(LoadSensitivity load_sensitivity) const;
 
