@@ -1147,9 +1147,9 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
 
     TNode<IntPtrT> offset =
         IntPtrSub(reference.offset, IntPtrConstant(kHeapObjectTag));
-    Node* rtn =
+    Node* result =
         LoadFromObject(MachineTypeOf<T>::value, reference.object, offset);
-    return CAST(rtn);
+    return CAST(result);
   }
   template <class T,
             typename std::enable_if<
