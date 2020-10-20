@@ -302,7 +302,7 @@ void MemoryOptimizer::VisitAllocateRaw(Node* node,
 void MemoryOptimizer::VisitLoadFromObject(Node* node,
                                           AllocationState const* state) {
   DCHECK_EQ(IrOpcode::kLoadFromObject, node->opcode());
-  auto reduction = memory_lowering()->ReduceLoadFromObject(node);
+  Reduction reduction = memory_lowering()->ReduceLoadFromObject(node);
   EnqueueUses(node, state);
 #ifdef V8_MAP_PACKING
   if (reduction.replacement() != node) {

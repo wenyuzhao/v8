@@ -154,8 +154,7 @@ class V8_EXPORT_PRIVATE RawMachineAssembler {
     }
     // Test if `node` is a `Phi(Int64Constant(0))`
     if (node->opcode() == IrOpcode::kPhi) {
-      auto c = node->InputAt(0);
-      Int64Matcher m(c);
+      Int64Matcher m(node->InputAt(0));
       if (m.HasValue()) {
         return static_cast<int32_t>(m.Value()) == HeapObject::kMapOffset;
       }

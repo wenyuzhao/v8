@@ -529,7 +529,7 @@ Node* JSGraphAssembler::StoreField(FieldAccess const& access, Node* object,
 #ifdef V8_MAP_PACKING
 TNode<Map> GraphAssembler::UnpackMapWord(Node* map_word) {
   map_word = BitcastTaggedToWordForTagAndSmiBits(map_word);
-  auto map = WordXor(
+  Node* map = WordXor(
       WordAnd(map_word, IntPtrConstant(~Internals::kMapWordMetadataMask)),
       IntPtrConstant(Internals::kXorMask));
   return TNode<Map>::UncheckedCast(BitcastWordToTaggedSigned(map));

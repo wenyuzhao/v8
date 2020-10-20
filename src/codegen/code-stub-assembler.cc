@@ -1528,10 +1528,10 @@ TNode<Map> CodeStubAssembler::LoadMap(SloppyTNode<HeapObject> object) {
   // TODO(v8:9637): Do a proper LoadObjectField<Map> and remove UncheckedCast
   // when we can avoid making Large code objects due to TNodification.
   CSA_ASSERT(this, IsStrong(object));
-  auto mapword =
+  Node* mapword =
       LoadFromObject(MachineType::MapInHeader(), object,
                      IntPtrConstant(HeapObject::kMapOffset - kHeapObjectTag));
-  auto map = UncheckedCast<Map>(mapword);
+  TNode<Map> map = UncheckedCast<Map>(mapword);
   CSA_ASSERT(this, IsNotMapWord(map));
   return map;
 }
@@ -10337,9 +10337,9 @@ void CodeStubAssembler::TrapAllocationMemento(TNode<JSObject> object,
   // Memento map check.
   BIND(&map_check);
   {
-    auto memento_object_start = IntPtrAdd(BitcastTaggedToWord(object),
+    TNode<IntPtrT> memento_object_start = IntPtrAdd(BitcastTaggedToWord(object),
                                           IntPtrConstant(kMementoMapOffset));
-    auto memento_object = TNode<HeapObject>::UncheckedCast(
+    TNode<HeapObject> memento_object = TNode<HeapObject>::UncheckedCast(
         BitcastWordToTaggedSigned(memento_object_start));
     TNode<Object> memento_map = TNode<Object>::UncheckedCast(LoadFromObject(
         MachineType::MapInHeader(), memento_object,

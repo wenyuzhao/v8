@@ -473,7 +473,7 @@ Reduction MemoryLowering::ReduceStoreField(Node* node,
 #ifdef V8_MAP_PACKING
   if (m_type.in_header()) {
     m_type = MachineType::TaggedPointer();
-    auto mapword = __ PackMapWord(TNode<Map>::UncheckedCast(value));
+    Node* mapword = __ PackMapWord(TNode<Map>::UncheckedCast(value));
     node->ReplaceInput(2, mapword);
   }
 #endif
