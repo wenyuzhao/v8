@@ -808,7 +808,7 @@ void Serializer::ObjectSerializer::VisitPointers(HeapObject host,
   HandleScope scope(isolate());
   DisallowGarbageCollection no_gc;
 
-  DCHECK(host.ptr() != start.address());
+  DCHECK_NE(host.ptr(), start.address());
   MaybeObjectSlot current = start;
   while (current < end) {
     while (current < end && (*current)->IsSmi()) {

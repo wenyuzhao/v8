@@ -4139,7 +4139,7 @@ class OldToNewSlotVerifyingVisitor : public SlotVerifyingVisitor {
 
   void VisitEphemeron(HeapObject host, int index, ObjectSlot key,
                       ObjectSlot target) override {
-    DCHECK(target != host.map_slot());
+    DCHECK_NE(target, host.map_slot());
     VisitPointer(host, target);
 #ifdef ENABLE_MINOR_MC
     if (FLAG_minor_mc) return VisitPointer(host, target);

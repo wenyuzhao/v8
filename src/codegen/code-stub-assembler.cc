@@ -1486,7 +1486,7 @@ TNode<Object> CodeStubAssembler::LoadFromParentFrame(int offset) {
 
 TNode<IntPtrT> CodeStubAssembler::LoadAndUntagObjectField(
     SloppyTNode<HeapObject> object, int offset) {
-  DCHECK(offset != HeapObject::kMapOffset);
+  DCHECK_NE(offset, HeapObject::kMapOffset);
   if (SmiValuesAre32Bits()) {
 #if V8_TARGET_LITTLE_ENDIAN
     offset += 4;
@@ -1499,7 +1499,7 @@ TNode<IntPtrT> CodeStubAssembler::LoadAndUntagObjectField(
 
 TNode<Int32T> CodeStubAssembler::LoadAndUntagToWord32ObjectField(
     SloppyTNode<HeapObject> object, int offset) {
-  DCHECK(offset != HeapObject::kMapOffset);
+  DCHECK_NE(offset, HeapObject::kMapOffset);
   if (SmiValuesAre32Bits()) {
 #if V8_TARGET_LITTLE_ENDIAN
     offset += 4;
@@ -10567,8 +10567,8 @@ void CodeStubAssembler::InitializeFieldsWithRoot(TNode<HeapObject> object,
   if (root_index == RootIndex::kOnePointerFillerMap) {
     root_value = LoadFiller(root_index);
   } else {
-    DCHECK(root_index != RootIndex::kTwoPointerFillerMap &&
-           root_index != RootIndex::kFreeSpaceMap);
+    DCHECK_NE(root_index, RootIndex::kTwoPointerFillerMap);
+    DCHECK_NE(root_index, RootIndex::kFreeSpaceMap);
     root_value = LoadRoot(root_index);
   }
   BuildFastLoop<IntPtrT>(

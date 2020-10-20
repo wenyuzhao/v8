@@ -692,7 +692,7 @@ Node* CodeAssembler::PackMapWord(Node* value) {
 
 Node* CodeAssembler::LoadFiller(RootIndex root_index) {
 #ifdef V8_MAP_PACKING
-  DCHECK(root_index == RootIndex::kOnePointerFillerMap);
+  DCHECK_EQ(root_index, RootIndex::kOnePointerFillerMap);
   Handle<Object> root = isolate()->root_handle(root_index);
   Node* map = HeapConstant(Handle<HeapObject>::cast(root));
   map = PackMapWord(map);
@@ -704,9 +704,9 @@ Node* CodeAssembler::LoadFiller(RootIndex root_index) {
 
 TNode<Object> CodeAssembler::LoadRoot(RootIndex root_index) {
 #ifdef V8_MAP_PACKING
-  DCHECK(root_index != RootIndex::kOnePointerFillerMap);
-  DCHECK(root_index != RootIndex::kTwoPointerFillerMap);
-  DCHECK(root_index != RootIndex::kFreeSpaceMap);
+  DCHECK_NE(root_index, RootIndex::kOnePointerFillerMap);
+  DCHECK_NE(root_index, RootIndex::kTwoPointerFillerMap);
+  DCHECK_NE(root_index, RootIndex::kFreeSpaceMap);
 #endif
 
   if (RootsTable::IsImmortalImmovable(root_index)) {

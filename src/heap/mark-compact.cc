@@ -1034,7 +1034,7 @@ class MarkCompactCollector::CustomRootBodyMarkingVisitor final
   void VisitPointers(HeapObject host, ObjectSlot start, ObjectSlot end) final {
     for (ObjectSlot p = start; p < end; ++p) {
       DCHECK(!Internals::IsMapWord(p.Relaxed_Load().ptr()));
-      DCHECK(host.map_slot() != p);  // don't blindly iterate over the map field
+      DCHECK_NE(host.map_slot(), p);  // don't blindly iterate over the map field
       DCHECK(!HasWeakHeapObjectTag(*p));
       MarkObject(host, *p);
     }
