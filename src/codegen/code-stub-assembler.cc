@@ -1904,9 +1904,10 @@ void CodeStubAssembler::DispatchMaybeObject(TNode<MaybeObject> maybe_object,
 
 void CodeStubAssembler::AssertIsUnpackedMapWord(SloppyTNode<Map> map) {
 #ifdef V8_MAP_PACKING
-  CSA_ASSERT(this, WordNotEqual(WordAnd(BitcastTaggedToWord(map),
-                              IntPtrConstant(Internals::kMapWordSignature)),
-                      IntPtrConstant(Internals::kMapWordSignature)));
+  CSA_ASSERT(this,
+             WordNotEqual(WordAnd(BitcastTaggedToWord(map),
+                                  IntPtrConstant(Internals::kMapWordSignature)),
+                          IntPtrConstant(Internals::kMapWordSignature)));
 #endif
 }
 
@@ -10331,8 +10332,8 @@ void CodeStubAssembler::TrapAllocationMemento(TNode<JSObject> object,
   // Memento map check.
   BIND(&map_check);
   {
-    TNode<IntPtrT> memento_object_start = IntPtrAdd(BitcastTaggedToWord(object),
-                                          IntPtrConstant(kMementoMapOffset));
+    TNode<IntPtrT> memento_object_start = IntPtrAdd(
+        BitcastTaggedToWord(object), IntPtrConstant(kMementoMapOffset));
     TNode<HeapObject> memento_object = TNode<HeapObject>::UncheckedCast(
         BitcastWordToTaggedSigned(memento_object_start));
     TNode<Object> memento_map = TNode<Object>::UncheckedCast(LoadFromObject(
