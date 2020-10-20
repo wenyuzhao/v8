@@ -1306,9 +1306,9 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
                            Label* if_cleared, Label* if_weak, Label* if_strong,
                            TVariable<Object>* extracted);
   // See MaybeObject for semantics of these functions.
-  TNode<BoolT> IsNotMapWord(SloppyTNode<Map> value);
   TNode<BoolT> IsNotMapOffset(SloppyTNode<IntPtrT> value);
-  TNode<BoolT> ContainsPackedMap(TNode<HeapObject> object);
+  void AssertIsUnpackedMapWord(SloppyTNode<Map> map);
+  void CheckMap(TNode<HeapObject> object);
   TNode<BoolT> IsStrong(TNode<MaybeObject> value);
   TNode<HeapObject> GetHeapObjectIfStrong(TNode<MaybeObject> value,
                                           Label* if_not_strong);

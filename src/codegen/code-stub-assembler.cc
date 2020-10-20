@@ -1532,7 +1532,7 @@ TNode<Map> CodeStubAssembler::LoadMap(SloppyTNode<HeapObject> object) {
       LoadFromObject(MachineType::MapInHeader(), object,
                      IntPtrConstant(HeapObject::kMapOffset - kHeapObjectTag));
   TNode<Map> map = UncheckedCast<Map>(mapword);
-  CSA_ASSERT(this, IsNotMapWord(map));
+  AssertIsUnpackedMapWord(map);
   return map;
 }
 
@@ -1902,26 +1902,20 @@ void CodeStubAssembler::DispatchMaybeObject(TNode<MaybeObject> maybe_object,
   Goto(if_strong);
 }
 
-TNode<BoolT> CodeStubAssembler::IsNotMapWord(SloppyTNode<Map> value) {
+void CodeStubAssembler::AssertIsUnpackedMapWord(SloppyTNode<Map> map) {
 #ifdef V8_MAP_PACKING
-  return WordNotEqual(WordAnd(BitcastTaggedToWord(value),
+  CSA_ASSERT(this, WordNotEqual(WordAnd(BitcastTaggedToWord(map),
                               IntPtrConstant(Internals::kMapWordSignature)),
-                      IntPtrConstant(Internals::kMapWordSignature));
-#else
-  return BoolConstant(true);
+                      IntPtrConstant(Internals::kMapWordSignature)));
 #endif
 }
 
-TNode<BoolT> CodeStubAssembler::ContainsPackedMap(TNode<HeapObject> object) {
+void CodeStubAssembler::CheckMap(TNode<HeapObject> object) {
 #ifdef V8_MAP_PACKING
-  // LoadFromObject will unpack the value, so result of this load should be
-  // clean
-  Node* mapvalue = LoadMap(object);
-  return WordNotEqual(WordAnd(BitcastTaggedToWord(mapvalue),
-                              IntPtrConstant(Internals::kMapWordSignature)),
-                      IntPtrConstant(Internals::kMapWordSignature));
-#else
-  return BoolConstant(true);
+  // Test if the map is an unpacked and valid map
+  TNode<Map> map = LoadMap(object);
+  AssertIsUnpackedMapWord(map);
+  CSA_ASSERT(this, IsMap(map));
 #endif
 }
 
@@ -2050,7 +2044,7 @@ TNode<TValue> CodeStubAssembler::LoadArrayElement(
                 "Only Smi, UintPtrT or IntPtrT indices are allowed");
   CSA_ASSERT(this, IntPtrGreaterThanOrEqual(ParameterToIntPtr(index_node),
                                             IntPtrConstant(0)));
-  CSA_ASSERT(this, ContainsPackedMap(array));
+  CheckMap(array);
   DCHECK(IsAligned(additional_offset, kTaggedSize));
   int32_t header_size = array_header_size + additional_offset - kHeapObjectTag;
   TNode<IntPtrT> offset =
@@ -2810,7 +2804,7 @@ void CodeStubAssembler::UnsafeStoreObjectFieldNoWriteBarrier(
 
 void CodeStubAssembler::StoreMap(TNode<HeapObject> object, TNode<Map> map) {
   OptimizedStoreMap(object, map);
-  CSA_ASSERT(this, ContainsPackedMap(object));
+  CheckMap(object);
 }
 
 void CodeStubAssembler::StoreMapNoWriteBarrier(TNode<HeapObject> object,
@@ -2821,7 +2815,7 @@ void CodeStubAssembler::StoreMapNoWriteBarrier(TNode<HeapObject> object,
 void CodeStubAssembler::StoreMapNoWriteBarrier(TNode<HeapObject> object,
                                                TNode<Map> map) {
   OptimizedStoreMap(object, map);
-  CSA_ASSERT(this, ContainsPackedMap(UncheckedCast<HeapObject>(object)));
+  CheckMap(object);
 }
 
 void CodeStubAssembler::StoreObjectFieldRoot(TNode<HeapObject> object,
