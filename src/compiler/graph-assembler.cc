@@ -531,13 +531,13 @@ TNode<Map> GraphAssembler::UnpackMapWord(Node* map_word) {
   map_word = BitcastTaggedToWordForTagAndSmiBits(map_word);
   Node* map = WordXor(
       WordAnd(map_word, IntPtrConstant(~Internals::kMapWordMetadataMask)),
-      IntPtrConstant(Internals::kXorMask));
+      IntPtrConstant(Internals::kMapWordXorMask));
   return TNode<Map>::UncheckedCast(BitcastWordToTaggedSigned(map));
 }
 
 Node* GraphAssembler::PackMapWord(TNode<Map> map) {
   Node* map_word = BitcastTaggedToWordForTagAndSmiBits(map);
-  Node* packed = WordXor(map_word, IntPtrConstant(Internals::kXorMask));
+  Node* packed = WordXor(map_word, IntPtrConstant(Internals::kMapWordXorMask));
   return TNode<Map>::UncheckedCast(BitcastWordToTaggedSigned(packed));
 }
 #endif

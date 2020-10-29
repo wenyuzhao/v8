@@ -40,6 +40,9 @@ const int kWeakHeapObjectTag = 3;
 const int kHeapObjectTagSize = 2;
 const intptr_t kHeapObjectTagMask = (1 << kHeapObjectTagSize) - 1;
 
+// Tag information for fowarding pointers stored in object headers.
+// 0b00 at the lowest 2 bits in the header indicates that the map word is a
+// forwarding pointer.
 const int kForwardingTag = 0;
 const int kForwardingTagSize = 2;
 const intptr_t kForwardingTagMask = (1 << kForwardingTagSize) - 1;
@@ -255,8 +258,8 @@ class Internals {
   // incremental GC once the external memory reaches this limit.
   static constexpr int kExternalAllocationSoftLimit = 64 * 1024 * 1024;
 
-  static const int kXorMask = 0b11;  // ensure two low-order bits are
-                                     // 0b10 (looks like a smi)
+  static const int kMapWordXorMask = 0b11;  // ensure two low-order bits are
+                                            // 0b10 (looks like a smi)
 
 #ifdef V8_MAP_PACKING
   static const intptr_t kMapWordMetadataMask = ((intptr_t)1) << 48;
@@ -374,13 +377,12 @@ class Internals {
 #ifdef V8_MAP_PACKING
   V8_INLINE static constexpr internal::Address PackMapWord(
       internal::Address map) {
-    return map ^ kXorMask;
+    return map ^ kMapWordXorMask;
   }
 
   V8_INLINE static constexpr internal::Address UnpackMapWord(
       internal::Address mapword) {
-    // return mapword ^ kXorMask;
-    return (mapword & ~kMapWordMetadataMask) ^ kXorMask;
+    return (mapword & ~kMapWordMetadataMask) ^ kMapWordXorMask;
   }
 #endif
 

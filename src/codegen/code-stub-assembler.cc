@@ -1525,14 +1525,17 @@ TNode<Map> CodeStubAssembler::GetInstanceTypeMap(InstanceType instance_type) {
 }
 
 TNode<Map> CodeStubAssembler::LoadMap(SloppyTNode<HeapObject> object) {
-  // TODO(v8:9637): Do a proper LoadObjectField<Map> and remove UncheckedCast
-  // when we can avoid making Large code objects due to TNodification.
   CSA_ASSERT(this, IsStrong(object));
   Node* mapword =
       LoadFromObject(MachineType::MapInHeader(), object,
                      IntPtrConstant(HeapObject::kMapOffset - kHeapObjectTag));
-  TNode<Map> map = UncheckedCast<Map>(mapword);
-  AssertIsUnpackedMapWord(map);
+  TNode<Map> map = CAST(mapword);
+#ifdef V8_MAP_PACKING
+  CSA_ASSERT(this,
+             WordNotEqual(WordAnd(BitcastTaggedToWord(map),
+                                  IntPtrConstant(Internals::kMapWordSignature)),
+                          IntPtrConstant(Internals::kMapWordSignature)));
+#endif
   return map;
 }
 
@@ -1902,27 +1905,12 @@ void CodeStubAssembler::DispatchMaybeObject(TNode<MaybeObject> maybe_object,
   Goto(if_strong);
 }
 
-void CodeStubAssembler::AssertIsUnpackedMapWord(SloppyTNode<Map> map) {
-#ifdef V8_MAP_PACKING
-  CSA_ASSERT(this,
-             WordNotEqual(WordAnd(BitcastTaggedToWord(map),
-                                  IntPtrConstant(Internals::kMapWordSignature)),
-                          IntPtrConstant(Internals::kMapWordSignature)));
-#endif
-}
-
-void CodeStubAssembler::CheckMap(TNode<HeapObject> object) {
+void CodeStubAssembler::AssertHasValidMap(TNode<HeapObject> object) {
 #ifdef V8_MAP_PACKING
   // Test if the map is an unpacked and valid map
   TNode<Map> map = LoadMap(object);
-  AssertIsUnpackedMapWord(map);
   CSA_ASSERT(this, IsMap(map));
 #endif
-}
-
-TNode<BoolT> CodeStubAssembler::IsNotMapOffset(SloppyTNode<IntPtrT> value) {
-  return Word32NotEqual(TruncateIntPtrToInt32(value),
-                        Int32Constant(HeapObject::kMapOffset));
 }
 
 TNode<BoolT> CodeStubAssembler::IsStrong(TNode<MaybeObject> value) {
@@ -2045,7 +2033,7 @@ TNode<TValue> CodeStubAssembler::LoadArrayElement(
                 "Only Smi, UintPtrT or IntPtrT indices are allowed");
   CSA_ASSERT(this, IntPtrGreaterThanOrEqual(ParameterToIntPtr(index_node),
                                             IntPtrConstant(0)));
-  CheckMap(array);
+  AssertHasValidMap(array);
   DCHECK(IsAligned(additional_offset, kTaggedSize));
   int32_t header_size = array_header_size + additional_offset - kHeapObjectTag;
   TNode<IntPtrT> offset =
@@ -2805,7 +2793,7 @@ void CodeStubAssembler::UnsafeStoreObjectFieldNoWriteBarrier(
 
 void CodeStubAssembler::StoreMap(TNode<HeapObject> object, TNode<Map> map) {
   OptimizedStoreMap(object, map);
-  CheckMap(object);
+  AssertHasValidMap(object);
 }
 
 void CodeStubAssembler::StoreMapNoWriteBarrier(TNode<HeapObject> object,
@@ -2816,13 +2804,13 @@ void CodeStubAssembler::StoreMapNoWriteBarrier(TNode<HeapObject> object,
 void CodeStubAssembler::StoreMapNoWriteBarrier(TNode<HeapObject> object,
                                                TNode<Map> map) {
   OptimizedStoreMap(object, map);
-  CheckMap(object);
+  AssertHasValidMap(object);
 }
 
 void CodeStubAssembler::StoreObjectFieldRoot(TNode<HeapObject> object,
                                              int offset, RootIndex root_index) {
   if (offset == HeapObject::kMapOffset) {
-    StoreMap(object, TNode<Map>::UncheckedCast(LoadRoot(root_index)));
+    StoreMap(object, CAST(LoadRoot(root_index)));
   } else if (RootsTable::IsImmortalImmovable(root_index)) {
     StoreObjectFieldNoWriteBarrier(object, offset, LoadRoot(root_index));
   } else {

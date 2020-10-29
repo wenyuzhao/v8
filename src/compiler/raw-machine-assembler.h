@@ -148,29 +148,17 @@ class V8_EXPORT_PRIVATE RawMachineAssembler {
   bool IsMapOffsetConstant(Node* node) {
     // Test if `node` is a `Int64Constant(0)`
     Int64Matcher m(node);
-    if (m.HasValue() && m.IsInRange(std::numeric_limits<int32_t>::min(),
-                                    std::numeric_limits<int32_t>::max())) {
-      return static_cast<int32_t>(m.Value()) == HeapObject::kMapOffset;
-    }
+    if (m.Is(HeapObject::kMapOffset)) return true;
     // Test if `node` is a `Phi(Int64Constant(0))`
     if (node->opcode() == IrOpcode::kPhi) {
       Int64Matcher m(node->InputAt(0));
-      if (m.HasValue()) {
-        return static_cast<int32_t>(m.Value()) == HeapObject::kMapOffset;
-      }
+      if (m.Is(HeapObject::kMapOffset)) return true;
     }
-    // Not a constant map offset
     return false;
   }
   bool IsMapOffsetConstantMinusTag(Node* node) {
     Int64Matcher m(node);
-    if (m.HasValue() && m.IsInRange(std::numeric_limits<int32_t>::min(),
-                                    std::numeric_limits<int32_t>::max())) {
-      return static_cast<int32_t>(m.Value()) ==
-             HeapObject::kMapOffset - kHeapObjectTag;
-    } else {
-      return false;
-    }
+    return m.Is(HeapObject::kMapOffset - kHeapObjectTag);
   }
   bool IsMapOffsetConstantMinusTag(int offset) {
     return offset != HeapObject::kMapOffset - kHeapObjectTag;

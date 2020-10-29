@@ -209,7 +209,7 @@ void TurboAssembler::LoadTaggedPointerField(Register destination,
 void TurboAssembler::UnpackMapWord(Register r) {
   shlq(r, Immediate(8));
   shrq(r, Immediate(8));
-  xorq(r, Immediate(Internals::kXorMask));
+  xorq(r, Immediate(Internals::kMapWordXorMask));
 }
 #endif
 

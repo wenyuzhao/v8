@@ -1142,7 +1142,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
                          int>::type = 0>
   TNode<T> LoadReference(Reference reference) {
     if (IsMapOffsetConstant(reference.offset)) {
-      return TNode<T>::UncheckedCast(LoadMap(reference.object));
+      return CAST((Node*)LoadMap(reference.object));
     }
 
     TNode<IntPtrT> offset =
@@ -1176,7 +1176,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
       write_barrier = StoreToObjectWriteBarrier::kMap;
     }
     if (IsMapOffsetConstant(reference.offset)) {
-      return StoreMap(reference.object, TNode<Map>::UncheckedCast(value));
+      return StoreMap(reference.object, CAST((Node*)value));
     }
     TNode<IntPtrT> offset =
         IntPtrSub(reference.offset, IntPtrConstant(kHeapObjectTag));
@@ -1306,9 +1306,6 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
                            Label* if_cleared, Label* if_weak, Label* if_strong,
                            TVariable<Object>* extracted);
   // See MaybeObject for semantics of these functions.
-  TNode<BoolT> IsNotMapOffset(SloppyTNode<IntPtrT> value);
-  void AssertIsUnpackedMapWord(SloppyTNode<Map> map);
-  void CheckMap(TNode<HeapObject> object);
   TNode<BoolT> IsStrong(TNode<MaybeObject> value);
   TNode<HeapObject> GetHeapObjectIfStrong(TNode<MaybeObject> value,
                                           Label* if_not_strong);
@@ -3763,6 +3760,8 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   void TryPlainPrimitiveNonNumberToNumber(TNode<HeapObject> input,
                                           TVariable<Number>* var_result,
                                           Label* if_bailout);
+
+  void AssertHasValidMap(TNode<HeapObject> object);
 };
 
 class V8_EXPORT_PRIVATE CodeStubArguments {
