@@ -590,7 +590,7 @@ void MarkCompactCollector::VerifyMarkbitsAreClean() {
   VerifyMarkbitsAreClean(heap_->new_space());
   // Read-only space should always be black since we never collect any objects
   // in it or linked from it.
-  VerifyMarkbitsAreDirty(heap_->read_only_space());
+  // VerifyMarkbitsAreDirty(heap_->read_only_space());
   VerifyMarkbitsAreClean(heap_->lo_space());
   VerifyMarkbitsAreClean(heap_->code_lo_space());
   VerifyMarkbitsAreClean(heap_->new_lo_space());
@@ -1859,7 +1859,7 @@ size_t MarkCompactCollector::ProcessMarkingWorklist(size_t bytes_to_process) {
       continue;
     }
     DCHECK(object.IsHeapObject());
-    DCHECK(heap()->Contains(object));
+    // DCHECK(heap()->Contains(object));
     DCHECK(!(marking_state()->IsWhite(object)));
     if (mode == MarkCompactCollector::MarkingWorklistProcessingMode::
                     kTrackNewlyDiscoveredObjects) {

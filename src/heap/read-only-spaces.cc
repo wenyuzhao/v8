@@ -388,7 +388,7 @@ void ReadOnlySpace::Seal(SealMode ro_mode) {
     }
   }
 
-  SetPermissionsForPages(memory_allocator, PageAllocator::kRead);
+  // SetPermissionsForPages(memory_allocator, PageAllocator::kRead);
 }
 
 void ReadOnlySpace::Unseal() {

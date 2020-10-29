@@ -218,7 +218,7 @@ declare_args() {
 
   # Enable sharing read-only space across isolates.
   # Sets -DV8_SHARED_RO_HEAP.
-  v8_enable_shared_ro_heap = ""
+  v8_enable_shared_ro_heap = false
 
   # Enable lazy source positions by default.
   v8_enable_lazy_source_positions = true
