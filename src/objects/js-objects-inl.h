@@ -715,7 +715,7 @@ DEF_GETTER(JSReceiver, property_array, PropertyArray) {
 }
 
 bool JSReceiver::MapOK() {
-  const Isolate* isolate = GetIsolateForPtrCompr(*this);
+  IsolateRoot isolate = GetIsolateForPtrCompr(*this);
   Map m = map(isolate);
   return m.IsMap();
 }
