@@ -2982,8 +2982,7 @@ Node* WasmGraphBuilder::BuildLoadFunctionIndexFromExportedFunctionData(
 
 Node* HasInstanceType(WasmGraphAssembler* gasm, Node* object,
                       InstanceType type) {
-  Node* map = gasm->Load(MachineType::TaggedPointer(), object,
-                         wasm::ObjectAccess::ToTagged(HeapObject::kMapOffset));
+  Node* map = gasm->LoadMap(object);
   Node* instance_type =
       gasm->Load(MachineType::Uint16(), map,
                  wasm::ObjectAccess::ToTagged(Map::kInstanceTypeOffset));
@@ -6543,9 +6542,7 @@ class WasmWrapperGraphBuilder : public WasmGraphBuilder {
       case wasm::ValueType::kF64: {
         auto done = gasm_->MakeLabel();
         gasm_->GotoIf(IsSmi(input), &done);
-        Node* map =
-            gasm_->Load(MachineType::TaggedPointer(), input,
-                        wasm::ObjectAccess::ToTagged(HeapObject::kMapOffset));
+        Node* map = gasm_->LoadMap(input);
         Node* heap_number_map = LOAD_FULL_POINTER(
             BuildLoadIsolateRoot(),
             IsolateData::root_slot_offset(RootIndex::kHeapNumberMap));
