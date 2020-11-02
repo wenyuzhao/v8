@@ -144,7 +144,8 @@ T TaggedField<T, kFieldOffset>::Acquire_Load(HeapObject host, int offset) {
 
 // static
 template <typename T, int kFieldOffset>
-T TaggedField<T, kFieldOffset>::Acquire_Load_No_Unpack(IsolateRoot isolate, HeapObject host,
+T TaggedField<T, kFieldOffset>::Acquire_Load_No_Unpack(IsolateRoot isolate,
+                                                       HeapObject host,
                                                        int offset) {
   AtomicTagged_t value = AsAtomicTagged::Acquire_Load(location(host, offset));
   return T(tagged_to_full(isolate, value));
