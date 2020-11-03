@@ -444,7 +444,7 @@ class Marking : public AllStatic {
   template <AccessMode mode = AccessMode::NON_ATOMIC>
   V8_INLINE static bool WhiteToGrey(MarkBit markbit) {
     DCHECK_EQ(mode, AccessMode::NON_ATOMIC);
-    // DCHECK(!IsBlack(markbit));
+    DCHECK(!IsBlack(markbit));
     if (!IsWhite(markbit)) return false;
     MarkGrey(markbit);
     return true;
