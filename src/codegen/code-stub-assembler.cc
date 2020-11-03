@@ -1908,8 +1908,7 @@ void CodeStubAssembler::DispatchMaybeObject(TNode<MaybeObject> maybe_object,
 void CodeStubAssembler::AssertHasValidMap(TNode<HeapObject> object) {
 #ifdef V8_MAP_PACKING
   // Test if the map is an unpacked and valid map
-  TNode<Map> map = LoadMap(object);
-  CSA_ASSERT(this, IsMap(map));
+  CSA_ASSERT(this, IsMap(LoadMap(object)));
 #endif
 }
 
