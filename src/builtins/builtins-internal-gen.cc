@@ -144,30 +144,32 @@ class RecordWriteCodeStubAssembler : public CodeStubAssembler {
 
   void GetMarkBit(TNode<IntPtrT> object, TNode<IntPtrT>* cell,
                   TNode<IntPtrT>* mask) {
-    TNode<IntPtrT> page = PageFromAddress(object);
-    TNode<IntPtrT> bitmap =
-        IntPtrAdd(page, IntPtrConstant(MemoryChunk::kMarkingBitmapOffset));
+    *cell = IntPtrAdd(object, IntPtrConstant(4));
+    *mask = IntPtrConstant(0b11 << (47 - 32));
+    // TNode<IntPtrT> page = PageFromAddress(object);
+    // TNode<IntPtrT> bitmap =
+    //     IntPtrAdd(page, IntPtrConstant(MemoryChunk::kMarkingBitmapOffset));
 
-    {
-      // Temp variable to calculate cell offset in bitmap.
-      TNode<WordT> r0;
-      int shift = Bitmap::kBitsPerCellLog2 + kTaggedSizeLog2 -
-                  Bitmap::kBytesPerCellLog2;
-      r0 = WordShr(object, IntPtrConstant(shift));
-      r0 = WordAnd(r0, IntPtrConstant((kPageAlignmentMask >> shift) &
-                                      ~(Bitmap::kBytesPerCell - 1)));
-      *cell = IntPtrAdd(bitmap, Signed(r0));
-    }
-    {
-      // Temp variable to calculate bit offset in cell.
-      TNode<WordT> r1;
-      r1 = WordShr(object, IntPtrConstant(kTaggedSizeLog2));
-      r1 = WordAnd(r1, IntPtrConstant((1 << Bitmap::kBitsPerCellLog2) - 1));
-      // It seems that LSB(e.g. cl) is automatically used, so no manual masking
-      // is needed. Uncomment the following line otherwise.
-      // WordAnd(r1, IntPtrConstant((1 << kBitsPerByte) - 1)));
-      *mask = WordShl(IntPtrConstant(1), r1);
-    }
+    // {
+    //   // Temp variable to calculate cell offset in bitmap.
+    //   TNode<WordT> r0;
+    //   int shift = Bitmap::kBitsPerCellLog2 + kTaggedSizeLog2 -
+    //               Bitmap::kBytesPerCellLog2;
+    //   r0 = WordShr(object, IntPtrConstant(shift));
+    //   r0 = WordAnd(r0, IntPtrConstant((kPageAlignmentMask >> shift) &
+    //                                   ~(Bitmap::kBytesPerCell - 1)));
+    //   *cell = IntPtrAdd(bitmap, Signed(r0));
+    // }
+    // {
+    //   // Temp variable to calculate bit offset in cell.
+    //   TNode<WordT> r1;
+    //   r1 = WordShr(object, IntPtrConstant(kTaggedSizeLog2));
+    //   r1 = WordAnd(r1, IntPtrConstant((1 << Bitmap::kBitsPerCellLog2) - 1));
+    //   // It seems that LSB(e.g. cl) is automatically used, so no manual masking
+    //   // is needed. Uncomment the following line otherwise.
+    //   // WordAnd(r1, IntPtrConstant((1 << kBitsPerByte) - 1)));
+    //   *mask = WordShl(IntPtrConstant(1), r1);
+    // }
   }
 
   TNode<BoolT> ShouldSkipFPRegs(TNode<Smi> mode) {
