@@ -545,6 +545,8 @@ class ReadOnlyRoots {
   V8_INLINE explicit ReadOnlyRoots(Isolate* isolate);
   V8_INLINE explicit ReadOnlyRoots(LocalIsolate* isolate);
 
+  // For `v8_enable_map_packing=true`, this will return a packed (also untagged)
+  // map-word instead of a tagged heap pointer.
   inline MapWord one_pointer_filler_map_word();
 
 #define ROOT_ACCESSOR(Type, name, CamelName)     \
