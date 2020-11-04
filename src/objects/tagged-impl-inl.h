@@ -258,10 +258,16 @@ Object TaggedImpl<kRefType, StorageType>::GetHeapObjectOrSmi(
 template <HeapObjectReferenceType kRefType, typename StorageType>
 bool TaggedImpl<kRefType, StorageType>::IsFillerMap(Isolate* isolate) const {
   ReadOnlyRoots roots = ReadOnlyRoots(isolate);
-  Address m = MapWord(static_cast<Address>(ptr_)).ToMap().ptr();
-  return m == roots.one_pointer_filler_map().ptr() ||
-         m == roots.two_pointer_filler_map().ptr() ||
-         m == roots.free_space_map().ptr();
+  Address ptr = ptr_;
+#ifdef V8_MAP_PACKING
+  // Unconditionally unpack this pointer.
+  // For non filler-maps, the unpacked value will always fail the following
+  // comparisons.
+  ptr = Internals::UnpackMapWord(ptr);
+#endif
+  return ptr == roots.one_pointer_filler_map().ptr() ||
+         ptr == roots.two_pointer_filler_map().ptr() ||
+         ptr == roots.free_space_map().ptr();
 }
 
 }  // namespace internal

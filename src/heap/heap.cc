@@ -3082,7 +3082,7 @@ FixedArrayBase Heap::LeftTrimFixedArray(FixedArrayBase object,
   // performed on pages which are not concurrently swept creating a filler
   // object does not require synchronization.
   RELAXED_WRITE_FIELD(object, bytes_to_trim,
-                      Object(MapWord::FromMapUnchecked(map).ptr()));
+                      Object(MapWord::FromMap(map).ptr()));
   RELAXED_WRITE_FIELD(object, bytes_to_trim + kTaggedSize,
                       Smi::FromInt(len - elements_to_trim));
 

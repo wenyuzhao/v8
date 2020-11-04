@@ -146,7 +146,6 @@ class V8_EXPORT_PRIVATE RawMachineAssembler {
     return load;
   }
   bool IsMapOffsetConstant(Node* node) {
-    // Test if `node` is a `Int64Constant(0)`
     Int64Matcher m(node);
     if (m.Is(HeapObject::kMapOffset)) return true;
     // Test if `node` is a `Phi(Int64Constant(0))`

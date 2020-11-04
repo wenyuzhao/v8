@@ -669,10 +669,6 @@ MaybeObjectSlot HeapObject::RawMaybeWeakField(int byte_offset) const {
 
 MapWord MapWord::FromMap(const Map map) {
   DCHECK(map.is_null() || !Internals::IsMapWord(map.ptr()));
-  return FromMapUnchecked(map);
-}
-
-MapWord MapWord::FromMapUnchecked(const Map map) {
 #ifdef V8_MAP_PACKING
   return MapWord(Internals::PackMapWord(map.ptr()));
 #else
@@ -796,7 +792,7 @@ void HeapObject::set_map_after_allocation(Map value, WriteBarrierMode mode) {
 
 void HeapObject::set_map_after_allocation_no_check(Map value,
                                                    WriteBarrierMode mode) {
-  set_map_word(MapWord::FromMapUnchecked(value));
+  set_map_word(MapWord::FromMap(value));
 #ifndef V8_DISABLE_WRITE_BARRIERS
   if (mode != SKIP_WRITE_BARRIER) {
     DCHECK(!value.is_null());

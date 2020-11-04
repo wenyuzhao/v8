@@ -1908,8 +1908,7 @@ void CodeStubAssembler::DispatchMaybeObject(TNode<MaybeObject> maybe_object,
 void CodeStubAssembler::AssertHasValidMap(TNode<HeapObject> object) {
 #ifdef V8_MAP_PACKING
   // Test if the map is an unpacked and valid map
-  TNode<Map> map = LoadMap(object);
-  CSA_ASSERT(this, IsMap(map));
+  CSA_ASSERT(this, IsMap(LoadMap(object)));
 #endif
 }
 
@@ -2033,7 +2032,6 @@ TNode<TValue> CodeStubAssembler::LoadArrayElement(
                 "Only Smi, UintPtrT or IntPtrT indices are allowed");
   CSA_ASSERT(this, IntPtrGreaterThanOrEqual(ParameterToIntPtr(index_node),
                                             IntPtrConstant(0)));
-  AssertHasValidMap(array);
   DCHECK(IsAligned(additional_offset, kTaggedSize));
   int32_t header_size = array_header_size + additional_offset - kHeapObjectTag;
   TNode<IntPtrT> offset =
@@ -10550,8 +10548,6 @@ void CodeStubAssembler::InitializeFieldsWithRoot(TNode<HeapObject> object,
   if (root_index == RootIndex::kOnePointerFillerMap) {
     root_value = LoadFiller(root_index);
   } else {
-    DCHECK_NE(root_index, RootIndex::kTwoPointerFillerMap);
-    DCHECK_NE(root_index, RootIndex::kFreeSpaceMap);
     root_value = LoadRoot(root_index);
   }
   BuildFastLoop<IntPtrT>(
