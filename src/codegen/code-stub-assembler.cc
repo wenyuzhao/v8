@@ -1533,7 +1533,7 @@ TNode<Map> CodeStubAssembler::LoadMap(SloppyTNode<HeapObject> object) {
 #ifdef V8_MAP_PACKING
   CSA_ASSERT(this,
              WordNotEqual(WordAnd(BitcastTaggedToWord(map),
-                                  IntPtrConstant(Internals::kMapWordSignature)),
+                                  IntPtrConstant(Internals::kMapWordXorMask)),
                           IntPtrConstant(Internals::kMapWordSignature)));
 #endif
   return map;

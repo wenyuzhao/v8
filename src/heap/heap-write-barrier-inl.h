@@ -130,8 +130,8 @@ inline void GenerationalBarrier(HeapObject object, ObjectSlot slot,
                                 Object value) {
   if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) return;
   DCHECK(!HasWeakHeapObjectTag(value));
-  DCHECK(!Internals::IsMapWord(value.ptr()));
   if (!value.IsHeapObject()) return;
+  DCHECK(!Internals::IsMapWord(value.ptr()));
   GenerationalBarrier(object, slot, HeapObject::cast(value));
 }
 
@@ -209,16 +209,16 @@ base::Optional<Heap*> WriteBarrier::GetHeapIfMarking(HeapObject object) {
 
 void WriteBarrier::Marking(HeapObject host, ObjectSlot slot, Object value) {
   DCHECK(!HasWeakHeapObjectTag(value));
-  DCHECK(!Internals::IsMapWord(value.ptr()));
   if (!value.IsHeapObject()) return;
+  DCHECK(!Internals::IsMapWord(value.ptr()));
   Marking(host, HeapObjectSlot(slot), HeapObject::cast(value));
 }
 
 void WriteBarrier::Marking(HeapObject host, MaybeObjectSlot slot,
                            MaybeObject value) {
   HeapObject value_heap_object;
-  DCHECK(!Internals::IsMapWord(value.ptr()));
   if (!value->GetHeapObject(&value_heap_object)) return;
+  DCHECK(!Internals::IsMapWord(value.ptr()));
   Marking(host, HeapObjectSlot(slot), value_heap_object);
 }
 

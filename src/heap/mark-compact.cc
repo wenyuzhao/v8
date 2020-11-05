@@ -995,7 +995,6 @@ class MarkCompactCollector::RootMarkingVisitor final : public RootVisitor {
   void VisitRootPointers(Root root, const char* description,
                          FullObjectSlot start, FullObjectSlot end) final {
     for (FullObjectSlot p = start; p < end; ++p) {
-      DCHECK(!Internals::IsMapWord(p.Relaxed_Load().ptr()));
       MarkObjectByPointer(root, p);
     }
   }
@@ -2791,7 +2790,6 @@ class PointersUpdatingVisitor : public ObjectVisitor, public RootVisitor {
   void VisitRootPointers(Root root, const char* description,
                          FullObjectSlot start, FullObjectSlot end) override {
     for (FullObjectSlot p = start; p < end; ++p) {
-      DCHECK(!Internals::IsMapWord(p.Relaxed_Load().ptr()));
       UpdateRootSlotInternal(isolate_, p);
     }
   }
