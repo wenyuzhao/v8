@@ -6327,7 +6327,8 @@ void VerifyPointersVisitor::VerifyPointersImpl(TSlot start, TSlot end) {
     if (object.GetHeapObject(&heap_object)) {
       VerifyHeapObjectImpl(heap_object);
     } else {
-      CHECK(object.IsSmi() || object.IsCleared() || Internals::IsMapWord(object.ptr()));
+      CHECK(object.IsSmi() || object.IsCleared() ||
+            Internals::IsMapWord(object.ptr()));
     }
   }
 }
