@@ -162,10 +162,8 @@ bool DeleteObjectPropertyFast(Isolate* isolate, Handle<JSReceiver> receiver,
       // Clear out the properties backing store.
       receiver->SetProperties(ReadOnlyRoots(isolate).empty_fixed_array());
     } else {
-      Object filler =
-          Object(ReadOnlyRoots(isolate).one_pointer_filler_map_word().ptr());
-      JSObject::cast(*receiver).RawFastPropertyAtPutNoWriteBarrier(index,
-                                                                   filler);
+      MapWord filler = ReadOnlyRoots(isolate).one_pointer_filler_map_word();
+      JSObject::cast(*receiver).WriteFillerMapNoWritebarrier(index, filler);
       // We must clear any recorded slot for the deleted property, because
       // subsequent object modifications might put a raw double there.
       // Slot clearing is the reason why this entire function cannot currently

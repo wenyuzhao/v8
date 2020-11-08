@@ -53,6 +53,13 @@ void PropertyArray::set(int index, Object value, WriteBarrierMode mode) {
   CONDITIONAL_WRITE_BARRIER(*this, offset, value, mode);
 }
 
+void PropertyArray::set(int index, MapWord value) {
+  DCHECK_LT(static_cast<unsigned>(index),
+            static_cast<unsigned>(this->length()));
+  int offset = OffsetOfElementAt(index);
+  TaggedField<MapWord>::Release_Store(*this, offset, value);
+}
+
 ObjectSlot PropertyArray::data_start() { return RawField(kHeaderSize); }
 
 int PropertyArray::length() const {
