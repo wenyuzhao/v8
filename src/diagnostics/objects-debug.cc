@@ -586,7 +586,7 @@ void NativeContext::NativeContextVerify(Isolate* isolate) {
 }
 
 void FeedbackMetadata::FeedbackMetadataVerify(Isolate* isolate) {
-  if (slot_count() == 0 && closure_feedback_cell_count() == 0) {
+  if (slot_count() == 0 && create_closure_slot_count() == 0) {
     CHECK_EQ(ReadOnlyRoots(isolate).empty_feedback_metadata(), *this);
   } else {
     FeedbackMetadataIterator iter(*this);
@@ -1556,8 +1556,6 @@ void CallHandlerInfo::CallHandlerInfoVerify(Isolate* isolate) {
         map() == ReadOnlyRoots(isolate)
                      .next_call_side_effect_free_call_handler_info_map());
 }
-
-USE_TORQUE_VERIFIER(WasmCapiFunctionData)
 
 USE_TORQUE_VERIFIER(WasmJSFunctionData)
 

@@ -378,10 +378,12 @@ class V8_EXPORT_PRIVATE CodeAssembler {
   explicit CodeAssembler(CodeAssemblerState* state) : state_(state) {}
   ~CodeAssembler();
 
+  CodeAssembler(const CodeAssembler&) = delete;
+  CodeAssembler& operator=(const CodeAssembler&) = delete;
+
   static Handle<Code> GenerateCode(CodeAssemblerState* state,
                                    const AssemblerOptions& options,
                                    const ProfileDataFromFile* profile_data);
-
   bool Is64() const;
   bool Is32() const;
   bool IsFloat64RoundUpSupported() const;
@@ -1256,8 +1258,6 @@ class V8_EXPORT_PRIVATE CodeAssembler {
   void CallEpilogue();
 
   CodeAssemblerState* state_;
-
-  DISALLOW_COPY_AND_ASSIGN(CodeAssembler);
 };
 
 // TODO(solanes, v8:6949): this class should be merged into
@@ -1265,6 +1265,9 @@ class V8_EXPORT_PRIVATE CodeAssembler {
 // CodeAssemblerVariableLists.
 class V8_EXPORT_PRIVATE CodeAssemblerVariable {
  public:
+  CodeAssemblerVariable(const CodeAssemblerVariable&) = delete;
+  CodeAssemblerVariable& operator=(const CodeAssemblerVariable&) = delete;
+
   Node* value() const;
   MachineRepresentation rep() const;
   bool IsBound() const;
@@ -1296,7 +1299,6 @@ class V8_EXPORT_PRIVATE CodeAssemblerVariable {
   };
   Impl* impl_;
   CodeAssemblerState* state_;
-  DISALLOW_COPY_AND_ASSIGN(CodeAssemblerVariable);
 };
 
 std::ostream& operator<<(std::ostream&, const CodeAssemblerVariable&);
@@ -1363,6 +1365,11 @@ class V8_EXPORT_PRIVATE CodeAssemblerLabel {
       : CodeAssemblerLabel(assembler, 1, &merged_variable, type) {}
   ~CodeAssemblerLabel();
 
+  // Cannot be copied because the destructor explicitly call the destructor of
+  // the underlying {RawMachineLabel}, hence only one pointer can point to it.
+  CodeAssemblerLabel(const CodeAssemblerLabel&) = delete;
+  CodeAssemblerLabel& operator=(const CodeAssemblerLabel&) = delete;
+
   inline bool is_bound() const { return bound_; }
   inline bool is_used() const { return merge_count_ != 0; }
 
@@ -1390,10 +1397,6 @@ class V8_EXPORT_PRIVATE CodeAssemblerLabel {
   std::map<CodeAssemblerVariable::Impl*, std::vector<Node*>,
            CodeAssemblerVariable::ImplComparator>
       variable_merges_;
-
-  // Cannot be copied because the destructor explicitly call the destructor of
-  // the underlying {RawMachineLabel}, hence only one pointer can point to it.
-  DISALLOW_COPY_AND_ASSIGN(CodeAssemblerLabel);
 };
 
 class CodeAssemblerParameterizedLabelBase {
@@ -1474,6 +1477,9 @@ class V8_EXPORT_PRIVATE CodeAssemblerState {
 
   ~CodeAssemblerState();
 
+  CodeAssemblerState(const CodeAssemblerState&) = delete;
+  CodeAssemblerState& operator=(const CodeAssemblerState&) = delete;
+
   const char* name() const { return name_; }
   int parameter_count() const;
 
@@ -1517,8 +1523,6 @@ class V8_EXPORT_PRIVATE CodeAssemblerState {
   std::vector<FileAndLine> macro_call_stack_;
 
   VariableId NextVariableId() { return next_variable_id_++; }
-
-  DISALLOW_COPY_AND_ASSIGN(CodeAssemblerState);
 };
 
 class V8_EXPORT_PRIVATE ScopedExceptionHandler {

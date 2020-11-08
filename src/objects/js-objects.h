@@ -287,7 +287,7 @@ class JSReceiver : public HeapObject {
   bool HasProxyInPrototype(Isolate* isolate);
 
   // TC39 "Dynamic Code Brand Checks"
-  bool IsCodeKind(Isolate* isolate) const;
+  bool IsCodeLike(Isolate* isolate) const;
 
   OBJECT_CONSTRUCTORS(JSReceiver, HeapObject);
 };

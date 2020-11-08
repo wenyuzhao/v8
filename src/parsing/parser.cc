@@ -1034,9 +1034,7 @@ Statement* Parser::ParseModuleItem() {
     // We must be careful not to parse a dynamic import expression as an import
     // declaration. Same for import.meta expressions.
     Token::Value peek_ahead = PeekAhead();
-    if ((!flags().allow_harmony_dynamic_import() ||
-         peek_ahead != Token::LPAREN) &&
-        (!flags().allow_harmony_import_meta() || peek_ahead != Token::PERIOD)) {
+    if (peek_ahead != Token::LPAREN && peek_ahead != Token::PERIOD) {
       ParseImportDeclaration();
       return factory()->EmptyStatement();
     }
@@ -1467,8 +1465,7 @@ void Parser::ParseExportStar() {
   int pos = position();
   Consume(Token::MUL);
 
-  if (!FLAG_harmony_namespace_exports ||
-      !PeekContextualKeyword(ast_value_factory()->as_string())) {
+  if (!PeekContextualKeyword(ast_value_factory()->as_string())) {
     // 'export' '*' 'from' ModuleSpecifier ';'
     Scanner::Location loc = scanner()->location();
     ExpectContextualKeyword(ast_value_factory()->from_string());
@@ -1480,7 +1477,6 @@ void Parser::ParseExportStar() {
                             specifier_loc, zone());
     return;
   }
-  if (!FLAG_harmony_namespace_exports) return;
 
   // 'export' '*' 'as' IdentifierName 'from' ModuleSpecifier ';'
   //

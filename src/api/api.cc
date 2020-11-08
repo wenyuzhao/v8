@@ -922,9 +922,9 @@ void ResourceConstraints::ConfigureDefaultsFromHeapSize(
   i::Heap::GenerationSizesFromHeapSize(maximum_heap_size_in_bytes,
                                        &young_generation, &old_generation);
   set_max_young_generation_size_in_bytes(
-      i::Max(young_generation, i::Heap::MinYoungGenerationSize()));
+      std::max(young_generation, i::Heap::MinYoungGenerationSize()));
   set_max_old_generation_size_in_bytes(
-      i::Max(old_generation, i::Heap::MinOldGenerationSize()));
+      std::max(old_generation, i::Heap::MinOldGenerationSize()));
   if (initial_heap_size_in_bytes > 0) {
     i::Heap::GenerationSizesFromHeapSize(initial_heap_size_in_bytes,
                                          &young_generation, &old_generation);
@@ -934,7 +934,7 @@ void ResourceConstraints::ConfigureDefaultsFromHeapSize(
   }
   if (i::kPlatformRequiresCodeRange) {
     set_code_range_size_in_bytes(
-        i::Min(i::kMaximalCodeRangeSize, maximum_heap_size_in_bytes));
+        std::min(i::kMaximalCodeRangeSize, maximum_heap_size_in_bytes));
   }
 }
 
@@ -949,8 +949,8 @@ void ResourceConstraints::ConfigureDefaults(uint64_t physical_memory,
 
   if (virtual_memory_limit > 0 && i::kPlatformRequiresCodeRange) {
     set_code_range_size_in_bytes(
-        i::Min(i::kMaximalCodeRangeSize,
-               static_cast<size_t>(virtual_memory_limit / 8)));
+        std::min(i::kMaximalCodeRangeSize,
+                 static_cast<size_t>(virtual_memory_limit / 8)));
   }
 }
 
@@ -2005,15 +2005,15 @@ void ObjectTemplate::SetImmutableProto() {
   self->set_immutable_proto(true);
 }
 
-bool ObjectTemplate::IsCodeKind() {
-  return Utils::OpenHandle(this)->code_kind();
+bool ObjectTemplate::IsCodeLike() {
+  return Utils::OpenHandle(this)->code_like();
 }
 
-void ObjectTemplate::SetCodeKind() {
+void ObjectTemplate::SetCodeLike() {
   auto self = Utils::OpenHandle(this);
   i::Isolate* isolate = self->GetIsolate();
   ENTER_V8_NO_SCRIPT_NO_EXCEPTION(isolate);
-  self->set_code_kind(true);
+  self->set_code_like(true);
 }
 
 // --- S c r i p t s ---
@@ -2633,12 +2633,15 @@ void ScriptCompiler::ScriptStreamingTask::Run() { data_->task->Run(); }
 
 ScriptCompiler::ScriptStreamingTask* ScriptCompiler::StartStreamingScript(
     Isolate* v8_isolate, StreamedSource* source, CompileOptions options) {
-  if (!i::FLAG_script_streaming) {
-    return nullptr;
-  }
   // We don't support other compile options on streaming background compiles.
   // TODO(rmcilroy): remove CompileOptions from the API.
   CHECK(options == ScriptCompiler::kNoCompileOptions);
+  return StartStreaming(v8_isolate, source);
+}
+
+ScriptCompiler::ScriptStreamingTask* ScriptCompiler::StartStreaming(
+    Isolate* v8_isolate, StreamedSource* source) {
+  if (!i::FLAG_script_streaming) return nullptr;
   i::Isolate* isolate = reinterpret_cast<i::Isolate*>(v8_isolate);
   i::ScriptStreamingData* data = source->impl();
   std::unique_ptr<i::BackgroundCompileTask> task =
@@ -5123,6 +5126,18 @@ Local<v8::Value> Function::GetBoundFunction() const {
     return Utils::CallableToLocal(bound_target_function);
   }
   return v8::Undefined(reinterpret_cast<v8::Isolate*>(self->GetIsolate()));
+}
+
+MaybeLocal<String> v8::Function::FunctionProtoToString(Local<Context> context) {
+  PREPARE_FOR_EXECUTION(context, Function, FunctionProtoToString, String);
+  auto self = Utils::OpenHandle(this);
+  Local<Value> result;
+  has_pending_exception = !ToLocal<Value>(
+      i::Execution::CallBuiltin(isolate, isolate->function_to_string(), self, 0,
+                                nullptr),
+      &result);
+  RETURN_ON_FAILED_EXECUTION(String);
+  RETURN_ESCAPED(Local<String>::Cast(result));
 }
 
 int Name::GetIdentityHash() {
@@ -7666,7 +7681,7 @@ Local<ArrayBuffer> v8::ArrayBufferView::Buffer() {
 size_t v8::ArrayBufferView::CopyContents(void* dest, size_t byte_length) {
   i::Handle<i::JSArrayBufferView> self = Utils::OpenHandle(this);
   size_t byte_offset = self->byte_offset();
-  size_t bytes_to_copy = i::Min(byte_length, self->byte_length());
+  size_t bytes_to_copy = std::min(byte_length, self->byte_length());
   if (bytes_to_copy) {
     i::DisallowHeapAllocation no_gc;
     i::Isolate* isolate = self->GetIsolate();
@@ -9211,12 +9226,12 @@ void v8::Isolate::LocaleConfigurationChangeNotification() {
 #endif  // V8_INTL_SUPPORT
 }
 
-bool v8::Object::IsCodeKind(v8::Isolate* isolate) {
+bool v8::Object::IsCodeLike(v8::Isolate* isolate) {
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
-  LOG_API(i_isolate, Object, IsCodeKind);
+  LOG_API(i_isolate, Object, IsCodeLike);
   ENTER_V8_NO_SCRIPT_NO_EXCEPTION(i_isolate);
   i::HandleScope scope(i_isolate);
-  return Utils::OpenHandle(this)->IsCodeKind(i_isolate);
+  return Utils::OpenHandle(this)->IsCodeLike(i_isolate);
 }
 
 // static
@@ -9963,6 +9978,10 @@ int debug::WasmScript::CodeOffset() const {
   i::wasm::NativeModule* native_module = script->wasm_native_module();
   const i::wasm::WasmModule* module = native_module->module();
 
+  // If the module contains at least one function, the code offset must have
+  // been initialized, and it cannot be zero.
+  DCHECK_IMPLIES(module->num_declared_functions > 0,
+                 module->code.offset() != 0);
   return module->code.offset();
 }
 

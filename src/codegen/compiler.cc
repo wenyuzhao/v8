@@ -94,16 +94,15 @@ class CompilerTracer : public AllStatic {
   static void PrintTracePrefix(const CodeTracer::Scope& scope,
                                const char* header,
                                OptimizedCompilationInfo* info) {
-    PrintF(scope.file(), "[%s ", header);
-    info->closure()->ShortPrint(scope.file());
-    PrintF(scope.file(), " (target %s)", CodeKindToString(info->code_kind()));
+    PrintTracePrefix(scope, header, info->closure(), info->code_kind());
   }
 
   static void PrintTracePrefix(const CodeTracer::Scope& scope,
-                               const char* header,
-                               Handle<JSFunction> function) {
+                               const char* header, Handle<JSFunction> function,
+                               CodeKind code_kind) {
     PrintF(scope.file(), "[%s ", header);
     function->ShortPrint(scope.file());
+    PrintF(scope.file(), " (target %s)", CodeKindToString(code_kind));
   }
 
   static void PrintTraceSuffix(const CodeTracer::Scope& scope) {
@@ -152,10 +151,11 @@ class CompilerTracer : public AllStatic {
 
   static void TraceOptimizedCodeCacheHit(Isolate* isolate,
                                          Handle<JSFunction> function,
-                                         BailoutId osr_offset) {
+                                         BailoutId osr_offset,
+                                         CodeKind code_kind) {
     if (!FLAG_trace_opt) return;
     CodeTracer::Scope scope(isolate->GetCodeTracer());
-    PrintTracePrefix(scope, "found optimized code for", function);
+    PrintTracePrefix(scope, "found optimized code for", function, code_kind);
     if (!osr_offset.IsNone()) {
       PrintF(scope.file(), " at OSR AST id %d", osr_offset.ToInt());
     }
@@ -163,10 +163,11 @@ class CompilerTracer : public AllStatic {
   }
 
   static void TraceOptimizeForAlwaysOpt(Isolate* isolate,
-                                        Handle<JSFunction> function) {
+                                        Handle<JSFunction> function,
+                                        CodeKind code_kind) {
     if (!FLAG_trace_opt) return;
     CodeTracer::Scope scope(isolate->GetCodeTracer());
-    PrintTracePrefix(scope, "optimizing", function);
+    PrintTracePrefix(scope, "optimizing", function, code_kind);
     PrintF(scope.file(), " because --always-opt");
     PrintTraceSuffix(scope);
   }
@@ -821,7 +822,7 @@ bool FinalizeDeferredUnoptimizedCompilationJobs(
 }
 
 V8_WARN_UNUSED_RESULT MaybeHandle<Code> GetCodeFromOptimizedCodeCache(
-    Handle<JSFunction> function, BailoutId osr_offset) {
+    Handle<JSFunction> function, BailoutId osr_offset, CodeKind code_kind) {
   RuntimeCallTimerScope runtimeTimer(
       function->GetIsolate(),
       RuntimeCallCounterId::kCompileGetFromOptimizedCodeMap);
@@ -840,7 +841,8 @@ V8_WARN_UNUSED_RESULT MaybeHandle<Code> GetCodeFromOptimizedCodeCache(
                .GetOSROptimizedCodeCache()
                .GetOptimizedCode(shared, osr_offset, isolate);
   }
-  if (!code.is_null()) {
+  DCHECK_IMPLIES(!code.is_null(), code.kind() <= code_kind);
+  if (!code.is_null() && code.kind() == code_kind) {
     // Caching of optimized code enabled and optimized code found.
     DCHECK(!code.marked_for_deoptimization());
     DCHECK(function->shared().is_compiled());
@@ -1032,6 +1034,18 @@ Handle<Code> ContinuationForConcurrentOptimization(
     // Tiering up to Turbofan and cached optimized code exists. Continue
     // execution there until TF optimization has finished.
     return cached_code;
+  } else if (FLAG_turboprop_as_midtier &&
+             function->HasAvailableOptimizedCode()) {
+    DCHECK(function->NextTier() == CodeKind::TURBOFAN);
+    // It is possible that we have marked a closure for TurboFan optimization
+    // but the marker is processed by another closure that doesn't have
+    // optimized code yet. So heal the closure here and return the optimized
+    // code.
+    if (!function->HasAttachedOptimizedCode()) {
+      DCHECK(function->feedback_vector().has_optimized_code());
+      function->set_code(function->feedback_vector().optimized_code());
+    }
+    return handle(function->code(), isolate);
   }
   return BUILTIN_CODE(isolate, InterpreterEntryTrampoline);
 }
@@ -1078,9 +1092,10 @@ MaybeHandle<Code> GetOptimizedCode(Handle<JSFunction> function,
   // Check the optimized code cache (stored on the SharedFunctionInfo).
   if (CodeKindIsStoredInOptimizedCodeCache(code_kind)) {
     Handle<Code> cached_code;
-    if (GetCodeFromOptimizedCodeCache(function, osr_offset)
+    if (GetCodeFromOptimizedCodeCache(function, osr_offset, code_kind)
             .ToHandle(&cached_code)) {
-      CompilerTracer::TraceOptimizedCodeCacheHit(isolate, function, osr_offset);
+      CompilerTracer::TraceOptimizedCodeCacheHit(isolate, function, osr_offset,
+                                                 code_kind);
       return cached_code;
     }
   }
@@ -1820,7 +1835,8 @@ bool Compiler::Compile(Handle<JSFunction> function, ClearExceptionFlag flag,
 
   // Optimize now if --always-opt is enabled.
   if (FLAG_always_opt && !function->shared().HasAsmWasmData()) {
-    CompilerTracer::TraceOptimizeForAlwaysOpt(isolate, function);
+    CompilerTracer::TraceOptimizeForAlwaysOpt(isolate, function,
+                                              CodeKindForTopTier());
 
     Handle<Code> maybe_code;
     if (GetOptimizedCode(function, ConcurrencyMode::kNotConcurrent,
@@ -2076,7 +2092,7 @@ bool CodeGenerationFromStringsAllowed(Isolate* isolate, Handle<Context> context,
 //  or v8::Isolate::SetModifyCodeGenerationFromStringsCallback2)
 bool ModifyCodeGenerationFromStrings(Isolate* isolate, Handle<Context> context,
                                      Handle<i::Object>* source,
-                                     bool is_code_kind) {
+                                     bool is_code_like) {
   DCHECK(isolate->modify_code_gen_callback() ||
          isolate->modify_code_gen_callback2());
   DCHECK(source);
@@ -2092,7 +2108,7 @@ bool ModifyCodeGenerationFromStrings(Isolate* isolate, Handle<Context> context,
                                                 v8::Utils::ToLocal(*source))
           : isolate->modify_code_gen_callback2()(v8::Utils::ToLocal(context),
                                                  v8::Utils::ToLocal(*source),
-                                                 is_code_kind);
+                                                 is_code_like);
   if (result.codegen_allowed && !result.modified_source.IsEmpty()) {
     // Use the new source (which might be the same as the old source).
     *source =
@@ -2118,7 +2134,7 @@ bool ModifyCodeGenerationFromStrings(Isolate* isolate, Handle<Context> context,
 // static
 std::pair<MaybeHandle<String>, bool> Compiler::ValidateDynamicCompilationSource(
     Isolate* isolate, Handle<Context> context,
-    Handle<i::Object> original_source, bool is_code_kind) {
+    Handle<i::Object> original_source, bool is_code_like) {
   // Check if the context unconditionally allows code gen from strings.
   // allow_code_gen_from_strings can be many things, so we'll always check
   // against the 'false' literal, so that e.g. undefined and 'true' are treated
@@ -2133,9 +2149,9 @@ std::pair<MaybeHandle<String>, bool> Compiler::ValidateDynamicCompilationSource(
   // (I.e., let allow_code_gen_callback decide, if it has been set.)
   if (isolate->allow_code_gen_callback()) {
     // If we run into this condition, the embedder has marked some object
-    // templates as "code kind", but has given us a callback that only accepts
+    // templates as "code like", but has given us a callback that only accepts
     // strings. That makes no sense.
-    DCHECK(!original_source->IsCodeKind(isolate));
+    DCHECK(!original_source->IsCodeLike(isolate));
 
     if (!original_source->IsString()) {
       return {MaybeHandle<String>(), true};
@@ -2154,7 +2170,7 @@ std::pair<MaybeHandle<String>, bool> Compiler::ValidateDynamicCompilationSource(
       isolate->modify_code_gen_callback2()) {
     Handle<i::Object> modified_source = original_source;
     if (!ModifyCodeGenerationFromStrings(isolate, context, &modified_source,
-                                         is_code_kind)) {
+                                         is_code_like)) {
       return {MaybeHandle<String>(), false};
     }
     if (!modified_source->IsString()) {
@@ -2164,8 +2180,8 @@ std::pair<MaybeHandle<String>, bool> Compiler::ValidateDynamicCompilationSource(
   }
 
   if (!context->allow_code_gen_from_strings().IsFalse(isolate) &&
-      original_source->IsCodeKind(isolate)) {
-    // Codegen is unconditionally allowed, and we're been given a CodeKind
+      original_source->IsCodeLike(isolate)) {
+    // Codegen is unconditionally allowed, and we're been given a CodeLike
     // object. Stringify.
     MaybeHandle<String> stringified_source =
         Object::ToString(isolate, original_source);
@@ -2208,10 +2224,10 @@ MaybeHandle<JSFunction> Compiler::GetFunctionFromValidatedString(
 // static
 MaybeHandle<JSFunction> Compiler::GetFunctionFromString(
     Handle<Context> context, Handle<Object> source,
-    ParseRestriction restriction, int parameters_end_pos, bool is_code_kind) {
+    ParseRestriction restriction, int parameters_end_pos, bool is_code_like) {
   Isolate* const isolate = context->GetIsolate();
   MaybeHandle<String> validated_source =
-      ValidateDynamicCompilationSource(isolate, context, source, is_code_kind)
+      ValidateDynamicCompilationSource(isolate, context, source, is_code_like)
           .first;
   return GetFunctionFromValidatedString(context, validated_source, restriction,
                                         parameters_end_pos);

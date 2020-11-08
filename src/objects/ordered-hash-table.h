@@ -35,7 +35,7 @@ namespace internal {
 //   [kPrefixSize]: element count
 //   [kPrefixSize + 1]: deleted element count
 //   [kPrefixSize + 2]: bucket count
-//   [kPrefixSize + 3..(3 + NumberOfBuckets() - 1)]: "hash table",
+//   [kPrefixSize + 3..(kPrefixSize + 3 + NumberOfBuckets() - 1)]: "hash table",
 //                            where each item is an offset into the
 //                            data table (see below) where the first
 //                            item in this bucket is stored.
@@ -53,13 +53,15 @@ namespace internal {
 //
 // Memory layout for obsolete table:
 //   [0] : Prefix
-//   [kPrefixSize + 0]: bucket count
-//   [kPrefixSize + 1]: Next newer table
-//   [kPrefixSize + 2]: Number of removed holes or -1 when the table was
-//                      cleared.
-//   [kPrefixSize + 3..(3 + NumberOfRemovedHoles() - 1)]: The indexes
-//                      of the removed holes.
-//   [kPrefixSize + 3 + NumberOfRemovedHoles()..length]: Not used
+//   [kPrefixSize + 0]: Next newer table
+//   [kPrefixSize + 1]: deleted element count or kClearedTableSentinel if
+//                      the table was cleared
+//   [kPrefixSize + 2]: bucket count
+//   [kPrefixSize + 3..(kPrefixSize + 3 + NumberOfDeletedElements() - 1)]:
+//                      The indexes of the removed holes. This part is only
+//                      usable for non-cleared tables, as clearing removes the
+//                      deleted elements count.
+//   [kPrefixSize + 3 + NumberOfDeletedElements()..length]: Not used
 template <class Derived, int entrysize>
 class OrderedHashTable : public FixedArray {
  public:
@@ -79,11 +81,17 @@ class OrderedHashTable : public FixedArray {
   // Returns true if the OrderedHashTable contains the key
   static bool HasKey(Isolate* isolate, Derived table, Object key);
 
+  // Returns whether a potential key |k| returned by KeyAt is a real
+  // key (meaning that it is not a hole).
+  static inline bool IsKey(ReadOnlyRoots roots, Object k);
+
   // Returns a true value if the OrderedHashTable contains the key and
   // the key has been deleted. This does not shrink the table.
   static bool Delete(Isolate* isolate, Derived table, Object key);
 
   InternalIndex FindEntry(Isolate* isolate, Object key);
+
+  Object SlowReverseLookup(Isolate* isolate, Object value);
 
   int NumberOfElements() const {
     return Smi::ToInt(get(NumberOfElementsIndex()));
@@ -107,11 +115,15 @@ class OrderedHashTable : public FixedArray {
     return InternalIndex::Range(UsedCapacity());
   }
 
-  // use KeyAt(i)->IsTheHole(isolate) to determine if this is a deleted entry.
+  // use IsKey to check if this is a deleted entry.
   Object KeyAt(InternalIndex entry) {
     DCHECK_LT(entry.as_int(), this->UsedCapacity());
     return get(EntryToIndex(entry));
   }
+
+  // Similar to KeyAt, but indicates whether the given entry is valid
+  // (not deleted one)
+  bool ToKey(ReadOnlyRoots roots, InternalIndex entry, Object* out_key);
 
   bool IsObsolete() { return !get(NextTableIndex()).IsSmi(); }
 
@@ -131,7 +143,7 @@ class OrderedHashTable : public FixedArray {
   static const int kNotFound = -1;
   // The minimum capacity. Note that despite this value, 0 is also a permitted
   // capacity, indicating a table without any storage for elements.
-  static const int kMinNonZeroCapacity = 4;
+  static const int kInitialCapacity = 4;
 
   static constexpr int PrefixIndex() { return 0; }
 
@@ -750,6 +762,10 @@ class V8_EXPORT_PRIVATE OrderedNameDictionary
 
   InternalIndex FindEntry(Isolate* isolate, Object key);
 
+  int NumberOfEnumerableProperties();
+
+  Object SlowReverseLookup(Isolate* isolate, Object value);
+
   static Handle<OrderedNameDictionary> DeleteEntry(
       Isolate* isolate, Handle<OrderedNameDictionary> table,
       InternalIndex entry);
@@ -766,6 +782,9 @@ class V8_EXPORT_PRIVATE OrderedNameDictionary
 
   // Returns the value for entry.
   inline Object ValueAt(InternalIndex entry);
+
+  // Like KeyAt, but casts to Name
+  inline Name NameAt(InternalIndex entry);
 
   // Set the value for entry.
   inline void ValueAtPut(InternalIndex entry, Object value);
@@ -786,6 +805,8 @@ class V8_EXPORT_PRIVATE OrderedNameDictionary
   static const int kValueOffset = 1;
   static const int kPropertyDetailsOffset = 2;
   static const int kPrefixSize = 1;
+
+  static const bool kIsOrderedDictionaryType = true;
 
   OBJECT_CONSTRUCTORS(OrderedNameDictionary,
                       OrderedHashTable<OrderedNameDictionary, 3>);

@@ -1571,8 +1571,10 @@ void Genesis::InitializeGlobal(Handle<JSGlobalObject> global_object,
                           Builtins::kFastFunctionPrototypeBind, 1, false);
     SimpleInstallFunction(isolate_, prototype, "call",
                           Builtins::kFunctionPrototypeCall, 1, false);
-    SimpleInstallFunction(isolate_, prototype, "toString",
-                          Builtins::kFunctionPrototypeToString, 0, false);
+    Handle<JSFunction> function_to_string =
+        SimpleInstallFunction(isolate_, prototype, "toString",
+                              Builtins::kFunctionPrototypeToString, 0, false);
+    native_context()->set_function_to_string(*function_to_string);
 
     // Install the @@hasInstance function.
     Handle<JSFunction> has_instance = InstallFunctionAtSymbol(
@@ -2300,6 +2302,9 @@ void Genesis::InitializeGlobal(Handle<JSGlobalObject> global_object,
     Handle<JSFunction> promise_all = InstallFunctionWithBuiltinId(
         isolate_, promise_fun, "all", Builtins::kPromiseAll, 1, true);
     native_context()->set_promise_all(*promise_all);
+
+    InstallFunctionWithBuiltinId(isolate_, promise_fun, "allSettled",
+                                 Builtins::kPromiseAllSettled, 1, true);
 
     InstallFunctionWithBuiltinId(isolate_, promise_fun, "race",
                                  Builtins::kPromiseRace, 1, true);
@@ -4126,10 +4131,7 @@ void Genesis::InitializeCallSiteBuiltins() {
 #define EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(id) \
   void Genesis::InitializeGlobal_##id() {}
 
-EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_namespace_exports)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_private_methods)
-EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_dynamic_import)
-EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_import_meta)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_regexp_sequence)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_top_level_await)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_logical_assignment)
@@ -4275,12 +4277,6 @@ void Genesis::InitializeGlobal_harmony_promise_any() {
   Handle<JSFunction> promise_any = InstallFunctionWithBuiltinId(
       isolate_, promise_fun, "any", Builtins::kPromiseAny, 1, true);
   native_context()->set_promise_any(*promise_any);
-}
-
-void Genesis::InitializeGlobal_harmony_promise_all_settled() {
-  if (!FLAG_harmony_promise_all_settled) return;
-  SimpleInstallFunction(isolate(), isolate()->promise_function(), "allSettled",
-                        Builtins::kPromiseAllSettled, 1, true);
 }
 
 void Genesis::InitializeGlobal_harmony_regexp_match_indices() {

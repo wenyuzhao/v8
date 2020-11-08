@@ -157,6 +157,9 @@ class JSCallReducerAssembler : public JSGraphAssembler {
       gasm_->Bind(&merge);
     }
 
+    IfBuilder0(const IfBuilder0&) = delete;
+    IfBuilder0& operator=(const IfBuilder0&) = delete;
+
    private:
     JSGraphAssembler* const gasm_;
     const TNode<Boolean> cond_;
@@ -166,8 +169,6 @@ class JSCallReducerAssembler : public JSGraphAssembler {
     BranchHint hint_ = BranchHint::kNone;
     VoidGenerator0 then_body_;
     VoidGenerator0 else_body_;
-
-    DISALLOW_COPY_AND_ASSIGN(IfBuilder0);
   };
 
   IfBuilder0 If(TNode<Boolean> cond) { return {this, cond, false}; }
@@ -2640,7 +2641,7 @@ Reduction JSCallReducer::ReduceFunctionPrototypeBind(Node* node) {
     // recomputed even if the actual value of the object changes.
     // This mirrors the checks done in builtins-function-gen.cc at
     // runtime otherwise.
-    int minimum_nof_descriptors = i::Max(JSFunction::kLengthDescriptorIndex,
+    int minimum_nof_descriptors = std::max(JSFunction::kLengthDescriptorIndex,
                                            JSFunction::kNameDescriptorIndex) +
                                   1;
     if (receiver_map.NumberOfOwnDescriptors() < minimum_nof_descriptors) {

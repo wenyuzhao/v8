@@ -5,6 +5,7 @@
 #include <iomanip>
 #include <memory>
 
+#include "src/common/globals.h"
 #include "src/compiler/node.h"
 #include "src/diagnostics/disasm.h"
 #include "src/diagnostics/disassembler.h"
@@ -274,6 +275,8 @@ bool JSObject::PrintProperties(std::ostream& os) {  // NOLINT
     return map().NumberOfOwnDescriptors() > 0;
   } else if (IsJSGlobalObject()) {
     JSGlobalObject::cast(*this).global_dictionary().Print(os);
+  } else if (V8_DICT_MODE_PROTOTYPES_BOOL) {
+    property_dictionary_ordered().Print(os);
   } else {
     property_dictionary().Print(os);
   }
@@ -846,14 +849,13 @@ void FeedbackVectorSpec::Print() {
 }
 
 void FeedbackVectorSpec::FeedbackVectorSpecPrint(std::ostream& os) {  // NOLINT
-  int slot_count = slots();
-  os << " - slot_count: " << slot_count;
-  if (slot_count == 0) {
+  os << " - slot_count: " << slot_count();
+  if (slot_count() == 0) {
     os << " (empty)\n";
     return;
   }
 
-  for (int slot = 0; slot < slot_count;) {
+  for (int slot = 0; slot < slot_count();) {
     FeedbackSlotKind kind = GetKind(FeedbackSlot(slot));
     int entry_size = FeedbackMetadata::GetSlotSize(kind);
     DCHECK_LT(0, entry_size);
@@ -866,6 +868,7 @@ void FeedbackVectorSpec::FeedbackVectorSpecPrint(std::ostream& os) {  // NOLINT
 void FeedbackMetadata::FeedbackMetadataPrint(std::ostream& os) {
   PrintHeader(os, "FeedbackMetadata");
   os << "\n - slot_count: " << slot_count();
+  os << "\n - create_closure_slot_count: " << create_closure_slot_count();
 
   FeedbackMetadataIterator iter(*this);
   while (iter.HasNext()) {
@@ -1875,16 +1878,6 @@ void FunctionTemplateInfo::FunctionTemplateInfoPrint(
   os << "\n - need_access_check: " << (needs_access_check() ? "true" : "false");
   os << "\n - instantiated: " << (instantiated() ? "true" : "false");
   os << "\n - rare_data: " << Brief(rare_data());
-  os << "\n";
-}
-
-void WasmCapiFunctionData::WasmCapiFunctionDataPrint(
-    std::ostream& os) {  // NOLINT
-  PrintHeader(os, "WasmCapiFunctionData");
-  os << "\n - call_target: " << call_target();
-  os << "\n - embedder_data: " << Brief(embedder_data());
-  os << "\n - wrapper_code: " << Brief(wrapper_code());
-  os << "\n - serialized_signature: " << Brief(serialized_signature());
   os << "\n";
 }
 

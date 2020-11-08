@@ -826,8 +826,7 @@ bool LiftoffAssembler::emit_i32_popcnt(Register dst, Register src) {
   I32_SHIFTOP(name, instruction##v)                                     \
   void LiftoffAssembler::emit_i32_##name##i(Register dst, Register src, \
                                             int amount) {               \
-    DCHECK(is_uint5(amount));                                           \
-    instruction(dst, src, amount);                                      \
+    instruction(dst, src, amount & 31);                                 \
   }
 
 I32_SHIFTOP_I(shl, sll)
@@ -926,7 +925,7 @@ I64_BINOP_I(xor, Xor)
   I64_SHIFTOP(name, instruction##v)                                            \
   void LiftoffAssembler::emit_i64_##name##i(LiftoffRegister dst,               \
                                             LiftoffRegister src, int amount) { \
-    DCHECK(is_uint6(amount));                                                  \
+    amount &= 63;                                                              \
     if (amount < 32)                                                           \
       instruction(dst.gp(), src.gp(), amount);                                 \
     else                                                                       \
@@ -1508,6 +1507,16 @@ void LiftoffAssembler::LoadTransform(LiftoffRegister dst, Register src_addr,
       xor_v(kSimd128RegZero, kSimd128RegZero, kSimd128RegZero);
       fill_d(dst_msa, scratch);
       ilvr_w(dst_msa, kSimd128RegZero, dst_msa);
+    }
+  } else if (transform == LoadTransformationKind::kZeroExtend) {
+    xor_v(dst_msa, dst_msa, dst_msa);
+    if (memtype == MachineType::Int32()) {
+      Lwu(scratch, src_op);
+      insert_w(dst_msa, 0, scratch);
+    } else {
+      DCHECK_EQ(MachineType::Int64(), memtype);
+      Ld(scratch, src_op);
+      insert_d(dst_msa, 0, scratch);
     }
   } else {
     DCHECK_EQ(LoadTransformationKind::kSplat, transform);
