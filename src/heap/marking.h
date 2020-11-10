@@ -393,6 +393,7 @@ class Marking : public AllStatic {
   static const char* kBlackBitPattern;
   template <AccessMode mode = AccessMode::NON_ATOMIC>
   V8_INLINE static bool IsBlack(MarkBit mark_bit) {
+    if (mark_bit.InReadOnlySpace()) return true;
     if (!mark_bit.Next().Get<mode>()) return false;
     return mark_state.first ? mark_bit.Get<mode>() : !mark_bit.Get<mode>();
   }
@@ -401,13 +402,17 @@ class Marking : public AllStatic {
   static const char* kWhiteBitPattern;
   template <AccessMode mode = AccessMode::NON_ATOMIC>
   V8_INLINE static bool IsWhite(MarkBit mark_bit) {
-    return !mark_bit.Get<mode>() && !mark_bit.Next().Get<mode>();
+    if (mark_bit.InReadOnlySpace()) return false;
+    return (!mark_bit.Get<mode>() && !mark_bit.Next().Get<mode>()) || (
+      (mark_state.first ? !mark_bit.template Get<mode>() : mark_bit.template Get<mode>()) && mark_bit.Next().Get<mode>()
+    );
   }
 
   // Grey markbits: 10
   static const char* kGreyBitPattern;
   template <AccessMode mode = AccessMode::NON_ATOMIC>
   V8_INLINE static bool IsGrey(MarkBit mark_bit) {
+    if (mark_bit.InReadOnlySpace()) return false;
     return mark_bit.Get<mode>() && !mark_bit.Next().Get<mode>();
   }
 
@@ -415,11 +420,13 @@ class Marking : public AllStatic {
   // objects.
   template <AccessMode mode = AccessMode::NON_ATOMIC>
   V8_INLINE static bool IsBlackOrGrey(MarkBit mark_bit) {
+    if (mark_bit.InReadOnlySpace()) return true;
     return !IsWhite<mode>(mark_bit);
   }
 
   template <AccessMode mode = AccessMode::NON_ATOMIC>
   V8_INLINE static void MarkWhite(MarkBit markbit) {
+    if (markbit.InReadOnlySpace()) return;
     STATIC_ASSERT(mode == AccessMode::NON_ATOMIC);
     markbit.Clear<mode>();
     markbit.Next().Clear<mode>();
@@ -430,6 +437,7 @@ class Marking : public AllStatic {
   // then you may use it.
   template <AccessMode mode = AccessMode::NON_ATOMIC>
   V8_INLINE static void MarkBlack(MarkBit markbit) {
+    if (markbit.InReadOnlySpace()) return;
     if (mark_state.first) markbit.Set<mode>();
     else markbit.Clear<mode>();
     markbit.Next().Set<mode>();
@@ -437,6 +445,7 @@ class Marking : public AllStatic {
 
   template <AccessMode mode = AccessMode::NON_ATOMIC>
   V8_INLINE static void MarkGrey(MarkBit markbit) {
+    if (markbit.InReadOnlySpace()) return;
     markbit.Set<mode>();
     markbit.Next().Clear<mode>();
   }
@@ -444,7 +453,8 @@ class Marking : public AllStatic {
   template <AccessMode mode = AccessMode::NON_ATOMIC>
   V8_INLINE static bool WhiteToGrey(MarkBit markbit) {
     DCHECK_EQ(mode, AccessMode::NON_ATOMIC);
-    DCHECK(!IsBlack(markbit));
+    if (markbit.InReadOnlySpace()) return false;
+    // DCHECK(!IsBlack(markbit));
     if (!IsWhite(markbit)) return false;
     MarkGrey(markbit);
     return true;
@@ -453,6 +463,7 @@ class Marking : public AllStatic {
 
   template <AccessMode mode = AccessMode::NON_ATOMIC>
   V8_INLINE static bool WhiteToBlack(MarkBit markbit) {
+    if (markbit.InReadOnlySpace()) return false;
     // DCHECK(!markbit.InReadOnlySpace());
     DCHECK_EQ(mode, AccessMode::NON_ATOMIC);
     DCHECK(!IsGrey(markbit));
@@ -465,6 +476,7 @@ class Marking : public AllStatic {
 
   template <AccessMode mode = AccessMode::NON_ATOMIC>
   V8_INLINE static bool GreyToBlack(MarkBit markbit) {
+    if (markbit.InReadOnlySpace()) return false;
     // DCHECK(!markbit.InReadOnlySpace());
     DCHECK_EQ(mode, AccessMode::NON_ATOMIC);
     DCHECK(!IsWhite(markbit));
