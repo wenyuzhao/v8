@@ -2000,7 +2000,9 @@ using Instr = uint32_t;
   /* Store VSR Vector Doubleword*2 Indexed */             \
   V(stxvd, STXVD, 0x7C000798)                             \
   /* Store VSR Vector Word*4 Indexed */                   \
-  V(stxvw, STXVW, 0x7C000718)
+  V(stxvw, STXVW, 0x7C000718)                             \
+  /* Vector Splat Immediate Byte */                       \
+  V(xxspltib, XXSPLTIB, 0xF00002D1)
 
 #define PPC_B_OPCODE_LIST(V) \
   /* Branch Conditional */   \
@@ -2212,9 +2214,21 @@ using Instr = uint32_t;
   /* Vector Splat Halfword */            \
   V(vsplth, VSPLTH, 0x1000024C)          \
   /* Vector Extract Unsigned Byte */     \
-  V(vextractub, VEXTRACTUB, 0x1000020d)  \
+  V(vextractub, VEXTRACTUB, 0x1000020D)  \
   /* Vector Extract Unsigned Halfword */ \
-  V(vextractuh, VEXTRACTUH, 0x1000024D)
+  V(vextractuh, VEXTRACTUH, 0x1000024D)  \
+  /* Vector Extract Unsigned Word */     \
+  V(vextractuw, VEXTRACTUW, 0x1000028D)  \
+  /* Vector Extract Doubleword */        \
+  V(vextractd, VEXTRACTD, 0x100002CD)    \
+  /* Vector Insert Byte */               \
+  V(vinsertb, VINSERTB, 0x1000030D)      \
+  /* Vector Insert Halfword */           \
+  V(vinserth, VINSERTH, 0x1000034D)      \
+  /* Vector Insert Word */               \
+  V(vinsertw, VINSERTW, 0x1000038D)      \
+  /* Vector Insert Doubleword */         \
+  V(vinsertd, VINSERTD, 0x100003CD)
 
 #define PPC_VX_OPCODE_B_FORM_LIST(V)                       \
   /* Vector Logical OR */                                  \

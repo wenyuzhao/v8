@@ -1707,7 +1707,7 @@ int Heap::NotifyContextDisposed(bool dependant_context) {
   if (!dependant_context) {
     tracer()->ResetSurvivalEvents();
     old_generation_size_configured_ = false;
-    old_generation_allocation_limit_ = initial_old_generation_size_;
+    set_old_generation_allocation_limit(initial_old_generation_size_);
     MemoryReducer::Event event;
     event.type = MemoryReducer::kPossibleGarbage;
     event.time_ms = MonotonicallyIncreasingTimeInMs();
@@ -2074,11 +2074,11 @@ void Heap::RecomputeLimits(GarbageCollector collector) {
   if (collector == MARK_COMPACTOR) {
     external_memory_.ResetAfterGC();
 
-    old_generation_allocation_limit_ =
+    set_old_generation_allocation_limit(
         MemoryController<V8HeapTrait>::CalculateAllocationLimit(
             this, old_gen_size, min_old_generation_size_,
             max_old_generation_size(), new_space_capacity, v8_growing_factor,
-            mode);
+            mode));
     if (UseGlobalMemoryScheduling()) {
       DCHECK_GT(global_growing_factor, 0);
       global_allocation_limit_ =
@@ -2096,8 +2096,8 @@ void Heap::RecomputeLimits(GarbageCollector collector) {
             this, old_gen_size, min_old_generation_size_,
             max_old_generation_size(), new_space_capacity, v8_growing_factor,
             mode);
-    if (new_old_generation_limit < old_generation_allocation_limit_) {
-      old_generation_allocation_limit_ = new_old_generation_limit;
+    if (new_old_generation_limit < old_generation_allocation_limit()) {
+      set_old_generation_allocation_limit(new_old_generation_limit);
     }
     if (UseGlobalMemoryScheduling()) {
       DCHECK_GT(global_growing_factor, 0);
@@ -2805,11 +2805,11 @@ void Heap::ConfigureInitialOldGenerationSize() {
     const size_t new_old_generation_allocation_limit =
         Max(OldGenerationSizeOfObjects() + minimum_growing_step,
             static_cast<size_t>(
-                static_cast<double>(old_generation_allocation_limit_) *
+                static_cast<double>(old_generation_allocation_limit()) *
                 (tracer()->AverageSurvivalRatio() / 100)));
     if (new_old_generation_allocation_limit <
-        old_generation_allocation_limit_) {
-      old_generation_allocation_limit_ = new_old_generation_allocation_limit;
+        old_generation_allocation_limit()) {
+      set_old_generation_allocation_limit(new_old_generation_allocation_limit);
     } else {
       old_generation_size_configured_ = true;
     }
@@ -4337,7 +4337,8 @@ class FixStaleLeftTrimmedHandlesVisitor : public RootVisitor {
     if (!map_word.IsForwardingAddress() && current.IsFreeSpaceOrFiller()) {
 #ifdef DEBUG
       // We need to find a FixedArrayBase map after walking the fillers.
-      while (current.IsFreeSpaceOrFiller()) {
+      while (!current.map_word().IsForwardingAddress() &&
+             current.IsFreeSpaceOrFiller()) {
         Address next = current.ptr();
         if (current.map() == ReadOnlyRoots(heap_).one_pointer_filler_map()) {
           next += kTaggedSize;
@@ -4349,7 +4350,8 @@ class FixStaleLeftTrimmedHandlesVisitor : public RootVisitor {
         }
         current = HeapObject::cast(Object(next));
       }
-      DCHECK(current.IsFixedArrayBase());
+      DCHECK(current.map_word().IsForwardingAddress() ||
+             current.IsFixedArrayBase());
 #endif  // DEBUG
       p.store(Smi::zero());
     }
@@ -4653,9 +4655,9 @@ void Heap::ConfigureHeap(const v8::ResourceConstraints& constraints) {
     FLAG_semi_space_growth_factor = 2;
   }
 
-  old_generation_allocation_limit_ = initial_old_generation_size_;
+  set_old_generation_allocation_limit(initial_old_generation_size_);
   global_allocation_limit_ =
-      GlobalMemorySizeFromV8Size(old_generation_allocation_limit_);
+      GlobalMemorySizeFromV8Size(old_generation_allocation_limit());
   initial_max_old_generation_size_ = max_old_generation_size();
 
   // We rely on being able to allocate new arrays in paged spaces.
@@ -4764,8 +4766,8 @@ bool Heap::AllocationLimitOvershotByLargeMargin() {
   uint64_t size_now =
       OldGenerationSizeOfObjects() + AllocatedExternalMemorySinceMarkCompact();
 
-  const size_t v8_overshoot = old_generation_allocation_limit_ < size_now
-                                  ? size_now - old_generation_allocation_limit_
+  const size_t v8_overshoot = old_generation_allocation_limit() < size_now
+                                  ? size_now - old_generation_allocation_limit()
                                   : 0;
   const size_t global_overshoot =
       global_allocation_limit_ < GlobalSizeOfObjects()
@@ -4781,8 +4783,8 @@ bool Heap::AllocationLimitOvershotByLargeMargin() {
   // Overshoot margin is 50% of allocation limit or half-way to the max heap
   // with special handling of small heaps.
   const size_t v8_margin =
-      Min(Max(old_generation_allocation_limit_ / 2, kMarginForSmallHeaps),
-          (max_old_generation_size() - old_generation_allocation_limit_) / 2);
+      Min(Max(old_generation_allocation_limit() / 2, kMarginForSmallHeaps),
+          (max_old_generation_size() - old_generation_allocation_limit()) / 2);
   const size_t global_margin =
       Min(Max(global_allocation_limit_ / 2, kMarginForSmallHeaps),
           (max_global_memory_size_ - global_allocation_limit_) / 2);
@@ -4878,7 +4880,7 @@ double Heap::PercentToOldGenerationLimit() {
   double size_now =
       OldGenerationSizeOfObjects() + AllocatedExternalMemorySinceMarkCompact();
   double current_bytes = size_now - size_at_gc;
-  double total_bytes = old_generation_allocation_limit_ - size_at_gc;
+  double total_bytes = old_generation_allocation_limit() - size_at_gc;
   return total_bytes > 0 ? (current_bytes / total_bytes) * 100.0 : 0;
 }
 
@@ -4887,7 +4889,7 @@ double Heap::PercentToGlobalMemoryLimit() {
   double size_now =
       OldGenerationSizeOfObjects() + AllocatedExternalMemorySinceMarkCompact();
   double current_bytes = size_now - size_at_gc;
-  double total_bytes = old_generation_allocation_limit_ - size_at_gc;
+  double total_bytes = old_generation_allocation_limit() - size_at_gc;
   return total_bytes > 0 ? (current_bytes / total_bytes) * 100.0 : 0;
 }
 
@@ -6327,10 +6329,10 @@ void VerifyPointersVisitor::VerifyPointersImpl(TSlot start, TSlot end) {
     typename TSlot::TObject object = slot.load(isolate);
     HeapObject heap_object;
     if (object.GetHeapObject(&heap_object)) {
-      DCHECK(!Internals::IsMapWord(object.ptr()));
       VerifyHeapObjectImpl(heap_object);
     } else {
-      CHECK(object.IsSmi() || object.IsCleared());
+      CHECK(object.IsSmi() || object.IsCleared() ||
+            Internals::IsMapWord(object.ptr()));
     }
   }
 }

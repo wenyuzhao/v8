@@ -287,7 +287,7 @@ class JSReceiver : public HeapObject {
   bool HasProxyInPrototype(Isolate* isolate);
 
   // TC39 "Dynamic Code Brand Checks"
-  bool IsCodeKind(Isolate* isolate) const;
+  bool IsCodeLike(Isolate* isolate) const;
 
   OBJECT_CONSTRUCTORS(JSReceiver, HeapObject);
 };
@@ -646,6 +646,7 @@ class JSObject : public TorqueGeneratedJSObject<JSObject, JSReceiver> {
   inline void RawFastPropertyAtPut(
       FieldIndex index, Object value,
       WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
+  inline void WriteFillerMapNoWritebarrier(FieldIndex index, MapWord value);
   inline void RawFastPropertyAtPutNoWriteBarrier(FieldIndex index,
                                                  Object value);
   inline void RawFastInobjectPropertyAtPut(

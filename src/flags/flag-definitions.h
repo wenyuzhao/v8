@@ -242,8 +242,6 @@ DEFINE_BOOL(es_staging, false,
 DEFINE_BOOL(harmony, false, "enable all completed harmony features")
 DEFINE_BOOL(harmony_shipping, true, "enable all shipped harmony features")
 DEFINE_IMPLICATION(es_staging, harmony)
-// Enabling import.meta requires to also enable import()
-DEFINE_IMPLICATION(harmony_import_meta, harmony_dynamic_import)
 // Enabling FinalizationRegistry#cleanupSome also enables weak refs
 DEFINE_IMPLICATION(harmony_weak_refs_with_cleanup_some, harmony_weak_refs)
 
@@ -280,13 +278,8 @@ DEFINE_IMPLICATION(harmony_weak_refs_with_cleanup_some, harmony_weak_refs)
 
 // Features that are shipping (turned on by default, but internal flag remains).
 #define HARMONY_SHIPPING_BASE(V)                                          \
-  V(harmony_namespace_exports,                                            \
-    "harmony namespace exports (export * as foo from 'bar')")             \
   V(harmony_sharedarraybuffer, "harmony sharedarraybuffer")               \
   V(harmony_atomics, "harmony atomics")                                   \
-  V(harmony_import_meta, "harmony import.meta property")                  \
-  V(harmony_dynamic_import, "harmony dynamic import")                     \
-  V(harmony_promise_all_settled, "harmony Promise.allSettled")            \
   V(harmony_promise_any, "harmony Promise.any")                           \
   V(harmony_private_methods, "harmony private methods in class literals") \
   V(harmony_weak_refs, "harmony weak references")                         \
@@ -455,6 +448,10 @@ DEFINE_NEG_IMPLICATION(jitless, interpreted_frames_native_stack)
 DEFINE_BOOL(assert_types, false,
             "generate runtime type assertions to test the typer")
 
+DEFINE_BOOL(trace_code_dependencies, false, "trace code dependencies")
+// Depend on --trace-deopt-verbose for reporting dependency invalidations.
+DEFINE_IMPLICATION(trace_code_dependencies, trace_deopt_verbose)
+
 // Flags for experimental implementation features.
 DEFINE_BOOL(allocation_site_pretenuring, true,
             "pretenure with allocation sites")
@@ -556,18 +553,22 @@ DEFINE_BOOL(trace_generalization, false, "trace map generalization")
 DEFINE_BOOL(turboprop, false, "enable experimental turboprop mid-tier compiler")
 DEFINE_BOOL(turboprop_mid_tier_reg_alloc, true,
             "enable mid-tier register allocator for turboprop")
-DEFINE_BOOL(turboprop_dynamic_map_checks, true,
+DEFINE_BOOL(turboprop_dynamic_map_checks, false,
             "use dynamic map checks when generating code for property accesses "
             "if all handlers in an IC are the same for turboprop")
 DEFINE_BOOL(turboprop_as_midtier, false,
             "enable experimental turboprop mid-tier compiler")
 DEFINE_IMPLICATION(turboprop_as_midtier, turboprop)
-DEFINE_NEG_IMPLICATION(turboprop, turbo_inlining)
 DEFINE_IMPLICATION(turboprop, concurrent_inlining)
 DEFINE_VALUE_IMPLICATION(turboprop, interrupt_budget, 15 * KB)
 DEFINE_VALUE_IMPLICATION(turboprop, reuse_opt_code_count, 2)
 DEFINE_UINT_READONLY(max_minimorphic_map_checks, 4,
                      "max number of map checks to perform in minimorphic state")
+// Since Turboprop uses much lower value for interrupt budget, we need to wait
+// for a higher number of ticks to tierup to Turbofan roughly match the default.
+// The default of 10 is approximately the ration of TP to TF interrupt budget.
+DEFINE_INT(ticks_scale_factor_for_top_tier, 10,
+           "scale factor for profiler ticks when tiering up from midtier")
 
 // Flags for concurrent recompilation.
 DEFINE_BOOL(concurrent_recompilation, true,

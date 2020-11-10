@@ -100,6 +100,10 @@ class String : public TorqueGeneratedString<String, Name> {
   // A flat string has content that's encoded as a sequence of either
   // one-byte chars or two-byte UC16.
   // Returned by String::GetFlatContent().
+  // Not safe to use from concurrent background threads.
+  // TODO(solanes): Move FlatContent into FlatStringReader, and make it private.
+  // This would de-duplicate code, as well as taking advantage of the fact that
+  // FlatStringReader is relocatable.
   class FlatContent {
    public:
     // Returns true if the string is flat and this structure contains content.
@@ -137,11 +141,20 @@ class String : public TorqueGeneratedString<String, Name> {
     enum State { NON_FLAT, ONE_BYTE, TWO_BYTE };
 
     // Constructors only used by String::GetFlatContent().
-    explicit FlatContent(const uint8_t* start, int length)
-        : onebyte_start(start), length_(length), state_(ONE_BYTE) {}
-    explicit FlatContent(const uc16* start, int length)
-        : twobyte_start(start), length_(length), state_(TWO_BYTE) {}
-    FlatContent() : onebyte_start(nullptr), length_(0), state_(NON_FLAT) {}
+    FlatContent(const uint8_t* start, int length,
+                const DisallowHeapAllocation& no_gc)
+        : onebyte_start(start),
+          length_(length),
+          state_(ONE_BYTE),
+          no_gc_(no_gc) {}
+    FlatContent(const uc16* start, int length,
+                const DisallowHeapAllocation& no_gc)
+        : twobyte_start(start),
+          length_(length),
+          state_(TWO_BYTE),
+          no_gc_(no_gc) {}
+    explicit FlatContent(const DisallowHeapAllocation& no_gc)
+        : onebyte_start(nullptr), length_(0), state_(NON_FLAT), no_gc_(no_gc) {}
 
     union {
       const uint8_t* onebyte_start;
@@ -149,6 +162,7 @@ class String : public TorqueGeneratedString<String, Name> {
     };
     int length_;
     State state_;
+    const DisallowHeapAllocation& no_gc_;
 
     friend class String;
     friend class IterableSubString;
@@ -834,8 +848,9 @@ class ExternalTwoByteString : public ExternalString {
 };
 
 // A flat string reader provides random access to the contents of a
-// string independent of the character width of the string.  The handle
+// string independent of the character width of the string. The handle
 // must be valid as long as the reader is being used.
+// Not safe to use from concurrent background threads.
 class V8_EXPORT_PRIVATE FlatStringReader : public Relocatable {
  public:
   FlatStringReader(Isolate* isolate, Handle<String> str);
@@ -861,6 +876,8 @@ class ConsStringIterator {
   inline explicit ConsStringIterator(ConsString cons_string, int offset = 0) {
     Reset(cons_string, offset);
   }
+  ConsStringIterator(const ConsStringIterator&) = delete;
+  ConsStringIterator& operator=(const ConsStringIterator&) = delete;
   inline void Reset(ConsString cons_string, int offset = 0) {
     depth_ = 0;
     // Next will always return nullptr.
@@ -899,12 +916,13 @@ class ConsStringIterator {
   int depth_;
   int maximum_depth_;
   int consumed_;
-  DISALLOW_COPY_AND_ASSIGN(ConsStringIterator);
 };
 
 class StringCharacterStream {
  public:
   inline explicit StringCharacterStream(String string, int offset = 0);
+  StringCharacterStream(const StringCharacterStream&) = delete;
+  StringCharacterStream& operator=(const StringCharacterStream&) = delete;
   inline uint16_t GetNext();
   inline bool HasMore();
   inline void Reset(String string, int offset = 0);
@@ -919,7 +937,6 @@ class StringCharacterStream {
     const uint16_t* buffer16_;
   };
   const uint8_t* end_;
-  DISALLOW_COPY_AND_ASSIGN(StringCharacterStream);
 };
 
 template <typename Char>

@@ -1859,7 +1859,7 @@ class V8_EXPORT ScriptCompiler {
 
   /**
    * A streaming task which the embedder must run on a background thread to
-   * stream scripts into V8. Returned by ScriptCompiler::StartStreamingScript.
+   * stream scripts into V8. Returned by ScriptCompiler::StartStreaming.
    */
   class V8_EXPORT ScriptStreamingTask final {
    public:
@@ -1946,9 +1946,12 @@ class V8_EXPORT ScriptCompiler {
    * This API allows to start the streaming with as little data as possible, and
    * the remaining data (for example, the ScriptOrigin) is passed to Compile.
    */
+  V8_DEPRECATE_SOON("Use ScriptCompiler::StartStreamingScript instead.")
   static ScriptStreamingTask* StartStreamingScript(
       Isolate* isolate, StreamedSource* source,
       CompileOptions options = kNoCompileOptions);
+  static ScriptStreamingTask* StartStreaming(Isolate* isolate,
+                                             StreamedSource* source);
 
   /**
    * Compiles a streamed script (bound to current context).
@@ -4204,11 +4207,11 @@ class V8_EXPORT Object : public Value {
    * Support for TC39 "dynamic code brand checks" proposal.
    *
    * This API allows to query whether an object was constructed from a
-   * "code kind" ObjectTemplate.
+   * "code like" ObjectTemplate.
    *
-   * See also: v8::ObjectTemplate::SetCodeKind
+   * See also: v8::ObjectTemplate::SetCodeLike
    */
-  bool IsCodeKind(Isolate* isolate);
+  bool IsCodeLike(Isolate* isolate);
 
  private:
   Object();
@@ -4617,6 +4620,15 @@ class V8_EXPORT Function : public Object {
    * v8::Undefined.
    */
   Local<Value> GetBoundFunction() const;
+
+  /**
+   * Calls builtin Function.prototype.toString on this function.
+   * This is different from Value::ToString() that may call a user-defined
+   * toString() function, and different than Object::ObjectProtoToString() which
+   * always serializes "[object Function]".
+   */
+  V8_WARN_UNUSED_RESULT MaybeLocal<String> FunctionProtoToString(
+      Local<Context> context);
 
   ScriptOrigin GetScriptOrigin() const;
   V8_INLINE static Function* Cast(Value* obj);
@@ -7004,14 +7016,14 @@ class V8_EXPORT ObjectTemplate : public Template {
   /**
    * Support for TC39 "dynamic code brand checks" proposal.
    *
-   * This API allows to mark (& query) objects as "code kind", which causes
-   * them to be treated as code-like (i.e. like Strings) in the context of
-   * eval and function constructor.
+   * This API allows to mark (& query) objects as "code like", which causes
+   * them to be treated like Strings in the context of eval and function
+   * constructor.
    *
    * Reference: https://github.com/tc39/proposal-dynamic-code-brand-checks
    */
-  void SetCodeKind();
-  bool IsCodeKind();
+  void SetCodeLike();
+  bool IsCodeLike();
 
   V8_INLINE static ObjectTemplate* Cast(Data* data);
 
@@ -7595,7 +7607,7 @@ typedef ModifyCodeGenerationFromStringsResult (
 typedef ModifyCodeGenerationFromStringsResult (
     *ModifyCodeGenerationFromStringsCallback2)(Local<Context> context,
                                                Local<Value> source,
-                                               bool is_code_kind);
+                                               bool is_code_like);
 
 // --- WebAssembly compilation callbacks ---
 typedef bool (*ExtensionCallback)(const FunctionCallbackInfo<Value>&);

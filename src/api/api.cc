@@ -2005,15 +2005,15 @@ void ObjectTemplate::SetImmutableProto() {
   self->set_immutable_proto(true);
 }
 
-bool ObjectTemplate::IsCodeKind() {
-  return Utils::OpenHandle(this)->code_kind();
+bool ObjectTemplate::IsCodeLike() {
+  return Utils::OpenHandle(this)->code_like();
 }
 
-void ObjectTemplate::SetCodeKind() {
+void ObjectTemplate::SetCodeLike() {
   auto self = Utils::OpenHandle(this);
   i::Isolate* isolate = self->GetIsolate();
   ENTER_V8_NO_SCRIPT_NO_EXCEPTION(isolate);
-  self->set_code_kind(true);
+  self->set_code_like(true);
 }
 
 // --- S c r i p t s ---
@@ -2633,12 +2633,15 @@ void ScriptCompiler::ScriptStreamingTask::Run() { data_->task->Run(); }
 
 ScriptCompiler::ScriptStreamingTask* ScriptCompiler::StartStreamingScript(
     Isolate* v8_isolate, StreamedSource* source, CompileOptions options) {
-  if (!i::FLAG_script_streaming) {
-    return nullptr;
-  }
   // We don't support other compile options on streaming background compiles.
   // TODO(rmcilroy): remove CompileOptions from the API.
   CHECK(options == ScriptCompiler::kNoCompileOptions);
+  return StartStreaming(v8_isolate, source);
+}
+
+ScriptCompiler::ScriptStreamingTask* ScriptCompiler::StartStreaming(
+    Isolate* v8_isolate, StreamedSource* source) {
+  if (!i::FLAG_script_streaming) return nullptr;
   i::Isolate* isolate = reinterpret_cast<i::Isolate*>(v8_isolate);
   i::ScriptStreamingData* data = source->impl();
   std::unique_ptr<i::BackgroundCompileTask> task =
@@ -5125,6 +5128,18 @@ Local<v8::Value> Function::GetBoundFunction() const {
   return v8::Undefined(reinterpret_cast<v8::Isolate*>(self->GetIsolate()));
 }
 
+MaybeLocal<String> v8::Function::FunctionProtoToString(Local<Context> context) {
+  PREPARE_FOR_EXECUTION(context, Function, FunctionProtoToString, String);
+  auto self = Utils::OpenHandle(this);
+  Local<Value> result;
+  has_pending_exception = !ToLocal<Value>(
+      i::Execution::CallBuiltin(isolate, isolate->function_to_string(), self, 0,
+                                nullptr),
+      &result);
+  RETURN_ON_FAILED_EXECUTION(String);
+  RETURN_ESCAPED(Local<String>::Cast(result));
+}
+
 int Name::GetIdentityHash() {
   auto self = Utils::OpenHandle(this);
   return static_cast<int>(self->Hash());
@@ -7315,6 +7330,7 @@ CompiledWasmModule::CompiledWasmModule(
 }
 
 OwnedBuffer CompiledWasmModule::Serialize() {
+  TRACE_EVENT0("v8.wasm", "wasm.SerializeModule");
   i::wasm::WasmSerializer wasm_serializer(native_module_.get());
   size_t buffer_size = wasm_serializer.GetSerializedNativeModuleSize();
   std::unique_ptr<uint8_t[]> buffer(new uint8_t[buffer_size]);
@@ -9211,12 +9227,12 @@ void v8::Isolate::LocaleConfigurationChangeNotification() {
 #endif  // V8_INTL_SUPPORT
 }
 
-bool v8::Object::IsCodeKind(v8::Isolate* isolate) {
+bool v8::Object::IsCodeLike(v8::Isolate* isolate) {
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
-  LOG_API(i_isolate, Object, IsCodeKind);
+  LOG_API(i_isolate, Object, IsCodeLike);
   ENTER_V8_NO_SCRIPT_NO_EXCEPTION(i_isolate);
   i::HandleScope scope(i_isolate);
-  return Utils::OpenHandle(this)->IsCodeKind(i_isolate);
+  return Utils::OpenHandle(this)->IsCodeLike(i_isolate);
 }
 
 // static
@@ -9963,6 +9979,10 @@ int debug::WasmScript::CodeOffset() const {
   i::wasm::NativeModule* native_module = script->wasm_native_module();
   const i::wasm::WasmModule* module = native_module->module();
 
+  // If the module contains at least one function, the code offset must have
+  // been initialized, and it cannot be zero.
+  DCHECK_IMPLIES(module->num_declared_functions > 0,
+                 module->code.offset() != 0);
   return module->code.offset();
 }
 

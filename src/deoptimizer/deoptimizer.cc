@@ -739,10 +739,10 @@ void Deoptimizer::TraceMarkForDeoptimization(Code code, const char* reason) {
 
   DeoptimizationData deopt_data = DeoptimizationData::cast(maybe_data);
   CodeTracer::Scope scope(isolate->GetCodeTracer());
-  PrintF(scope.file(), "[marking dependent code " V8PRIxPTR_FMT " ",
+  PrintF(scope.file(), "[marking dependent code " V8PRIxPTR_FMT " (",
          code.ptr());
   deopt_data.SharedFunctionInfo().ShortPrint(scope.file());
-  PrintF(" (opt id %d) for deoptimization, reason: %s]\n",
+  PrintF(") (opt id %d) for deoptimization, reason: %s]\n",
          deopt_data.OptimizationId().value(), reason);
   {
     AllowHeapAllocation yes_gc;
@@ -3464,12 +3464,12 @@ TranslatedState::TranslatedState(const JavaScriptFrame* frame) {
   DCHECK(!data.is_null() && deopt_index != Safepoint::kNoDeoptimizationIndex);
   TranslationIterator it(data.TranslationByteArray(),
                          data.TranslationIndex(deopt_index).value());
-#ifdef V8_NO_ARGUMENT_ADAPTOR
+#ifdef V8_NO_ARGUMENTS_ADAPTOR
   int actual_argc = frame->GetActualArgumentCount();
 #else
   int actual_argc = 0;
 #endif
-  Init(frame->isolate(), frame->fp(), kNullAddress, &it, data.LiteralArray(),
+  Init(frame->isolate(), frame->fp(), frame->fp(), &it, data.LiteralArray(),
        nullptr /* registers */, nullptr /* trace file */,
        frame->function().shared().internal_formal_parameter_count(),
        actual_argc);

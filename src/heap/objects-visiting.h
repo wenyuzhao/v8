@@ -25,7 +25,6 @@ namespace internal {
   V(Context)                           \
   V(CoverageInfo)                      \
   V(DataHandler)                       \
-  V(DescriptorArray)                   \
   V(EmbedderDataArray)                 \
   V(EphemeronHashTable)                \
   V(FeedbackCell)                      \
@@ -57,7 +56,6 @@ namespace internal {
   V(UncompiledDataWithoutPreparseData) \
   V(UncompiledDataWithPreparseData)    \
   V(WasmArray)                         \
-  V(WasmCapiFunctionData)              \
   V(WasmIndirectFunctionTable)         \
   V(WasmInstanceObject)                \
   V(WasmStruct)                        \

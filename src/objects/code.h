@@ -521,6 +521,8 @@ class Code : public HeapObject {
 class Code::OptimizedCodeIterator {
  public:
   explicit OptimizedCodeIterator(Isolate* isolate);
+  OptimizedCodeIterator(const OptimizedCodeIterator&) = delete;
+  OptimizedCodeIterator& operator=(const OptimizedCodeIterator&) = delete;
   Code Next();
 
  private:
@@ -529,7 +531,6 @@ class Code::OptimizedCodeIterator {
   Isolate* isolate_;
 
   DISALLOW_HEAP_ALLOCATION(no_gc)
-  DISALLOW_COPY_AND_ASSIGN(OptimizedCodeIterator);
 };
 
 class AbstractCode : public HeapObject {
@@ -641,7 +642,7 @@ class DependentCode : public WeakFixedArray {
     kAllocationSiteTransitionChangedGroup
   };
 
-  // Register a code dependency of {cell} on {object}.
+  // Register a dependency of {code} on {object}, of the kind given by {group}.
   V8_EXPORT_PRIVATE static void InstallDependency(Isolate* isolate,
                                                   const MaybeObjectHandle& code,
                                                   Handle<HeapObject> object,

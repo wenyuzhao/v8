@@ -117,6 +117,7 @@ class V8_EXPORT_PRIVATE Type : public TypeBase {
   // Used for naming generated code.
   virtual std::string SimpleName() const;
 
+  std::string UnhandlifiedCppTypeName() const;
   std::string HandlifiedCppTypeName() const;
 
   const Type* parent() const { return parent_; }
@@ -159,6 +160,7 @@ class V8_EXPORT_PRIVATE Type : public TypeBase {
   virtual const Type* ConstexprVersion() const {
     if (constexpr_version_) return constexpr_version_;
     if (IsConstexpr()) return this;
+    if (parent()) return parent()->ConstexprVersion();
     return nullptr;
   }
 
@@ -680,6 +682,9 @@ class ClassType final : public AggregateType {
   bool GenerateCppClassDefinitions() const {
     return flags_ & ClassFlag::kGenerateCppClassDefinitions || !IsExtern() ||
            ShouldGenerateBodyDescriptor();
+  }
+  bool ShouldGenerateFullClassDefinition() const {
+    return !IsExtern() && !(flags_ & ClassFlag::kCustomCppClass);
   }
   bool ShouldExport() const { return flags_ & ClassFlag::kExport; }
   bool IsShape() const { return flags_ & ClassFlag::kIsShape; }

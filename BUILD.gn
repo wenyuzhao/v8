@@ -111,7 +111,9 @@ declare_args() {
 
   # Disable arguments adaptor frame (sets -dV8_NO_ARGUMENTS_ADAPTOR).
   v8_disable_arguments_adaptor =
-      v8_current_cpu == "x86" || v8_current_cpu == "x64"
+      v8_current_cpu == "x86" || v8_current_cpu == "x64" ||
+      v8_current_cpu == "mipsel" || v8_current_cpu == "mips64el" ||
+      v8_current_cpu == "arm"
 
   # Sets -dOBJECT_PRINT.
   v8_enable_object_print = ""
@@ -1233,8 +1235,9 @@ torque_files = [
   "src/builtins/string-replaceall.tq",
   "src/builtins/string-slice.tq",
   "src/builtins/string-startswith.tq",
-  "src/builtins/string-substring.tq",
   "src/builtins/string-substr.tq",
+  "src/builtins/string-substring.tq",
+  "src/builtins/string-trim.tq",
   "src/builtins/symbol.tq",
   "src/builtins/torque-internal.tq",
   "src/builtins/typed-array-createtypedarray.tq",
@@ -2880,8 +2883,9 @@ v8_source_set("v8_base_without_compiler") {
     "src/objects/code-kind.h",
     "src/objects/code.cc",
     "src/objects/code.h",
-    "src/objects/compilation-cache-inl.h",
-    "src/objects/compilation-cache.h",
+    "src/objects/compilation-cache-table-inl.h",
+    "src/objects/compilation-cache-table.cc",
+    "src/objects/compilation-cache-table.h",
     "src/objects/compressed-slots-inl.h",
     "src/objects/compressed-slots.h",
     "src/objects/contexts-inl.h",
@@ -4819,6 +4823,7 @@ if (is_fuchsia && !build_with_chromium) {
 group("v8_fuzzers") {
   testonly = true
   data_deps = [
+    ":v8_simple_inspector_fuzzer",
     ":v8_simple_json_fuzzer",
     ":v8_simple_multi_return_fuzzer",
     ":v8_simple_parser_fuzzer",
@@ -5281,6 +5286,23 @@ v8_source_set("wasm_compile_fuzzer") {
 }
 
 v8_fuzzer("wasm_compile_fuzzer") {
+}
+
+v8_source_set("inspector_fuzzer") {
+  sources = [ "test/fuzzer/inspector-fuzzer.cc" ]
+
+  deps = [
+    ":fuzzer_support",
+    "test/inspector:inspector_test",
+  ]
+
+  configs = [
+    ":external_config",
+    ":internal_config_base",
+  ]
+}
+
+v8_fuzzer("inspector_fuzzer") {
 }
 
 # Target to build all generated .cc files.

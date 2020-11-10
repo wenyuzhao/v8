@@ -1244,9 +1244,12 @@ class LiftoffCompiler {
       int32_t imm = rhs_slot.i32_const();
 
       LiftoffRegister lhs = __ PopToRegister();
+      // Either reuse {lhs} for {dst}, or choose a register (pair) which does
+      // not overlap, for easier code generation.
+      LiftoffRegList pinned = LiftoffRegList::ForRegs(lhs);
       LiftoffRegister dst = src_rc == result_rc
-                                ? __ GetUnusedRegister(result_rc, {lhs}, {})
-                                : __ GetUnusedRegister(result_rc, {});
+                                ? __ GetUnusedRegister(result_rc, {lhs}, pinned)
+                                : __ GetUnusedRegister(result_rc, pinned);
 
       CallEmitFn(fnImm, dst, lhs, imm);
       __ PushRegister(ValueType::Primitive(result_type), dst);
@@ -4111,7 +4114,7 @@ WasmCompilationResult ExecuteLiftoffCompilation(
     std::unique_ptr<DebugSideTable>* debug_sidetable, int dead_breakpoint) {
   int func_body_size = static_cast<int>(func_body.end - func_body.start);
   TRACE_EVENT2(TRACE_DISABLED_BY_DEFAULT("v8.wasm.detailed"),
-               "wasm.CompileBaseline", "func_index", func_index, "body_size",
+               "wasm.CompileBaseline", "funcIndex", func_index, "bodySize",
                func_body_size);
 
   Zone zone(allocator, "LiftoffCompilationZone");

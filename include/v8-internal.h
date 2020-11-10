@@ -264,7 +264,7 @@ class Internals {
 #ifdef V8_MAP_PACKING
   static const intptr_t kMapWordMetadataMask = ((intptr_t)0b11) << 48;
   static const intptr_t kMapWordSignature =
-      0xffff000000000002;  // these bits will be set only on a map word
+      0x2;  // these bits will be set only on a map word
 #else
   static const intptr_t kMapWordMetadataMask = 0;
   static const intptr_t kMapWordSignature = 0;
@@ -388,7 +388,8 @@ class Internals {
 
   V8_INLINE static bool IsMapWord(internal::Address mw) {
 #ifdef V8_MAP_PACKING
-    return (static_cast<intptr_t>(mw) & kMapWordSignature) == kMapWordSignature;
+    return (static_cast<intptr_t>(mw) & kMapWordXorMask) == kMapWordSignature &&
+           (0xffffffff00000000 & static_cast<intptr_t>(mw)) != 0;
 #else
     return false;
 #endif

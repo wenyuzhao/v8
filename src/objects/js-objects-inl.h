@@ -359,6 +359,15 @@ void JSObject::RawFastPropertyAtPut(FieldIndex index, Object value,
   }
 }
 
+void JSObject::WriteFillerMapNoWritebarrier(FieldIndex index, MapWord value) {
+  if (index.is_inobject()) {
+    int offset = index.offset();
+    TaggedField<MapWord>::Release_Store(*this, offset, value);
+  } else {
+    property_array().set(index.outobject_array_index(), value);
+  }
+}
+
 void JSObject::RawFastPropertyAtPutNoWriteBarrier(FieldIndex index,
                                                   Object value) {
   if (index.is_inobject()) {
@@ -655,9 +664,15 @@ void JSReceiver::initialize_properties(Isolate* isolate) {
   ReadOnlyRoots roots(isolate);
   DCHECK(!ObjectInYoungGeneration(roots.empty_fixed_array()));
   DCHECK(!ObjectInYoungGeneration(roots.empty_property_dictionary()));
+  DCHECK(!ObjectInYoungGeneration(roots.empty_ordered_property_dictionary()));
   if (map(isolate).is_dictionary_map()) {
-    WRITE_FIELD(*this, kPropertiesOrHashOffset,
-                roots.empty_property_dictionary());
+    if (V8_DICT_MODE_PROTOTYPES_BOOL) {
+      WRITE_FIELD(*this, kPropertiesOrHashOffset,
+                  roots.empty_ordered_property_dictionary());
+    } else {
+      WRITE_FIELD(*this, kPropertiesOrHashOffset,
+                  roots.empty_property_dictionary());
+    }
   } else {
     WRITE_FIELD(*this, kPropertiesOrHashOffset, roots.empty_fixed_array());
   }
@@ -668,7 +683,8 @@ DEF_GETTER(JSReceiver, HasFastProperties, bool) {
   DCHECK(m.IsMap());
   DCHECK(raw_properties_or_hash(isolate).IsSmi() ||
          ((raw_properties_or_hash(isolate).IsGlobalDictionary(isolate) ||
-           raw_properties_or_hash(isolate).IsNameDictionary(isolate)) ==
+           raw_properties_or_hash(isolate).IsNameDictionary(isolate) ||
+           raw_properties_or_hash(isolate).IsOrderedNameDictionary(isolate)) ==
           m.is_dictionary_map()));
   return !m.is_dictionary_map();
 }

@@ -353,7 +353,9 @@ Reduction JSNativeContextSpecialization::ReduceJSGetSuperConstructor(
 
   // Check if the input is a known JSFunction.
   HeapObjectMatcher m(constructor);
-  if (!m.HasResolvedValue()) return NoChange();
+  if (!m.HasResolvedValue() || !m.Ref(broker()).IsJSFunction()) {
+    return NoChange();
+  }
   JSFunctionRef function = m.Ref(broker()).AsJSFunction();
   MapRef function_map = function.map();
   if (should_disallow_heap_access() && !function_map.serialized_prototype()) {
@@ -1081,10 +1083,15 @@ Reduction JSNativeContextSpecialization::ReduceMinimorphicPropertyAccess(
   if (feedback.has_migration_target_maps()) {
     flags |= CheckMapsFlag::kTryMigrateInstance;
   }
-  effect =
-      graph()->NewNode(simplified()->DynamicCheckMaps(flags, feedback.handler(),
-                                                      feedback.map(), source),
-                       receiver, effect, control);
+
+  ZoneHandleSet<Map> maps;
+  for (Handle<Map> map : feedback.maps()) {
+    maps.insert(map, graph()->zone());
+  }
+
+  effect = graph()->NewNode(
+      simplified()->DynamicCheckMaps(flags, feedback.handler(), maps, source),
+      receiver, effect, control);
   value = access_builder.BuildMinimorphicLoadDataField(
       feedback.name(), access_info, receiver, &effect, &control);
 

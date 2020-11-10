@@ -6,6 +6,7 @@
 
 #include "src/common/assert-scope.h"
 #include "src/common/globals.h"
+#include "src/execution/thread-id.h"
 #include "src/handles/handles-inl.h"
 #include "src/heap/heap-inl.h"
 #include "src/heap/memory-chunk.h"
@@ -167,6 +168,11 @@ bool String::MakeExternal(v8::String::ExternalStringResource* resource) {
     isolate->heap()->NotifyObjectLayoutChange(*this, no_allocation,
                                               InvalidateRecordedSlots::kYes);
   }
+
+  // Disallow garbage collection to avoid possible GC vs string access deadlock.
+  DisallowGarbageCollection no_gc;
+  base::SharedMutexGuard<base::kExclusive> shared_mutex_guard(
+      isolate->string_access());
   // Morph the string to an external string by replacing the map and
   // reinitializing the fields.  This won't work if the space the existing
   // string occupies is too small for a regular external string.  Instead, we
@@ -239,6 +245,11 @@ bool String::MakeExternal(v8::String::ExternalOneByteStringResource* resource) {
     isolate->heap()->NotifyObjectLayoutChange(*this, no_allocation,
                                               InvalidateRecordedSlots::kYes);
   }
+
+  // Disallow garbage collection to avoid possible GC vs string access deadlock.
+  DisallowGarbageCollection no_gc;
+  base::SharedMutexGuard<base::kExclusive> shared_mutex_guard(
+      isolate->string_access());
   // Morph the string to an external string by replacing the map and
   // reinitializing the fields.  This won't work if the space the existing
   // string occupies is too small for a regular external string.  Instead, we
@@ -520,6 +531,15 @@ Handle<Object> String::ToNumber(Isolate* isolate, Handle<String> subject) {
 
 String::FlatContent String::GetFlatContent(
     const DisallowHeapAllocation& no_gc) {
+#if DEBUG
+  // Check that this method is called only from the main thread.
+  {
+    Isolate* isolate;
+    // We don't have to check read only strings as those won't move.
+    DCHECK_IMPLIES(GetIsolateFromHeapObject(*this, &isolate),
+                   ThreadId::Current() == isolate->thread_id());
+  }
+#endif
   USE(no_gc);
   int length = this->length();
   StringShape shape(*this);
@@ -528,7 +548,7 @@ String::FlatContent String::GetFlatContent(
   if (shape.representation_tag() == kConsStringTag) {
     ConsString cons = ConsString::cast(string);
     if (cons.second().length() != 0) {
-      return FlatContent();
+      return FlatContent(no_gc);
     }
     string = cons.first();
     shape = StringShape(string);
@@ -554,7 +574,7 @@ String::FlatContent String::GetFlatContent(
     } else {
       start = ExternalOneByteString::cast(string).GetChars();
     }
-    return FlatContent(start + offset, length);
+    return FlatContent(start + offset, length, no_gc);
   } else {
     DCHECK_EQ(shape.encoding_tag(), kTwoByteStringTag);
     const uc16* start;
@@ -563,7 +583,7 @@ String::FlatContent String::GetFlatContent(
     } else {
       start = ExternalTwoByteString::cast(string).GetChars();
     }
-    return FlatContent(start + offset, length);
+    return FlatContent(start + offset, length, no_gc);
   }
 }
 
@@ -1512,6 +1532,10 @@ int ExternalString::ExternalPayloadSize() const {
 
 FlatStringReader::FlatStringReader(Isolate* isolate, Handle<String> str)
     : Relocatable(isolate), str_(str), length_(str->length()) {
+#if DEBUG
+  // Check that this constructor is called only from the main thread.
+  DCHECK_EQ(ThreadId::Current(), isolate->thread_id());
+#endif
   PostGarbageCollection();
 }
 

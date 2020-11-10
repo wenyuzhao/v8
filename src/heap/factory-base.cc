@@ -329,7 +329,8 @@ Handle<SharedFunctionInfo> FactoryBase<Impl>::NewSharedFunctionInfo(
   } else if (Builtins::IsBuiltinId(maybe_builtin_index)) {
     shared->set_builtin_id(maybe_builtin_index);
   } else {
-    shared->set_builtin_id(Builtins::kIllegal);
+    DCHECK(shared->HasBuiltinId());
+    DCHECK_EQ(Builtins::kIllegal, shared->builtin_id());
   }
 
   shared->CalculateConstructAsBuiltin();
@@ -409,14 +410,14 @@ FactoryBase<Impl>::NewTemplateObjectDescription(
 
 template <typename Impl>
 Handle<FeedbackMetadata> FactoryBase<Impl>::NewFeedbackMetadata(
-    int slot_count, int feedback_cell_count, AllocationType allocation) {
+    int slot_count, int create_closure_slot_count, AllocationType allocation) {
   DCHECK_LE(0, slot_count);
   int size = FeedbackMetadata::SizeFor(slot_count);
   HeapObject result = AllocateRawWithImmortalMap(
       size, allocation, read_only_roots().feedback_metadata_map());
   Handle<FeedbackMetadata> data(FeedbackMetadata::cast(result), isolate());
   data->set_slot_count(slot_count);
-  data->set_closure_feedback_cell_count(feedback_cell_count);
+  data->set_create_closure_slot_count(create_closure_slot_count);
 
   // Initialize the data section to 0.
   int data_size = size - FeedbackMetadata::kHeaderSize;

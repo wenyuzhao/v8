@@ -595,6 +595,8 @@ class CompilationStateImpl {
 
   void WaitForCompilationEvent(CompilationEvent event);
 
+  void SetHighPriority() { has_priority_ = true; }
+
   bool failed() const {
     return compile_failed_.load(std::memory_order_relaxed);
   }
@@ -662,6 +664,8 @@ class CompilationStateImpl {
   // alive by the tasks even if the NativeModule dies.
   std::vector<std::shared_ptr<JSToWasmWrapperCompilationUnit>>
       js_to_wasm_wrapper_units_;
+
+  bool has_priority_ = false;
 
   // This mutex protects all information of this {CompilationStateImpl} which is
   // being accessed concurrently.
@@ -791,6 +795,8 @@ void CompilationState::WaitForTopTierFinished() {
   });
   top_tier_finished_semaphore->Wait();
 }
+
+void CompilationState::SetHighPriority() { Impl(this)->SetHighPriority(); }
 
 void CompilationState::InitializeAfterDeserialization() {
   Impl(this)->InitializeCompilationProgressAfterDeserialization();
@@ -1189,6 +1195,24 @@ CompilationExecutionResult ExecuteJSToWasmWrapperCompilationUnits(
   }
 }
 
+namespace {
+const char* GetCompilationEventName(const WasmCompilationUnit& unit,
+                                    const CompilationEnv& env) {
+  ExecutionTier tier = unit.tier();
+  if (tier == ExecutionTier::kLiftoff) {
+    return "wasm.BaselineCompilation";
+  }
+  if (tier == ExecutionTier::kTurbofan) {
+    return "wasm.TopTierCompilation";
+  }
+  if (unit.func_index() <
+      static_cast<int>(env.module->num_imported_functions)) {
+    return "wasm.WasmToJSWrapperCompilation";
+  }
+  return "wasm.OtherCompilation";
+}
+}  // namespace
+
 // Run by the {BackgroundCompileJob} (on any thread).
 CompilationExecutionResult ExecuteCompilationUnits(
     std::weak_ptr<NativeModule> native_module, Counters* counters,
@@ -1237,11 +1261,7 @@ CompilationExecutionResult ExecuteCompilationUnits(
   std::vector<WasmCompilationResult> results_to_publish;
   while (true) {
     ExecutionTier current_tier = unit->tier();
-    const char* event_name = current_tier == ExecutionTier::kLiftoff
-                                 ? "wasm.BaselineCompilation"
-                                 : current_tier == ExecutionTier::kTurbofan
-                                       ? "wasm.TopTierCompilation"
-                                       : "wasm.OtherCompilation";
+    const char* event_name = GetCompilationEventName(unit.value(), env.value());
     TRACE_EVENT0("v8.wasm", event_name);
     while (unit->tier() == current_tier) {
       // (asynchronous): Execute the compilation.
@@ -1430,6 +1450,7 @@ class CompilationTimeCallback {
         histogram->AddSample(static_cast<int>(duration.InMicroseconds()));
       }
 
+      // TODO(sartang@microsoft.com): Remove wall_clock_time_in_us field
       v8::metrics::WasmModuleCompiled event{
           (compile_mode_ != kSynchronous),         // async
           (compile_mode_ == kStreaming),           // streamed
@@ -1439,7 +1460,8 @@ class CompilationTimeCallback {
           true,                                    // success
           native_module->liftoff_code_size(),      // code_size_in_bytes
           native_module->liftoff_bailout_count(),  // liftoff_bailout_count
-          duration.InMicroseconds()                // wall_clock_time_in_us
+          duration.InMicroseconds(),               // wall_clock_time_in_us
+          duration.InMicroseconds()                // wall_clock_duration_in_us
       };
       metrics_recorder_->DelayMainThreadEvent(event, context_id_);
     }
@@ -1450,7 +1472,8 @@ class CompilationTimeCallback {
       v8::metrics::WasmModuleTieredUp event{
           FLAG_wasm_lazy_compilation,           // lazy
           native_module->turbofan_code_size(),  // code_size_in_bytes
-          duration.InMicroseconds()             // wall_clock_time_in_us
+          duration.InMicroseconds(),            // wall_clock_time_in_us
+          duration.InMicroseconds()             // wall_clock_duration_in_us
       };
       metrics_recorder_->DelayMainThreadEvent(event, context_id_);
     }
@@ -1464,7 +1487,8 @@ class CompilationTimeCallback {
           false,                                   // success
           native_module->liftoff_code_size(),      // code_size_in_bytes
           native_module->liftoff_bailout_count(),  // liftoff_bailout_count
-          duration.InMicroseconds()                // wall_clock_time_in_us
+          duration.InMicroseconds(),               // wall_clock_time_in_us
+          duration.InMicroseconds()                // wall_clock_duration_in_us
       };
       metrics_recorder_->DelayMainThreadEvent(event, context_id_);
     }
@@ -1614,6 +1638,8 @@ std::shared_ptr<NativeModule> CompileToNativeModule(
   native_module = isolate->wasm_engine()->NewNativeModule(
       isolate, enabled, module, code_size_estimate);
   native_module->SetWireBytes(std::move(wire_bytes_copy));
+  // Sync compilation is user blocking, so we increase the priority.
+  native_module->compilation_state()->SetHighPriority();
 
   v8::metrics::Recorder::ContextId context_id =
       isolate->GetOrRegisterRecorderContextId(isolate->native_context());
@@ -1851,7 +1877,8 @@ void AsyncCompileJob::FinishCompile(bool is_after_cache_hit) {
           !compilation_state->failed(),             // success
           native_module_->liftoff_code_size(),      // code_size_in_bytes
           native_module_->liftoff_bailout_count(),  // liftoff_bailout_count
-          duration.InMicroseconds()                 // wall_clock_time_in_us
+          duration.InMicroseconds(),                // wall_clock_time_in_us
+          duration.InMicroseconds()                 // wall_clock_duration_in_us
       };
       isolate_->metrics_recorder()->DelayMainThreadEvent(event, context_id_);
     }
@@ -2366,6 +2393,7 @@ void AsyncStreamingProcessor::FinishAsyncCompileJobWithError(
   job_->metrics_event_.module_size_in_bytes = job_->wire_bytes_.length();
   job_->metrics_event_.function_count = num_functions_;
   job_->metrics_event_.wall_clock_time_in_us = duration.InMicroseconds();
+  job_->metrics_event_.wall_clock_duration_in_us = duration.InMicroseconds();
   job_->isolate_->metrics_recorder()->DelayMainThreadEvent(job_->metrics_event_,
                                                            job_->context_id_);
 
@@ -2457,6 +2485,8 @@ bool AsyncStreamingProcessor::ProcessCodeSectionHeader(
     return false;
   }
 
+  decoder_.set_code_section(offset, static_cast<uint32_t>(code_section_length));
+
   prefix_hash_ = base::hash_combine(prefix_hash_,
                                     static_cast<uint32_t>(code_section_length));
   if (!wasm_engine_->GetStreamingCompilationOwnership(prefix_hash_)) {
@@ -2478,7 +2508,6 @@ bool AsyncStreamingProcessor::ProcessCodeSectionHeader(
   job_->DoImmediately<AsyncCompileJob::PrepareAndStartCompile>(
       decoder_.shared_module(), false, code_size_estimate);
 
-  decoder_.set_code_section(offset, static_cast<uint32_t>(code_section_length));
   auto* compilation_state = Impl(job_->native_module_->compilation_state());
   compilation_state->SetWireBytesStorage(std::move(wire_bytes_storage));
   DCHECK_EQ(job_->native_module_->module()->origin, kWasmOrigin);
@@ -2587,6 +2616,7 @@ void AsyncStreamingProcessor::OnFinishedStream(OwnedVector<uint8_t> bytes) {
   job_->metrics_event_.module_size_in_bytes = job_->wire_bytes_.length();
   job_->metrics_event_.function_count = num_functions_;
   job_->metrics_event_.wall_clock_time_in_us = duration.InMicroseconds();
+  job_->metrics_event_.wall_clock_duration_in_us = duration.InMicroseconds();
   job_->isolate_->metrics_recorder()->DelayMainThreadEvent(job_->metrics_event_,
                                                            job_->context_id_);
 
@@ -2937,7 +2967,7 @@ void CompilationStateImpl::FinalizeJSToWasmWrappers(
   // optimization we keep the code space unlocked to avoid repeated unlocking
   // because many such wrapper are allocated in sequence below.
   TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("v8.wasm.detailed"),
-               "wasm.FinalizeJSToWasmWrappers", "num_wrappers",
+               "wasm.FinalizeJSToWasmWrappers", "wrappers",
                js_to_wasm_wrapper_units_.size());
   CodeSpaceMemoryModificationScope modification_scope(isolate->heap());
   for (auto& unit : js_to_wasm_wrapper_units_) {
@@ -2962,7 +2992,7 @@ CompilationStateImpl::GetNextCompilationUnit(
 
 void CompilationStateImpl::OnFinishedUnits(Vector<WasmCode*> code_vector) {
   TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("v8.wasm.detailed"),
-               "wasm.OnFinishedUnits", "num_units", code_vector.size());
+               "wasm.OnFinishedUnits", "units", code_vector.size());
 
   base::MutexGuard guard(&callbacks_mutex_);
 
@@ -3211,8 +3241,13 @@ void CompilationStateImpl::ScheduleCompileJobForNewUnits() {
                                              async_counters_);
   // TODO(wasm): Lower priority for TurboFan-only jobs.
   current_compile_job_ = V8::GetCurrentPlatform()->PostJob(
-      TaskPriority::kUserVisible, std::move(new_compile_job));
+      has_priority_ ? TaskPriority::kUserBlocking : TaskPriority::kUserVisible,
+      std::move(new_compile_job));
   native_module_->engine()->ShepherdCompileJobHandle(current_compile_job_);
+
+  // Reset the priority. Later uses of the compilation state, e.g. for
+  // debugging, should compile with the default priority again.
+  has_priority_ = false;
 }
 
 size_t CompilationStateImpl::NumOutstandingCompilations() const {

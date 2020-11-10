@@ -957,6 +957,9 @@ TEST(DecideToPretenureDuringCompilation) {
   FLAG_allow_natives_syntax = true;
   FLAG_allocation_site_pretenuring = true;
   FLAG_flush_bytecode = false;
+  // Turn on lazy feedback allocation, so we create exactly one allocation site.
+  // Without lazy feedback allocation, we create two allocation sites.
+  FLAG_lazy_feedback_allocation = true;
 
   // We want to trigger exactly 1 optimization.
   FLAG_use_osr = false;
@@ -1081,7 +1084,7 @@ TEST(ProfilerEnabledDuringBackgroundCompile) {
       std::make_unique<DummySourceStream>(source),
       v8::ScriptCompiler::StreamedSource::UTF8);
   std::unique_ptr<v8::ScriptCompiler::ScriptStreamingTask> task(
-      v8::ScriptCompiler::StartStreamingScript(isolate, &streamed_source));
+      v8::ScriptCompiler::StartStreaming(isolate, &streamed_source));
 
   // Run the background compilation task on the main thread.
   task->Run();

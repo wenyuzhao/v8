@@ -2034,6 +2034,10 @@ class WasmInterpreterInternals {
         *len += 1;
         break;
       case kExprI32AtomicWait: {
+        if (!module()->has_shared_memory) {
+          DoTrap(kTrapUnreachable, pc);
+          return false;
+        }
         int32_t val;
         int64_t timeout;
         uint32_t buffer_offset;
@@ -2050,6 +2054,10 @@ class WasmInterpreterInternals {
         break;
       }
       case kExprI64AtomicWait: {
+        if (!module()->has_shared_memory) {
+          DoTrap(kTrapUnreachable, pc);
+          return false;
+        }
         int64_t val;
         int64_t timeout;
         uint32_t buffer_offset;
@@ -2071,6 +2079,10 @@ class WasmInterpreterInternals {
         if (!ExtractAtomicWaitNotifyParams<int32_t>(decoder, code, pc, len,
                                                     &buffer_offset, &val)) {
           return false;
+        }
+        if (!module()->has_shared_memory) {
+          Push(WasmValue(0));
+          break;
         }
         HandleScope handle_scope(isolate_);
         Handle<JSArrayBuffer> array_buffer(
@@ -3856,7 +3868,8 @@ class WasmInterpreterInternals {
     size_t old_size = stack_limit_ - stack_.get();
     size_t requested_size =
         base::bits::RoundUpToPowerOfTwo64((sp_ - stack_.get()) + size);
-    size_t new_size = Max(size_t{8}, Max(2 * old_size, requested_size));
+    size_t new_size =
+        std::max(size_t{8}, std::max(2 * old_size, requested_size));
     std::unique_ptr<StackValue[]> new_stack(new StackValue[new_size]);
     if (old_size > 0) {
       memcpy(new_stack.get(), stack_.get(), old_size * sizeof(*sp_));

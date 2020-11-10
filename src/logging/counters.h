@@ -739,6 +739,7 @@ class RuntimeCallTimer final {
   V(Float64Array_New)                                      \
   V(Function_Call)                                         \
   V(Function_New)                                          \
+  V(Function_FunctionProtoToString)                        \
   V(Function_NewInstance)                                  \
   V(FunctionTemplate_GetFunction)                          \
   V(FunctionTemplate_New)                                  \
@@ -790,7 +791,7 @@ class RuntimeCallTimer final {
   V(Object_HasRealIndexedProperty)                         \
   V(Object_HasRealNamedCallbackProperty)                   \
   V(Object_HasRealNamedProperty)                           \
-  V(Object_IsCodeKind)                                     \
+  V(Object_IsCodeLike)                                     \
   V(Object_New)                                            \
   V(Object_ObjectProtoToString)                            \
   V(Object_Set)                                            \
