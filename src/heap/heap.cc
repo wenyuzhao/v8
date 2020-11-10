@@ -4335,7 +4335,8 @@ class FixStaleLeftTrimmedHandlesVisitor : public RootVisitor {
     if (!map_word.IsForwardingAddress() && current.IsFreeSpaceOrFiller()) {
 #ifdef DEBUG
       // We need to find a FixedArrayBase map after walking the fillers.
-      while (current.IsFreeSpaceOrFiller()) {
+      while (!current.map_word().IsForwardingAddress() &&
+             current.IsFreeSpaceOrFiller()) {
         Address next = current.ptr();
         if (current.map() == ReadOnlyRoots(heap_).one_pointer_filler_map()) {
           next += kTaggedSize;
@@ -4347,7 +4348,8 @@ class FixStaleLeftTrimmedHandlesVisitor : public RootVisitor {
         }
         current = HeapObject::cast(Object(next));
       }
-      DCHECK(current.IsFixedArrayBase());
+      DCHECK(current.map_word().IsForwardingAddress() ||
+             current.IsFixedArrayBase());
 #endif  // DEBUG
       p.store(Smi::zero());
     }
