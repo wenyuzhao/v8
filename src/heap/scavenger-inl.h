@@ -122,11 +122,14 @@ bool Scavenger::MigrateObject(Map map, HeapObject source, HeapObject target,
   target.set_map_word(MapWord::FromMap(map));
   heap()->CopyBlock(target.address() + kTaggedSize,
                     source.address() + kTaggedSize, size - kTaggedSize);
-
-  if (!source.release_compare_and_swap_map_word(
-          MapWord::FromMap(map), MapWord::FromForwardingAddress(target))) {
-    // Other task migrated the object.
-    return false;
+  auto mapword = MapWord::FromMap(map);
+  if (!source.release_compare_and_swap_map_word(mapword, MapWord::FromForwardingAddress(target))) {
+    auto mark = target.map_word().ptr() & Internals::kMapWordMetadataMask;
+    mapword = MapWord(mapword.ptr() | mark);
+    if (!source.release_compare_and_swap_map_word(mapword, MapWord::FromForwardingAddress(target))) {
+      // Other task migrated the object.
+      return false;
+    }
   }
 
   if (V8_UNLIKELY(is_logging_)) {
@@ -154,8 +157,8 @@ CopyAndForwardResult Scavenger::SemiSpaceCopyObject(
 
   HeapObject target;
   if (allocation.To(&target)) {
-    DCHECK(heap()->incremental_marking()->non_atomic_marking_state()->IsWhite(
-        target));
+    // DCHECK(heap()->incremental_marking()->non_atomic_marking_state()->IsWhite(
+    //     target));
     const bool self_success = MigrateObject(map, object, target, object_size);
     if (!self_success) {
       allocator_.FreeLast(NEW_SPACE, target, object_size);
@@ -190,8 +193,8 @@ CopyAndForwardResult Scavenger::PromoteObject(Map map, THeapObjectSlot slot,
 
   HeapObject target;
   if (allocation.To(&target)) {
-    DCHECK(heap()->incremental_marking()->non_atomic_marking_state()->IsWhite(
-        target));
+    // DCHECK(heap()->incremental_marking()->non_atomic_marking_state()->IsWhite(
+    //     target));
     const bool self_success = MigrateObject(map, object, target, object_size);
     if (!self_success) {
       allocator_.FreeLast(OLD_SPACE, target, object_size);
