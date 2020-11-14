@@ -336,7 +336,7 @@ TNode<String> StringBuiltinsAssembler::AllocateConsString(TNode<Uint32T> length,
   TNode<HeapObject> result = AllocateInNewSpace(ConsString::kSize);
   StoreMapNoWriteBarrier(result, result_map);
   StoreObjectFieldNoWriteBarrier(result, ConsString::kLengthOffset, length);
-  StoreObjectFieldNoWriteBarrier(result, ConsString::kHashFieldOffset,
+  StoreObjectFieldNoWriteBarrier(result, ConsString::kRawHashFieldOffset,
                                  Int32Constant(String::kEmptyHashField));
   StoreObjectFieldNoWriteBarrier(result, ConsString::kFirstOffset, left);
   StoreObjectFieldNoWriteBarrier(result, ConsString::kSecondOffset, right);
@@ -1942,8 +1942,8 @@ void StringBuiltinsAssembler::CopyStringCharacters(
   int to_index_constant = 0, from_index_constant = 0;
   bool index_same = (from_encoding == to_encoding) &&
                     (from_index == to_index ||
-                     (ToInt32Constant(from_index, &from_index_constant) &&
-                      ToInt32Constant(to_index, &to_index_constant) &&
+                     (TryToInt32Constant(from_index, &from_index_constant) &&
+                      TryToInt32Constant(to_index, &to_index_constant) &&
                       from_index_constant == to_index_constant));
   BuildFastLoop<IntPtrT>(
       vars, from_offset, limit_offset,

@@ -71,18 +71,15 @@ void EphemeronHashTable::set_key(int index, Object value,
 }
 
 int HashTableBase::NumberOfElements() const {
-  int offset = OffsetOfElementAt(kNumberOfElementsIndex);
-  return TaggedField<Smi>::load(*this, offset).value();
+  return Smi::cast(get(kNumberOfElementsIndex)).value();
 }
 
 int HashTableBase::NumberOfDeletedElements() const {
-  int offset = OffsetOfElementAt(kNumberOfDeletedElementsIndex);
-  return TaggedField<Smi>::load(*this, offset).value();
+  return Smi::cast(get(kNumberOfDeletedElementsIndex)).value();
 }
 
 int HashTableBase::Capacity() const {
-  int offset = OffsetOfElementAt(kCapacityIndex);
-  return TaggedField<Smi>::load(*this, offset).value();
+  return Smi::cast(get(kCapacityIndex)).value();
 }
 
 InternalIndex::Range HashTableBase::IterateEntries() const {
@@ -110,7 +107,7 @@ int HashTableBase::ComputeCapacity(int at_least_space_for) {
   // Must be kept in sync with CodeStubAssembler::HashTableComputeCapacity().
   int raw_cap = at_least_space_for + (at_least_space_for >> 1);
   int capacity = base::bits::RoundUpToPowerOfTwo32(raw_cap);
-  return Max(capacity, kMinCapacity);
+  return std::max({capacity, kMinCapacity});
 }
 
 void HashTableBase::SetNumberOfElements(int nof) {
@@ -145,6 +142,7 @@ template <typename Derived, typename Shape>
 InternalIndex HashTable<Derived, Shape>::FindEntry(IsolateRoot isolate,
                                                    ReadOnlyRoots roots, Key key,
                                                    int32_t hash) {
+  DisallowGarbageCollection no_gc;
   uint32_t capacity = Capacity();
   uint32_t count = 1;
   Object undefined = roots.undefined_value();

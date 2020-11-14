@@ -85,6 +85,7 @@ static const char* const ANNOTATION_ABSTRACT = "@abstract";
 static const char* const ANNOTATION_HAS_SAME_INSTANCE_TYPE_AS_PARENT =
     "@hasSameInstanceTypeAsParent";
 static const char* const ANNOTATION_GENERATE_CPP_CLASS = "@generateCppClass";
+static const char* const ANNOTATION_CUSTOM_MAP = "@customMap";
 static const char* const ANNOTATION_CUSTOM_CPP_CLASS = "@customCppClass";
 static const char* const ANNOTATION_HIGHEST_INSTANCE_TYPE_WITHIN_PARENT =
     "@highestInstanceTypeWithinParentClassRange";
@@ -102,6 +103,8 @@ static const char* const ANNOTATION_EXPORT = "@export";
 static const char* const ANNOTATION_DO_NOT_GENERATE_CAST = "@doNotGenerateCast";
 static const char* const ANNOTATION_USE_PARENT_TYPE_CHECKER =
     "@useParentTypeChecker";
+// Generate C++ accessors with relaxed write semantics.
+static const char* const ANNOTATION_RELAXED_WRITE = "@relaxedWrite";
 
 inline bool IsConstexprName(const std::string& name) {
   return name.substr(0, std::strlen(CONSTEXPR_TYPE_PREFIX)) ==
@@ -142,7 +145,8 @@ enum class ClassFlag {
   kUndefinedLayout = 1 << 11,
   kGenerateBodyDescriptor = 1 << 12,
   kExport = 1 << 13,
-  kDoNotGenerateCast = 1 << 14
+  kDoNotGenerateCast = 1 << 14,
+  kCustomMap = 1 << 15,
 };
 using ClassFlags = base::Flags<ClassFlag>;
 

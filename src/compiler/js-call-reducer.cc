@@ -2640,8 +2640,8 @@ Reduction JSCallReducer::ReduceFunctionPrototypeBind(Node* node) {
     // recomputed even if the actual value of the object changes.
     // This mirrors the checks done in builtins-function-gen.cc at
     // runtime otherwise.
-    int minimum_nof_descriptors = i::Max(JSFunction::kLengthDescriptorIndex,
-                                           JSFunction::kNameDescriptorIndex) +
+    int minimum_nof_descriptors = std::max({JSFunction::kLengthDescriptorIndex,
+                                            JSFunction::kNameDescriptorIndex}) +
                                   1;
     if (receiver_map.NumberOfOwnDescriptors() < minimum_nof_descriptors) {
       return inference.NoChange();
@@ -7648,7 +7648,7 @@ Reduction JSCallReducer::ReduceRegExpPrototypeTest(Node* node) {
 
     // Add proper dependencies on the {regexp}s [[Prototype]]s.
     dependencies()->DependOnStablePrototypeChains(
-        ai_exec.receiver_maps(), kStartAtPrototype,
+        ai_exec.lookup_start_object_maps(), kStartAtPrototype,
         JSObjectRef(broker(), holder));
   } else {
     return inference.NoChange();

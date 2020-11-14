@@ -18,7 +18,6 @@ extern class ConsString extends String {
 }
 
 @abstract
-@generateBodyDescriptor
 @doNotGenerateCast
 extern class ExternalString extends String {
   resource: ExternalPointer;
@@ -86,7 +85,7 @@ macro AllocateSeqOneByteString(length: uint32): SeqOneByteString {
   if (length == 0) return UnsafeCast<SeqOneByteString>(kEmptyString);
   return new SeqOneByteString{
     map: kOneByteStringMap,
-    hash_field: kNameEmptyHashField,
+    raw_hash_field: kNameEmptyHashField,
     length: Signed(length),
     chars: ...UninitializedIterator {}
   };
@@ -98,7 +97,7 @@ macro AllocateSeqTwoByteString(length: uint32): String {
   if (length == 0) return kEmptyString;
   return new SeqTwoByteString{
     map: kStringMap,
-    hash_field: kNameEmptyHashField,
+    raw_hash_field: kNameEmptyHashField,
     length: Signed(length),
     chars: ...UninitializedIterator {}
   };

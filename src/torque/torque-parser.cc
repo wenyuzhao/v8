@@ -890,8 +890,8 @@ base::Optional<ParseResult> MakeClassDeclaration(
       {ANNOTATION_GENERATE_PRINT, ANNOTATION_NO_VERIFIER, ANNOTATION_ABSTRACT,
        ANNOTATION_HAS_SAME_INSTANCE_TYPE_AS_PARENT,
        ANNOTATION_GENERATE_CPP_CLASS, ANNOTATION_CUSTOM_CPP_CLASS,
-       ANNOTATION_GENERATE_BODY_DESCRIPTOR, ANNOTATION_EXPORT,
-       ANNOTATION_DO_NOT_GENERATE_CAST,
+       ANNOTATION_CUSTOM_MAP, ANNOTATION_GENERATE_BODY_DESCRIPTOR,
+       ANNOTATION_EXPORT, ANNOTATION_DO_NOT_GENERATE_CAST,
        ANNOTATION_HIGHEST_INSTANCE_TYPE_WITHIN_PARENT,
        ANNOTATION_LOWEST_INSTANCE_TYPE_WITHIN_PARENT},
       {ANNOTATION_RESERVE_BITS_IN_INSTANCE_TYPE,
@@ -912,6 +912,9 @@ base::Optional<ParseResult> MakeClassDeclaration(
   }
   if (annotations.Contains(ANNOTATION_CUSTOM_CPP_CLASS)) {
     flags |= ClassFlag::kCustomCppClass;
+  }
+  if (annotations.Contains(ANNOTATION_CUSTOM_MAP)) {
+    flags |= ClassFlag::kCustomMap;
   }
   if (annotations.Contains(ANNOTATION_DO_NOT_GENERATE_CAST)) {
     flags |= ClassFlag::kDoNotGenerateCast;
@@ -1936,9 +1939,11 @@ base::Optional<ParseResult> MakeAnnotation(ParseResultIterator* child_results) {
 }
 
 base::Optional<ParseResult> MakeClassField(ParseResultIterator* child_results) {
-  AnnotationSet annotations(child_results, {ANNOTATION_NO_VERIFIER},
+  AnnotationSet annotations(child_results,
+                            {ANNOTATION_NO_VERIFIER, ANNOTATION_RELAXED_WRITE},
                             {ANNOTATION_IF, ANNOTATION_IFNOT});
   bool generate_verify = !annotations.Contains(ANNOTATION_NO_VERIFIER);
+  bool relaxed_write = annotations.Contains(ANNOTATION_RELAXED_WRITE);
   std::vector<ConditionalAnnotation> conditions;
   base::Optional<std::string> if_condition =
       annotations.GetStringParam(ANNOTATION_IF);
@@ -1961,7 +1966,8 @@ base::Optional<ParseResult> MakeClassField(ParseResultIterator* child_results) {
                                           std::move(conditions),
                                           weak,
                                           const_qualified,
-                                          generate_verify}};
+                                          generate_verify,
+                                          relaxed_write}};
 }
 
 base::Optional<ParseResult> MakeStructField(

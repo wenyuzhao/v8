@@ -287,6 +287,7 @@ uint32_t NameDictionaryShape::HashForObject(ReadOnlyRoots roots, Object other) {
 }
 
 bool GlobalDictionaryShape::IsMatch(Handle<Name> key, Object other) {
+  DCHECK(key->IsUniqueName());
   DCHECK(PropertyCell::cast(other).name().IsUniqueName());
   return *key == PropertyCell::cast(other).name();
 }
@@ -320,7 +321,11 @@ void GlobalDictionaryShape::DetailsAtPut(Dictionary dict, InternalIndex entry,
                                          PropertyDetails value) {
   DCHECK(entry.is_found());
   PropertyCell cell = dict.CellAt(entry);
-  if (cell.property_details().IsReadOnly() != value.IsReadOnly()) {
+  // Deopt when when making a writable property read-only. The reverse direction
+  // is uninteresting because Turbofan does not currently rely on read-only
+  // unless the property is also configurable, in which case it will stay
+  // read-only forever.
+  if (!cell.property_details().IsReadOnly() && value.IsReadOnly()) {
     cell.dependent_code().DeoptimizeDependentCodeGroup(
         DependentCode::kPropertyCellChangedGroup);
   }

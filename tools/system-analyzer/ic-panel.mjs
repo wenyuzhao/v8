@@ -21,7 +21,7 @@ DOM.defineCustomElement(
         console.assert(value !== undefined, 'timeline undefined!');
         this._timeline = value;
         this.selectedLogEntries = this._timeline.all;
-        this.updateCount();
+        this.update();
       }
       get groupKey() {
         return this.$('#group-key');
@@ -48,23 +48,21 @@ DOM.defineCustomElement(
         this.update();
       }
 
-      async update() {
-        await delay(1);
-        this.updateCount();
-        this.updateTable();
+      _update() {
+        this._updateCount();
+        this._updateTable();
       }
 
-      updateCount() {
-        this.count.innerHTML = 'length=' + this._selectedLogEntries.length;
+      _updateCount() {
+        this.count.innerHTML = `length=${this._selectedLogEntries.length}`;
       }
 
-      updateTable(event) {
+      _updateTable(event) {
         let select = this.groupKey;
         let key = select.options[select.selectedIndex].text;
-        let tableBody = this.tableBody;
-        DOM.removeAllChildren(tableBody);
+        DOM.removeAllChildren(this.tableBody);
         let groups = Group.groupBy(this._selectedLogEntries, key, true);
-        this.render(groups, tableBody);
+        this._render(groups, this.tableBody);
       }
 
       escapeHtml(unsafe) {
@@ -89,8 +87,7 @@ DOM.defineCustomElement(
         // searches for mapLogEntries using the id, time
         const selectedMapLogEntriesSet = new Set();
         for (const icLogEntry of icLogEntries) {
-          const time = icLogEntry.time;
-          const selectedMap = MapLogEntry.get(id, time);
+          const selectedMap = MapLogEntry.get(id, icLogEntry.time);
           selectedMapLogEntriesSet.add(selectedMap);
         }
         return Array.from(selectedMapLogEntriesSet);
@@ -104,7 +101,7 @@ DOM.defineCustomElement(
         this.dispatchEvent(new FocusEvent(sourcePosition));
       }
 
-      render(groups, parent) {
+      _render(groups, parent) {
         const fragment = document.createDocumentFragment();
         const max = Math.min(1000, groups.length)
         const detailsClickHandler = this.handleDetailsClick.bind(this);
@@ -131,8 +128,7 @@ DOM.defineCustomElement(
         const omitted = groups.length - max;
         if (omitted > 0) {
           const tr = DOM.tr();
-          const tdNode =
-              tr.appendChild(DOM.td('Omitted ' + omitted + ' entries.'));
+          const tdNode = tr.appendChild(DOM.td(`Omitted ${omitted} entries.`));
           tdNode.colSpan = 4;
           fragment.appendChild(tr);
         }
@@ -179,7 +175,7 @@ DOM.defineCustomElement(
             `Grouped by ${key} [top ${max} out of ${children.length}]`;
         td.appendChild(div);
         const table = DOM.table();
-        this.render(children.slice(0, max), table, false)
+        this._render(children.slice(0, max), table, false)
         td.appendChild(table);
       }
 
