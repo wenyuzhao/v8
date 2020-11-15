@@ -13395,7 +13395,7 @@ static int GetGlobalObjectsCount() {
     if (object.IsJSGlobalObject()) {
       i::JSGlobalObject g = i::JSGlobalObject::cast(object);
       // Skip dummy global object.
-      if (g.global_dictionary().NumberOfElements() != 0) {
+      if (g.global_dictionary(v8::kAcquireLoad).NumberOfElements() != 0) {
         count++;
       }
     }
@@ -28285,7 +28285,13 @@ TEST(FastApiCalls) {
   CallAndCheck<uint64_t>(0, Behavior::kNoException,
                          expected_path_for_64bit_test, v8_num(-0.0));
 
-#ifndef V8_TARGET_ARCH_ARM64
+#if defined(V8_TARGET_ARCH_ARM64) || defined(V8_TARGET_ARCH_MIPS64)
+  // TODO(v8:11121): Currently the tests below are executed for non-arm64
+  // and non-mips64 because they fall down the fast path due to incorrect
+  // behaviour of CheckedFloat64ToInt64 on arm64 and mips64 (see the
+  // linked issue for details). Eventually we want to remove the conditional
+  // compilation and ensure consistent behaviour on all platforms.
+#else
   // TODO(mslekova): We deopt for unsafe integers, but ultimately we want to
   // stay on the fast path.
   CallAndCheck<int64_t>(std::numeric_limits<int64_t>::min(),
@@ -28304,13 +28310,7 @@ TEST(FastApiCalls) {
   CallAndCheck<uint64_t>(1ull << 63, Behavior::kNoException,
                          ApiCheckerResult::kSlowCalled,
                          v8_num(static_cast<double>(1ull << 63)));
-#else
-  // TODO(v8:11121): Currently the tests above are executed for non-arm64
-  // because they fall down the fast path due to incorrect behaviour of
-  // CheckedFloat64ToInt64 on arm64 (see the linked issue for details).
-  // Eventually we want to remove the conditional compilation and ensure
-  // consistent behaviour on all platforms.
-#endif  // V8_TARGET_ARCH_ARM64
+#endif  // V8_TARGET_ARCH_ARM64 || V8_TARGET_ARCH_MIPS64
 
   // Corner cases - float and double
 #ifdef V8_ENABLE_FP_PARAMS_IN_C_LINKAGE
@@ -28803,4 +28803,36 @@ TEST(CodeLikeFunction) {
       });
   CHECK(CompileRun("new Function(new Other())()").IsEmpty());
   ExpectInt32("new Function(new CodeLike())()", 7);
+}
+
+UNINITIALIZED_TEST(SingleThreadedDefaultPlatform) {
+  v8::V8::SetFlagsFromString("--single-threaded");
+  auto old_platform = i::V8::GetCurrentPlatform();
+  std::unique_ptr<v8::Platform> new_platform(
+      v8::platform::NewSingleThreadedDefaultPlatform());
+  i::V8::SetPlatformForTesting(new_platform.get());
+  v8::Isolate::CreateParams create_params;
+  create_params.array_buffer_allocator = CcTest::array_buffer_allocator();
+  v8::Isolate* isolate = v8::Isolate::New(create_params);
+  isolate->Enter();
+  i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
+  {
+    i::HandleScope scope(i_isolate);
+    v8::Local<Context> env = Context::New(isolate);
+    env->Enter();
+
+    CompileRunChecked(isolate,
+                      "function f() {"
+                      "  for (let i = 0; i < 10; i++)"
+                      "    (new Array(10)).fill(0);"
+                      "  return 0;"
+                      "}"
+                      "f();");
+    env->Exit();
+  }
+  CcTest::CollectGarbage(i::NEW_SPACE, i_isolate);
+  CcTest::CollectAllAvailableGarbage(i_isolate);
+  isolate->Exit();
+  isolate->Dispose();
+  i::V8::SetPlatformForTesting(old_platform);
 }

@@ -341,9 +341,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   TNode<TIndex> TaggedToParameter(TNode<Smi> value);
 
   bool ToParameterConstant(TNode<Smi> node, intptr_t* out) {
-    Smi constant;
-    if (ToSmiConstant(node, &constant)) {
-      *out = static_cast<intptr_t>(constant.value());
+    if (TryToIntPtrConstant(node, out)) {
       return true;
     }
     return false;
@@ -351,7 +349,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
 
   bool ToParameterConstant(TNode<IntPtrT> node, intptr_t* out) {
     intptr_t constant;
-    if (ToIntPtrConstant(node, &constant)) {
+    if (TryToIntPtrConstant(node, &constant)) {
       *out = constant;
       return true;
     }
@@ -1529,7 +1527,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
                                       SloppyTNode<IntPtrT> offset,
                                       TNode<T> value) {
     int const_offset;
-    if (ToInt32Constant(offset, &const_offset)) {
+    if (TryToInt32Constant(offset, &const_offset)) {
       return StoreObjectFieldNoWriteBarrier<T>(object, const_offset, value);
     }
     StoreNoWriteBarrier(MachineRepresentationOf<T>::value, object,
@@ -1758,8 +1756,15 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   TNode<NameDictionary> CopyNameDictionary(TNode<NameDictionary> dictionary,
                                            Label* large_object_fallback);
 
-  template <typename CollectionType>
-  TNode<CollectionType> AllocateOrderedHashTable();
+  TNode<OrderedHashSet> AllocateOrderedHashSet();
+
+  TNode<OrderedHashMap> AllocateOrderedHashMap();
+
+  // Allocates an OrderedNameDictionary of the given capacity. This guarantees
+  // that |capacity| entries can be added without reallocating.
+  TNode<OrderedNameDictionary> AllocateOrderedNameDictionary(
+      TNode<IntPtrT> capacity);
+  TNode<OrderedNameDictionary> AllocateOrderedNameDictionary(int capacity);
 
   TNode<JSObject> AllocateJSObjectFromMap(
       TNode<Map> map,
@@ -3652,16 +3657,12 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
       TNode<JSFinalizationRegistry> finalization_registry,
       TNode<WeakCell> weak_cell);
 
-  TNode<IntPtrT> FeedbackIteratorSizeFor(int number_of_entries) {
-    return IntPtrConstant(FeedbackIterator::SizeFor(number_of_entries));
+  TNode<IntPtrT> FeedbackIteratorEntrySize() {
+    return IntPtrConstant(FeedbackIterator::kEntrySize);
   }
 
-  TNode<IntPtrT> FeedbackIteratorMapIndexForEntry(int entry) {
-    return IntPtrConstant(FeedbackIterator::MapIndexForEntry(entry));
-  }
-
-  TNode<IntPtrT> FeedbackIteratorHandlerIndexForEntry(int entry) {
-    return IntPtrConstant(FeedbackIterator::HandlerIndexForEntry(entry));
+  TNode<IntPtrT> FeedbackIteratorHandlerOffset() {
+    return IntPtrConstant(FeedbackIterator::kHandlerOffset);
   }
 
  private:
@@ -3688,6 +3689,15 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
       TNode<Map> array_map, TNode<Smi> length,
       base::Optional<TNode<AllocationSite>> allocation_site,
       TNode<IntPtrT> size_in_bytes);
+
+  // Increases the provided capacity to the next valid value, if necessary.
+  template <typename CollectionType>
+  TNode<CollectionType> AllocateOrderedHashTable(TNode<IntPtrT> capacity);
+
+  // Uses the provided capacity (which must be valid) in verbatim.
+  template <typename CollectionType>
+  TNode<CollectionType> AllocateOrderedHashTableWithCapacity(
+      TNode<IntPtrT> capacity);
 
   TNode<IntPtrT> SmiShiftBitsConstant() {
     return IntPtrConstant(kSmiShiftSize + kSmiTagSize);

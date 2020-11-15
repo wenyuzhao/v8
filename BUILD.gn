@@ -112,8 +112,9 @@ declare_args() {
   # Disable arguments adaptor frame (sets -dV8_NO_ARGUMENTS_ADAPTOR).
   v8_disable_arguments_adaptor =
       v8_current_cpu == "x86" || v8_current_cpu == "x64" ||
+      v8_current_cpu == "arm" || v8_current_cpu == "arm64" ||
       v8_current_cpu == "mipsel" || v8_current_cpu == "mips64el" ||
-      v8_current_cpu == "arm"
+      v8_current_cpu == "ppc64" || v8_current_cpu == "s390x"
 
   # Sets -dOBJECT_PRINT.
   v8_enable_object_print = ""
@@ -3124,6 +3125,8 @@ v8_source_set("v8_base_without_compiler") {
     "src/parsing/expression-scope.h",
     "src/parsing/func-name-inferrer.cc",
     "src/parsing/func-name-inferrer.h",
+    "src/parsing/import-assertions.cc",
+    "src/parsing/import-assertions.h",
     "src/parsing/literal-buffer.cc",
     "src/parsing/literal-buffer.h",
     "src/parsing/parse-info.cc",
@@ -4186,10 +4189,7 @@ v8_component("v8_libbase") {
       "src/base/platform/platform-aix.cc",
     ]
 
-    libs = [
-      "dl",
-      "rt",
-    ]
+    libs = [ "dl" ]
   } else if (is_android) {
     if (current_toolchain == host_toolchain) {
       libs = [
@@ -4218,6 +4218,7 @@ v8_component("v8_libbase") {
       "src/base/debug/stack_trace_fuchsia.cc",
       "src/base/platform/platform-fuchsia.cc",
     ]
+    deps += [ "//third_party/fuchsia-sdk/sdk/pkg/zx" ]
   } else if (is_mac || is_ios) {
     sources += [
       "src/base/debug/stack_trace_posix.cc",
@@ -4396,6 +4397,23 @@ v8_source_set("v8_cppgc_shared") {
   configs = [ ":internal_config" ]
 
   public_deps = [ ":v8_libbase" ]
+}
+
+# This is split out to be a non-code containing target that the Chromium browser
+# can depend upon to get basic cppgc types.
+v8_header_set("cppgc_headers") {
+  configs = [ ":internal_config" ]
+  public_configs = [ ":v8_header_features" ]
+
+  sources = [
+    "include/cppgc/garbage-collected.h",
+    "include/cppgc/member.h",
+    "include/cppgc/persistent.h",
+    "include/cppgc/type-traits.h",
+    "include/cppgc/visitor.h",
+  ]
+
+  public_deps = [ ":v8_headers" ]
 }
 
 v8_source_set("cppgc_base") {
@@ -4778,7 +4796,10 @@ group("v8_python_base") {
 group("v8_clusterfuzz") {
   testonly = true
 
-  deps = [ ":d8" ]
+  deps = [
+    ":d8",
+    ":v8_simple_inspector_fuzzer",
+  ]
 
   if (v8_multi_arch_build) {
     deps += [

@@ -594,6 +594,7 @@ class WasmTypeInfo::BodyDescriptor final : public BodyDescriptorBase {
     Foreign::BodyDescriptor::IterateBody<ObjectVisitor>(map, obj, object_size,
                                                         v);
     IteratePointer(obj, kParentOffset, v);
+    IteratePointer(obj, kSupertypesOffset, v);
     IteratePointer(obj, kSubtypesOffset, v);
   }
 
@@ -1034,8 +1035,6 @@ ReturnType BodyDescriptorApply(InstanceType type, T1 p1, T2 p2, T3 p3, T4 p4) {
       return Op::template apply<WeakCell::BodyDescriptor>(p1, p2, p3, p4);
     case JS_WEAK_REF_TYPE:
       return Op::template apply<JSWeakRef::BodyDescriptor>(p1, p2, p3, p4);
-    case ODDBALL_TYPE:
-      return Op::template apply<Oddball::BodyDescriptor>(p1, p2, p3, p4);
     case JS_PROXY_TYPE:
       return Op::template apply<JSProxy::BodyDescriptor>(p1, p2, p3, p4);
     case FOREIGN_TYPE:

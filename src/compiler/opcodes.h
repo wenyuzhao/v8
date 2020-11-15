@@ -875,6 +875,8 @@
   V(I32x4ExtMulLowI16x8U)       \
   V(I32x4ExtMulHighI16x8U)      \
   V(I32x4SignSelect)            \
+  V(I32x4ExtAddPairwiseI16x8S)  \
+  V(I32x4ExtAddPairwiseI16x8U)  \
   V(I16x8Splat)                 \
   V(I16x8ExtractLaneU)          \
   V(I16x8ExtractLaneS)          \
@@ -920,6 +922,8 @@
   V(I16x8ExtMulLowI8x16U)       \
   V(I16x8ExtMulHighI8x16U)      \
   V(I16x8SignSelect)            \
+  V(I16x8ExtAddPairwiseI8x16S)  \
+  V(I16x8ExtAddPairwiseI8x16U)  \
   V(I8x16Splat)                 \
   V(I8x16ExtractLaneU)          \
   V(I8x16ExtractLaneS)          \
@@ -1116,6 +1120,7 @@ class V8_EXPORT_PRIVATE IrOpcode {
       case kJSInstanceOf:
       case kJSLoadGlobal:
       case kJSLoadNamed:
+      case kJSLoadNamedFromSuper:
       case kJSLoadProperty:
       case kJSStoreDataPropertyInLiteral:
       case kJSStoreGlobal:

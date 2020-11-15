@@ -922,9 +922,9 @@ void ResourceConstraints::ConfigureDefaultsFromHeapSize(
   i::Heap::GenerationSizesFromHeapSize(maximum_heap_size_in_bytes,
                                        &young_generation, &old_generation);
   set_max_young_generation_size_in_bytes(
-      i::Max(young_generation, i::Heap::MinYoungGenerationSize()));
+      std::max(young_generation, i::Heap::MinYoungGenerationSize()));
   set_max_old_generation_size_in_bytes(
-      i::Max(old_generation, i::Heap::MinOldGenerationSize()));
+      std::max(old_generation, i::Heap::MinOldGenerationSize()));
   if (initial_heap_size_in_bytes > 0) {
     i::Heap::GenerationSizesFromHeapSize(initial_heap_size_in_bytes,
                                          &young_generation, &old_generation);
@@ -934,7 +934,7 @@ void ResourceConstraints::ConfigureDefaultsFromHeapSize(
   }
   if (i::kPlatformRequiresCodeRange) {
     set_code_range_size_in_bytes(
-        i::Min(i::kMaximalCodeRangeSize, maximum_heap_size_in_bytes));
+        std::min(i::kMaximalCodeRangeSize, maximum_heap_size_in_bytes));
   }
 }
 
@@ -949,8 +949,8 @@ void ResourceConstraints::ConfigureDefaults(uint64_t physical_memory,
 
   if (virtual_memory_limit > 0 && i::kPlatformRequiresCodeRange) {
     set_code_range_size_in_bytes(
-        i::Min(i::kMaximalCodeRangeSize,
-               static_cast<size_t>(virtual_memory_limit / 8)));
+        std::min(i::kMaximalCodeRangeSize,
+                 static_cast<size_t>(virtual_memory_limit / 8)));
   }
 }
 
@@ -2053,8 +2053,9 @@ Local<Script> UnboundScript::BindToCurrentContext() {
       i::Handle<i::SharedFunctionInfo>::cast(Utils::OpenHandle(this));
   i::Isolate* isolate = function_info->GetIsolate();
   i::Handle<i::JSFunction> function =
-      isolate->factory()->NewFunctionFromSharedFunctionInfo(
-          function_info, isolate->native_context());
+      i::Factory::JSFunctionBuilder{isolate, function_info,
+                                    isolate->native_context()}
+          .Build();
   return ToApiHandle<Script>(function);
 }
 
@@ -2249,7 +2250,9 @@ Local<String> Module::GetModuleRequest(int i) const {
       i::Handle<i::SourceTextModule>::cast(self)->info().module_requests(),
       isolate);
   CHECK_LT(i, module_requests->length());
-  return ToApiHandle<String>(i::handle(module_requests->get(i), isolate));
+  i::Handle<i::ModuleRequest> module_request(
+      i::ModuleRequest::cast(module_requests->get(i)), isolate);
+  return ToApiHandle<String>(i::handle(module_request->specifier(), isolate));
 }
 
 Location Module::GetModuleRequestLocation(int i) const {
@@ -2258,15 +2261,15 @@ Location Module::GetModuleRequestLocation(int i) const {
   i::Isolate* isolate = self->GetIsolate();
   i::HandleScope scope(isolate);
   CHECK(self->IsSourceTextModule());
-  i::Handle<i::FixedArray> module_request_positions(
-      i::Handle<i::SourceTextModule>::cast(self)
-          ->info()
-          .module_request_positions(),
+  i::Handle<i::FixedArray> module_requests(
+      i::Handle<i::SourceTextModule>::cast(self)->info().module_requests(),
       isolate);
-  CHECK_LT(i, module_request_positions->length());
-  int position = i::Smi::ToInt(module_request_positions->get(i));
+  CHECK_LT(i, module_requests->length());
+  i::Handle<i::ModuleRequest> module_request(
+      i::ModuleRequest::cast(module_requests->get(i)), isolate);
+  int position = module_request->position();
   i::Handle<i::Script> script(
-      i::Handle<i::SourceTextModule>::cast(self)->script(), isolate);
+      i::Handle<i::SourceTextModule>::cast(self)->GetScript(), isolate);
   i::Script::PositionInfo info;
   i::Script::GetPositionInfo(script, position, &info, i::Script::WITH_OFFSET);
   return v8::Location(info.line, info.column);
@@ -2283,12 +2286,11 @@ Local<Value> Module::GetModuleNamespace() {
 }
 
 Local<UnboundModuleScript> Module::GetUnboundModuleScript() {
-  Utils::ApiCheck(
-      GetStatus() < kEvaluating, "v8::Module::GetUnboundScript",
-      "v8::Module::GetUnboundScript must be used on an unevaluated module");
   i::Handle<i::Module> self = Utils::OpenHandle(this);
-  CHECK(self->IsSourceTextModule());
-  return ToApiHandle<UnboundModuleScript>(i::Handle<i::SharedFunctionInfo>(
+  Utils::ApiCheck(
+      self->IsSourceTextModule(), "v8::Module::GetUnboundModuleScript",
+      "v8::Module::GetUnboundModuleScript must be used on an SourceTextModule");
+  return ToApiHandle<UnboundModuleScript>(i::handle(
       i::Handle<i::SourceTextModule>::cast(self)->GetSharedFunctionInfo(),
       self->GetIsolate()));
 }
@@ -2297,14 +2299,7 @@ int Module::ScriptId() {
   i::Handle<i::Module> self = Utils::OpenHandle(this);
   Utils::ApiCheck(self->IsSourceTextModule(), "v8::Module::ScriptId",
                   "v8::Module::ScriptId must be used on an SourceTextModule");
-
-  // The SharedFunctionInfo is not available for errored modules.
-  Utils::ApiCheck(GetStatus() != kErrored, "v8::Module::ScriptId",
-                  "v8::Module::ScriptId must not be used on an errored module");
-  i::Handle<i::SharedFunctionInfo> sfi(
-      i::Handle<i::SourceTextModule>::cast(self)->GetSharedFunctionInfo(),
-      self->GetIsolate());
-  return ToApiHandle<UnboundScript>(sfi)->GetId();
+  return i::Handle<i::SourceTextModule>::cast(self)->GetScript().id();
 }
 
 bool Module::IsGraphAsync() const {
@@ -7682,7 +7677,7 @@ Local<ArrayBuffer> v8::ArrayBufferView::Buffer() {
 size_t v8::ArrayBufferView::CopyContents(void* dest, size_t byte_length) {
   i::Handle<i::JSArrayBufferView> self = Utils::OpenHandle(this);
   size_t byte_offset = self->byte_offset();
-  size_t bytes_to_copy = i::Min(byte_length, self->byte_length());
+  size_t bytes_to_copy = std::min(byte_length, self->byte_length());
   if (bytes_to_copy) {
     i::DisallowHeapAllocation no_gc;
     i::Isolate* isolate = self->GetIsolate();
@@ -10140,19 +10135,20 @@ Local<Function> debug::GetBuiltin(Isolate* v8_isolate, Builtin builtin) {
   i::Isolate* isolate = reinterpret_cast<i::Isolate*>(v8_isolate);
   ENTER_V8_NO_SCRIPT_NO_EXCEPTION(isolate);
   i::HandleScope handle_scope(isolate);
-  i::Builtins::Name builtin_id;
-  switch (builtin) {
-    case kStringToLowerCase:
-      builtin_id = i::Builtins::kStringPrototypeToLocaleLowerCase;
-      break;
-    default:
-      UNREACHABLE();
-  }
 
+  CHECK_EQ(builtin, kStringToLowerCase);
+  i::Builtins::Name builtin_id = i::Builtins::kStringPrototypeToLocaleLowerCase;
+
+  i::Factory* factory = isolate->factory();
   i::Handle<i::String> name = isolate->factory()->empty_string();
-  i::NewFunctionArgs args = i::NewFunctionArgs::ForBuiltinWithoutPrototype(
-      name, builtin_id, i::LanguageMode::kStrict);
-  i::Handle<i::JSFunction> fun = isolate->factory()->NewFunction(args);
+  i::Handle<i::NativeContext> context(isolate->native_context());
+  i::Handle<i::SharedFunctionInfo> info =
+      factory->NewSharedFunctionInfoForBuiltin(name, builtin_id);
+  info->set_language_mode(i::LanguageMode::kStrict);
+  i::Handle<i::JSFunction> fun =
+      i::Factory::JSFunctionBuilder{isolate, info, context}
+          .set_map(isolate->strict_function_without_prototype_map())
+          .Build();
 
   fun->shared().set_internal_formal_parameter_count(0);
   fun->shared().set_length(0);

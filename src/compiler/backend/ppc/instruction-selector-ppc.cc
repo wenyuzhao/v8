@@ -283,8 +283,7 @@ void InstructionSelector::VisitStore(Node* node) {
     write_barrier_kind = kFullWriteBarrier;
   }
 
-  if (write_barrier_kind != kNoWriteBarrier &&
-      V8_LIKELY(!FLAG_disable_write_barriers)) {
+  if (write_barrier_kind != kNoWriteBarrier && !FLAG_disable_write_barriers) {
     DCHECK(CanBeTaggedOrCompressedPointer(rep));
     AddressingMode addressing_mode;
     InstructionOperand inputs[3];
@@ -2389,6 +2388,18 @@ SIMD_VISIT_BITMASK(I8x16BitMask)
 SIMD_VISIT_BITMASK(I16x8BitMask)
 SIMD_VISIT_BITMASK(I32x4BitMask)
 #undef SIMD_VISIT_BITMASK
+
+#define SIMD_VISIT_PMIN_MAX(Type)                                           \
+  void InstructionSelector::Visit##Type(Node* node) {                       \
+    PPCOperandGenerator g(this);                                            \
+    Emit(kPPC_##Type, g.DefineAsRegister(node),                             \
+         g.UseRegister(node->InputAt(0)), g.UseRegister(node->InputAt(1))); \
+  }
+SIMD_VISIT_PMIN_MAX(F64x2Pmin)
+SIMD_VISIT_PMIN_MAX(F32x4Pmin)
+SIMD_VISIT_PMIN_MAX(F64x2Pmax)
+SIMD_VISIT_PMIN_MAX(F32x4Pmax)
+#undef SIMD_VISIT_PMIN_MAX
 #undef SIMD_TYPES
 
 void InstructionSelector::VisitI8x16Shuffle(Node* node) {
@@ -2456,14 +2467,6 @@ void InstructionSelector::EmitPrepareResults(
 }
 
 void InstructionSelector::VisitLoadTransform(Node* node) { UNIMPLEMENTED(); }
-
-void InstructionSelector::VisitF32x4Pmin(Node* node) { UNIMPLEMENTED(); }
-
-void InstructionSelector::VisitF32x4Pmax(Node* node) { UNIMPLEMENTED(); }
-
-void InstructionSelector::VisitF64x2Pmin(Node* node) { UNIMPLEMENTED(); }
-
-void InstructionSelector::VisitF64x2Pmax(Node* node) { UNIMPLEMENTED(); }
 
 // static
 MachineOperatorBuilder::Flags

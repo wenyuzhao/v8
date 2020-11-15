@@ -886,7 +886,8 @@ void JSGlobalProxy::JSGlobalProxyVerify(Isolate* isolate) {
 void JSGlobalObject::JSGlobalObjectVerify(Isolate* isolate) {
   CHECK(IsJSGlobalObject());
   // Do not check the dummy global object for the builtins.
-  if (global_dictionary().NumberOfElements() == 0 && elements().length() == 0) {
+  if (global_dictionary(kAcquireLoad).NumberOfElements() == 0 &&
+      elements().length() == 0) {
     return;
   }
   JSObjectVerify(isolate);
@@ -1387,11 +1388,24 @@ void Module::ModuleVerify(Isolate* isolate) {
   CHECK_NE(hash(), 0);
 }
 
+void ModuleRequest::ModuleRequestVerify(Isolate* isolate) {
+  TorqueGeneratedClassVerifiers::ModuleRequestVerify(*this, isolate);
+  CHECK_EQ(0,
+           import_assertions().length() % ModuleRequest::kAssertionEntrySize);
+
+  for (int i = 0; i < import_assertions().length();
+       i += ModuleRequest::kAssertionEntrySize) {
+    CHECK(import_assertions().get(i).IsString());      // Assertion key
+    CHECK(import_assertions().get(i + 1).IsString());  // Assertion value
+    CHECK(import_assertions().get(i + 2).IsSmi());     // Assertion location
+  }
+}
+
 void SourceTextModule::SourceTextModuleVerify(Isolate* isolate) {
   TorqueGeneratedClassVerifiers::SourceTextModuleVerify(*this, isolate);
 
   if (status() == kErrored) {
-    CHECK(code().IsSourceTextModuleInfo());
+    CHECK(code().IsSharedFunctionInfo());
   } else if (status() == kEvaluating || status() == kEvaluated) {
     CHECK(code().IsJSGeneratorObject());
   } else {
@@ -1618,7 +1632,8 @@ void JSObject::IncrementSpillStatistics(Isolate* isolate,
     info->number_of_fast_used_fields_ += map().NextFreePropertyIndex();
     info->number_of_fast_unused_fields_ += map().UnusedPropertyFields();
   } else if (IsJSGlobalObject()) {
-    GlobalDictionary dict = JSGlobalObject::cast(*this).global_dictionary();
+    GlobalDictionary dict =
+        JSGlobalObject::cast(*this).global_dictionary(kAcquireLoad);
     info->number_of_slow_used_properties_ += dict.NumberOfElements();
     info->number_of_slow_unused_properties_ +=
         dict.Capacity() - dict.NumberOfElements();

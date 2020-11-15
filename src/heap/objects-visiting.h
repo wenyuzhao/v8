@@ -22,7 +22,6 @@ namespace internal {
   V(Cell)                              \
   V(Code)                              \
   V(CodeDataContainer)                 \
-  V(Context)                           \
   V(CoverageInfo)                      \
   V(DataHandler)                       \
   V(EmbedderDataArray)                 \
@@ -40,7 +39,6 @@ namespace internal {
   V(JSWeakRef)                         \
   V(Map)                               \
   V(NativeContext)                     \
-  V(Oddball)                           \
   V(PreparseData)                      \
   V(PropertyArray)                     \
   V(PropertyCell)                      \

@@ -3781,8 +3781,9 @@ void CppClassGenerator::GenerateClass() {
   if (!index_fields.has_value()) {
     hdr_ << "  // SizeFor implementations not generated due to complex array "
             "lengths\n\n";
-  } else if (!type_->IsAbstract() &&
-             !type_->IsSubtypeOf(TypeOracle::GetJSObjectType())) {
+  } else if (type_->ShouldGenerateBodyDescriptor() ||
+             (!type_->IsAbstract() &&
+              !type_->IsSubtypeOf(TypeOracle::GetJSObjectType()))) {
     hdr_ << "  V8_INLINE static constexpr int32_t SizeFor(";
     bool first = true;
     for (const Field& field : *index_fields) {
@@ -4060,12 +4061,15 @@ void CppClassGenerator::GenerateFieldAccessorForSmi(const Field& f) {
     inl_ << "int i, ";
   }
   inl_ << type << " value) {\n";
+  const char* write_macro =
+      f.relaxed_write ? "RELAXED_WRITE_FIELD" : "WRITE_FIELD";
   if (f.index) {
     GenerateBoundsDCheck(inl_, "i", type_, f);
     inl_ << "  int offset = " << offset << " + i * kTaggedSize;\n";
-    inl_ << "  WRITE_FIELD(*this, offset, Smi::FromInt(value));\n";
+    inl_ << "  " << write_macro << "(*this, offset, Smi::FromInt(value));\n";
   } else {
-    inl_ << "  WRITE_FIELD(*this, " << offset << ", Smi::FromInt(value));\n";
+    inl_ << "  " << write_macro << "(*this, " << offset
+         << ", Smi::FromInt(value));\n";
   }
   inl_ << "}\n\n";
 }
@@ -4105,12 +4109,6 @@ void CppClassGenerator::GenerateFieldAccessorForTagged(const Field& f) {
   inl_ << type << " " << gen_name_ << "<D, P>::" << name
        << "(IsolateRoot isolate" << (f.index ? ", int i" : "") << ") const {\n";
 
-  // TODO(tebbi): The distinction between relaxed and non-relaxed accesses here
-  // is pretty arbitrary and just tries to preserve what was there before.
-  // It currently doesn't really make a difference due to concurrent marking
-  // turning all loads and stores to be relaxed. We should probably drop the
-  // distinction at some point, even though in principle non-relaxed operations
-  // would give us TSAN protection.
   if (f.index) {
     GenerateBoundsDCheck(inl_, "i", type_, f);
     inl_ << "  int offset = " << offset << " + i * kTaggedSize;\n";
@@ -4135,16 +4133,15 @@ void CppClassGenerator::GenerateFieldAccessorForTagged(const Field& f) {
   if (!type_check.empty()) {
     inl_ << "  SLOW_DCHECK(" << type_check << ");\n";
   }
+  const char* write_macro =
+      strong_pointer ? (f.relaxed_write ? "RELAXED_WRITE_FIELD" : "WRITE_FIELD")
+                     : "RELAXED_WRITE_WEAK_FIELD";
   if (f.index) {
     GenerateBoundsDCheck(inl_, "i", type_, f);
-    const char* write_macro =
-        strong_pointer ? "WRITE_FIELD" : "RELAXED_WRITE_WEAK_FIELD";
     inl_ << "  int offset = " << offset << " + i * kTaggedSize;\n";
     offset = "offset";
     inl_ << "  " << write_macro << "(*this, offset, value);\n";
   } else {
-    const char* write_macro =
-        strong_pointer ? "RELAXED_WRITE_FIELD" : "RELAXED_WRITE_WEAK_FIELD";
     inl_ << "  " << write_macro << "(*this, " << offset << ", value);\n";
   }
   const char* write_barrier = strong_pointer ? "CONDITIONAL_WRITE_BARRIER"
@@ -4178,8 +4175,8 @@ void ImplementationVisitor::GenerateClassDefinitions(
   std::string forward_declarations_filename = "class-forward-declarations.h";
 
   {
-    factory_impl << "#include \"src/heap/factory.h\"\n";
-    factory_impl << "#include \"src/heap/factory-inl.h\"\n";
+    factory_impl << "#include \"src/heap/factory-base.h\"\n";
+    factory_impl << "#include \"src/heap/factory-base-inl.h\"\n";
     factory_impl << "#include \"src/heap/heap.h\"\n";
     factory_impl << "#include \"src/heap/heap-inl.h\"\n";
     factory_impl << "#include \"src/execution/isolate.h\"\n";
@@ -4220,25 +4217,27 @@ void ImplementationVisitor::GenerateClassDefinitions(
           structs_used_in_classes.insert(*field_as_struct);
         }
       }
-      if (type->ShouldExport() && !type->IsAbstract()) {
-        factory_header << type->HandlifiedCppTypeName() << " New"
-                       << type->name() << "(";
-        factory_impl << type->HandlifiedCppTypeName() << " Factory::New"
-                     << type->name() << "(";
-
+      if (type->ShouldExport() && !type->IsAbstract() &&
+          !type->HasCustomMap()) {
+        std::string return_type = type->HandlifiedCppTypeName();
+        std::string function_name = "New" + type->name();
+        std::stringstream parameters;
         for (const Field& f : type->ComputeAllFields()) {
           if (f.name_and_type.name == "map") continue;
           if (!f.index) {
             std::string type_string =
                 f.name_and_type.type->HandlifiedCppTypeName();
-            factory_header << type_string << " " << f.name_and_type.name
-                           << ", ";
-            factory_impl << type_string << " " << f.name_and_type.name << ", ";
+            parameters << type_string << " " << f.name_and_type.name << ", ";
           }
         }
+        parameters << "AllocationType allocation_type";
 
-        factory_header << "AllocationType allocation_type);\n";
-        factory_impl << "AllocationType allocation_type) {\n";
+        factory_header << return_type << " " << function_name << "("
+                       << parameters.str() << ");\n";
+        factory_impl << "template <typename Impl>\n";
+        factory_impl << return_type
+                     << " TorqueGeneratedFactory<Impl>::" << function_name
+                     << "(" << parameters.str() << ") {\n";
 
         factory_impl << " int size = ";
         const ClassType* super = type->GetSuperClass();
@@ -4259,20 +4258,17 @@ void ImplementationVisitor::GenerateClassDefinitions(
         }
 
         factory_impl << ");\n";
-        factory_impl << "  ReadOnlyRoots roots(isolate());\n";
+        factory_impl << "  Map map = factory()->read_only_roots()."
+                     << SnakeifyString(type->name()) << "_map();";
         factory_impl << "  HeapObject result =\n";
-        factory_impl << "    "
-                        "isolate()->heap()->AllocateRawWith<Heap::kRetryOrFail>"
-                        "(size, allocation_type);\n";
+        factory_impl << "    factory()->AllocateRawWithImmortalMap(size, "
+                        "allocation_type, map);\n";
         factory_impl << "    WriteBarrierMode write_barrier_mode =\n"
                      << "       allocation_type == AllocationType::kYoung\n"
                      << "       ? SKIP_WRITE_BARRIER : UPDATE_WRITE_BARRIER;\n";
-        factory_impl << "  result.set_map_after_allocation(roots."
-                     << SnakeifyString(type->name())
-                     << "_map(), write_barrier_mode);\n";
         factory_impl << "  " << type->HandlifiedCppTypeName()
                      << " result_handle(" << type->name()
-                     << "::cast(result), isolate());\n";
+                     << "::cast(result), factory()->isolate());\n";
 
         for (const Field& f : type->ComputeAllFields()) {
           if (f.name_and_type.name == "map") continue;
@@ -4293,6 +4289,16 @@ void ImplementationVisitor::GenerateClassDefinitions(
 
         factory_impl << "  return result_handle;\n";
         factory_impl << "}\n\n";
+
+        factory_impl << "template EXPORT_TEMPLATE_DEFINE(V8_EXPORT_PRIVATE) "
+                     << return_type
+                     << "TorqueGeneratedFactory<Factory>::" << function_name
+                     << "(" << parameters.str() << ");\n";
+        factory_impl << "template EXPORT_TEMPLATE_DEFINE(V8_EXPORT_PRIVATE) "
+                     << return_type << "TorqueGeneratedFactory<LocalFactory>::"
+                     << function_name << "(" << parameters.str() << ");\n";
+
+        factory_impl << "\n\n";
       }
     }
 

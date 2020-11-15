@@ -595,7 +595,10 @@ class CompilationStateImpl {
 
   void WaitForCompilationEvent(CompilationEvent event);
 
-  void SetHighPriority() { has_priority_ = true; }
+  void SetHighPriority() {
+    base::MutexGuard guard(&mutex_);
+    has_priority_ = true;
+  }
 
   bool failed() const {
     return compile_failed_.load(std::memory_order_relaxed);
@@ -665,14 +668,14 @@ class CompilationStateImpl {
   std::vector<std::shared_ptr<JSToWasmWrapperCompilationUnit>>
       js_to_wasm_wrapper_units_;
 
-  bool has_priority_ = false;
-
   // This mutex protects all information of this {CompilationStateImpl} which is
   // being accessed concurrently.
   mutable base::Mutex mutex_;
 
   //////////////////////////////////////////////////////////////////////////////
   // Protected by {mutex_}:
+
+  bool has_priority_ = false;
 
   std::shared_ptr<JobHandle> current_compile_job_;
 
@@ -2930,7 +2933,7 @@ void CompilationStateImpl::AddCompilationUnits(
   if (!js_to_wasm_wrapper_units.empty()) {
     // |js_to_wasm_wrapper_units_| can only be modified before background
     // compilation started.
-    DCHECK(!current_compile_job_ || !current_compile_job_->IsRunning());
+    DCHECK(!current_compile_job_);
     js_to_wasm_wrapper_units_.insert(js_to_wasm_wrapper_units_.end(),
                                      js_to_wasm_wrapper_units.begin(),
                                      js_to_wasm_wrapper_units.end());
@@ -3230,24 +3233,34 @@ void CompilationStateImpl::SchedulePublishCompilationResults(
 }
 
 void CompilationStateImpl::ScheduleCompileJobForNewUnits() {
-  if (current_compile_job_ && current_compile_job_->IsValid()) {
-    current_compile_job_->NotifyConcurrencyIncrease();
-    return;
-  }
   if (failed()) return;
 
-  std::unique_ptr<JobTask> new_compile_job =
-      std::make_unique<BackgroundCompileJob>(native_module_weak_,
-                                             async_counters_);
-  // TODO(wasm): Lower priority for TurboFan-only jobs.
-  current_compile_job_ = V8::GetCurrentPlatform()->PostJob(
-      has_priority_ ? TaskPriority::kUserBlocking : TaskPriority::kUserVisible,
-      std::move(new_compile_job));
-  native_module_->engine()->ShepherdCompileJobHandle(current_compile_job_);
+  std::shared_ptr<JobHandle> new_job_handle;
+  {
+    base::MutexGuard guard(&mutex_);
+    if (current_compile_job_ && current_compile_job_->IsValid()) {
+      current_compile_job_->NotifyConcurrencyIncrease();
+      return;
+    }
 
-  // Reset the priority. Later uses of the compilation state, e.g. for
-  // debugging, should compile with the default priority again.
-  has_priority_ = false;
+    std::unique_ptr<JobTask> new_compile_job =
+        std::make_unique<BackgroundCompileJob>(native_module_weak_,
+                                               async_counters_);
+    // TODO(wasm): Lower priority for TurboFan-only jobs.
+    new_job_handle = V8::GetCurrentPlatform()->PostJob(
+        has_priority_ ? TaskPriority::kUserBlocking
+                      : TaskPriority::kUserVisible,
+        std::move(new_compile_job));
+    current_compile_job_ = new_job_handle;
+    // Reset the priority. Later uses of the compilation state, e.g. for
+    // debugging, should compile with the default priority again.
+    has_priority_ = false;
+  }
+
+  if (new_job_handle) {
+    native_module_->engine()->ShepherdCompileJobHandle(
+        std::move(new_job_handle));
+  }
 }
 
 size_t CompilationStateImpl::NumOutstandingCompilations() const {

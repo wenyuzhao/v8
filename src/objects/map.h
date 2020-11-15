@@ -38,7 +38,6 @@ enum InstanceType : uint16_t;
   V(Cell)                              \
   V(Code)                              \
   V(CodeDataContainer)                 \
-  V(Context)                           \
   V(DataHandler)                       \
   V(EmbedderDataArray)                 \
   V(EphemeronHashTable)                \
@@ -55,7 +54,6 @@ enum InstanceType : uint16_t;
   V(JSWeakCollection)                  \
   V(Map)                               \
   V(NativeContext)                     \
-  V(Oddball)                           \
   V(PreparseData)                      \
   V(PropertyArray)                     \
   V(PropertyCell)                      \
@@ -179,10 +177,9 @@ using MapHandles = std::vector<Handle<Map>>;
 // +---------------+------------------------------------------------+
 // | TaggedPointer | [instance_descriptors]                         |
 // +****************************************************************+
-// ! TaggedPointer ! [layout_descriptors]                           !
+// ! TaggedPointer ! [layout_descriptor]                            !
 // !               ! Field is only present if compile-time flag     !
 // !               ! FLAG_unbox_double_fields is enabled            !
-// !               ! (basically on 64 bit architectures)            !
 // +****************************************************************+
 // | TaggedPointer | [dependent_code]                               |
 // +---------------+------------------------------------------------+

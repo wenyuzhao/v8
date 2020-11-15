@@ -167,9 +167,13 @@ DOM.defineCustomElement('./timeline/timeline-track',
   set data(value) {
     this._timeline = value;
     this._resetTypeToColorCache();
-    this.updateChunks();
-    this.updateTimeline();
-    this.renderLegend();
+    this.update();
+  }
+
+  _update() {
+    this._updateChunks();
+    this._updateTimeline();
+    this._renderLegend();
   }
 
   _resetTypeToColorCache() {
@@ -186,15 +190,14 @@ DOM.defineCustomElement('./timeline/timeline-track',
 
   set nofChunks(count) {
     this._nofChunks = count;
-    this.updateChunks();
-    this.updateTimeline();
+    this.update();
   }
 
   get nofChunks() {
     return this._nofChunks;
   }
 
-  updateChunks() {
+  _updateChunks() {
     this._chunks = this.data.chunks(this.nofChunks);
   }
 
@@ -219,8 +222,7 @@ DOM.defineCustomElement('./timeline/timeline-track',
     return this._typeToColor.get(type);
   }
 
-  renderLegend() {
-    let timelineLegend = this.timelineLegend;
+  _renderLegend() {
     let timelineLegendContent = this.timelineLegendContent;
     DOM.removeAllChildren(timelineLegendContent);
     this._timeline.uniqueTypes.forEach((entries, type) => {
@@ -249,7 +251,7 @@ DOM.defineCustomElement('./timeline/timeline-track',
     row.appendChild(DOM.td(this.data.all.length));
     row.appendChild(DOM.td('100%'));
     timelineLegendContent.appendChild(row);
-    timelineLegend.appendChild(timelineLegendContent);
+    this.timelineLegend.appendChild(timelineLegendContent);
   }
 
   handleEntryTypeDblClick(e) {
@@ -306,10 +308,10 @@ DOM.defineCustomElement('./timeline/timeline-track',
     }
 
     let imageData = this.backgroundCanvas.toDataURL('image/webp', 0.2);
-    node.style.backgroundImage = 'url(' + imageData + ')';
+    node.style.backgroundImage = `url(${imageData})`;
   }
 
-  updateTimeline() {
+  _updateTimeline() {
     let chunksNode = this.timelineChunks;
     DOM.removeAllChildren(chunksNode);
     let chunks = this.chunks;
