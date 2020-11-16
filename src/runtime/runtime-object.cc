@@ -93,6 +93,15 @@ MaybeHandle<Object> Runtime::HasProperty(Isolate* isolate,
 
 namespace {
 
+inline void WriteMapWord(JSObject object, FieldIndex index, MapWord value) {
+  if (index.is_inobject()) {
+    int offset = index.offset();
+    TaggedField<MapWord>::Release_Store(object, offset, value);
+  } else {
+    object.property_array().set(index.outobject_array_index(), value);
+  }
+}
+
 bool DeleteObjectPropertyFast(Isolate* isolate, Handle<JSReceiver> receiver,
                               Handle<Object> raw_key) {
   // This implements a special case for fast property deletion: when the
@@ -163,7 +172,7 @@ bool DeleteObjectPropertyFast(Isolate* isolate, Handle<JSReceiver> receiver,
       receiver->SetProperties(ReadOnlyRoots(isolate).empty_fixed_array());
     } else {
       MapWord filler = ReadOnlyRoots(isolate).one_pointer_filler_map_word();
-      JSObject::cast(*receiver).WriteFillerMapNoWritebarrier(index, filler);
+      WriteMapWord(JSObject::cast(*receiver), index, filler);
       // We must clear any recorded slot for the deleted property, because
       // subsequent object modifications might put a raw double there.
       // Slot clearing is the reason why this entire function cannot currently

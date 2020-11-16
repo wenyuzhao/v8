@@ -754,9 +754,6 @@ V8_INLINE static bool HasWeakHeapObjectTag(const Object value) {
 // encoded in the first word.  The class MapWord is an abstraction of the
 // value in a heap object's first word.
 class MapWord {
-  // ReadOnlyRoots needs to construct MapWord from a packed map pointer.
-  friend class ReadOnlyRoots;
-
  public:
   // Normal state: the map word contains a map pointer.
 
@@ -782,13 +779,14 @@ class MapWord {
 
   inline Address ptr() { return value_; }
 
+  // Create a map word from an address.
+  explicit MapWord(Address value) : value_(value) {}
+
  private:
   // HeapObject calls the private constructor and directly reads the value.
   friend class HeapObject;
   template <typename TFieldType, int kFieldOffset>
   friend class TaggedField;
-
-  explicit MapWord(Address value) : value_(value) {}
 
   Address value_;
 };

@@ -772,7 +772,7 @@ class V8_EXPORT_PRIVATE CodeAssembler {
 #endif
 
   // Load a value from the root array.
-  Node* LoadFiller(RootIndex root_index);
+  Node* LoadRootMapWord(RootIndex root_index);
   TNode<Object> LoadRoot(RootIndex root_index);
 
   // Store value to raw memory location.

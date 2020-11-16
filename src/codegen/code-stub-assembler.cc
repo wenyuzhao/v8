@@ -10607,7 +10607,7 @@ void CodeStubAssembler::InitializeFieldsWithRoot(TNode<HeapObject> object,
   end_offset = IntPtrAdd(end_offset, IntPtrConstant(-kHeapObjectTag));
   Node* root_value;
   if (root_index == RootIndex::kOnePointerFillerMap) {
-    root_value = LoadFiller(root_index);
+    root_value = LoadRootMapWord(root_index);
   } else {
     root_value = LoadRoot(root_index);
   }

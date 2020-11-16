@@ -1150,7 +1150,9 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
                          int>::type = 0>
   TNode<T> LoadReference(Reference reference) {
     if (IsMapOffsetConstant(reference.offset)) {
-      return CAST((Node*)LoadMap(reference.object));
+      TNode<Map> map = LoadMap(reference.object);
+      DCHECK((std::is_base_of<T, Map>::value));
+      return ReinterpretCast<T>(map);
     }
 
     TNode<IntPtrT> offset =
@@ -3753,8 +3755,8 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   // complaining about this method, don't make it public, add your root to
   // HEAP_(IM)MUTABLE_IMMOVABLE_OBJECT_LIST instead. If you *really* need
   // LoadRoot, use CodeAssembler::LoadRoot.
-  Node* LoadFiller(RootIndex root_index) {
-    return CodeAssembler::LoadFiller(root_index);
+  Node* LoadRootMapWord(RootIndex root_index) {
+    return CodeAssembler::LoadRootMapWord(root_index);
   }
   TNode<Object> LoadRoot(RootIndex root_index) {
     return CodeAssembler::LoadRoot(root_index);

@@ -359,15 +359,6 @@ void JSObject::RawFastPropertyAtPut(FieldIndex index, Object value,
   }
 }
 
-void JSObject::WriteFillerMapNoWritebarrier(FieldIndex index, MapWord value) {
-  if (index.is_inobject()) {
-    int offset = index.offset();
-    TaggedField<MapWord>::Release_Store(*this, offset, value);
-  } else {
-    property_array().set(index.outobject_array_index(), value);
-  }
-}
-
 void JSObject::RawFastPropertyAtPutNoWriteBarrier(FieldIndex index,
                                                   Object value) {
   if (index.is_inobject()) {
