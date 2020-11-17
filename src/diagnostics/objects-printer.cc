@@ -1513,45 +1513,7 @@ void PropertyCell::PropertyCellPrint(std::ostream& os) {  // NOLINT
   os << "\n - details: ";
   property_details().PrintAsSlowTo(os, true);
   PropertyCellType cell_type = property_details().cell_type();
-  os << "\n - cell_type: ";
-  if (value().IsTheHole()) {
-    switch (cell_type) {
-      case PropertyCellType::kUninitialized:
-        os << "Uninitialized";
-        break;
-      case PropertyCellType::kInvalidated:
-        os << "Invalidated";
-        break;
-      default:
-        os << "??? " << static_cast<int>(cell_type);
-        break;
-    }
-  } else {
-    switch (cell_type) {
-      case PropertyCellType::kUndefined:
-        os << "Undefined";
-        break;
-      case PropertyCellType::kConstant:
-        os << "Constant";
-        break;
-      case PropertyCellType::kConstantType:
-        os << "ConstantType"
-           << " (";
-        switch (GetConstantType()) {
-          case PropertyCellConstantType::kSmi:
-            os << "Smi";
-            break;
-          case PropertyCellConstantType::kStableMap:
-            os << "StableMap";
-            break;
-        }
-        os << ")";
-        break;
-      case PropertyCellType::kMutable:
-        os << "Mutable";
-        break;
-    }
-  }
+  os << "\n - cell_type: " << cell_type;
   os << "\n";
 }
 
@@ -1782,7 +1744,7 @@ void WasmStruct::WasmStructPrint(std::ostream& os) {  // NOLINT
       case wasm::ValueType::kRtt:
       case wasm::ValueType::kBottom:
       case wasm::ValueType::kStmt:
-        UNIMPLEMENTED();  // TODO(7748): Implement.
+        os << "UNIMPLEMENTED";  // TODO(7748): Implement.
         break;
     }
   }
@@ -1821,7 +1783,8 @@ void WasmArray::WasmArrayPrint(std::ostream& os) {  // NOLINT
     case wasm::ValueType::kRtt:
     case wasm::ValueType::kBottom:
     case wasm::ValueType::kStmt:
-      UNIMPLEMENTED();  // TODO(7748): Implement.
+      os << "\n   Printing elements of this type is unimplemented, sorry";
+      // TODO(7748): Implement.
       break;
   }
   os << "\n";

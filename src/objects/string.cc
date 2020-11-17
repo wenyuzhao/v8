@@ -206,7 +206,8 @@ bool String::MakeExternal(v8::String::ExternalStringResource* resource) {
   self.AllocateExternalPointerEntries(isolate);
   self.SetResource(isolate, resource);
   isolate->heap()->RegisterExternalString(*this);
-  if (is_internalized) self.Hash();  // Force regeneration of the hash value.
+  // Force regeneration of the hash value.
+  if (is_internalized) self.EnsureHash();
   return true;
 }
 
@@ -282,7 +283,8 @@ bool String::MakeExternal(v8::String::ExternalOneByteStringResource* resource) {
   self.AllocateExternalPointerEntries(isolate);
   self.SetResource(isolate, resource);
   isolate->heap()->RegisterExternalString(*this);
-  if (is_internalized) self.Hash();  // Force regeneration of the hash value.
+  // Force regeneration of the hash value.
+  if (is_internalized) self.EnsureHash();
   return true;
 }
 
@@ -515,9 +517,8 @@ Handle<Object> String::ToNumber(Isolate* isolate, Handle<String> subject) {
         // Update the hash field to speed up sequential convertions.
         uint32_t raw_hash_field = StringHasher::MakeArrayIndexHash(d, len);
 #ifdef DEBUG
-        subject->Hash();  // Force hash calculation.
-        DCHECK_EQ(static_cast<int>(subject->raw_hash_field()),
-                  static_cast<int>(raw_hash_field));
+        subject->EnsureHash();  // Force hash calculation.
+        DCHECK_EQ(subject->raw_hash_field(), raw_hash_field);
 #endif
         subject->set_raw_hash_field(raw_hash_field);
       }
@@ -640,11 +641,9 @@ std::unique_ptr<char[]> String::ToCString(AllowNullsFlag allow_nulls,
 }
 
 template <typename sinkchar>
-void String::WriteToFlat(String src, sinkchar* sink, int f, int t) {
+void String::WriteToFlat(String source, sinkchar* sink, int from, int to) {
   DisallowHeapAllocation no_gc;
-  String source = src;
-  int from = f;
-  int to = t;
+  SharedStringAccessGuardIfNeeded access_guard(source);
   while (from < to) {
     DCHECK_LE(0, from);
     DCHECK_LE(to, source.length());
@@ -660,13 +659,17 @@ void String::WriteToFlat(String src, sinkchar* sink, int f, int t) {
         return;
       }
       case kOneByteStringTag | kSeqStringTag: {
-        CopyChars(sink, SeqOneByteString::cast(source).GetChars(no_gc) + from,
-                  to - from);
+        CopyChars(
+            sink,
+            SeqOneByteString::cast(source).GetChars(no_gc, access_guard) + from,
+            to - from);
         return;
       }
       case kTwoByteStringTag | kSeqStringTag: {
-        CopyChars(sink, SeqTwoByteString::cast(source).GetChars(no_gc) + from,
-                  to - from);
+        CopyChars(
+            sink,
+            SeqTwoByteString::cast(source).GetChars(no_gc, access_guard) + from,
+            to - from);
         return;
       }
       case kOneByteStringTag | kConsStringTag:
@@ -699,9 +702,10 @@ void String::WriteToFlat(String src, sinkchar* sink, int f, int t) {
             if (to - boundary == 1) {
               sink[boundary - from] = static_cast<sinkchar>(second.Get(0));
             } else if (second.IsSeqOneByteString()) {
-              CopyChars(sink + boundary - from,
-                        SeqOneByteString::cast(second).GetChars(no_gc),
-                        to - boundary);
+              CopyChars(
+                  sink + boundary - from,
+                  SeqOneByteString::cast(second).GetChars(no_gc, access_guard),
+                  to - boundary);
             } else {
               WriteToFlat(second, sink + boundary - from, 0, to - boundary);
             }
@@ -810,7 +814,7 @@ bool String::SlowEquals(String other) {
   if (HasHashCode() && other.HasHashCode()) {
 #ifdef ENABLE_SLOW_DCHECKS
     if (FLAG_enable_slow_asserts) {
-      if (Hash() != other.Hash()) {
+      if (hash() != other.hash()) {
         bool found_difference = false;
         for (int i = 0; i < len; i++) {
           if (Get(i) != other.Get(i)) {
@@ -822,7 +826,7 @@ bool String::SlowEquals(String other) {
       }
     }
 #endif
-    if (Hash() != other.Hash()) return false;
+    if (hash() != other.hash()) return false;
   }
 
   // We know the strings are both non-empty. Compare the first chars
@@ -861,7 +865,7 @@ bool String::SlowEquals(Isolate* isolate, Handle<String> one,
   if (one->HasHashCode() && two->HasHashCode()) {
 #ifdef ENABLE_SLOW_DCHECKS
     if (FLAG_enable_slow_asserts) {
-      if (one->Hash() != two->Hash()) {
+      if (one->hash() != two->hash()) {
         bool found_difference = false;
         for (int i = 0; i < one_length; i++) {
           if (one->Get(i) != two->Get(i)) {
@@ -873,7 +877,7 @@ bool String::SlowEquals(Isolate* isolate, Handle<String> one,
       }
     }
 #endif
-    if (one->Hash() != two->Hash()) return false;
+    if (one->hash() != two->hash()) return false;
   }
 
   // We know the strings are both non-empty. Compare the first chars
@@ -1414,7 +1418,7 @@ bool String::SlowAsArrayIndex(uint32_t* index) {
   DisallowHeapAllocation no_gc;
   int length = this->length();
   if (length <= kMaxCachedArrayIndexLength) {
-    Hash();  // Force computation of hash code.
+    EnsureHash();  // Force computation of hash code.
     uint32_t field = raw_hash_field();
     if ((field & kIsNotIntegerIndexMask) != 0) return false;
     *index = ArrayIndexValueBits::decode(field);
@@ -1429,7 +1433,7 @@ bool String::SlowAsIntegerIndex(size_t* index) {
   DisallowHeapAllocation no_gc;
   int length = this->length();
   if (length <= kMaxCachedArrayIndexLength) {
-    Hash();  // Force computation of hash code.
+    EnsureHash();  // Force computation of hash code.
     uint32_t field = raw_hash_field();
     if ((field & kIsNotIntegerIndexMask) != 0) return false;
     *index = ArrayIndexValueBits::decode(field);

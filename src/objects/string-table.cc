@@ -237,7 +237,7 @@ std::unique_ptr<StringTable::Data> StringTable::Data::Resize(
     Object element = data->Get(isolate, i);
     if (element == empty_element() || element == deleted_element()) continue;
     String string = String::cast(element);
-    uint32_t hash = string.Hash();
+    uint32_t hash = string.hash();
     InternalIndex insertion_index = new_data->FindInsertionEntry(isolate, hash);
     new_data->Set(insertion_index, string);
   }
@@ -354,11 +354,14 @@ class InternalizedStringKey final : public StringTableKey {
     DCHECK(!string->IsInternalizedString());
     DCHECK(string->IsFlat());
     // Make sure hash_field is computed.
-    string->Hash();
+    string->EnsureHash();
     set_raw_hash_field(string->raw_hash_field());
   }
 
-  bool IsMatch(String string) override { return string_->SlowEquals(string); }
+  bool IsMatch(String string) override {
+    DCHECK(!SharedStringAccessGuardIfNeeded::IsNeeded(string));
+    return string_->SlowEquals(string);
+  }
 
   Handle<String> AsHandle(Isolate* isolate) {
     // Internalize the string if possible.
