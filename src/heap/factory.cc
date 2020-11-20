@@ -1473,7 +1473,7 @@ Map Factory::InitializeMap(Map map, InstanceType type, int instance_size,
   // Must be called only after |instance_type|, |instance_size| and
   // |layout_descriptor| are set.
   map.set_visitor_id(Map::GetVisitorId(map));
-  map.set_relaxed_bit_field(0);
+  map.set_bit_field(0);
   map.set_bit_field2(Map::Bits2::NewTargetIsBaseBit::encode(true));
   int bit_field3 =
       Map::Bits3::EnumLengthBits::encode(kInvalidEnumCacheSentinel) |
@@ -2143,8 +2143,13 @@ Handle<JSObject> Factory::NewSlowJSObjectFromMap(
     Handle<Map> map, int capacity, AllocationType allocation,
     Handle<AllocationSite> allocation_site) {
   DCHECK(map->is_dictionary_map());
-  Handle<NameDictionary> object_properties =
-      NameDictionary::New(isolate(), capacity);
+  Handle<HeapObject> object_properties;
+  if (V8_DICT_MODE_PROTOTYPES_BOOL) {
+    object_properties =
+        OrderedNameDictionary::Allocate(isolate(), capacity).ToHandleChecked();
+  } else {
+    object_properties = NameDictionary::New(isolate(), capacity);
+  }
   Handle<JSObject> js_object =
       NewJSObjectFromMap(map, allocation, allocation_site);
   js_object->set_raw_properties_or_hash(*object_properties);
@@ -2152,8 +2157,12 @@ Handle<JSObject> Factory::NewSlowJSObjectFromMap(
 }
 
 Handle<JSObject> Factory::NewSlowJSObjectWithPropertiesAndElements(
-    Handle<HeapObject> prototype, Handle<NameDictionary> properties,
+    Handle<HeapObject> prototype, Handle<HeapObject> properties,
     Handle<FixedArrayBase> elements) {
+  DCHECK_IMPLIES(V8_DICT_MODE_PROTOTYPES_BOOL,
+                 properties->IsOrderedNameDictionary());
+  DCHECK_IMPLIES(!V8_DICT_MODE_PROTOTYPES_BOOL, properties->IsNameDictionary());
+
   Handle<Map> object_map = isolate()->slow_object_with_object_prototype_map();
   if (object_map->prototype() != *prototype) {
     object_map = Map::TransitionToPrototype(isolate(), object_map, prototype);
@@ -3480,18 +3489,27 @@ Handle<JSFunction> Factory::JSFunctionBuilder::Build() {
   PrepareMap();
   PrepareFeedbackCell();
 
-  // Determine the associated Code object.
-  Handle<Code> code;
-  const bool have_cached_code =
-      sfi_->TryGetCachedCode(isolate_).ToHandle(&code);
-  if (!have_cached_code) code = handle(sfi_->GetCode(), isolate_);
+  // Determine the associated Code object. If we hit the NCI cache, take that;
+  // otherwise, ask the SharedFunctionInfo for the appropriate Code object.
+  MaybeHandle<Code> maybe_code;
+  MaybeHandle<SerializedFeedback> maybe_feedback;
+  const bool have_nci_cache = sfi_->TryGetCachedCodeAndSerializedFeedback(
+      isolate_, &maybe_code, &maybe_feedback);
+  Handle<Code> code = have_nci_cache ? maybe_code.ToHandleChecked()
+                                     : handle(sfi_->GetCode(), isolate_);
 
   Handle<JSFunction> result = BuildRaw(code);
 
-  if (have_cached_code) {
-    IsCompiledScope is_compiled_scope(sfi_->is_compiled_scope(isolate_));
-    JSFunction::EnsureFeedbackVector(result, &is_compiled_scope);
+  if (have_nci_cache) {
     if (FLAG_trace_turbo_nci) CompilationCacheCode::TraceHit(sfi_, code);
+    if (!result->has_feedback_vector()) {
+      IsCompiledScope is_compiled_scope(sfi_->is_compiled_scope(isolate_));
+      JSFunction::EnsureFeedbackVector(result, &is_compiled_scope);
+      // TODO(jgruber,v8:8888): Consider combining shared feedback with
+      // existing feedback here.
+      maybe_feedback.ToHandleChecked()->DeserializeInto(
+          result->feedback_vector());
+    }
   }
 
   Compiler::PostInstantiation(result);

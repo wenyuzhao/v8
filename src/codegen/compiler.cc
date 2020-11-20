@@ -37,6 +37,7 @@
 #include "src/heap/local-factory-inl.h"
 #include "src/heap/local-heap-inl.h"
 #include "src/heap/local-heap.h"
+#include "src/heap/parked-scope.h"
 #include "src/init/bootstrapper.h"
 #include "src/interpreter/interpreter.h"
 #include "src/logging/log-inl.h"
@@ -44,6 +45,7 @@
 #include "src/objects/js-function-inl.h"
 #include "src/objects/map.h"
 #include "src/objects/object-list-macros.h"
+#include "src/objects/serialized-feedback.h"
 #include "src/objects/shared-function-info.h"
 #include "src/objects/string.h"
 #include "src/parsing/parse-info.h"
@@ -917,10 +919,19 @@ void InsertCodeIntoCompilationCache(Isolate* isolate,
   Handle<Code> code = info->code();
   DCHECK(!info->function_context_specializing());
 
+  Handle<SerializedFeedback> serialized_feedback =
+      SerializedFeedback::Serialize(
+          isolate, handle(info->closure()->feedback_vector(), isolate));
+
   Handle<SharedFunctionInfo> sfi = info->shared_info();
   CompilationCache* cache = isolate->compilation_cache();
-  cache->PutCode(sfi, code);
-  DCHECK(!cache->LookupCode(sfi).is_null());
+  cache->PutCode(sfi, code, serialized_feedback);
+
+#ifdef DEBUG
+  MaybeHandle<Code> maybe_code;
+  MaybeHandle<SerializedFeedback> maybe_feedback;
+  DCHECK(cache->LookupCode(sfi, &maybe_code, &maybe_feedback));
+#endif  // DEBUG
 
   sfi->set_may_have_cached_code(true);
 
@@ -958,9 +969,11 @@ bool GetOptimizedCodeNow(OptimizedCompilationJob* job, Isolate* isolate,
   }
 
   {
-    LocalIsolate local_isolate(isolate, ThreadKind::kMain);
+    // Park main thread here to be in the same state as background threads.
+    ParkedScope parked_scope(isolate->main_thread_local_isolate());
     if (job->ExecuteJob(isolate->counters()->runtime_call_stats(),
-                        &local_isolate)) {
+                        isolate->main_thread_local_isolate())) {
+      UnparkedScope unparked_scope(isolate->main_thread_local_isolate());
       CompilerTracer::TraceAbortedJob(isolate, compilation_info);
       return false;
     }
@@ -1660,7 +1673,6 @@ bool Compiler::CollectSourcePositions(Isolate* isolate,
   // Collecting source positions requires allocating a new source position
   // table.
   DCHECK(AllowHeapAllocation::IsAllowed());
-  DCHECK(AllowGarbageCollection::IsAllowed());
 
   Handle<BytecodeArray> bytecode =
       handle(shared_info->GetBytecodeArray(), isolate);

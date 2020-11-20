@@ -5,6 +5,7 @@
 #include "src/compiler/bytecode-graph-builder.h"
 
 #include "src/ast/ast.h"
+#include "src/base/platform/wrappers.h"
 #include "src/codegen/source-position-table.h"
 #include "src/codegen/tick-counter.h"
 #include "src/compiler/access-builder.h"
@@ -4127,7 +4128,6 @@ JSTypeHintLowering::LoweringResult
 BytecodeGraphBuilder::TryBuildSimplifiedUnaryOp(const Operator* op,
                                                 Node* operand,
                                                 FeedbackSlot slot) {
-  if (!CanApplyTypeHintLowering(op)) return NoChange();
   Node* effect = environment()->GetEffectDependency();
   Node* control = environment()->GetControlDependency();
   JSTypeHintLowering::LoweringResult result =
@@ -4141,7 +4141,6 @@ JSTypeHintLowering::LoweringResult
 BytecodeGraphBuilder::TryBuildSimplifiedBinaryOp(const Operator* op, Node* left,
                                                  Node* right,
                                                  FeedbackSlot slot) {
-  if (!CanApplyTypeHintLowering(op)) return NoChange();
   Node* effect = environment()->GetEffectDependency();
   Node* control = environment()->GetControlDependency();
   JSTypeHintLowering::LoweringResult result =
@@ -4156,7 +4155,6 @@ BytecodeGraphBuilder::TryBuildSimplifiedForInNext(Node* receiver,
                                                   Node* cache_array,
                                                   Node* cache_type, Node* index,
                                                   FeedbackSlot slot) {
-  if (!CanApplyTypeHintLowering(IrOpcode::kJSForInNext)) return NoChange();
   Node* effect = environment()->GetEffectDependency();
   Node* control = environment()->GetControlDependency();
   JSTypeHintLowering::LoweringResult result =
@@ -4169,7 +4167,6 @@ BytecodeGraphBuilder::TryBuildSimplifiedForInNext(Node* receiver,
 JSTypeHintLowering::LoweringResult
 BytecodeGraphBuilder::TryBuildSimplifiedForInPrepare(Node* enumerator,
                                                      FeedbackSlot slot) {
-  if (!CanApplyTypeHintLowering(IrOpcode::kJSForInPrepare)) return NoChange();
   Node* effect = environment()->GetEffectDependency();
   Node* control = environment()->GetControlDependency();
   JSTypeHintLowering::LoweringResult result =
@@ -4365,7 +4362,8 @@ Node* BytecodeGraphBuilder::MakeNode(const Operator* op, int value_input_count,
     if (has_effect) ++input_count_with_deps;
     Node** buffer = EnsureInputBufferSize(input_count_with_deps);
     if (value_input_count > 0) {
-      memcpy(buffer, value_inputs, kSystemPointerSize * value_input_count);
+      base::Memcpy(buffer, value_inputs,
+                   kSystemPointerSize * value_input_count);
     }
     Node** current_input = buffer + value_input_count;
     if (has_context) {

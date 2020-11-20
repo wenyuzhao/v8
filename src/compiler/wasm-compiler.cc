@@ -9,6 +9,7 @@
 #include "src/base/optional.h"
 #include "src/base/platform/elapsed-timer.h"
 #include "src/base/platform/platform.h"
+#include "src/base/platform/wrappers.h"
 #include "src/base/small-vector.h"
 #include "src/base/v8-fallthrough.h"
 #include "src/codegen/assembler-inl.h"
@@ -378,8 +379,6 @@ WasmGraphBuilder::WasmGraphBuilder(
 // Destructor define here where the definition of {WasmGraphAssembler} is
 // available.
 WasmGraphBuilder::~WasmGraphBuilder() = default;
-
-Node* WasmGraphBuilder::Error() { return mcgraph()->Dead(); }
 
 Node* WasmGraphBuilder::Start(unsigned params) {
   Node* start = graph()->NewNode(mcgraph()->common()->Start(params));
@@ -1174,12 +1173,6 @@ Node* WasmGraphBuilder::BranchNoHint(Node* cond, Node** true_node,
                 BranchHint::kNone);
 }
 
-Node* WasmGraphBuilder::BranchExpectTrue(Node* cond, Node** true_node,
-                                         Node** false_node) {
-  return Branch(mcgraph(), cond, true_node, false_node, control(),
-                BranchHint::kTrue);
-}
-
 Node* WasmGraphBuilder::BranchExpectFalse(Node* cond, Node** true_node,
                                           Node** false_node) {
   return Branch(mcgraph(), cond, true_node, false_node, control(),
@@ -1292,7 +1285,7 @@ Node* WasmGraphBuilder::Return(Vector<Node*> vals) {
 
   buf[0] = mcgraph()->Int32Constant(0);
   if (count > 0) {
-    memcpy(buf.data() + 1, vals.begin(), sizeof(void*) * count);
+    base::Memcpy(buf.data() + 1, vals.begin(), sizeof(void*) * count);
   }
   buf[count + 1] = effect();
   buf[count + 2] = control();
@@ -2825,7 +2818,7 @@ Node* WasmGraphBuilder::BuildCallNode(const wasm::FunctionSig* sig,
   // Make room for the instance_node parameter at index 1, just after code.
   inputs[0] = args[0];  // code
   inputs[1] = instance_node;
-  if (params > 0) memcpy(&inputs[2], &args[1], params * sizeof(Node*));
+  if (params > 0) base::Memcpy(&inputs[2], &args[1], params * sizeof(Node*));
 
   // Add effect and control inputs.
   inputs[params + 2] = effect();
@@ -3848,34 +3841,6 @@ Node* WasmGraphBuilder::BoundsCheckMem(uint8_t access_size, Node* index,
     index = gasm_->WordAnd(index, mem_mask);
   }
   return index;
-}
-
-Node* WasmGraphBuilder::BoundsCheckRange(Node* start, Node** size, Node* max,
-                                         wasm::WasmCodePosition position) {
-  auto m = mcgraph()->machine();
-  // The region we are trying to access is [start, start+size). If
-  // {start} > {max}, none of this region is valid, so we trap. Otherwise,
-  // there may be a subset of the region that is valid. {max - start} is the
-  // maximum valid size, so if {max - start < size}, then the region is
-  // partially out-of-bounds.
-  TrapIfTrue(wasm::kTrapMemOutOfBounds,
-             graph()->NewNode(m->Uint32LessThan(), max, start), position);
-  Node* sub = graph()->NewNode(m->Int32Sub(), max, start);
-  Node* fail = graph()->NewNode(m->Uint32LessThan(), sub, *size);
-  Diamond d(graph(), mcgraph()->common(), fail, BranchHint::kFalse);
-  d.Chain(control());
-  *size = d.Phi(MachineRepresentation::kWord32, sub, *size);
-  return fail;
-}
-
-Node* WasmGraphBuilder::BoundsCheckMemRange(Node** start, Node** size,
-                                            wasm::WasmCodePosition position) {
-  // TODO(binji): Support trap handler and no bounds check mode.
-  Node* fail =
-      BoundsCheckRange(*start, size, instance_cache_->mem_size, position);
-  *start = graph()->NewNode(mcgraph()->machine()->IntAdd(), MemBuffer(0),
-                            Uint32ToUintptr(*start));
-  return fail;
 }
 
 const Operator* WasmGraphBuilder::GetSafeLoadOperator(int offset,
@@ -5663,31 +5628,34 @@ Node* WasmGraphBuilder::ArrayNewWithRtt(uint32_t array_index,
 }
 
 Node* WasmGraphBuilder::RttCanon(wasm::HeapType type) {
-  if (type.is_generic()) {
-    switch (type.representation()) {
-      case wasm::HeapType::kEq:
-        return LOAD_FULL_POINTER(
-            BuildLoadIsolateRoot(),
-            IsolateData::root_slot_offset(RootIndex::kWasmRttEqrefMap));
-      case wasm::HeapType::kExtern:
-        return LOAD_FULL_POINTER(
-            BuildLoadIsolateRoot(),
-            IsolateData::root_slot_offset(RootIndex::kWasmRttExternrefMap));
-      case wasm::HeapType::kFunc:
-        return LOAD_FULL_POINTER(
-            BuildLoadIsolateRoot(),
-            IsolateData::root_slot_offset(RootIndex::kWasmRttFuncrefMap));
-      case wasm::HeapType::kI31:
-        return LOAD_FULL_POINTER(
-            BuildLoadIsolateRoot(),
-            IsolateData::root_slot_offset(RootIndex::kWasmRttI31refMap));
-      default:
-        UNREACHABLE();
+  RootIndex index;
+  switch (type.representation()) {
+    case wasm::HeapType::kEq:
+      index = RootIndex::kWasmRttEqrefMap;
+      break;
+    case wasm::HeapType::kExtern:
+      index = RootIndex::kWasmRttExternrefMap;
+      break;
+    case wasm::HeapType::kFunc:
+      index = RootIndex::kWasmRttFuncrefMap;
+      break;
+    case wasm::HeapType::kI31:
+      index = RootIndex::kWasmRttI31refMap;
+      break;
+    case wasm::HeapType::kAny:
+      index = RootIndex::kWasmRttAnyrefMap;
+      break;
+    case wasm::HeapType::kBottom:
+      UNREACHABLE();
+    default: {
+      // User-defined type.
+      Node* maps_list =
+          LOAD_INSTANCE_FIELD(ManagedObjectMaps, MachineType::TaggedPointer());
+      return LOAD_FIXED_ARRAY_SLOT_PTR(maps_list, type.ref_index());
     }
   }
-  Node* maps_list =
-      LOAD_INSTANCE_FIELD(ManagedObjectMaps, MachineType::TaggedPointer());
-  return LOAD_FIXED_ARRAY_SLOT_PTR(maps_list, type.ref_index());
+  return LOAD_FULL_POINTER(BuildLoadIsolateRoot(),
+                           IsolateData::root_slot_offset(index));
 }
 
 Node* WasmGraphBuilder::RttSub(wasm::HeapType type, Node* parent_rtt) {
@@ -5729,6 +5697,7 @@ Node* WasmGraphBuilder::RefTest(Node* object, Node* rtt,
 
   Node* map = gasm_->LoadMap(object);
   gasm_->GotoIf(gasm_->TaggedEqual(map, rtt), &done, gasm_->Int32Constant(1));
+
   if (!config.object_must_be_data_ref) {
     gasm_->GotoIfNot(gasm_->IsDataRefMap(map), &done, gasm_->Int32Constant(0));
   }
@@ -6233,12 +6202,17 @@ class WasmWrapperGraphBuilder : public WasmGraphBuilder {
         if (representation == wasm::HeapType::kEq) {
           return BuildAllocateObjectWrapper(node);
         }
+        if (representation == wasm::HeapType::kAny) {
+          // TODO(7748): Add wrapping for arrays/structs, or proper JS API when
+          // available.
+          return node;
+        }
         if (type.has_index() && module_->has_signature(type.ref_index())) {
           // Typed function
           return node;
         }
-        // TODO(7748): Figure out a JS interop story for arrays and structs.
         // If this is reached, then IsJSCompatibleSignature() is too permissive.
+        // TODO(7748): Figure out a JS interop story for arrays and structs.
         UNREACHABLE();
       }
       case wasm::ValueType::kRtt:
@@ -6352,6 +6326,9 @@ class WasmWrapperGraphBuilder : public WasmGraphBuilder {
         switch (type.heap_representation()) {
           case wasm::HeapType::kExtern:
           case wasm::HeapType::kExn:
+          // TODO(7748): Possibly implement different cases for 'any' when the
+          // JS API has settled.
+          case wasm::HeapType::kAny:
             return input;
           case wasm::HeapType::kFunc:
             BuildCheckValidRefValue(input, js_context, type);
@@ -7266,7 +7243,7 @@ std::unique_ptr<OptimizedCompilationJob> NewJSToWasmCompilationJob(
   constexpr size_t kMaxNameLen = 128;
   constexpr size_t kNamePrefixLen = 11;
   auto name_buffer = std::unique_ptr<char[]>(new char[kMaxNameLen]);
-  memcpy(name_buffer.get(), "js-to-wasm:", kNamePrefixLen);
+  base::Memcpy(name_buffer.get(), "js-to-wasm:", kNamePrefixLen);
   PrintSignature(VectorOf(name_buffer.get(), kMaxNameLen) + kNamePrefixLen,
                  sig);
 
@@ -7644,7 +7621,7 @@ MaybeHandle<Code> CompileWasmToJSWrapper(Isolate* isolate,
   constexpr size_t kMaxNameLen = 128;
   constexpr size_t kNamePrefixLen = 11;
   auto name_buffer = std::unique_ptr<char[]>(new char[kMaxNameLen]);
-  memcpy(name_buffer.get(), "wasm-to-js:", kNamePrefixLen);
+  base::Memcpy(name_buffer.get(), "wasm-to-js:", kNamePrefixLen);
   PrintSignature(VectorOf(name_buffer.get(), kMaxNameLen) + kNamePrefixLen,
                  sig);
 
@@ -7696,7 +7673,7 @@ MaybeHandle<Code> CompileJSToJSWrapper(Isolate* isolate,
   constexpr size_t kMaxNameLen = 128;
   constexpr size_t kNamePrefixLen = 9;
   auto name_buffer = std::unique_ptr<char[]>(new char[kMaxNameLen]);
-  memcpy(name_buffer.get(), "js-to-js:", kNamePrefixLen);
+  base::Memcpy(name_buffer.get(), "js-to-js:", kNamePrefixLen);
   PrintSignature(VectorOf(name_buffer.get(), kMaxNameLen) + kNamePrefixLen,
                  sig);
 
@@ -7751,7 +7728,7 @@ Handle<Code> CompileCWasmEntry(Isolate* isolate, const wasm::FunctionSig* sig,
   constexpr size_t kMaxNameLen = 128;
   constexpr size_t kNamePrefixLen = 13;
   auto name_buffer = std::unique_ptr<char[]>(new char[kMaxNameLen]);
-  memcpy(name_buffer.get(), "c-wasm-entry:", kNamePrefixLen);
+  base::Memcpy(name_buffer.get(), "c-wasm-entry:", kNamePrefixLen);
   PrintSignature(VectorOf(name_buffer.get(), kMaxNameLen) + kNamePrefixLen,
                  sig);
 
@@ -7853,7 +7830,7 @@ Vector<const char> GetDebugName(Zone* zone, int index) {
   DCHECK(name_len > 0 && name_len < name_vector.length());
 
   char* index_name = zone->NewArray<char>(name_len);
-  memcpy(index_name, name_vector.begin(), name_len);
+  base::Memcpy(index_name, name_vector.begin(), name_len);
   return Vector<const char>(index_name, name_len);
 }
 

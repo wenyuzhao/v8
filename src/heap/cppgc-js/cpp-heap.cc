@@ -33,6 +33,11 @@
 #include "src/profiler/heap-profiler.h"
 
 namespace v8 {
+
+cppgc::AllocationHandle& CppHeap::GetAllocationHandle() {
+  return internal::CppHeap::From(this)->object_allocator();
+}
+
 namespace internal {
 
 namespace {
@@ -60,6 +65,10 @@ class CppgcPlatformAdapter final : public cppgc::Platform {
   std::unique_ptr<JobHandle> PostJob(TaskPriority priority,
                                      std::unique_ptr<JobTask> job_task) final {
     return platform_->PostJob(priority, std::move(job_task));
+  }
+
+  TracingController* GetTracingController() override {
+    return platform_->GetTracingController();
   }
 
  private:
@@ -149,13 +158,17 @@ CppHeap::CppHeap(
                                     kSupportsConservativeStackScan),
       isolate_(*reinterpret_cast<Isolate*>(isolate)) {
   CHECK(!FLAG_incremental_marking_wrappers);
-  isolate_.heap_profiler()->AddBuildEmbedderGraphCallback(&CppGraphBuilder::Run,
-                                                          this);
+  if (isolate_.heap_profiler()) {
+    isolate_.heap_profiler()->AddBuildEmbedderGraphCallback(
+        &CppGraphBuilder::Run, this);
+  }
 }
 
 CppHeap::~CppHeap() {
-  isolate_.heap_profiler()->RemoveBuildEmbedderGraphCallback(
-      &CppGraphBuilder::Run, this);
+  if (isolate_.heap_profiler()) {
+    isolate_.heap_profiler()->RemoveBuildEmbedderGraphCallback(
+        &CppGraphBuilder::Run, this);
+  }
 }
 
 void CppHeap::RegisterV8References(
@@ -176,7 +189,10 @@ void CppHeap::TracePrologue(TraceFlags flags) {
   const UnifiedHeapMarker::MarkingConfig marking_config{
       UnifiedHeapMarker::MarkingConfig::CollectionType::kMajor,
       cppgc::Heap::StackState::kNoHeapPointers,
-      UnifiedHeapMarker::MarkingConfig::MarkingType::kIncrementalAndConcurrent};
+      UnifiedHeapMarker::MarkingConfig::MarkingType::kIncrementalAndConcurrent,
+      flags == TraceFlags::kForced
+          ? UnifiedHeapMarker::MarkingConfig::IsForcedGC::kForced
+          : UnifiedHeapMarker::MarkingConfig::IsForcedGC::kNotForced};
   if ((flags == TraceFlags::kReduceMemory) || (flags == TraceFlags::kForced)) {
     // Only enable compaction when in a memory reduction garbage collection as
     // it may significantly increase the final garbage collection pause.
@@ -234,6 +250,7 @@ void CppHeap::TraceEpilogue(TraceSummary* trace_summary) {
         compactable_space_handling};
     sweeper().Start(sweeping_config);
   }
+  sweeper().NotifyDoneIfNeeded();
 }
 
 }  // namespace internal

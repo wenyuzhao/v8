@@ -9,6 +9,7 @@
 
 #include <cmath>
 
+#include "src/base/platform/wrappers.h"
 #include "src/common/assert-scope.h"
 #include "src/handles/handles.h"
 #include "src/heap/factory.h"
@@ -1347,7 +1348,8 @@ char* DoubleToRadixCString(double value, int radix) {
   DCHECK_LE(0, integer_cursor);
   // Allocate new string as return value.
   char* result = NewArray<char>(fraction_cursor - integer_cursor);
-  memcpy(result, buffer + integer_cursor, fraction_cursor - integer_cursor);
+  base::Memcpy(result, buffer + integer_cursor,
+               fraction_cursor - integer_cursor);
   return result;
 }
 
@@ -1377,17 +1379,7 @@ base::Optional<double> TryStringToDouble(Handle<String> object,
 
   const int flags = ALLOW_HEX | ALLOW_OCTAL | ALLOW_BINARY;
   auto buffer = std::make_unique<uc16[]>(max_length_for_conversion);
-  Isolate* isolate = nullptr;
-  // Read only strings have no isolate associated to them and we don't need a
-  // lock for those.
-  const bool need_lock = GetIsolateFromHeapObject(*object, &isolate);
-  if (need_lock) {
-    isolate->string_access()->LockShared();
-  }
   String::WriteToFlat(*object, buffer.get(), 0, length);
-  if (need_lock) {
-    isolate->string_access()->UnlockShared();
-  }
   Vector<const uc16> v(buffer.get(), length);
   return StringToDouble(v, flags);
 }

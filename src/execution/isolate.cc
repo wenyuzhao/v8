@@ -39,6 +39,7 @@
 #include "src/diagnostics/compilation-statistics.h"
 #include "src/execution/frames-inl.h"
 #include "src/execution/isolate-inl.h"
+#include "src/execution/local-isolate.h"
 #include "src/execution/messages.h"
 #include "src/execution/microtask-queue.h"
 #include "src/execution/protectors-inl.h"
@@ -103,6 +104,7 @@
 #endif  // V8_OS_WIN64
 
 #ifdef V8_ENABLE_CONSERVATIVE_STACK_SCANNING
+#include "src/base/platform/wrappers.h"
 #include "src/heap/conservative-stack-visitor.h"
 #endif
 
@@ -1612,8 +1614,7 @@ Object Isolate::ThrowInternal(Object raw_exception, MessageLocation* location) {
 // Script::GetLineNumber and Script::GetColumnNumber can allocate on the heap to
 // initialize the line_ends array, so be careful when calling them.
 #ifdef DEBUG
-      if (AllowHeapAllocation::IsAllowed() &&
-          AllowGarbageCollection::IsAllowed()) {
+      if (AllowGarbageCollection::IsAllowed()) {
 #else
       if ((false)) {
 #endif
@@ -2910,6 +2911,7 @@ void Isolate::Delete(Isolate* isolate) {
   Isolate* saved_isolate = reinterpret_cast<Isolate*>(
       base::Thread::GetThreadLocal(isolate->isolate_key_));
   SetIsolateThreadLocals(isolate, nullptr);
+  isolate->set_thread_id(ThreadId::Current());
 
   isolate->Deinit();
 
@@ -3108,9 +3110,11 @@ void Isolate::Deinit() {
   // This stops cancelable tasks (i.e. concurrent marking tasks)
   cancelable_task_manager()->CancelAndWait();
 
+  main_thread_local_isolate_.reset();
+
   heap_.TearDown();
   FILE* logfile = logger_->TearDownAndGetLogFile();
-  if (logfile != nullptr) fclose(logfile);
+  if (logfile != nullptr) base::Fclose(logfile);
 
   if (wasm_engine_) {
     wasm_engine_->RemoveIsolate(this);
@@ -3538,6 +3542,10 @@ bool Isolate::Init(SnapshotData* startup_snapshot_data,
   heap_.SetUp();
   ReadOnlyHeap::SetUp(this, read_only_snapshot_data, can_rehash);
   heap_.SetUpSpaces();
+
+  // Create LocalIsolate/LocalHeap for the main thread and set state to Running.
+  main_thread_local_isolate_.reset(new LocalIsolate(this, ThreadKind::kMain));
+  main_thread_local_heap()->Unpark();
 
   isolate_data_.external_reference_table()->Init(this);
 
@@ -4753,6 +4761,10 @@ void Isolate::RemoveContextIdCallback(const v8::WeakCallbackInfo<void>& data) {
   Isolate* isolate = reinterpret_cast<Isolate*>(data.GetIsolate());
   uintptr_t context_id = reinterpret_cast<uintptr_t>(data.GetParameter());
   isolate->recorder_context_id_map_.erase(context_id);
+}
+
+LocalHeap* Isolate::main_thread_local_heap() {
+  return main_thread_local_isolate()->heap();
 }
 
 // |chunk| is either a Page or an executable LargePage.

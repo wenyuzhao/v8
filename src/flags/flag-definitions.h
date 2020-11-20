@@ -253,7 +253,8 @@ DEFINE_IMPLICATION(harmony_weak_refs_with_cleanup_some, harmony_weak_refs)
   V(harmony_weak_refs_with_cleanup_some,                                       \
     "harmony weak references with FinalizationRegistry.prototype.cleanupSome") \
   V(harmony_regexp_match_indices, "harmony regexp match indices")              \
-  V(harmony_import_assertions, "harmony import assertions")
+  V(harmony_import_assertions, "harmony import assertions")                    \
+  V(harmony_relative_indexing_methods, "harmony relative indexing methods")
 
 #ifdef V8_INTL_SUPPORT
 #define HARMONY_INPROGRESS(V)                       \
@@ -551,9 +552,6 @@ DEFINE_BOOL(trace_generalization, false, "trace map generalization")
 DEFINE_BOOL(turboprop, false, "enable experimental turboprop mid-tier compiler")
 DEFINE_BOOL(turboprop_mid_tier_reg_alloc, true,
             "enable mid-tier register allocator for turboprop")
-DEFINE_BOOL(turboprop_dynamic_map_checks, true,
-            "use dynamic map checks when generating code for property accesses "
-            "if all handlers in an IC are the same for turboprop")
 DEFINE_BOOL(turboprop_as_midtier, false,
             "enable experimental turboprop mid-tier compiler")
 DEFINE_IMPLICATION(turboprop_as_midtier, turboprop)
@@ -733,6 +731,9 @@ DEFINE_BOOL(
 DEFINE_BOOL(turbo_fast_api_calls, false, "enable fast API calls from TurboFan")
 DEFINE_INT(reuse_opt_code_count, 0,
            "don't discard optimized code for the specified number of deopts.")
+DEFINE_BOOL(turbo_dynamic_map_checks, true,
+            "use dynamic map checks when generating code for property accesses "
+            "if all handlers in an IC are the same for turboprop and NCI")
 
 // Native context independent (NCI) code.
 DEFINE_BOOL(turbo_nci, false,
@@ -1282,6 +1283,7 @@ DEFINE_IMPLICATION(trace_deopt_verbose, trace_deopt)
 DEFINE_BOOL(trace_file_names, false,
             "include file names in trace-opt/trace-deopt output")
 DEFINE_BOOL(always_opt, false, "always try to optimize functions")
+DEFINE_IMPLICATION(always_opt, opt)
 DEFINE_BOOL(always_osr, false, "always try to OSR functions")
 DEFINE_BOOL(prepare_always_opt, false, "prepare for turning on always opt")
 

@@ -60,7 +60,7 @@ void PreparseData::copy_in(int index, const byte* buffer, int length) {
   DCHECK(index >= 0 && length >= 0 && length <= kMaxInt - index &&
          index + length <= this->data_length());
   Address dst_addr = field_address(kDataStartOffset + index * kByteSize);
-  memcpy(reinterpret_cast<void*>(dst_addr), buffer, length);
+  base::Memcpy(reinterpret_cast<void*>(dst_addr), buffer, length);
 }
 
 PreparseData PreparseData::get_child(int index) const {
@@ -644,14 +644,6 @@ void SharedFunctionInfo::ClearPreparseData() {
   DCHECK(HasUncompiledDataWithoutPreparseData());
 }
 
-template <typename LocalIsolate>
-void UncompiledData::Init(LocalIsolate* isolate, String inferred_name,
-                          int start_position, int end_position) {
-  set_inferred_name(inferred_name);
-  set_start_position(start_position);
-  set_end_position(end_position);
-}
-
 void UncompiledData::InitAfterBytecodeFlush(
     String inferred_name, int start_position, int end_position,
     std::function<void(HeapObject object, ObjectSlot slot, HeapObject target)>
@@ -661,16 +653,6 @@ void UncompiledData::InitAfterBytecodeFlush(
                          inferred_name);
   set_start_position(start_position);
   set_end_position(end_position);
-}
-
-template <typename LocalIsolate>
-void UncompiledDataWithPreparseData::Init(LocalIsolate* isolate,
-                                          String inferred_name,
-                                          int start_position, int end_position,
-                                          PreparseData scope_data) {
-  this->UncompiledData::Init(isolate, inferred_name, start_position,
-                             end_position);
-  set_preparse_data(scope_data);
 }
 
 bool SharedFunctionInfo::HasWasmExportedFunctionData() const {
@@ -791,6 +773,7 @@ bool SharedFunctionInfo::are_properties_final() const {
 }  // namespace internal
 }  // namespace v8
 
+#include "src/base/platform/wrappers.h"
 #include "src/objects/object-macros-undef.h"
 
 #endif  // V8_OBJECTS_SHARED_FUNCTION_INFO_INL_H_

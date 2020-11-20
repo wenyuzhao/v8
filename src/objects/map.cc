@@ -248,12 +248,6 @@ VisitorId Map::GetVisitorId(Map map) {
     case PREPARSE_DATA_TYPE:
       return kVisitPreparseData;
 
-    case UNCOMPILED_DATA_WITHOUT_PREPARSE_DATA_TYPE:
-      return kVisitUncompiledDataWithoutPreparseData;
-
-    case UNCOMPILED_DATA_WITH_PREPARSE_DATA_TYPE:
-      return kVisitUncompiledDataWithPreparseData;
-
     case COVERAGE_INFO_TYPE:
       return kVisitCoverageInfo;
 
@@ -1455,7 +1449,7 @@ Handle<Map> Map::RawCopy(Isolate* isolate, Handle<Map> map, int instance_size,
   Handle<HeapObject> prototype(map->prototype(), isolate);
   Map::SetPrototype(isolate, result, prototype);
   result->set_constructor_or_backpointer(map->GetConstructor());
-  result->set_relaxed_bit_field(map->bit_field());
+  result->set_bit_field(map->bit_field());
   result->set_bit_field2(map->bit_field2());
   int new_bit_field3 = map->bit_field3();
   new_bit_field3 = Bits3::OwnsDescriptorsBit::update(new_bit_field3, true);
