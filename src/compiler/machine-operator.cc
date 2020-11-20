@@ -611,6 +611,7 @@ ShiftKind ShiftKindOf(Operator const* op) {
   V(kWord16)                           \
   V(kWord32)                           \
   V(kWord64)                           \
+  V(kMapWord)                          \
   V(kTaggedSigned)                     \
   V(kTaggedPointer)                    \
   V(kTagged)                           \
@@ -784,7 +785,7 @@ template <MachineRepresentation rep, MachineSemantic sem>
 struct LoadOperator : public Operator1<LoadRepresentation> {
   LoadOperator()
       : Operator1(IrOpcode::kLoad, Operator::kEliminatable, "Load", 2, 1, 1, 1,
-                  1, 0, LoadRepresentation(rep, sem, false)) {}
+                  1, 0, LoadRepresentation(rep, sem)) {}
 };
 
 template <MachineRepresentation rep, MachineSemantic sem>
@@ -1162,7 +1163,7 @@ MACHINE_PURE_OP_LIST(PURE)
 #undef PURE
 
 const Operator* MachineOperatorBuilder::Load(LoadRepresentation rep) {
-  DCHECK(!rep.in_header());
+  DCHECK(!rep.IsMapWord());
 #define LOAD(Type)                                         \
   if (rep == MachineType::Type()) {                        \
     return GetCachedOperator<                              \

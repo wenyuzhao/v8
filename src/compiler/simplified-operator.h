@@ -128,9 +128,9 @@ struct FieldAccess {
     DCHECK_GE(offset, 0);
 
     DCHECK_IMPLIES(
-        machine_type.in_header(),
+        machine_type.IsMapWord(),
         offset == HeapObject::kMapOffset && base_is_tagged != kUntaggedBase);
-    DCHECK_IMPLIES(machine_type.in_header(),
+    DCHECK_IMPLIES(machine_type.IsMapWord(),
                    (write_barrier_kind == kMapWriteBarrier ||
                     write_barrier_kind == kNoWriteBarrier ||
                     write_barrier_kind == kAssertNoWriteBarrier));

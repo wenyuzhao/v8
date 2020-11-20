@@ -296,9 +296,8 @@ Reduction MemoryLowering::ReduceLoadFromObject(Node* node) {
 
   MachineType machine_type = access.machine_type;
 
-  if (machine_type.in_header()) {
+  if (machine_type.IsMapWord()) {
 #ifdef V8_MAP_PACKING
-    DCHECK(IsAnyTagged(machine_type.representation()));
     CHECK_EQ(machine_type.semantic(), MachineSemantic::kAny);
     return UnpackMapWord(node);
 #else
@@ -316,7 +315,7 @@ Reduction MemoryLowering::ReduceLoadElement(Node* node) {
   Node* index = node->InputAt(1);
   node->ReplaceInput(1, ComputeIndex(access, index));
   MachineType type = access.machine_type;
-  DCHECK(!type.in_header());
+  DCHECK(!type.IsMapWord());
   if (NeedsPoisoning(access.load_sensitivity)) {
     NodeProperties::ChangeOp(node, machine()->PoisonedLoad(type));
   } else {
@@ -388,7 +387,7 @@ Reduction MemoryLowering::ReduceLoadField(Node* node) {
     type = MachineType::Uint32();
   }
 
-  if (type.in_header()) {
+  if (type.IsMapWord()) {
 #ifdef V8_MAP_PACKING
     return UnpackMapWord(node);
 #else
@@ -431,11 +430,11 @@ Reduction MemoryLowering::ReduceStoreToObject(Node* node,
   MachineType machine_type = access.machine_type;
   WriteBarrierKind write_barrier_kind = ComputeWriteBarrierKind(
       node, object, value, state, access.write_barrier_kind);
-  DCHECK(!machine_type.in_header());
+  DCHECK(!machine_type.IsMapWord());
   NodeProperties::ChangeOp(
       node, machine()->Store(StoreRepresentation(machine_type.representation(),
                                                  write_barrier_kind,
-                                                 machine_type.in_header())));
+                                                 machine_type.IsMapWord())));
   return Changed(node);
 }
 
@@ -476,7 +475,7 @@ Reduction MemoryLowering::ReduceStoreField(Node* node,
   Node* offset = __ IntPtrConstant(access.offset - access.tag());
   node->InsertInput(graph_zone(), 1, offset);
 
-  if (machine_type.in_header()) {
+  if (machine_type.IsMapWord()) {
     machine_type = MachineType::TaggedPointer();
 #ifdef V8_MAP_PACKING
     Node* mapword = __ PackMapWord(TNode<Map>::UncheckedCast(value));
@@ -486,7 +485,7 @@ Reduction MemoryLowering::ReduceStoreField(Node* node,
   NodeProperties::ChangeOp(
       node, machine()->Store(StoreRepresentation(machine_type.representation(),
                                                  write_barrier_kind,
-                                                 machine_type.in_header())));
+                                                 machine_type.IsMapWord())));
   return Changed(node);
 }
 

@@ -291,6 +291,7 @@ ArchOpcode GetLoadOpcode(LoadRepresentation load_rep) {
       opcode = kX64Movdqu;
       break;
     case MachineRepresentation::kNone:
+    case MachineRepresentation::kMapWord:
       UNREACHABLE();
   }
   return opcode;
@@ -325,6 +326,7 @@ ArchOpcode GetStoreOpcode(StoreRepresentation store_rep) {
     case MachineRepresentation::kSimd128:  // Fall through.
       return kX64Movdqu;
     case MachineRepresentation::kNone:
+    case MachineRepresentation::kMapWord:
       UNREACHABLE();
   }
   UNREACHABLE();
@@ -458,7 +460,7 @@ void InstructionSelector::VisitLoad(Node* node, Node* value,
 
 void InstructionSelector::VisitLoad(Node* node) {
   LoadRepresentation load_rep = LoadRepresentationOf(node->op());
-  DCHECK(!load_rep.in_header());
+  DCHECK(!load_rep.IsMapWord());
   VisitLoad(node, node, GetLoadOpcode(load_rep));
 }
 
