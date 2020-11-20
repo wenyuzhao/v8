@@ -110,23 +110,17 @@ class StoreRepresentation final {
   StoreRepresentation(MachineRepresentation representation,
                       WriteBarrierKind write_barrier_kind)
       : representation_(representation),
-        write_barrier_kind_(write_barrier_kind) {
-    store_to_header_ = false;
-  }
-  StoreRepresentation(MachineRepresentation representation,
-                      WriteBarrierKind write_barrier_kind, bool store_to_header)
-      : representation_(representation),
-        write_barrier_kind_(write_barrier_kind),
-        store_to_header_(store_to_header) {}
+        write_barrier_kind_(write_barrier_kind) {}
 
   MachineRepresentation representation() const { return representation_; }
   WriteBarrierKind write_barrier_kind() const { return write_barrier_kind_; }
-  bool store_to_header() const { return store_to_header_; }
+  bool store_to_header() const {
+    return representation() == MachineRepresentation::kMapWord;
+  }
 
  private:
   MachineRepresentation representation_;
   WriteBarrierKind write_barrier_kind_;
-  bool store_to_header_;
 };
 
 V8_EXPORT_PRIVATE bool operator==(StoreRepresentation, StoreRepresentation);

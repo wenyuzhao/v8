@@ -433,8 +433,7 @@ Reduction MemoryLowering::ReduceStoreToObject(Node* node,
   DCHECK(!machine_type.IsMapWord());
   NodeProperties::ChangeOp(
       node, machine()->Store(StoreRepresentation(machine_type.representation(),
-                                                 write_barrier_kind,
-                                                 machine_type.IsMapWord())));
+                                                 write_barrier_kind)));
   return Changed(node);
 }
 
@@ -448,9 +447,9 @@ Reduction MemoryLowering::ReduceStoreElement(Node* node,
   node->ReplaceInput(1, ComputeIndex(access, index));
   WriteBarrierKind write_barrier_kind = ComputeWriteBarrierKind(
       node, object, value, state, access.write_barrier_kind);
-  NodeProperties::ChangeOp(node, machine()->Store(StoreRepresentation(
-                                     access.machine_type.representation(),
-                                     write_barrier_kind, false)));
+  NodeProperties::ChangeOp(
+      node, machine()->Store(StoreRepresentation(
+                access.machine_type.representation(), write_barrier_kind)));
   return Changed(node);
 }
 
@@ -484,8 +483,7 @@ Reduction MemoryLowering::ReduceStoreField(Node* node,
   }
   NodeProperties::ChangeOp(
       node, machine()->Store(StoreRepresentation(machine_type.representation(),
-                                                 write_barrier_kind,
-                                                 machine_type.IsMapWord())));
+                                                 write_barrier_kind)));
   return Changed(node);
 }
 
@@ -500,7 +498,7 @@ Reduction MemoryLowering::ReduceStore(Node* node,
   if (write_barrier_kind != representation.write_barrier_kind()) {
     NodeProperties::ChangeOp(
         node, machine()->Store(StoreRepresentation(
-                  representation.representation(), write_barrier_kind, false)));
+                  representation.representation(), write_barrier_kind)));
     return Changed(node);
   }
   return NoChange();
