@@ -21,9 +21,11 @@ enum class MachineRepresentation : uint8_t {
   kWord16,
   kWord32,
   kWord64,
-  kTaggedSigned,       // (uncompressed) Smi
-  kTaggedPointer,      // (uncompressed) HeapObject
-  kTagged,             // (uncompressed) Object (Smi or HeapObject)
+  kMapWord,        // (uncompressed) MapWord (can be untagged and may contain
+                   // metadata)
+  kTaggedSigned,   // (uncompressed) Smi
+  kTaggedPointer,  // (uncompressed) HeapObject
+  kTagged,         // (uncompressed) Object (Smi or HeapObject)
   kCompressedPointer,  // (compressed) HeapObject
   kCompressed,         // (compressed) Object (Smi or HeapObject)
   // FP representations must be last, and in order of increasing size.
@@ -62,22 +64,14 @@ class MachineType {
  public:
   constexpr MachineType()
       : representation_(MachineRepresentation::kNone),
-        semantic_(MachineSemantic::kNone),
-        in_header_(false) {}
+        semantic_(MachineSemantic::kNone) {}
   constexpr MachineType(MachineRepresentation representation,
                         MachineSemantic semantic)
-      : representation_(representation),
-        semantic_(semantic),
-        in_header_(false) {}
-  constexpr MachineType(MachineRepresentation representation,
-                        MachineSemantic semantic, bool in_header)
-      : representation_(representation),
-        semantic_(semantic),
-        in_header_(in_header) {}
+      : representation_(representation), semantic_(semantic) {}
 
   constexpr bool operator==(MachineType other) const {
     return representation() == other.representation() &&
-           semantic() == other.semantic() && in_header() == other.in_header();
+           semantic() == other.semantic();
   }
 
   constexpr bool operator!=(MachineType other) const {
@@ -88,10 +82,13 @@ class MachineType {
     return representation_;
   }
   constexpr MachineSemantic semantic() const { return semantic_; }
-  constexpr bool in_header() const { return in_header_; }
 
   constexpr bool IsNone() const {
     return representation() == MachineRepresentation::kNone;
+  }
+
+  constexpr bool IsMapWord() const {
+    return representation() == MachineRepresentation::kMapWord;
   }
 
   constexpr bool IsSigned() const {
@@ -180,8 +177,7 @@ class MachineType {
                        MachineSemantic::kAny);
   }
   constexpr static MachineType MapInHeader() {
-    return MachineType(MachineRepresentation::kTagged, MachineSemantic::kAny,
-                       true);
+    return MachineType(MachineRepresentation::kMapWord, MachineSemantic::kAny);
   }
   constexpr static MachineType TaggedSigned() {
     return MachineType(MachineRepresentation::kTaggedSigned,
@@ -252,7 +248,6 @@ class MachineType {
  private:
   MachineRepresentation representation_;
   MachineSemantic semantic_;
-  bool in_header_;
 };
 
 V8_INLINE size_t hash_value(MachineRepresentation rep) {
@@ -261,8 +256,7 @@ V8_INLINE size_t hash_value(MachineRepresentation rep) {
 
 V8_INLINE size_t hash_value(MachineType type) {
   return (static_cast<size_t>(type.representation()) * 2) +
-         (static_cast<size_t>(type.semantic()) * 32) +
-         (type.in_header() ? 0 : 1);
+         (static_cast<size_t>(type.semantic()) * 32);
 }
 
 V8_EXPORT_PRIVATE std::ostream& operator<<(std::ostream& os,
@@ -276,7 +270,8 @@ inline bool IsFloatingPoint(MachineRepresentation rep) {
 
 inline bool CanBeTaggedPointer(MachineRepresentation rep) {
   return rep == MachineRepresentation::kTagged ||
-         rep == MachineRepresentation::kTaggedPointer;
+         rep == MachineRepresentation::kTaggedPointer ||
+         rep == MachineRepresentation::kMapWord;
 }
 
 inline bool CanBeTaggedSigned(MachineRepresentation rep) {
@@ -321,6 +316,7 @@ V8_EXPORT_PRIVATE inline constexpr int ElementSizeLog2Of(
     case MachineRepresentation::kTaggedSigned:
     case MachineRepresentation::kTaggedPointer:
     case MachineRepresentation::kTagged:
+    case MachineRepresentation::kMapWord:
     case MachineRepresentation::kCompressedPointer:
     case MachineRepresentation::kCompressed:
       return kTaggedSizeLog2;

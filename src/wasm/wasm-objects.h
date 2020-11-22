@@ -763,7 +763,7 @@ class WasmExportedFunctionData : public Struct {
   DECL_INT_ACCESSORS(jump_table_offset)
   DECL_INT_ACCESSORS(function_index)
   DECL_ACCESSORS(signature, Foreign)
-  DECL_INT_ACCESSORS(call_count)
+  DECL_INT_ACCESSORS(wrapper_budget)
   DECL_ACCESSORS(c_wrapper_code, Object)
   DECL_ACCESSORS(wasm_call_target, Object)
   DECL_INT_ACCESSORS(packed_args_size)
@@ -932,6 +932,7 @@ class WasmArray : public TorqueGeneratedWasmArray<WasmArray, HeapObject> {
   static inline wasm::ArrayType* GcSafeType(Map map);
 
   static inline int SizeFor(Map map, int length);
+  static inline int GcSafeSizeFor(Map map, int length);
 
   DECL_CAST(WasmArray)
   DECL_PRINTER(WasmArray)

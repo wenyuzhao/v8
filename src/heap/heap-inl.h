@@ -170,7 +170,6 @@ AllocationResult Heap::AllocateRaw(int size_in_bytes, AllocationType type,
                                    AllocationAlignment alignment) {
   DCHECK(AllowHandleAllocation::IsAllowed());
   DCHECK(AllowHeapAllocation::IsAllowed());
-  DCHECK(AllowGarbageCollection::IsAllowed());
   DCHECK_IMPLIES(type == AllocationType::kCode || type == AllocationType::kMap,
                  alignment == AllocationAlignment::kWordAligned);
   DCHECK_EQ(gc_state(), NOT_IN_GC);
@@ -271,7 +270,6 @@ HeapObject Heap::AllocateRawWith(int size, AllocationType allocation,
                                  AllocationAlignment alignment) {
   DCHECK(AllowHandleAllocation::IsAllowed());
   DCHECK(AllowHeapAllocation::IsAllowed());
-  DCHECK(AllowGarbageCollection::IsAllowed());
   DCHECK_EQ(gc_state(), NOT_IN_GC);
   Heap* heap = isolate()->heap();
   if (!V8_ENABLE_THIRD_PARTY_HEAP_BOOL &&
@@ -562,6 +560,25 @@ void Heap::UpdateAllocationSite(Map map, HeapObject object,
   // till actually merging the data.
   Address key = memento_candidate.GetAllocationSiteUnchecked();
   (*pretenuring_feedback)[AllocationSite::unchecked_cast(Object(key))]++;
+}
+
+bool Heap::IsPendingAllocation(HeapObject object) {
+  // TODO(ulan): Optimize this function to perform 3 loads at most.
+  Address addr = object.address();
+  Address top = new_space_->original_top_acquire();
+  Address limit = new_space_->original_limit_relaxed();
+  if (top <= addr && addr < limit) return true;
+  PagedSpaceIterator spaces(this);
+  for (PagedSpace* space = spaces.Next(); space != nullptr;
+       space = spaces.Next()) {
+    top = space->original_top_acquire();
+    limit = space->original_limit_relaxed();
+    if (top <= addr && addr < limit) return true;
+  }
+  if (addr == lo_space_->pending_object()) return true;
+  if (addr == new_lo_space_->pending_object()) return true;
+  if (addr == code_lo_space_->pending_object()) return true;
+  return false;
 }
 
 void Heap::ExternalStringTable::AddString(String string) {

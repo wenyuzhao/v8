@@ -253,7 +253,8 @@ DEFINE_IMPLICATION(harmony_weak_refs_with_cleanup_some, harmony_weak_refs)
   V(harmony_weak_refs_with_cleanup_some,                                       \
     "harmony weak references with FinalizationRegistry.prototype.cleanupSome") \
   V(harmony_regexp_match_indices, "harmony regexp match indices")              \
-  V(harmony_import_assertions, "harmony import assertions")
+  V(harmony_import_assertions, "harmony import assertions")                    \
+  V(harmony_relative_indexing_methods, "harmony relative indexing methods")
 
 #ifdef V8_INTL_SUPPORT
 #define HARMONY_INPROGRESS(V)                       \
@@ -280,8 +281,6 @@ DEFINE_IMPLICATION(harmony_weak_refs_with_cleanup_some, harmony_weak_refs)
 #define HARMONY_SHIPPING_BASE(V)                                          \
   V(harmony_sharedarraybuffer, "harmony sharedarraybuffer")               \
   V(harmony_atomics, "harmony atomics")                                   \
-  V(harmony_promise_any, "harmony Promise.any")                           \
-  V(harmony_private_methods, "harmony private methods in class literals") \
   V(harmony_weak_refs, "harmony weak references")                         \
   V(harmony_string_replaceall, "harmony String.prototype.replaceAll")     \
   V(harmony_logical_assignment, "harmony logical assignment")             \
@@ -553,9 +552,6 @@ DEFINE_BOOL(trace_generalization, false, "trace map generalization")
 DEFINE_BOOL(turboprop, false, "enable experimental turboprop mid-tier compiler")
 DEFINE_BOOL(turboprop_mid_tier_reg_alloc, true,
             "enable mid-tier register allocator for turboprop")
-DEFINE_BOOL(turboprop_dynamic_map_checks, false,
-            "use dynamic map checks when generating code for property accesses "
-            "if all handlers in an IC are the same for turboprop")
 DEFINE_BOOL(turboprop_as_midtier, false,
             "enable experimental turboprop mid-tier compiler")
 DEFINE_IMPLICATION(turboprop_as_midtier, turboprop)
@@ -735,6 +731,9 @@ DEFINE_BOOL(
 DEFINE_BOOL(turbo_fast_api_calls, false, "enable fast API calls from TurboFan")
 DEFINE_INT(reuse_opt_code_count, 0,
            "don't discard optimized code for the specified number of deopts.")
+DEFINE_BOOL(turbo_dynamic_map_checks, true,
+            "use dynamic map checks when generating code for property accesses "
+            "if all handlers in an IC are the same for turboprop and NCI")
 
 // Native context independent (NCI) code.
 DEFINE_BOOL(turbo_nci, false,
@@ -1225,6 +1224,9 @@ DEFINE_BOOL(stress_background_compile, false,
 DEFINE_BOOL(
     finalize_streaming_on_background, false,
     "perform the script streaming finalization on the background thread")
+// TODO(leszeks): Parallel compile tasks currently don't support off-thread
+// finalization.
+DEFINE_NEG_IMPLICATION(finalize_streaming_on_background, parallel_compile_tasks)
 DEFINE_BOOL(disable_old_api_accessors, false,
             "Disable old-style API accessors whose setters trigger through the "
             "prototype chain")
@@ -1281,6 +1283,7 @@ DEFINE_IMPLICATION(trace_deopt_verbose, trace_deopt)
 DEFINE_BOOL(trace_file_names, false,
             "include file names in trace-opt/trace-deopt output")
 DEFINE_BOOL(always_opt, false, "always try to optimize functions")
+DEFINE_IMPLICATION(always_opt, opt)
 DEFINE_BOOL(always_osr, false, "always try to OSR functions")
 DEFINE_BOOL(prepare_always_opt, false, "prepare for turning on always opt")
 
@@ -1356,8 +1359,6 @@ DEFINE_GENERIC_IMPLICATION(
                   v8::tracing::TracingCategoryObserver::ENABLED_BY_NATIVE))
 DEFINE_BOOL_READONLY(fast_map_update, false,
                      "enable fast map update by caching the migration target")
-DEFINE_BOOL(modify_field_representation_inplace, true,
-            "enable in-place field representation updates")
 DEFINE_INT(max_valid_polymorphic_map_count, 4,
            "maximum number of valid maps to track in POLYMORPHIC state")
 
@@ -1917,6 +1918,7 @@ DEFINE_NEG_IMPLICATION(single_threaded_gc, concurrent_store_buffer)
 DEFINE_NEG_IMPLICATION(single_threaded_gc, minor_mc_parallel_marking)
 #endif  // ENABLE_MINOR_MC
 DEFINE_NEG_IMPLICATION(single_threaded_gc, concurrent_array_buffer_sweeping)
+DEFINE_NEG_IMPLICATION(single_threaded_gc, stress_concurrent_allocation)
 
 #undef FLAG
 

@@ -5,6 +5,7 @@
 #include "src/compiler/bytecode-graph-builder.h"
 
 #include "src/ast/ast.h"
+#include "src/base/platform/wrappers.h"
 #include "src/codegen/source-position-table.h"
 #include "src/codegen/tick-counter.h"
 #include "src/compiler/access-builder.h"
@@ -264,7 +265,7 @@ class BytecodeGraphBuilder {
       const Operator* op, Node* receiver, FeedbackSlot load_slot,
       FeedbackSlot call_slot);
   JSTypeHintLowering::LoweringResult TryBuildSimplifiedLoadNamed(
-      const Operator* op, Node* receiver, FeedbackSlot slot);
+      const Operator* op, FeedbackSlot slot);
   JSTypeHintLowering::LoweringResult TryBuildSimplifiedLoadKeyed(
       const Operator* op, Node* receiver, Node* key, FeedbackSlot slot);
   JSTypeHintLowering::LoweringResult TryBuildSimplifiedStoreNamed(
@@ -2019,7 +2020,7 @@ void BytecodeGraphBuilder::VisitLdaNamedProperty() {
   const Operator* op = javascript()->LoadNamed(name.object(), feedback);
 
   JSTypeHintLowering::LoweringResult lowering =
-      TryBuildSimplifiedLoadNamed(op, object, feedback.slot);
+      TryBuildSimplifiedLoadNamed(op, feedback.slot);
   if (lowering.IsExit()) return;
 
   Node* node = nullptr;
@@ -2052,10 +2053,24 @@ void BytecodeGraphBuilder::VisitLdaNamedPropertyFromSuper() {
   Node* home_object = environment()->LookupAccumulator();
   NameRef name(broker(),
                bytecode_iterator().GetConstantForIndexOperand(1, isolate()));
-  const Operator* op = javascript()->LoadNamedFromSuper(name.object());
-  // TODO(marja, v8:9237): Use lowering.
 
-  Node* node = NewNode(op, receiver, home_object);
+  FeedbackSource feedback =
+      CreateFeedbackSource(bytecode_iterator().GetIndexOperand(2));
+  const Operator* op =
+      javascript()->LoadNamedFromSuper(name.object(), feedback);
+
+  JSTypeHintLowering::LoweringResult lowering =
+      TryBuildSimplifiedLoadNamed(op, feedback.slot);
+  if (lowering.IsExit()) return;
+
+  Node* node = nullptr;
+  if (lowering.IsSideEffectFree()) {
+    node = lowering.value();
+  } else {
+    DCHECK(!lowering.Changed());
+    DCHECK(IrOpcode::IsFeedbackCollectingOpcode(op->opcode()));
+    node = NewNode(op, receiver, home_object, feedback_vector_node());
+  }
   environment()->BindAccumulator(node, Environment::kAttachFrameState);
 }
 
@@ -4113,7 +4128,6 @@ JSTypeHintLowering::LoweringResult
 BytecodeGraphBuilder::TryBuildSimplifiedUnaryOp(const Operator* op,
                                                 Node* operand,
                                                 FeedbackSlot slot) {
-  if (!CanApplyTypeHintLowering(op)) return NoChange();
   Node* effect = environment()->GetEffectDependency();
   Node* control = environment()->GetControlDependency();
   JSTypeHintLowering::LoweringResult result =
@@ -4127,7 +4141,6 @@ JSTypeHintLowering::LoweringResult
 BytecodeGraphBuilder::TryBuildSimplifiedBinaryOp(const Operator* op, Node* left,
                                                  Node* right,
                                                  FeedbackSlot slot) {
-  if (!CanApplyTypeHintLowering(op)) return NoChange();
   Node* effect = environment()->GetEffectDependency();
   Node* control = environment()->GetControlDependency();
   JSTypeHintLowering::LoweringResult result =
@@ -4142,7 +4155,6 @@ BytecodeGraphBuilder::TryBuildSimplifiedForInNext(Node* receiver,
                                                   Node* cache_array,
                                                   Node* cache_type, Node* index,
                                                   FeedbackSlot slot) {
-  if (!CanApplyTypeHintLowering(IrOpcode::kJSForInNext)) return NoChange();
   Node* effect = environment()->GetEffectDependency();
   Node* control = environment()->GetControlDependency();
   JSTypeHintLowering::LoweringResult result =
@@ -4155,7 +4167,6 @@ BytecodeGraphBuilder::TryBuildSimplifiedForInNext(Node* receiver,
 JSTypeHintLowering::LoweringResult
 BytecodeGraphBuilder::TryBuildSimplifiedForInPrepare(Node* enumerator,
                                                      FeedbackSlot slot) {
-  if (!CanApplyTypeHintLowering(IrOpcode::kJSForInPrepare)) return NoChange();
   Node* effect = environment()->GetEffectDependency();
   Node* control = environment()->GetControlDependency();
   JSTypeHintLowering::LoweringResult result =
@@ -4222,14 +4233,12 @@ BytecodeGraphBuilder::TryBuildSimplifiedGetIterator(const Operator* op,
 
 JSTypeHintLowering::LoweringResult
 BytecodeGraphBuilder::TryBuildSimplifiedLoadNamed(const Operator* op,
-                                                  Node* receiver,
                                                   FeedbackSlot slot) {
   if (!CanApplyTypeHintLowering(op)) return NoChange();
   Node* effect = environment()->GetEffectDependency();
   Node* control = environment()->GetControlDependency();
   JSTypeHintLowering::LoweringResult early_reduction =
-      type_hint_lowering().ReduceLoadNamedOperation(op, receiver, effect,
-                                                    control, slot);
+      type_hint_lowering().ReduceLoadNamedOperation(op, effect, control, slot);
   ApplyEarlyReduction(early_reduction);
   return early_reduction;
 }
@@ -4353,7 +4362,8 @@ Node* BytecodeGraphBuilder::MakeNode(const Operator* op, int value_input_count,
     if (has_effect) ++input_count_with_deps;
     Node** buffer = EnsureInputBufferSize(input_count_with_deps);
     if (value_input_count > 0) {
-      memcpy(buffer, value_inputs, kSystemPointerSize * value_input_count);
+      base::Memcpy(buffer, value_inputs,
+                   kSystemPointerSize * value_input_count);
     }
     Node** current_input = buffer + value_input_count;
     if (has_context) {

@@ -390,11 +390,10 @@ void FeedbackVector::SetOptimizedCode(Handle<FeedbackVector> vector,
          (vector->optimized_code().kind() == CodeKind::TURBOPROP &&
           code->kind() == CodeKind::TURBOFAN));
   // TODO(mythria): We could see a CompileOptimized marker here either from
-  // tests that use %OptimizeFunctionOnNextCall or because we re-mark the
-  // function for non-concurrent optimization after an OSR. We should avoid
-  // these cases and also check that marker isn't kCompileOptimized.
-  DCHECK(vector->optimization_marker() !=
-         OptimizationMarker::kCompileOptimizedConcurrent);
+  // tests that use %OptimizeFunctionOnNextCall, --always-opt or because we
+  // re-mark the function for non-concurrent optimization after an OSR. We
+  // should avoid these cases and also check that marker isn't
+  // kCompileOptimized or kCompileOptimizedConcurrent.
   vector->set_maybe_optimized_code(HeapObjectReference::Weak(*code));
   int32_t state = vector->flags();
   state = OptimizationTierBits::update(state, GetTierForCodeKind(code->kind()));
@@ -503,16 +502,11 @@ void NexusConfig::SetFeedbackPair(FeedbackVector vector,
 
 std::pair<MaybeObject, MaybeObject> NexusConfig::GetFeedbackPair(
     FeedbackVector vector, FeedbackSlot slot) const {
-  if (mode() == BackgroundThread) {
-    isolate()->feedback_vector_access()->LockShared();
-  }
+  base::SharedMutexGuardIf<base::kShared> scope(
+      isolate()->feedback_vector_access(), mode() == BackgroundThread);
   MaybeObject feedback = vector.Get(slot);
   MaybeObject feedback_extra = vector.Get(slot.WithOffset(1));
-  auto return_value = std::make_pair(feedback, feedback_extra);
-  if (mode() == BackgroundThread) {
-    isolate()->feedback_vector_access()->UnlockShared();
-  }
-  return return_value;
+  return std::make_pair(feedback, feedback_extra);
 }
 
 FeedbackNexus::FeedbackNexus(Handle<FeedbackVector> vector, FeedbackSlot slot)

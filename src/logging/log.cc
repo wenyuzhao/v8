@@ -12,6 +12,7 @@
 #include "src/api/api-inl.h"
 #include "src/base/platform/mutex.h"
 #include "src/base/platform/platform.h"
+#include "src/base/platform/wrappers.h"
 #include "src/builtins/profile-data-reader.h"
 #include "src/codegen/bailout-reason.h"
 #include "src/codegen/macro-assembler.h"
@@ -124,7 +125,7 @@ class CodeEventLogger::NameBuffer {
         AppendBytes("\" ");
       }
       AppendBytes("hash ");
-      AppendHex(symbol.Hash());
+      AppendHex(symbol.hash());
       AppendByte(')');
     }
   }
@@ -232,7 +233,7 @@ void CodeEventLogger::CodeCreateEvent(LogEventsAndTags tag,
     name_buffer_->AppendString(String::cast(*script_name));
   } else {
     name_buffer_->AppendBytes("symbol(hash ");
-    name_buffer_->AppendHex(Name::cast(*script_name).Hash());
+    name_buffer_->AppendHex(Name::cast(*script_name).hash());
     name_buffer_->AppendByte(')');
   }
   name_buffer_->AppendByte(':');
@@ -311,7 +312,7 @@ PerfBasicLogger::PerfBasicLogger(Isolate* isolate)
 }
 
 PerfBasicLogger::~PerfBasicLogger() {
-  fclose(perf_output_handle_);
+  base::Fclose(perf_output_handle_);
   perf_output_handle_ = nullptr;
 }
 
@@ -575,7 +576,7 @@ LowLevelLogger::LowLevelLogger(Isolate* isolate, const char* name)
 }
 
 LowLevelLogger::~LowLevelLogger() {
-  fclose(ll_output_handle_);
+  base::Fclose(ll_output_handle_);
   ll_output_handle_ = nullptr;
 }
 
@@ -1101,7 +1102,7 @@ void Logger::TimerEvent(Logger::StartEnd se, const char* name) {
 }
 
 void Logger::BasicBlockCounterEvent(const char* name, int block_id,
-                                    uint32_t count) {
+                                    double count) {
   if (!FLAG_turbo_profiling_log_builtins) return;
   std::unique_ptr<Log::MessageBuilder> msg_ptr = log_->NewMessageBuilder();
   if (!msg_ptr) return;
@@ -2298,8 +2299,14 @@ void ExistingCodeLogger::LogExistingFunction(
 #if USES_FUNCTION_DESCRIPTORS
       entry_point = *FUNCTION_ENTRYPOINT_ADDRESS(entry_point);
 #endif
-      CALL_CODE_EVENT_HANDLER(
-          CallbackEvent(handle(shared->DebugName(), isolate_), entry_point))
+      Handle<String> fun_name(shared->DebugName(), isolate_);
+      CALL_CODE_EVENT_HANDLER(CallbackEvent(fun_name, entry_point))
+
+      // Fast API function.
+      Address c_function = v8::ToCData<Address>(fun_data.GetCFunction());
+      if (c_function != kNullAddress) {
+        CALL_CODE_EVENT_HANDLER(CallbackEvent(fun_name, c_function))
+      }
     }
   }
 }

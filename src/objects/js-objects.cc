@@ -193,6 +193,7 @@ bool HasExcludedProperty(
 
 V8_WARN_UNUSED_RESULT Maybe<bool> FastAssign(
     Handle<JSReceiver> target, Handle<Object> source,
+    PropertiesEnumerationMode mode,
     const ScopedVector<Handle<Object>>* excluded_properties, bool use_set) {
   // Non-empty strings are the only non-JSReceivers that need to be handled
   // explicitly by Object.assign.
@@ -225,86 +226,111 @@ V8_WARN_UNUSED_RESULT Maybe<bool> FastAssign(
 
   bool stable = true;
 
-  for (InternalIndex i : map->IterateOwnDescriptors()) {
-    HandleScope inner_scope(isolate);
+  // Process symbols last and only do that if we found symbols.
+  bool has_symbol = false;
+  bool process_symbol_only = false;
+  while (true) {
+    for (InternalIndex i : map->IterateOwnDescriptors()) {
+      HandleScope inner_scope(isolate);
 
-    Handle<Name> next_key(descriptors->GetKey(i), isolate);
-    Handle<Object> prop_value;
-    // Directly decode from the descriptor array if |from| did not change shape.
-    if (stable) {
-      DCHECK_EQ(from->map(), *map);
-      DCHECK_EQ(*descriptors, map->instance_descriptors(kRelaxedLoad));
-
-      PropertyDetails details = descriptors->GetDetails(i);
-      if (!details.IsEnumerable()) continue;
-      if (details.kind() == kData) {
-        if (details.location() == kDescriptor) {
-          prop_value = handle(descriptors->GetStrongValue(i), isolate);
+      Handle<Name> next_key(descriptors->GetKey(i), isolate);
+      if (mode == PropertiesEnumerationMode::kEnumerationOrder) {
+        if (next_key->IsSymbol()) {
+          has_symbol = true;
+          if (!process_symbol_only) continue;
         } else {
-          Representation representation = details.representation();
-          FieldIndex index = FieldIndex::ForPropertyIndex(
-              *map, details.field_index(), representation);
-          prop_value = JSObject::FastPropertyAt(from, representation, index);
+          if (process_symbol_only) continue;
+        }
+      }
+      Handle<Object> prop_value;
+      // Directly decode from the descriptor array if |from| did not change
+      // shape.
+      if (stable) {
+        DCHECK_EQ(from->map(), *map);
+        DCHECK_EQ(*descriptors, map->instance_descriptors(kRelaxedLoad));
+
+        PropertyDetails details = descriptors->GetDetails(i);
+        if (!details.IsEnumerable()) continue;
+        if (details.kind() == kData) {
+          if (details.location() == kDescriptor) {
+            prop_value = handle(descriptors->GetStrongValue(i), isolate);
+          } else {
+            Representation representation = details.representation();
+            FieldIndex index = FieldIndex::ForPropertyIndex(
+                *map, details.field_index(), representation);
+            prop_value = JSObject::FastPropertyAt(from, representation, index);
+          }
+        } else {
+          LookupIterator it(isolate, from, next_key,
+                            LookupIterator::OWN_SKIP_INTERCEPTOR);
+          ASSIGN_RETURN_ON_EXCEPTION_VALUE(
+              isolate, prop_value, Object::GetProperty(&it), Nothing<bool>());
+          stable = from->map() == *map;
+          descriptors.PatchValue(map->instance_descriptors(kRelaxedLoad));
         }
       } else {
-        LookupIterator it(isolate, from, next_key,
+        // If the map did change, do a slower lookup. We are still guaranteed
+        // that the object has a simple shape, and that the key is a name.
+        LookupIterator it(isolate, from, next_key, from,
                           LookupIterator::OWN_SKIP_INTERCEPTOR);
+        if (!it.IsFound()) continue;
+        DCHECK(it.state() == LookupIterator::DATA ||
+               it.state() == LookupIterator::ACCESSOR);
+        if (!it.IsEnumerable()) continue;
         ASSIGN_RETURN_ON_EXCEPTION_VALUE(
             isolate, prop_value, Object::GetProperty(&it), Nothing<bool>());
-        stable = from->map() == *map;
-        descriptors.PatchValue(map->instance_descriptors(kRelaxedLoad));
       }
-    } else {
-      // If the map did change, do a slower lookup. We are still guaranteed that
-      // the object has a simple shape, and that the key is a name.
-      LookupIterator it(isolate, from, next_key, from,
-                        LookupIterator::OWN_SKIP_INTERCEPTOR);
-      if (!it.IsFound()) continue;
-      DCHECK(it.state() == LookupIterator::DATA ||
-             it.state() == LookupIterator::ACCESSOR);
-      if (!it.IsEnumerable()) continue;
-      ASSIGN_RETURN_ON_EXCEPTION_VALUE(
-          isolate, prop_value, Object::GetProperty(&it), Nothing<bool>());
+
+      if (use_set) {
+        // The lookup will walk the prototype chain, so we have to be careful
+        // to treat any key correctly for any receiver/holder.
+        LookupIterator::Key key(isolate, next_key);
+        LookupIterator it(isolate, target, key);
+        Maybe<bool> result =
+            Object::SetProperty(&it, prop_value, StoreOrigin::kNamed,
+                                Just(ShouldThrow::kThrowOnError));
+        if (result.IsNothing()) return result;
+        if (stable) {
+          stable = from->map() == *map;
+          descriptors.PatchValue(map->instance_descriptors(kRelaxedLoad));
+        }
+      } else {
+        if (excluded_properties != nullptr &&
+            HasExcludedProperty(excluded_properties, next_key)) {
+          continue;
+        }
+
+        // 4a ii 2. Perform ? CreateDataProperty(target, nextKey, propValue).
+        // This is an OWN lookup, so constructing a named-mode LookupIterator
+        // from {next_key} is safe.
+        LookupIterator it(isolate, target, next_key, LookupIterator::OWN);
+        CHECK(JSObject::CreateDataProperty(&it, prop_value, Just(kThrowOnError))
+                  .FromJust());
+      }
     }
-
-    if (use_set) {
-      // The lookup will walk the prototype chain, so we have to be careful
-      // to treat any key correctly for any receiver/holder.
-      LookupIterator::Key key(isolate, next_key);
-      LookupIterator it(isolate, target, key);
-      Maybe<bool> result =
-          Object::SetProperty(&it, prop_value, StoreOrigin::kNamed,
-                              Just(ShouldThrow::kThrowOnError));
-      if (result.IsNothing()) return result;
-      if (stable) {
-        stable = from->map() == *map;
-        descriptors.PatchValue(map->instance_descriptors(kRelaxedLoad));
+    if (mode == PropertiesEnumerationMode::kEnumerationOrder) {
+      if (process_symbol_only || !has_symbol) {
+        return Just(true);
+      }
+      if (has_symbol) {
+        process_symbol_only = true;
       }
     } else {
-      if (excluded_properties != nullptr &&
-          HasExcludedProperty(excluded_properties, next_key)) {
-        continue;
-      }
-
-      // 4a ii 2. Perform ? CreateDataProperty(target, nextKey, propValue).
-      // This is an OWN lookup, so constructing a named-mode LookupIterator
-      // from {next_key} is safe.
-      LookupIterator it(isolate, target, next_key, LookupIterator::OWN);
-      CHECK(JSObject::CreateDataProperty(&it, prop_value, Just(kThrowOnError))
-                .FromJust());
+      DCHECK_EQ(mode, PropertiesEnumerationMode::kPropertyAdditionOrder);
+      return Just(true);
     }
   }
-
-  return Just(true);
+  UNREACHABLE();
 }
 }  // namespace
 
 // static
 Maybe<bool> JSReceiver::SetOrCopyDataProperties(
     Isolate* isolate, Handle<JSReceiver> target, Handle<Object> source,
+    PropertiesEnumerationMode mode,
     const ScopedVector<Handle<Object>>* excluded_properties, bool use_set) {
   Maybe<bool> fast_assign =
-      FastAssign(target, source, excluded_properties, use_set);
+      FastAssign(target, source, mode, excluded_properties, use_set);
   if (fast_assign.IsNothing()) return Nothing<bool>();
   if (fast_assign.FromJust()) return Just(true);
 
@@ -327,7 +353,7 @@ Maybe<bool> JSReceiver::SetOrCopyDataProperties(
     int source_length;
     if (from->IsJSGlobalObject()) {
       source_length = JSGlobalObject::cast(*from)
-                          .global_dictionary()
+                          .global_dictionary(kAcquireLoad)
                           .NumberOfEnumerableProperties();
     } else if (V8_DICT_MODE_PROTOTYPES_BOOL) {
       source_length =
@@ -744,13 +770,14 @@ void JSReceiver::DeleteNormalizedProperty(Handle<JSReceiver> object,
     // If we have a global object, invalidate the cell and remove it from the
     // global object's dictionary.
     Handle<GlobalDictionary> dictionary(
-        JSGlobalObject::cast(*object).global_dictionary(), isolate);
+        JSGlobalObject::cast(*object).global_dictionary(kAcquireLoad), isolate);
 
     Handle<PropertyCell> cell(dictionary->CellAt(entry), isolate);
 
     Handle<GlobalDictionary> new_dictionary =
         GlobalDictionary::DeleteEntry(isolate, dictionary, entry);
-    JSGlobalObject::cast(*object).set_global_dictionary(*new_dictionary);
+    JSGlobalObject::cast(*object).set_global_dictionary(*new_dictionary,
+                                                        kReleaseStore);
 
     cell->ClearAndInvalidate(ReadOnlyRoots(isolate));
   } else {
@@ -2389,12 +2416,12 @@ void JSObject::SetNormalizedProperty(Handle<JSObject> object, Handle<Name> name,
   DCHECK(name->IsUniqueName());
   Isolate* isolate = object->GetIsolate();
 
-  uint32_t hash = name->Hash();
+  uint32_t hash = name->hash();
 
   if (object->IsJSGlobalObject()) {
     Handle<JSGlobalObject> global_obj = Handle<JSGlobalObject>::cast(object);
-    Handle<GlobalDictionary> dictionary(global_obj->global_dictionary(),
-                                        isolate);
+    Handle<GlobalDictionary> dictionary(
+        global_obj->global_dictionary(kAcquireLoad), isolate);
     ReadOnlyRoots roots(isolate);
     InternalIndex entry = dictionary->FindEntry(isolate, roots, name, hash);
 
@@ -2409,7 +2436,7 @@ void JSObject::SetNormalizedProperty(Handle<JSObject> object, Handle<Name> name,
       value = cell;
       dictionary =
           GlobalDictionary::Add(isolate, dictionary, name, value, details);
-      global_obj->set_global_dictionary(*dictionary);
+      global_obj->set_global_dictionary(*dictionary, kReleaseStore);
     } else {
       Handle<PropertyCell> cell = PropertyCell::PrepareForValue(
           isolate, dictionary, entry, value, details);
@@ -2881,7 +2908,7 @@ void MigrateFastToFast(Isolate* isolate, Handle<JSObject> object,
 
   // Copy (real) inobject properties. If necessary, stop at number_of_fields to
   // avoid overwriting |one_pointer_filler_map|.
-  int limit = Min(inobject, number_of_fields);
+  int limit = std::min(inobject, number_of_fields);
   for (int i = 0; i < limit; i++) {
     FieldIndex index = FieldIndex::ForPropertyIndex(*new_map, i);
     Object value = inobject_props->get(isolate, i);
@@ -4108,7 +4135,8 @@ Maybe<bool> JSObject::PreventExtensionsWithTransition(
       ReadOnlyRoots roots(isolate);
       if (object->IsJSGlobalObject()) {
         Handle<GlobalDictionary> dictionary(
-            JSGlobalObject::cast(*object).global_dictionary(), isolate);
+            JSGlobalObject::cast(*object).global_dictionary(kAcquireLoad),
+            isolate);
         JSObject::ApplyAttributesToDictionary(isolate, roots, dictionary,
                                               attrs);
       } else if (V8_DICT_MODE_PROTOTYPES_BOOL) {
@@ -4369,8 +4397,9 @@ Object JSObject::SlowReverseLookup(Object value) {
     }
     return GetReadOnlyRoots().undefined_value();
   } else if (IsJSGlobalObject()) {
-    return JSGlobalObject::cast(*this).global_dictionary().SlowReverseLookup(
-        value);
+    return JSGlobalObject::cast(*this)
+        .global_dictionary(kAcquireLoad)
+        .SlowReverseLookup(value);
   } else if (V8_DICT_MODE_PROTOTYPES_BOOL) {
     return property_dictionary_ordered().SlowReverseLookup(GetIsolate(), value);
   } else {
@@ -4774,7 +4803,7 @@ static bool ShouldConvertToFastElements(JSObject object,
   } else {
     *new_capacity = dictionary.max_number_key() + 1;
   }
-  *new_capacity = Max(index + 1, *new_capacity);
+  *new_capacity = std::max(index + 1, *new_capacity);
 
   uint32_t dictionary_size = static_cast<uint32_t>(dictionary.Capacity()) *
                              NumberDictionary::kEntrySize;
@@ -5046,7 +5075,8 @@ void JSGlobalObject::InvalidatePropertyCell(Handle<JSGlobalObject> global,
   JSObject::InvalidatePrototypeValidityCell(*global);
 
   DCHECK(!global->HasFastProperties());
-  auto dictionary = handle(global->global_dictionary(), global->GetIsolate());
+  auto dictionary =
+      handle(global->global_dictionary(kAcquireLoad), global->GetIsolate());
   InternalIndex entry = dictionary->FindEntry(global->GetIsolate(), name);
   if (entry.is_not_found()) return;
   PropertyCell::InvalidateAndReplaceEntry(global->GetIsolate(), dictionary,

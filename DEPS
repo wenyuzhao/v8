@@ -10,7 +10,6 @@ gclient_gn_args = [
   # Remove when migration is complete.
   'checkout_fuchsia_for_arm64_host',
   'checkout_google_benchmark',
-  'mac_xcode_version',
 ]
 
 vars = {
@@ -47,13 +46,11 @@ vars = {
 
   'checkout_google_benchmark' : False,
 
-  'mac_xcode_version': 'default',
-
   # GN CIPD package version.
   'gn_version': 'git_revision:53d92014bf94c3893886470a1c7c1289f8818db0',
 
   # luci-go CIPD package version.
-  'luci_go': 'git_revision:576741d3eed0fa33971fb34cd823650e6f5b47fb',
+  'luci_go': 'git_revision:1a022d3a4c50be4207ee93451255d71896416596',
 
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling android_sdk_build-tools_version
@@ -91,11 +88,11 @@ vars = {
 
 deps = {
   'build':
-    Var('chromium_url') + '/chromium/src/build.git' + '@' + '6dd14a4537d657d9a7d24818d402cca050121765',
+    Var('chromium_url') + '/chromium/src/build.git' + '@' + 'ee1c0017e6bbd7cec3e6fe90b85f35bd9f4a6404',
   'third_party/depot_tools':
-    Var('chromium_url') + '/chromium/tools/depot_tools.git' + '@' + 'b674f8a27725216bd2201652636649d83064ca4a',
+    Var('chromium_url') + '/chromium/tools/depot_tools.git' + '@' + '2f8e0fa49d955d9c8f5addaf8ff1b88def004e2e',
   'third_party/icu':
-    Var('chromium_url') + '/chromium/deps/icu.git' + '@' + 'c2a4cae149aae7fd30c4cbe3cf1b30df03b386f1',
+    Var('chromium_url') + '/chromium/deps/icu.git' + '@' + '7db579a73addda0edb2bb83465ae51bcdc601af7',
   'third_party/instrumented_libraries':
     Var('chromium_url') + '/chromium/src/third_party/instrumented_libraries.git' + '@' + '6ba978ccb754d270b6cd12da58c8269b617e4f6e',
   'buildtools':
@@ -187,7 +184,7 @@ deps = {
       'dep_type': 'cipd',
   },
   'third_party/catapult': {
-    'url': Var('chromium_url') + '/catapult.git' + '@' + '434681c2378b686117c2b003a58c54d78f22185f',
+    'url': Var('chromium_url') + '/catapult.git' + '@' + '2ed6fc040fdce14fa59d3ac4be168b05bcc6b179',
     'condition': 'checkout_android',
   },
   'third_party/colorama/src': {
@@ -215,7 +212,7 @@ deps = {
   'test/mozilla/data':
     Var('chromium_url') + '/v8/deps/third_party/mozilla-tests.git' + '@' + 'f6c578a10ea707b1a8ab0b88943fe5115ce2b9be',
   'test/test262/data':
-    Var('chromium_url') + '/external/github.com/tc39/test262.git' + '@' + '0e7319c015fe935594f8bcafaedb0c94f7fec1df',
+    Var('chromium_url') + '/external/github.com/tc39/test262.git' + '@' + '36d2d2d348d83e9d6554af59a672fbcd9413914b',
   'test/test262/harness':
     Var('chromium_url') + '/external/github.com/test262-utils/test262-harness-py.git' + '@' + '4555345a943d0c99a9461182705543fb171dda4b',
   'third_party/qemu-linux-x64': {
@@ -242,7 +239,7 @@ deps = {
       'packages': [
           {
               'package': 'fuchsia/third_party/aemu/linux-amd64',
-              'version': 'a1yTNBS-h5GEUTwaKTzyZcC4sisB88wYX7_tvAkzSP0C'
+              'version': '4f-YWuHlGrqS9jy308GUs0eo8DxU3h6PwgpHfNYq290C'
           },
       ],
       'condition': 'host_os == "linux" and checkout_fuchsia',
@@ -259,7 +256,7 @@ deps = {
       'dep_type': 'cipd',
   },
   'tools/clang':
-    Var('chromium_url') + '/chromium/src/tools/clang.git' + '@' + '192a0edbbe6a10644dabf779d09d37b8673ed908',
+    Var('chromium_url') + '/chromium/src/tools/clang.git' + '@' + '41850cbe98f0a78e228b31506244cef91b76d10b',
   'tools/luci-go': {
       'packages': [
         {
@@ -490,8 +487,7 @@ hooks = [
     'name': 'mac_toolchain',
     'pattern': '.',
     'condition': 'checkout_mac',
-    'action': ['python', 'build/mac_toolchain.py',
-               '--xcode-version', Var('mac_xcode_version')],
+    'action': ['python', 'build/mac_toolchain.py'],
   },
   # Pull binutils for linux, enabled debug fission for faster linking /
   # debugging when used with clang on Ubuntu Precise.

@@ -685,6 +685,9 @@ class ManualGCScope {
 // of construction.
 class TestPlatform : public v8::Platform {
  public:
+  TestPlatform(const TestPlatform&) = delete;
+  TestPlatform& operator=(const TestPlatform&) = delete;
+
   // v8::Platform implementation.
   v8::PageAllocator* GetPageAllocator() override {
     return old_platform_->GetPageAllocator();
@@ -746,8 +749,6 @@ class TestPlatform : public v8::Platform {
 
  private:
   v8::Platform* old_platform_;
-
-  DISALLOW_COPY_AND_ASSIGN(TestPlatform);
 };
 
 #if defined(USE_SIMULATOR)
@@ -810,5 +811,27 @@ class SimulatorHelper {
   v8::internal::Simulator* simulator_;
 };
 #endif  // USE_SIMULATOR
+
+// The following should correspond to Chromium's kV8DOMWrapperTypeIndex and
+// kV8DOMWrapperObjectIndex.
+static const int kV8WrapperTypeIndex = 0;
+static const int kV8WrapperObjectIndex = 1;
+
+enum class ApiCheckerResult : uint8_t {
+  kNotCalled = 0,
+  kSlowCalled = 1 << 0,
+  kFastCalled = 1 << 1,
+};
+using ApiCheckerResultFlags = v8::base::Flags<ApiCheckerResult>;
+DEFINE_OPERATORS_FOR_FLAGS(ApiCheckerResultFlags)
+
+bool IsValidUnwrapObject(v8::Object* object);
+
+template <typename T, int offset>
+T* GetInternalField(v8::Object* wrapper) {
+  assert(offset < wrapper->InternalFieldCount());
+  return reinterpret_cast<T*>(
+      wrapper->GetAlignedPointerFromInternalField(offset));
+}
 
 #endif  // ifndef CCTEST_H_

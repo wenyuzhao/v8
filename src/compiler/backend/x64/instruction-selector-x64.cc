@@ -7,6 +7,7 @@
 #include "src/base/iterator.h"
 #include "src/base/logging.h"
 #include "src/base/overflowing-math.h"
+#include "src/base/platform/wrappers.h"
 #include "src/codegen/machine-type.h"
 #include "src/compiler/backend/instruction-selector-impl.h"
 #include "src/compiler/machine-operator.h"
@@ -285,13 +286,13 @@ ArchOpcode GetLoadOpcode(LoadRepresentation load_rep) {
     case MachineRepresentation::kTagged:         // Fall through.
 #endif
     case MachineRepresentation::kWord64:
-      DCHECK(!load_rep.in_header());
       opcode = kX64Movq;
       break;
     case MachineRepresentation::kSimd128:  // Fall through.
       opcode = kX64Movdqu;
       break;
     case MachineRepresentation::kNone:
+    case MachineRepresentation::kMapWord:
       UNREACHABLE();
   }
   return opcode;
@@ -313,7 +314,6 @@ ArchOpcode GetStoreOpcode(StoreRepresentation store_rep) {
     case MachineRepresentation::kCompressedPointer:  // Fall through.
     case MachineRepresentation::kCompressed:
 #ifdef V8_COMPRESS_POINTERS
-      DCHECK(!store_rep.store_to_header());
       return kX64MovqCompressTagged;
 #else
       UNREACHABLE();
@@ -321,13 +321,13 @@ ArchOpcode GetStoreOpcode(StoreRepresentation store_rep) {
     case MachineRepresentation::kTaggedSigned:   // Fall through.
     case MachineRepresentation::kTaggedPointer:  // Fall through.
     case MachineRepresentation::kTagged:
-      DCHECK(!store_rep.store_to_header());
       return kX64MovqCompressTagged;
     case MachineRepresentation::kWord64:
       return kX64Movq;
     case MachineRepresentation::kSimd128:  // Fall through.
       return kX64Movdqu;
     case MachineRepresentation::kNone:
+    case MachineRepresentation::kMapWord:
       UNREACHABLE();
   }
   UNREACHABLE();
@@ -461,7 +461,7 @@ void InstructionSelector::VisitLoad(Node* node, Node* value,
 
 void InstructionSelector::VisitLoad(Node* node) {
   LoadRepresentation load_rep = LoadRepresentationOf(node->op());
-  DCHECK(!load_rep.in_header());
+  DCHECK(!load_rep.IsMapWord());
   VisitLoad(node, node, GetLoadOpcode(load_rep));
 }
 
@@ -476,6 +476,7 @@ void InstructionSelector::VisitStore(Node* node) {
   Node* value = node->InputAt(2);
 
   StoreRepresentation store_rep = StoreRepresentationOf(node->op());
+  DCHECK(!store_rep.store_to_header());
   WriteBarrierKind write_barrier_kind = store_rep.write_barrier_kind();
 
   if (FLAG_enable_unconditional_write_barriers &&
@@ -483,8 +484,7 @@ void InstructionSelector::VisitStore(Node* node) {
     write_barrier_kind = kFullWriteBarrier;
   }
 
-  if (write_barrier_kind != kNoWriteBarrier &&
-      V8_LIKELY(!FLAG_disable_write_barriers)) {
+  if (write_barrier_kind != kNoWriteBarrier && !FLAG_disable_write_barriers) {
     DCHECK(CanBeTaggedOrCompressedPointer(store_rep.representation()));
     AddressingMode addressing_mode;
     InstructionOperand inputs[] = {
@@ -494,7 +494,6 @@ void InstructionSelector::VisitStore(Node* node) {
     RecordWriteMode record_write_mode =
         WriteBarrierKindToRecordWriteMode(write_barrier_kind);
     InstructionOperand temps[] = {g.TempRegister(), g.TempRegister()};
-    DCHECK(!store_rep.store_to_header());
     InstructionCode code = kArchStoreWithWriteBarrier;
     code |= AddressingModeField::encode(addressing_mode);
     code |= MiscField::encode(static_cast<int>(record_write_mode));
@@ -2949,7 +2948,7 @@ void InstructionSelector::VisitS128Const(Node* node) {
   X64OperandGenerator g(this);
   static const int kUint32Immediates = kSimd128Size / sizeof(uint32_t);
   uint32_t val[kUint32Immediates];
-  memcpy(val, S128ImmediateParameterOf(node->op()).data(), kSimd128Size);
+  base::Memcpy(val, S128ImmediateParameterOf(node->op()).data(), kSimd128Size);
   // If all bytes are zeros or ones, avoid emitting code for generic constants
   bool all_zeros = !(val[0] || val[1] || val[2] || val[3]);
   bool all_ones = val[0] == UINT32_MAX && val[1] == UINT32_MAX &&

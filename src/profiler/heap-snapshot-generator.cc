@@ -1363,7 +1363,7 @@ void V8HeapExplorer::ExtractPropertyReferences(JSObject js_obj,
   } else if (js_obj.IsJSGlobalObject()) {
     // We assume that global objects can only have slow properties.
     GlobalDictionary dictionary =
-        JSGlobalObject::cast(js_obj).global_dictionary();
+        JSGlobalObject::cast(js_obj).global_dictionary(kAcquireLoad);
     ReadOnlyRoots roots(isolate);
     for (InternalIndex i : dictionary.IterateEntries()) {
       if (!dictionary.IsKey(roots, dictionary.KeyAt(i))) continue;
@@ -1372,6 +1372,17 @@ void V8HeapExplorer::ExtractPropertyReferences(JSObject js_obj,
       Object value = cell.value();
       PropertyDetails details = cell.property_details();
       SetDataOrAccessorPropertyReference(details.kind(), entry, name, value);
+    }
+  } else if (V8_DICT_MODE_PROTOTYPES_BOOL) {
+    OrderedNameDictionary dictionary = js_obj.property_dictionary_ordered();
+    ReadOnlyRoots roots(isolate);
+    for (InternalIndex i : dictionary.IterateEntries()) {
+      Object k = dictionary.KeyAt(i);
+      if (!dictionary.IsKey(roots, k)) continue;
+      Object value = dictionary.ValueAt(i);
+      PropertyDetails details = dictionary.DetailsAt(i);
+      SetDataOrAccessorPropertyReference(details.kind(), entry, Name::cast(k),
+                                         value);
     }
   } else {
     NameDictionary dictionary = js_obj.property_dictionary();

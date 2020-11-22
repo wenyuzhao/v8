@@ -1876,6 +1876,57 @@ WASM_SIMD_TEST(S128Not) {
                    [](int32_t x) { return ~x; });
 }
 
+#if V8_TARGET_ARCH_ARM64
+// TODO(v8:11086) Prototype i32x4.extadd_pairwise_i16x8_{s,u}
+template <typename Narrow, typename Wide>
+void RunExtAddPairwiseTest(TestExecutionTier execution_tier,
+                           LowerSimd lower_simd, WasmOpcode ext_add_pairwise,
+                           WasmOpcode splat) {
+  FLAG_SCOPE(wasm_simd_post_mvp);
+  constexpr int num_lanes = kSimd128Size / sizeof(Wide);
+  WasmRunner<int32_t, Narrow> r(execution_tier, lower_simd);
+  Wide* g = r.builder().template AddGlobal<Wide>(kWasmS128);
+
+  // TODO(v8:11086) We splat the same value, so pairwise adding ends up adding
+  // the same value to itself, consider a more complicated test, like having 2
+  // vectors, and shuffling them.
+  BUILD(r, WASM_GET_LOCAL(0), WASM_SIMD_OP(splat),
+        WASM_SIMD_OP(ext_add_pairwise), kExprGlobalSet, 0, WASM_ONE);
+
+  for (Narrow x : compiler::ValueHelper::GetVector<Narrow>()) {
+    r.Call(x);
+    Wide expected = AddLong<Wide>(x, x);
+    for (int i = 0; i < num_lanes; i++) {
+      CHECK_EQ(expected, ReadLittleEndianValue<Wide>(&g[i]));
+    }
+  }
+}
+
+WASM_SIMD_TEST_NO_LOWERING(I32x4ExtAddPairwiseI16x8S) {
+  RunExtAddPairwiseTest<int16_t, int32_t>(execution_tier, lower_simd,
+                                          kExprI32x4ExtAddPairwiseI16x8S,
+                                          kExprI16x8Splat);
+}
+
+WASM_SIMD_TEST_NO_LOWERING(I32x4ExtAddPairwiseI16x8U) {
+  RunExtAddPairwiseTest<uint16_t, uint32_t>(execution_tier, lower_simd,
+                                            kExprI32x4ExtAddPairwiseI16x8U,
+                                            kExprI16x8Splat);
+}
+
+WASM_SIMD_TEST_NO_LOWERING(I16x8ExtAddPairwiseI8x16S) {
+  RunExtAddPairwiseTest<int8_t, int16_t>(execution_tier, lower_simd,
+                                         kExprI16x8ExtAddPairwiseI8x16S,
+                                         kExprI8x16Splat);
+}
+
+WASM_SIMD_TEST_NO_LOWERING(I16x8ExtAddPairwiseI8x16U) {
+  RunExtAddPairwiseTest<uint8_t, uint16_t>(execution_tier, lower_simd,
+                                           kExprI16x8ExtAddPairwiseI8x16U,
+                                           kExprI8x16Splat);
+}
+#endif  // V8_TARGET_ARCH_ARM64
+
 void RunI32x4BinOpTest(TestExecutionTier execution_tier, LowerSimd lower_simd,
                        WasmOpcode opcode, Int32BinOp expected_op) {
   WasmRunner<int32_t, int32_t, int32_t> r(execution_tier, lower_simd);
@@ -2763,7 +2814,7 @@ WASM_SIMD_SELECT_TEST(8x16)
 // Test Select by making a mask where the 0th and 3rd lanes are non-zero and the
 // rest 0. The mask is not the result of a comparison op.
 #define WASM_SIMD_NON_CANONICAL_SELECT_TEST(format)                           \
-  WASM_SIMD_TEST_NO_LOWERING(S##format##NonCanonicalSelect) {                 \
+  WASM_SIMD_TEST(S##format##NonCanonicalSelect) {                             \
     WasmRunner<int32_t, int32_t, int32_t, int32_t> r(execution_tier,          \
                                                      lower_simd);             \
     byte val1 = 0;                                                            \
@@ -3528,6 +3579,33 @@ WASM_SIMD_TEST(SimdLoadStoreLoad) {
     r.builder().WriteMemory(&memory[1], expected);
     CHECK_EQ(expected, r.Call());
   }
+
+  {
+    // OOB tests for loads.
+    WasmRunner<int32_t, uint32_t> r(execution_tier, lower_simd);
+    r.builder().AddMemoryElems<int32_t>(kWasmPageSize / sizeof(int32_t));
+    BUILD(r, WASM_SIMD_I32x4_EXTRACT_LANE(
+                 0, WASM_SIMD_LOAD_MEM(WASM_GET_LOCAL(0))));
+
+    for (uint32_t offset = kWasmPageSize - (kSimd128Size - 1);
+         offset < kWasmPageSize; ++offset) {
+      CHECK_TRAP(r.Call(offset));
+    }
+  }
+
+  {
+    // OOB tests for stores.
+    WasmRunner<int32_t, uint32_t> r(execution_tier, lower_simd);
+    r.builder().AddMemoryElems<int32_t>(kWasmPageSize / sizeof(int32_t));
+    BUILD(r,
+          WASM_SIMD_STORE_MEM(WASM_GET_LOCAL(0), WASM_SIMD_LOAD_MEM(WASM_ZERO)),
+          WASM_ONE);
+
+    for (uint32_t offset = kWasmPageSize - (kSimd128Size - 1);
+         offset < kWasmPageSize; ++offset) {
+      CHECK_TRAP(r.Call(offset));
+    }
+  }
 }
 
 WASM_SIMD_TEST(SimdLoadStoreLoadMemargOffset) {
@@ -3550,6 +3628,32 @@ WASM_SIMD_TEST(SimdLoadStoreLoadMemargOffset) {
     // Index 1 of memory (int32_t) will be bytes 4 to 8.
     r.builder().WriteMemory(&memory[1], expected);
     CHECK_EQ(expected, r.Call());
+  }
+
+  {
+    // OOB tests for loads with offsets.
+    for (uint32_t offset = kWasmPageSize - (kSimd128Size - 1);
+         offset < kWasmPageSize; ++offset) {
+      WasmRunner<int32_t> r(execution_tier, lower_simd);
+      r.builder().AddMemoryElems<int32_t>(kWasmPageSize / sizeof(int32_t));
+      BUILD(r, WASM_SIMD_I32x4_EXTRACT_LANE(
+                   0, WASM_SIMD_LOAD_MEM_OFFSET(U32V_3(offset), WASM_ZERO)));
+      CHECK_TRAP(r.Call());
+    }
+  }
+
+  {
+    // OOB tests for stores with offsets
+    for (uint32_t offset = kWasmPageSize - (kSimd128Size - 1);
+         offset < kWasmPageSize; ++offset) {
+      WasmRunner<int32_t, uint32_t> r(execution_tier, lower_simd);
+      r.builder().AddMemoryElems<int32_t>(kWasmPageSize / sizeof(int32_t));
+      BUILD(r,
+            WASM_SIMD_STORE_MEM_OFFSET(U32V_3(offset), WASM_ZERO,
+                                       WASM_SIMD_LOAD_MEM(WASM_ZERO)),
+            WASM_ONE);
+      CHECK_TRAP(r.Call(offset));
+    }
   }
 }
 
@@ -3804,11 +3908,11 @@ void RunLoadZeroTest(TestExecutionTier execution_tier, LowerSimd lower_simd,
   }
 }
 
-WASM_SIMD_TEST_NO_LOWERING(S128Load32Zero) {
+WASM_SIMD_TEST(S128Load32Zero) {
   RunLoadZeroTest<int32_t>(execution_tier, lower_simd, kExprS128Load32Zero);
 }
 
-WASM_SIMD_TEST_NO_LOWERING(S128Load64Zero) {
+WASM_SIMD_TEST(S128Load64Zero) {
   RunLoadZeroTest<int64_t>(execution_tier, lower_simd, kExprS128Load64Zero);
 }
 

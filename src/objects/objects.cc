@@ -184,6 +184,20 @@ std::ostream& operator<<(std::ostream& os, InstanceType instance_type) {
   UNREACHABLE();
 }
 
+std::ostream& operator<<(std::ostream& os, PropertyCellType type) {
+  switch (type) {
+    case PropertyCellType::kUndefined:
+      return os << "Undefined";
+    case PropertyCellType::kConstant:
+      return os << "Constant";
+    case PropertyCellType::kConstantType:
+      return os << "ConstantType";
+    case PropertyCellType::kMutable:
+      return os << "Mutable";
+  }
+  UNREACHABLE();
+}
+
 Handle<FieldType> Object::OptimalType(Isolate* isolate,
                                       Representation representation) {
   if (representation.IsNone()) return FieldType::None(isolate);
@@ -2300,7 +2314,7 @@ int HeapObject::SizeFromMap(Map map) const {
         CoverageInfo::unchecked_cast(*this).slot_count());
   }
   if (instance_type == WASM_ARRAY_TYPE) {
-    return WasmArray::SizeFor(map, WasmArray::cast(*this).length());
+    return WasmArray::GcSafeSizeFor(map, WasmArray::cast(*this).length());
   }
   DCHECK_EQ(instance_type, EMBEDDER_DATA_ARRAY_TYPE);
   return EmbedderDataArray::SizeFor(
@@ -2418,7 +2432,7 @@ void HeapObject::RehashBasedOnMap(Isolate* isolate) {
     case INTERNALIZED_STRING_TYPE:
       // Rare case, rehash read-only space strings before they are sealed.
       DCHECK(ReadOnlyHeap::Contains(*this));
-      String::cast(*this).Hash();
+      String::cast(*this).EnsureHash();
       break;
     default:
       UNREACHABLE();
@@ -3966,7 +3980,7 @@ Handle<FixedArray> EnsureSpaceInFixedArray(Isolate* isolate,
   int capacity = array->length();
   if (capacity < length) {
     int new_capacity = length;
-    new_capacity = new_capacity + Max(new_capacity / 2, 2);
+    new_capacity = new_capacity + std::max(new_capacity / 2, 2);
     int grow_by = new_capacity - capacity;
     array = isolate->factory()->CopyFixedArrayAndGrow(array, grow_by);
   }
@@ -5172,39 +5186,6 @@ bool JSArray::WouldChangeReadOnlyLength(Handle<JSArray> array, uint32_t index) {
   return false;
 }
 
-// Certain compilers request function template instantiation when they
-// see the definition of the other template functions in the
-// class. This requires us to have the template functions put
-// together, so even though this function belongs in objects-debug.cc,
-// we keep it here instead to satisfy certain compilers.
-#ifdef OBJECT_PRINT
-template <typename Derived, typename Shape>
-void Dictionary<Derived, Shape>::Print(std::ostream& os) {
-  DisallowHeapAllocation no_gc;
-  IsolateRoot isolate = GetIsolateForPtrCompr(*this);
-  ReadOnlyRoots roots = this->GetReadOnlyRoots(isolate);
-  Derived dictionary = Derived::cast(*this);
-  for (InternalIndex i : dictionary.IterateEntries()) {
-    Object k = dictionary.KeyAt(isolate, i);
-    if (!dictionary.ToKey(roots, i, &k)) continue;
-    os << "\n   ";
-    if (k.IsString()) {
-      String::cast(k).PrintUC16(os);
-    } else {
-      os << Brief(k);
-    }
-    os << ": " << Brief(dictionary.ValueAt(i)) << " ";
-    dictionary.DetailsAt(i).PrintAsSlowTo(os);
-  }
-}
-template <typename Derived, typename Shape>
-void Dictionary<Derived, Shape>::Print() {
-  StdoutStream os;
-  Print(os);
-  os << std::endl;
-}
-#endif
-
 int FixedArrayBase::GetMaxLengthForNewSpaceAllocation(ElementsKind kind) {
   return ((kMaxRegularHeapObjectSize - FixedArrayBase::kHeaderSize) >>
           ElementsKindToShiftSize(kind));
@@ -6364,10 +6345,9 @@ Handle<JSArray> JSWeakCollection::GetEntries(Handle<JSWeakCollection> holder,
 }
 
 void PropertyCell::ClearAndInvalidate(ReadOnlyRoots roots) {
-  // Cell is officially mutable henceforth.
   DCHECK(!value().IsTheHole(roots));
   PropertyDetails details = property_details();
-  details = details.set_cell_type(PropertyCellType::kInvalidated);
+  details = details.set_cell_type(PropertyCellType::kConstant);
   set_value(roots.the_hole_value());
   set_property_details(details);
   dependent_code().DeoptimizeDependentCodeGroup(
@@ -6396,11 +6376,6 @@ Handle<PropertyCell> PropertyCell::InvalidateAndReplaceEntry(
   return new_cell;
 }
 
-PropertyCellConstantType PropertyCell::GetConstantType() {
-  if (value().IsSmi()) return PropertyCellConstantType::kSmi;
-  return PropertyCellConstantType::kStableMap;
-}
-
 static bool RemainsConstantType(Handle<PropertyCell> cell,
                                 Handle<Object> value) {
   // TODO(dcarney): double->smi and smi->double transition from kConstant
@@ -6415,10 +6390,10 @@ static bool RemainsConstantType(Handle<PropertyCell> cell,
 }
 
 // static
-PropertyCellType PropertyCell::TypeForUninitializedCell(Isolate* isolate,
-                                                        Handle<Object> value) {
-  if (value->IsUndefined(isolate)) return PropertyCellType::kUndefined;
-  return PropertyCellType::kConstant;
+PropertyCellType PropertyCell::InitialType(Isolate* isolate,
+                                           Handle<Object> value) {
+  return value->IsUndefined(isolate) ? PropertyCellType::kUndefined
+                                     : PropertyCellType::kConstant;
 }
 
 // static
@@ -6426,20 +6401,9 @@ PropertyCellType PropertyCell::UpdatedType(Isolate* isolate,
                                            Handle<PropertyCell> cell,
                                            Handle<Object> value,
                                            PropertyDetails details) {
-  PropertyCellType type = details.cell_type();
   DCHECK(!value->IsTheHole(isolate));
-  if (cell->value().IsTheHole(isolate)) {
-    switch (type) {
-      // Only allow a cell to transition once into constant state.
-      case PropertyCellType::kUninitialized:
-        return TypeForUninitializedCell(isolate, value);
-      case PropertyCellType::kInvalidated:
-        return PropertyCellType::kMutable;
-      default:
-        UNREACHABLE();
-    }
-  }
-  switch (type) {
+  DCHECK(!cell->value().IsTheHole(isolate));
+  switch (details.cell_type()) {
     case PropertyCellType::kUndefined:
       return PropertyCellType::kConstant;
     case PropertyCellType::kConstant:
@@ -6461,20 +6425,12 @@ Handle<PropertyCell> PropertyCell::PrepareForValue(
     Handle<Object> value, PropertyDetails details) {
   DCHECK(!value->IsTheHole(isolate));
   Handle<PropertyCell> cell(dictionary->CellAt(entry), isolate);
+  CHECK(!cell->value().IsTheHole(isolate));
   const PropertyDetails original_details = cell->property_details();
   // Data accesses could be cached in ics or optimized code.
   bool invalidate =
       original_details.kind() == kData && details.kind() == kAccessor;
-  int index;
-  PropertyCellType old_type = original_details.cell_type();
-  // Preserve the enumeration index unless the property was deleted or never
-  // initialized.
-  if (cell->value().IsTheHole(isolate)) {
-    index = GlobalDictionary::NextEnumerationIndex(isolate, dictionary);
-    dictionary->set_next_enumeration_index(index + 1);
-  } else {
-    index = original_details.dictionary_index();
-  }
+  int index = original_details.dictionary_index();
   DCHECK_LT(0, index);
   details = details.set_index(index);
 
@@ -6496,9 +6452,14 @@ Handle<PropertyCell> PropertyCell::PrepareForValue(
     cell->set_value(*value);
   }
 
-  // Deopt when transitioning from a constant type.
-  if (!invalidate && (old_type != new_type ||
-                      original_details.IsReadOnly() != details.IsReadOnly())) {
+  // Deopt when transitioning from a constant type or when making a writable
+  // property read-only. Making a read-only property writable again is not
+  // interesting because Turbofan does not currently rely on read-only unless
+  // the property is also configurable, in which case it will stay read-only
+  // forever.
+  if (!invalidate &&
+      (original_details.cell_type() != new_type ||
+       (!original_details.IsReadOnly() && details.IsReadOnly()))) {
     cell->dependent_code().DeoptimizeDependentCodeGroup(
         DependentCode::kPropertyCellChangedGroup);
   }

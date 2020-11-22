@@ -112,8 +112,9 @@ declare_args() {
   # Disable arguments adaptor frame (sets -dV8_NO_ARGUMENTS_ADAPTOR).
   v8_disable_arguments_adaptor =
       v8_current_cpu == "x86" || v8_current_cpu == "x64" ||
+      v8_current_cpu == "arm" || v8_current_cpu == "arm64" ||
       v8_current_cpu == "mipsel" || v8_current_cpu == "mips64el" ||
-      v8_current_cpu == "arm"
+      v8_current_cpu == "ppc64" || v8_current_cpu == "s390x"
 
   # Sets -dOBJECT_PRINT.
   v8_enable_object_print = ""
@@ -733,6 +734,7 @@ config("toolchain") {
       # TODO(v8:10026): Enable this in src/build.
       if (current_cpu == "arm64") {
         cflags += [ "-mbranch-protection=standard" ]
+        asmflags = [ "-mmark-bti-property" ]
       }
     }
   }
@@ -1145,6 +1147,7 @@ action("postmortem-metadata") {
 
 torque_files = [
   "src/builtins/aggregate-error.tq",
+  "src/builtins/array-at.tq",
   "src/builtins/array-copywithin.tq",
   "src/builtins/array-every.tq",
   "src/builtins/array-filter.tq",
@@ -1227,6 +1230,7 @@ torque_files = [
   "src/builtins/regexp-split.tq",
   "src/builtins/regexp-test.tq",
   "src/builtins/regexp.tq",
+  "src/builtins/string-at.tq",
   "src/builtins/string-endswith.tq",
   "src/builtins/string-html.tq",
   "src/builtins/string-iterator.tq",
@@ -1240,6 +1244,7 @@ torque_files = [
   "src/builtins/string-trim.tq",
   "src/builtins/symbol.tq",
   "src/builtins/torque-internal.tq",
+  "src/builtins/typed-array-at.tq",
   "src/builtins/typed-array-createtypedarray.tq",
   "src/builtins/typed-array-every.tq",
   "src/builtins/typed-array-entries.tq",
@@ -1995,6 +2000,12 @@ v8_header_set("v8_headers") {
   deps = [ ":v8_version" ]
 }
 
+v8_source_set("v8_wrappers") {
+  configs = [ ":internal_config" ]
+
+  sources = [ "src/base/platform/wrappers.h" ]
+}
+
 # This is split out to share basic headers with Torque.
 v8_header_set("v8_shared_internal_headers") {
   visibility = [ ":*" ]  # Only targets in this file can depend on this.
@@ -2722,6 +2733,7 @@ v8_source_set("v8_base_without_compiler") {
     "src/heap/paged-spaces.cc",
     "src/heap/paged-spaces.h",
     "src/heap/parallel-work-item.h",
+    "src/heap/parked-scope.h",
     "src/heap/read-only-heap-inl.h",
     "src/heap/read-only-heap.cc",
     "src/heap/read-only-heap.h",
@@ -3071,6 +3083,9 @@ v8_source_set("v8_base_without_compiler") {
     "src/objects/scope-info.h",
     "src/objects/script-inl.h",
     "src/objects/script.h",
+    "src/objects/serialized-feedback-inl.h",
+    "src/objects/serialized-feedback.cc",
+    "src/objects/serialized-feedback.h",
     "src/objects/shared-function-info-inl.h",
     "src/objects/shared-function-info.cc",
     "src/objects/shared-function-info.h",
@@ -3124,6 +3139,8 @@ v8_source_set("v8_base_without_compiler") {
     "src/parsing/expression-scope.h",
     "src/parsing/func-name-inferrer.cc",
     "src/parsing/func-name-inferrer.h",
+    "src/parsing/import-assertions.cc",
+    "src/parsing/import-assertions.h",
     "src/parsing/literal-buffer.cc",
     "src/parsing/literal-buffer.h",
     "src/parsing/parse-info.cc",
@@ -3821,7 +3838,8 @@ v8_source_set("v8_base_without_compiler") {
     ":cppgc_base_config",
   ]
 
-  defines = []
+  defines = [ "CPPGC_BUILD_IN_V8" ]
+
   deps = [
     ":cppgc_base",
     ":torque_generated_definitions",
@@ -3832,6 +3850,7 @@ v8_source_set("v8_base_without_compiler") {
     ":v8_shared_internal_headers",
     ":v8_tracing",
     ":v8_version",
+    ":v8_wrappers",
     "src/inspector:inspector",
   ]
 
@@ -3996,7 +4015,10 @@ v8_source_set("torque_base") {
 
   deps = [ ":v8_shared_internal_headers" ]
 
-  public_deps = [ ":v8_libbase" ]
+  public_deps = [
+    ":v8_libbase",
+    ":v8_wrappers",
+  ]
 
   # The use of exceptions for Torque in violation of the Chromium style-guide
   # is justified by the fact that it is only used from the non-essential
@@ -4119,8 +4141,6 @@ v8_component("v8_libbase") {
     "src/base/platform/semaphore.h",
     "src/base/platform/time.cc",
     "src/base/platform/time.h",
-    "src/base/platform/wrappers.h",
-    "src/base/platform/wrappers_std.cc",
     "src/base/region-allocator.cc",
     "src/base/region-allocator.h",
     "src/base/ring-buffer.h",
@@ -4145,7 +4165,7 @@ v8_component("v8_libbase") {
 
   deps = [ ":v8_headers" ]
 
-  public_deps = []
+  public_deps = [ ":v8_wrappers" ]
 
   data = []
 
@@ -4186,10 +4206,7 @@ v8_component("v8_libbase") {
       "src/base/platform/platform-aix.cc",
     ]
 
-    libs = [
-      "dl",
-      "rt",
-    ]
+    libs = [ "dl" ]
   } else if (is_android) {
     if (current_toolchain == host_toolchain) {
       libs = [
@@ -4218,6 +4235,7 @@ v8_component("v8_libbase") {
       "src/base/debug/stack_trace_fuchsia.cc",
       "src/base/platform/platform-fuchsia.cc",
     ]
+    deps += [ "//third_party/fuchsia-sdk/sdk/pkg/zx" ]
   } else if (is_mac || is_ios) {
     sources += [
       "src/base/debug/stack_trace_posix.cc",
@@ -4300,10 +4318,13 @@ v8_component("v8_libplatform") {
 
   public_configs = [ ":libplatform_config" ]
 
+  public_deps = []
+
   deps = [
     ":v8_headers",
     ":v8_libbase",
     ":v8_tracing",
+    ":v8_wrappers",
   ]
 
   if (v8_use_perfetto) {
@@ -4398,10 +4419,28 @@ v8_source_set("v8_cppgc_shared") {
   public_deps = [ ":v8_libbase" ]
 }
 
+# This is split out to be a non-code containing target that the Chromium browser
+# can depend upon to get basic cppgc types.
+v8_header_set("cppgc_headers") {
+  configs = [ ":internal_config" ]
+  public_configs = [ ":v8_header_features" ]
+
+  sources = [
+    "include/cppgc/garbage-collected.h",
+    "include/cppgc/member.h",
+    "include/cppgc/persistent.h",
+    "include/cppgc/type-traits.h",
+    "include/cppgc/visitor.h",
+  ]
+
+  public_deps = [ ":v8_headers" ]
+}
+
 v8_source_set("cppgc_base") {
   visibility = [ ":*" ]
 
   sources = [
+    "//base/trace_event/common/trace_event_common.h",
     "include/cppgc/allocation.h",
     "include/cppgc/common.h",
     "include/cppgc/custom-space.h",
@@ -4497,6 +4536,7 @@ v8_source_set("cppgc_base") {
     "src/heap/cppgc/sweeper.cc",
     "src/heap/cppgc/sweeper.h",
     "src/heap/cppgc/task-handle.h",
+    "src/heap/cppgc/trace-event.h",
     "src/heap/cppgc/trace-trait.cc",
     "src/heap/cppgc/virtual-memory.cc",
     "src/heap/cppgc/virtual-memory.h",
@@ -4634,6 +4674,7 @@ if (current_toolchain == v8_snapshot_toolchain) {
       ":v8_libplatform",
       ":v8_maybe_icu",
       ":v8_tracing",
+      ":v8_wrappers",
       "//build/win:default_exe_manifest",
     ]
   }
@@ -4778,7 +4819,10 @@ group("v8_python_base") {
 group("v8_clusterfuzz") {
   testonly = true
 
-  deps = [ ":d8" ]
+  deps = [
+    ":d8",
+    ":v8_simple_inspector_fuzzer",
+  ]
 
   if (v8_multi_arch_build) {
     deps += [
@@ -4974,6 +5018,7 @@ v8_executable("d8") {
     ":v8_libbase",
     ":v8_libplatform",
     ":v8_tracing",
+    ":v8_wrappers",
     "//build/win:default_exe_manifest",
   ]
 
@@ -5112,7 +5157,10 @@ v8_fuzzer("json_fuzzer") {
 v8_source_set("multi_return_fuzzer") {
   sources = [ "test/fuzzer/multi-return.cc" ]
 
-  deps = [ ":fuzzer_support" ]
+  deps = [
+    ":fuzzer_support",
+    ":v8_wrappers",
+  ]
 
   configs = [
     ":external_config",
@@ -5126,7 +5174,10 @@ v8_fuzzer("multi_return_fuzzer") {
 v8_source_set("parser_fuzzer") {
   sources = [ "test/fuzzer/parser.cc" ]
 
-  deps = [ ":fuzzer_support" ]
+  deps = [
+    ":fuzzer_support",
+    ":v8_wrappers",
+  ]
 
   configs = [
     ":external_config",
@@ -5143,7 +5194,10 @@ v8_source_set("regexp_builtins_fuzzer") {
     "test/fuzzer/regexp_builtins/mjsunit.js.h",
   ]
 
-  deps = [ ":fuzzer_support" ]
+  deps = [
+    ":fuzzer_support",
+    ":v8_wrappers",
+  ]
 
   configs = [
     ":external_config",
@@ -5157,7 +5211,10 @@ v8_fuzzer("regexp_builtins_fuzzer") {
 v8_source_set("regexp_fuzzer") {
   sources = [ "test/fuzzer/regexp.cc" ]
 
-  deps = [ ":fuzzer_support" ]
+  deps = [
+    ":fuzzer_support",
+    ":v8_wrappers",
+  ]
 
   configs = [
     ":external_config",
@@ -5196,6 +5253,7 @@ v8_source_set("wasm_fuzzer") {
   deps = [
     ":fuzzer_support",
     ":lib_wasm_fuzzer_common",
+    ":v8_wrappers",
     ":wasm_test_common",
   ]
 
@@ -5214,6 +5272,7 @@ v8_source_set("wasm_async_fuzzer") {
   deps = [
     ":fuzzer_support",
     ":lib_wasm_fuzzer_common",
+    ":v8_wrappers",
     ":wasm_test_common",
   ]
 
@@ -5235,6 +5294,7 @@ v8_source_set("wasm_code_fuzzer") {
   deps = [
     ":fuzzer_support",
     ":lib_wasm_fuzzer_common",
+    ":v8_wrappers",
     ":wasm_test_common",
   ]
 
@@ -5276,6 +5336,7 @@ v8_source_set("wasm_compile_fuzzer") {
   deps = [
     ":fuzzer_support",
     ":lib_wasm_fuzzer_common",
+    ":v8_wrappers",
     ":wasm_test_common",
   ]
 
@@ -5293,6 +5354,7 @@ v8_source_set("inspector_fuzzer") {
 
   deps = [
     ":fuzzer_support",
+    ":v8_wrappers",
     "test/inspector:inspector_test",
   ]
 

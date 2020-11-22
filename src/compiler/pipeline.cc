@@ -1723,6 +1723,10 @@ struct GenericLoweringPhase {
     JSGenericLowering generic_lowering(data->jsgraph(), &graph_reducer,
                                        data->broker());
     AddReducer(data, &graph_reducer, &generic_lowering);
+
+    // JSGEnericLowering accesses the heap due to ObjectRef's type checks.
+    UnparkedScopeIfNeeded scope(data->broker());
+
     graph_reducer.ReduceGraph();
   }
 };
@@ -3030,8 +3034,8 @@ MaybeHandle<Code> Pipeline::GenerateCodeForTesting(
   }
 
   {
-    LocalIsolate local_isolate(isolate, ThreadKind::kMain);
-    LocalIsolateScope local_isolate_scope(data.broker(), info, &local_isolate);
+    LocalIsolateScope local_isolate_scope(data.broker(), info,
+                                          isolate->main_thread_local_isolate());
     if (data.broker()->is_concurrent_inlining()) {
       if (!pipeline.CreateGraph()) return MaybeHandle<Code>();
     }

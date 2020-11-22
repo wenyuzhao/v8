@@ -359,15 +359,6 @@ void JSObject::RawFastPropertyAtPut(FieldIndex index, Object value,
   }
 }
 
-void JSObject::WriteFillerMapNoWritebarrier(FieldIndex index, MapWord value) {
-  if (index.is_inobject()) {
-    int offset = index.offset();
-    TaggedField<MapWord>::Release_Store(*this, offset, value);
-  } else {
-    property_array().set(index.outobject_array_index(), value);
-  }
-}
-
 void JSObject::RawFastPropertyAtPutNoWriteBarrier(FieldIndex index,
                                                   Object value) {
   if (index.is_inobject()) {
@@ -643,16 +634,9 @@ DEF_GETTER(JSObject, HasIndexedInterceptor, bool) {
   return map(isolate).has_indexed_interceptor();
 }
 
-DEF_GETTER(JSGlobalObject, global_dictionary, GlobalDictionary) {
-  DCHECK(!HasFastProperties(isolate));
-  DCHECK(IsJSGlobalObject(isolate));
-  return GlobalDictionary::cast(raw_properties_or_hash(isolate));
-}
-
-void JSGlobalObject::set_global_dictionary(GlobalDictionary dictionary) {
-  DCHECK(IsJSGlobalObject());
-  set_raw_properties_or_hash(dictionary);
-}
+RELEASE_ACQUIRE_ACCESSORS_CHECKED2(JSGlobalObject, global_dictionary,
+                                   GlobalDictionary, kPropertiesOrHashOffset,
+                                   !HasFastProperties(isolate), true)
 
 DEF_GETTER(JSObject, element_dictionary, NumberDictionary) {
   DCHECK(HasDictionaryElements(isolate) ||

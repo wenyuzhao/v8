@@ -9,6 +9,7 @@
 
 #include <cmath>
 
+#include "src/base/platform/wrappers.h"
 #include "src/common/assert-scope.h"
 #include "src/handles/handles.h"
 #include "src/heap/factory.h"
@@ -1347,7 +1348,8 @@ char* DoubleToRadixCString(double value, int radix) {
   DCHECK_LE(0, integer_cursor);
   // Allocate new string as return value.
   char* result = NewArray<char>(fraction_cursor - integer_cursor);
-  memcpy(result, buffer + integer_cursor, fraction_cursor - integer_cursor);
+  base::Memcpy(result, buffer + integer_cursor,
+               fraction_cursor - integer_cursor);
   return result;
 }
 
@@ -1365,6 +1367,21 @@ double StringToDouble(Isolate* isolate, Handle<String> string, int flags,
       return StringToDouble(flat.ToUC16Vector(), flags, empty_string_val);
     }
   }
+}
+
+base::Optional<double> TryStringToDouble(Handle<String> object,
+                                         int max_length_for_conversion) {
+  DisallowGarbageCollection no_gc;
+  int length = object->length();
+  if (length > max_length_for_conversion) {
+    return base::nullopt;
+  }
+
+  const int flags = ALLOW_HEX | ALLOW_OCTAL | ALLOW_BINARY;
+  auto buffer = std::make_unique<uc16[]>(max_length_for_conversion);
+  String::WriteToFlat(*object, buffer.get(), 0, length);
+  Vector<const uc16> v(buffer.get(), length);
+  return StringToDouble(v, flags);
 }
 
 bool IsSpecialIndex(String string) {

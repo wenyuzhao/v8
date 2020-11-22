@@ -10,6 +10,7 @@
 #include "src/builtins/accessors.h"
 #include "src/codegen/assembler-inl.h"
 #include "src/codegen/callable.h"
+#include "src/codegen/compilation-cache.h"
 #include "src/codegen/macro-assembler.h"
 #include "src/codegen/register-configuration.h"
 #include "src/common/assert-scope.h"
@@ -392,6 +393,7 @@ void Deoptimizer::DeoptimizeAll(Isolate* isolate) {
     MarkAllCodeForContext(native_context);
     OSROptimizedCodeCache::Clear(native_context);
     DeoptimizeMarkedCodeForContext(native_context);
+    isolate->compilation_cache()->ClearDeoptimizedCode();
     context = native_context.next_context_link();
   }
 }
@@ -452,6 +454,16 @@ void Deoptimizer::DeoptimizeFunction(JSFunction function, Code code) {
     // this call from here.
     OSROptimizedCodeCache::Compact(
         Handle<NativeContext>(function.context().native_context(), isolate));
+
+    // Remove deoptimized Code from the NCI cache - such objects currently
+    // cannot be reused.
+    // TODO(jgruber): Instead of removal (and possibly later re-insertion), we
+    // should learn from deopts. Potentially this already happens now;
+    // re-insertion will also insert updated (generalized) feedback. We should
+    // still take a closer look at this in the future though.
+    if (code.kind() == CodeKind::NATIVE_CONTEXT_INDEPENDENT) {
+      isolate->compilation_cache()->ClearDeoptimizedCode();
+    }
   }
 }
 
@@ -522,7 +534,6 @@ Deoptimizer::Deoptimizer(Isolate* isolate, JSFunction function,
 
   DCHECK(function.IsJSFunction());
 #ifdef DEBUG
-  DCHECK(AllowHeapAllocation::IsAllowed());
   DCHECK(AllowGarbageCollection::IsAllowed());
   disallow_garbage_collection_ = new DisallowGarbageCollection();
 #endif  // DEBUG
@@ -962,9 +973,22 @@ void Deoptimizer::DoComputeInterpretedFrame(TranslatedFrame* translated_frame,
       goto_catch_handler ? catch_handler_pc_offset_ : real_bytecode_offset;
 
   const int parameters_count = InternalFormalParameterCountWithReceiver(shared);
+
+#ifdef V8_NO_ARGUMENTS_ADAPTOR
+  // If this is the bottom most frame or the previous frame was the arguments
+  // adaptor fake frame, then we already have extra arguments in the stack
+  // (including any extra padding). Therefore we should not try to add any
+  // padding.
+  bool should_pad_arguments =
+      !is_bottommost && (translated_state_.frames()[frame_index - 1]).kind() !=
+                            TranslatedFrame::kArgumentsAdaptor;
+#else
+  bool should_pad_arguments = true;
+#endif
+
   const int locals_count = translated_frame->height();
-  InterpretedFrameInfo frame_info =
-      InterpretedFrameInfo::Precise(parameters_count, locals_count, is_topmost);
+  InterpretedFrameInfo frame_info = InterpretedFrameInfo::Precise(
+      parameters_count, locals_count, is_topmost, should_pad_arguments);
   const uint32_t output_frame_size = frame_info.frame_size_in_bytes();
 
   TranslatedFrame::iterator function_iterator = value_iterator++;
@@ -996,9 +1020,10 @@ void Deoptimizer::DoComputeInterpretedFrame(TranslatedFrame* translated_frame,
 
   // Compute the incoming parameter translation.
   ReadOnlyRoots roots(isolate());
-  if (ShouldPadArguments(parameters_count)) {
+  if (should_pad_arguments && ShouldPadArguments(parameters_count)) {
     frame_writer.PushRawObject(roots.the_hole_value(), "padding\n");
   }
+
   // Note: parameters_count includes the receiver.
   if (verbose_tracing_enabled() && is_bottommost &&
       actual_argument_count_ > parameters_count - 1) {
@@ -1008,7 +1033,7 @@ void Deoptimizer::DoComputeInterpretedFrame(TranslatedFrame* translated_frame,
   }
   frame_writer.PushStackJSArguments(value_iterator, parameters_count);
 
-  DCHECK_EQ(output_frame->GetLastArgumentSlotOffset(),
+  DCHECK_EQ(output_frame->GetLastArgumentSlotOffset(should_pad_arguments),
             frame_writer.top_offset());
   if (verbose_tracing_enabled()) {
     PrintF(trace_scope()->file(), "    -------------------------\n");
@@ -1250,9 +1275,13 @@ void Deoptimizer::DoComputeArgumentsAdaptorFrame(
       translated_frame->raw_shared_info().internal_formal_parameter_count();
   const int extra_argument_count =
       argument_count_without_receiver - formal_parameter_count;
-
+  // The number of pushed arguments is the maximum of the actual argument count
+  // and the formal parameter count + the receiver.
+  const bool should_pad_args = ShouldPadArguments(
+      std::max(argument_count_without_receiver, formal_parameter_count) + 1);
   const int output_frame_size =
-      std::max(0, extra_argument_count * kSystemPointerSize);
+      std::max(0, extra_argument_count * kSystemPointerSize) +
+      (should_pad_args ? kSystemPointerSize : 0);
   if (verbose_tracing_enabled()) {
     PrintF(trace_scope_->file(),
            "  translating arguments adaptor => variable_size=%d\n",
@@ -1272,14 +1301,14 @@ void Deoptimizer::DoComputeArgumentsAdaptorFrame(
   output_frame->SetFp(output_[frame_index - 1]->GetFp());
   output_[frame_index] = output_frame;
 
+  FrameWriter frame_writer(this, output_frame, verbose_trace_scope());
+
+  ReadOnlyRoots roots(isolate());
+  if (should_pad_args) {
+    frame_writer.PushRawObject(roots.the_hole_value(), "padding\n");
+  }
+
   if (extra_argument_count > 0) {
-    FrameWriter frame_writer(this, output_frame, verbose_trace_scope());
-
-    ReadOnlyRoots roots(isolate());
-    if (ShouldPadArguments(extra_argument_count)) {
-      frame_writer.PushRawObject(roots.the_hole_value(), "padding\n");
-    }
-
     // The receiver and arguments with index below the formal parameter
     // count are in the fake adaptor frame, because they are used to create the
     // arguments object. We should however not push them, since the interpreter
@@ -2015,7 +2044,9 @@ unsigned Deoptimizer::ComputeInputFrameSize() const {
 // static
 unsigned Deoptimizer::ComputeIncomingArgumentSize(SharedFunctionInfo shared) {
   int parameter_slots = InternalFormalParameterCountWithReceiver(shared);
+#ifndef V8_NO_ARGUMENTS_ADAPTOR
   if (ShouldPadArguments(parameter_slots)) parameter_slots++;
+#endif
   return parameter_slots * kSystemPointerSize;
 }
 

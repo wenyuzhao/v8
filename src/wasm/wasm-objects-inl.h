@@ -189,9 +189,9 @@ void WasmGlobalObject::SetF64(double value) {
 }
 
 void WasmGlobalObject::SetExternRef(Handle<Object> value) {
-  // We use this getter externref and exnref.
   DCHECK(type().is_reference_to(wasm::HeapType::kExtern) ||
-         type().is_reference_to(wasm::HeapType::kExn));
+         type().is_reference_to(wasm::HeapType::kExn) ||
+         type().is_reference_to(wasm::HeapType::kAny));
   tagged_buffer().set(offset(), *value);
 }
 
@@ -333,7 +333,7 @@ SMI_ACCESSORS(WasmExportedFunctionData, jump_table_offset,
               kJumpTableOffsetOffset)
 SMI_ACCESSORS(WasmExportedFunctionData, function_index, kFunctionIndexOffset)
 ACCESSORS(WasmExportedFunctionData, signature, Foreign, kSignatureOffset)
-SMI_ACCESSORS(WasmExportedFunctionData, call_count, kCallCountOffset)
+SMI_ACCESSORS(WasmExportedFunctionData, wrapper_budget, kWrapperBudgetOffset)
 ACCESSORS(WasmExportedFunctionData, c_wrapper_code, Object, kCWrapperCodeOffset)
 ACCESSORS(WasmExportedFunctionData, wasm_call_target, Object,
           kWasmCallTargetOffset)
@@ -443,6 +443,11 @@ wasm::ArrayType* WasmArray::type() const { return type(map()); }
 
 int WasmArray::SizeFor(Map map, int length) {
   int element_size = type(map)->element_type().element_size_bytes();
+  return kHeaderSize + RoundUp(element_size * length, kTaggedSize);
+}
+
+int WasmArray::GcSafeSizeFor(Map map, int length) {
+  int element_size = GcSafeType(map)->element_type().element_size_bytes();
   return kHeaderSize + RoundUp(element_size * length, kTaggedSize);
 }
 

@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "src/codegen/assembler-inl.h"
+#include "src/common/globals.h"
 #include "src/date/date.h"
 #include "src/diagnostics/disasm.h"
 #include "src/diagnostics/disassembler.h"
@@ -278,7 +279,7 @@ void HeapObject::VerifyHeapPointer(Isolate* isolate, Object p) {
 void Symbol::SymbolVerify(Isolate* isolate) {
   TorqueGeneratedClassVerifiers::SymbolVerify(*this, isolate);
   CHECK(HasHashCode());
-  CHECK_GT(Hash(), 0);
+  CHECK_GT(hash(), 0);
   CHECK(description().IsUndefined(isolate) || description().IsString());
   CHECK_IMPLIES(IsPrivateName(), IsPrivate());
   CHECK_IMPLIES(IsPrivateBrand(), IsPrivateName());
@@ -886,7 +887,8 @@ void JSGlobalProxy::JSGlobalProxyVerify(Isolate* isolate) {
 void JSGlobalObject::JSGlobalObjectVerify(Isolate* isolate) {
   CHECK(IsJSGlobalObject());
   // Do not check the dummy global object for the builtins.
-  if (global_dictionary().NumberOfElements() == 0 && elements().length() == 0) {
+  if (global_dictionary(kAcquireLoad).NumberOfElements() == 0 &&
+      elements().length() == 0) {
     return;
   }
   JSObjectVerify(isolate);
@@ -939,7 +941,13 @@ void Oddball::OddballVerify(Isolate* isolate) {
   }
 }
 
-USE_TORQUE_VERIFIER(PropertyCell)
+void PropertyCell::PropertyCellVerify(Isolate* isolate) {
+  // TODO(torque): replace with USE_TORQUE_VERIFIER(PropertyCell) once
+  // it supports UniqueName type.
+  TorqueGeneratedClassVerifiers::PropertyCellVerify(*this, isolate);
+
+  CHECK(name().IsUniqueName());
+}
 
 void CodeDataContainer::CodeDataContainerVerify(Isolate* isolate) {
   CHECK(IsCodeDataContainer());
@@ -1387,11 +1395,24 @@ void Module::ModuleVerify(Isolate* isolate) {
   CHECK_NE(hash(), 0);
 }
 
+void ModuleRequest::ModuleRequestVerify(Isolate* isolate) {
+  TorqueGeneratedClassVerifiers::ModuleRequestVerify(*this, isolate);
+  CHECK_EQ(0,
+           import_assertions().length() % ModuleRequest::kAssertionEntrySize);
+
+  for (int i = 0; i < import_assertions().length();
+       i += ModuleRequest::kAssertionEntrySize) {
+    CHECK(import_assertions().get(i).IsString());      // Assertion key
+    CHECK(import_assertions().get(i + 1).IsString());  // Assertion value
+    CHECK(import_assertions().get(i + 2).IsSmi());     // Assertion location
+  }
+}
+
 void SourceTextModule::SourceTextModuleVerify(Isolate* isolate) {
   TorqueGeneratedClassVerifiers::SourceTextModuleVerify(*this, isolate);
 
   if (status() == kErrored) {
-    CHECK(code().IsSourceTextModuleInfo());
+    CHECK(code().IsSharedFunctionInfo());
   } else if (status() == kEvaluating || status() == kEvaluated) {
     CHECK(code().IsJSGeneratorObject());
   } else {
@@ -1618,7 +1639,13 @@ void JSObject::IncrementSpillStatistics(Isolate* isolate,
     info->number_of_fast_used_fields_ += map().NextFreePropertyIndex();
     info->number_of_fast_unused_fields_ += map().UnusedPropertyFields();
   } else if (IsJSGlobalObject()) {
-    GlobalDictionary dict = JSGlobalObject::cast(*this).global_dictionary();
+    GlobalDictionary dict =
+        JSGlobalObject::cast(*this).global_dictionary(kAcquireLoad);
+    info->number_of_slow_used_properties_ += dict.NumberOfElements();
+    info->number_of_slow_unused_properties_ +=
+        dict.Capacity() - dict.NumberOfElements();
+  } else if (V8_DICT_MODE_PROTOTYPES_BOOL) {
+    OrderedNameDictionary dict = property_dictionary_ordered();
     info->number_of_slow_used_properties_ += dict.NumberOfElements();
     info->number_of_slow_unused_properties_ +=
         dict.Capacity() - dict.NumberOfElements();

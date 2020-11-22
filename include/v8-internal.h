@@ -214,8 +214,10 @@ class Internals {
       kNumIsolateDataSlots * kApiSystemPointerSize;
   static const int kIsolateFastCCallCallerPcOffset =
       kIsolateFastCCallCallerFpOffset + kApiSystemPointerSize;
-  static const int kIsolateStackGuardOffset =
+  static const int kIsolateFastApiCallTargetOffset =
       kIsolateFastCCallCallerPcOffset + kApiSystemPointerSize;
+  static const int kIsolateStackGuardOffset =
+      kIsolateFastApiCallTargetOffset + kApiSystemPointerSize;
   static const int kIsolateRootsOffset =
       kIsolateStackGuardOffset + 7 * kApiSystemPointerSize;
 
@@ -258,16 +260,19 @@ class Internals {
   // incremental GC once the external memory reaches this limit.
   static constexpr int kExternalAllocationSoftLimit = 64 * 1024 * 1024;
 
-  static const int kMapWordXorMask = 0b11;  // ensure two low-order bits are
-                                            // 0b10 (looks like a smi)
+  // XORing a (non-compressed) map with this mask ensures that the two
+  // low-order bits are 0b10. The 0 at the end makes this look like a Smi,
+  // although real Smis have all lower 32 bits unset. We only rely on these
+  // values passing as Smis in very few places.
+  static const int kMapWordXorMask = 0b11;
 
 #ifdef V8_MAP_PACKING
-  static const intptr_t kMapWordMetadataMask = ((intptr_t)0b11) << 48;
-  static const intptr_t kMapWordSignature =
-      0x2;  // these bits will be set only on a map word
+  static const uintptr_t kMapWordMetadataMask = 0xffffULL << 48;
+  // The lowest two bits of mapwords are always `0b10`
+  static const uintptr_t kMapWordSignature = 0b10;
 #else
-  static const intptr_t kMapWordMetadataMask = 0;
-  static const intptr_t kMapWordSignature = 0;
+  static const uintptr_t kMapWordMetadataMask = 0;
+  static const uintptr_t kMapWordSignature = 0;
 #endif
 
   V8_EXPORT static void CheckInitializedImpl(v8::Isolate* isolate);

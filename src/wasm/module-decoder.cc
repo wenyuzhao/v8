@@ -6,6 +6,7 @@
 
 #include "src/base/functional.h"
 #include "src/base/platform/platform.h"
+#include "src/base/platform/wrappers.h"
 #include "src/flags/flags.h"
 #include "src/init/v8.h"
 #include "src/logging/counters.h"
@@ -310,7 +311,7 @@ class ModuleDecoderImpl : public Decoder {
     size_t rv = 0;
     if (FILE* file = base::OS::FOpen(path.c_str(), "wb")) {
       rv = fwrite(module_bytes.begin(), module_bytes.length(), 1, file);
-      fclose(file);
+      base::Fclose(file);
     }
     if (rv != 1) {
       OFStream os(stderr);
@@ -1357,10 +1358,10 @@ class ModuleDecoderImpl : public Decoder {
       }
       case WasmInitExpr::kRefNullConst:
         return ValueType::Ref(expr.immediate().heap_type, kNullable);
-      case WasmInitExpr::kRttCanon:
-        // TODO(7748): If heaptype is "anyref" (not introduced yet),
-        // then this should be uint8_t{0}.
-        return ValueType::Rtt(expr.immediate().heap_type, uint8_t{1});
+      case WasmInitExpr::kRttCanon: {
+        uint8_t depth = expr.immediate().heap_type == HeapType::kAny ? 0 : 1;
+        return ValueType::Rtt(expr.immediate().heap_type, depth);
+      }
       case WasmInitExpr::kRttSub: {
         ValueType operand_type = TypeOf(*expr.operand());
         if (operand_type.is_rtt()) {
@@ -1848,7 +1849,6 @@ class ModuleDecoderImpl : public Decoder {
     ValueType result = value_type_reader::read_value_type<kFullValidation>(
         this, this->pc(), &type_length,
         origin_ == kWasmOrigin ? enabled_features_ : WasmFeatures::None());
-    if (result == kWasmBottom) error(pc_, "invalid value type");
     // We use capacity() over size() so this function works
     // mid-DecodeTypeSection.
     if (result.has_index() && result.ref_index() >= module_->types.capacity()) {

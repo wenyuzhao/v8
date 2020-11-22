@@ -830,7 +830,7 @@ void CommonCopyEnumKeysTo(Isolate* isolate, Handle<Dictionary> dictionary,
       continue;
     } else {
       if (Dictionary::kIsOrderedDictionaryType) {
-        storage->set(properties, dictionary->ValueAt(i));
+        storage->set(properties, dictionary->NameAt(i));
       } else {
         // If the dictionary does not store elements in enumeration order,
         // we need to sort it afterwards in CopyEnumKeysTo. To enable this we
@@ -1003,7 +1003,7 @@ Maybe<bool> KeyAccumulator::CollectOwnPropertyNames(Handle<JSReceiver> receiver,
     } else if (object->IsJSGlobalObject()) {
       enum_keys = GetOwnEnumPropertyDictionaryKeys(
           isolate_, mode_, this, object,
-          JSGlobalObject::cast(*object).global_dictionary());
+          JSGlobalObject::cast(*object).global_dictionary(kAcquireLoad));
     } else if (V8_DICT_MODE_PROTOTYPES_BOOL) {
       enum_keys = GetOwnEnumPropertyDictionaryKeys(
           isolate_, mode_, this, object, object->property_dictionary_ordered());
@@ -1040,7 +1040,8 @@ Maybe<bool> KeyAccumulator::CollectOwnPropertyNames(Handle<JSReceiver> receiver,
       }
     } else if (object->IsJSGlobalObject()) {
       RETURN_NOTHING_IF_NOT_SUCCESSFUL(CollectKeysFromDictionary(
-          handle(JSGlobalObject::cast(*object).global_dictionary(), isolate_),
+          handle(JSGlobalObject::cast(*object).global_dictionary(kAcquireLoad),
+                 isolate_),
           this));
     } else if (V8_DICT_MODE_PROTOTYPES_BOOL) {
       RETURN_NOTHING_IF_NOT_SUCCESSFUL(CollectKeysFromDictionary(
@@ -1064,7 +1065,8 @@ ExceptionStatus KeyAccumulator::CollectPrivateNames(Handle<JSReceiver> receiver,
     CollectOwnPropertyNamesInternal<false>(object, this, descs, 0, limit);
   } else if (object->IsJSGlobalObject()) {
     RETURN_FAILURE_IF_NOT_SUCCESSFUL(CollectKeysFromDictionary(
-        handle(JSGlobalObject::cast(*object).global_dictionary(), isolate_),
+        handle(JSGlobalObject::cast(*object).global_dictionary(kAcquireLoad),
+               isolate_),
         this));
   } else if (V8_DICT_MODE_PROTOTYPES_BOOL) {
     RETURN_FAILURE_IF_NOT_SUCCESSFUL(CollectKeysFromDictionary(
@@ -1150,7 +1152,7 @@ Handle<FixedArray> KeyAccumulator::GetOwnEnumPropertyKeys(
   } else if (object->IsJSGlobalObject()) {
     return GetOwnEnumPropertyDictionaryKeys(
         isolate, KeyCollectionMode::kOwnOnly, nullptr, object,
-        JSGlobalObject::cast(*object).global_dictionary());
+        JSGlobalObject::cast(*object).global_dictionary(kAcquireLoad));
   } else if (V8_DICT_MODE_PROTOTYPES_BOOL) {
     return GetOwnEnumPropertyDictionaryKeys(
         isolate, KeyCollectionMode::kOwnOnly, nullptr, object,
@@ -1249,7 +1251,7 @@ Maybe<bool> KeyAccumulator::CollectOwnJSProxyKeys(Handle<JSReceiver> receiver,
   int unchecked_result_keys_size = 0;
   for (int i = 0; i < trap_result->length(); ++i) {
     Handle<Name> key(Name::cast(trap_result->get(i)), isolate_);
-    auto entry = unchecked_result_keys.LookupOrInsert(key, key->Hash());
+    auto entry = unchecked_result_keys.LookupOrInsert(key, key->EnsureHash());
     if (entry->value != kPresent) {
       entry->value = kPresent;
       unchecked_result_keys_size++;
@@ -1311,7 +1313,7 @@ Maybe<bool> KeyAccumulator::CollectOwnJSProxyKeys(Handle<JSReceiver> receiver,
     Handle<Name> key(Name::cast(raw_key), isolate_);
     // 19a. If key is not an element of uncheckedResultKeys, throw a
     //      TypeError exception.
-    auto found = unchecked_result_keys.Lookup(key, key->Hash());
+    auto found = unchecked_result_keys.Lookup(key, key->hash());
     if (found == nullptr || found->value == kGone) {
       isolate_->Throw(*isolate_->factory()->NewTypeError(
           MessageTemplate::kProxyOwnKeysMissing, key));
@@ -1332,7 +1334,7 @@ Maybe<bool> KeyAccumulator::CollectOwnJSProxyKeys(Handle<JSReceiver> receiver,
     Handle<Name> key(Name::cast(raw_key), isolate_);
     // 21a. If key is not an element of uncheckedResultKeys, throw a
     //      TypeError exception.
-    auto found = unchecked_result_keys.Lookup(key, key->Hash());
+    auto found = unchecked_result_keys.Lookup(key, key->hash());
     if (found == nullptr || found->value == kGone) {
       isolate_->Throw(*isolate_->factory()->NewTypeError(
           MessageTemplate::kProxyOwnKeysMissing, key));

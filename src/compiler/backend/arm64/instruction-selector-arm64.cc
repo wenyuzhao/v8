@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "src/base/bits.h"
+#include "src/base/platform/wrappers.h"
 #include "src/codegen/assembler-inl.h"
 #include "src/compiler/backend/instruction-selector-impl.h"
 #include "src/compiler/node-matchers.h"
@@ -791,8 +792,7 @@ void InstructionSelector::VisitStore(Node* node) {
   }
 
   // TODO(arm64): I guess this could be done in a better way.
-  if (write_barrier_kind != kNoWriteBarrier &&
-      V8_LIKELY(!FLAG_disable_write_barriers)) {
+  if (write_barrier_kind != kNoWriteBarrier && !FLAG_disable_write_barriers) {
     DCHECK(CanBeTaggedOrCompressedPointer(rep));
     AddressingMode addressing_mode;
     InstructionOperand inputs[3];
@@ -1706,6 +1706,31 @@ void InstructionSelector::VisitI64x2ExtMulLowI32x4U(Node* node) {
 
 void InstructionSelector::VisitI64x2ExtMulHighI32x4U(Node* node) {
   VisitExtMul(this, kArm64Umull2, node, 64);
+}
+
+namespace {
+void VisitExtAddPairwise(InstructionSelector* selector, ArchOpcode opcode,
+                         Node* node, int dst_lane_size) {
+  InstructionCode code = opcode;
+  code |= MiscField::encode(dst_lane_size);
+  VisitRR(selector, code, node);
+}
+}  // namespace
+
+void InstructionSelector::VisitI32x4ExtAddPairwiseI16x8S(Node* node) {
+  VisitExtAddPairwise(this, kArm64Saddlp, node, 32);
+}
+
+void InstructionSelector::VisitI32x4ExtAddPairwiseI16x8U(Node* node) {
+  VisitExtAddPairwise(this, kArm64Uaddlp, node, 32);
+}
+
+void InstructionSelector::VisitI16x8ExtAddPairwiseI8x16S(Node* node) {
+  VisitExtAddPairwise(this, kArm64Saddlp, node, 16);
+}
+
+void InstructionSelector::VisitI16x8ExtAddPairwiseI8x16U(Node* node) {
+  VisitExtAddPairwise(this, kArm64Uaddlp, node, 16);
 }
 
 void InstructionSelector::VisitInt32MulHigh(Node* node) {
@@ -3408,7 +3433,7 @@ void InstructionSelector::VisitS128Const(Node* node) {
   static const int kUint32Immediates = 4;
   uint32_t val[kUint32Immediates];
   STATIC_ASSERT(sizeof(val) == kSimd128Size);
-  memcpy(val, S128ImmediateParameterOf(node->op()).data(), kSimd128Size);
+  base::Memcpy(val, S128ImmediateParameterOf(node->op()).data(), kSimd128Size);
   // If all bytes are zeros, avoid emitting code for generic constants
   bool all_zeros = !(val[0] || val[1] || val[2] || val[3]);
   InstructionOperand dst = g.DefineAsRegister(node);

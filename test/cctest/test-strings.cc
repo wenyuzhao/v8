@@ -222,6 +222,8 @@ static void InitializeBuildingBlocks(Handle<String>* building_blocks,
 class ConsStringStats {
  public:
   ConsStringStats() { Reset(); }
+  ConsStringStats(const ConsStringStats&) = delete;
+  ConsStringStats& operator=(const ConsStringStats&) = delete;
   void Reset();
   void VerifyEqual(const ConsStringStats& that) const;
   int leaves_;
@@ -231,7 +233,6 @@ class ConsStringStats {
   int right_traversals_;
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(ConsStringStats);
 };
 
 void ConsStringStats::Reset() {
@@ -254,6 +255,8 @@ class ConsStringGenerationData {
  public:
   static const int kNumberOfBuildingBlocks = 256;
   explicit ConsStringGenerationData(bool long_blocks);
+  ConsStringGenerationData(const ConsStringGenerationData&) = delete;
+  ConsStringGenerationData& operator=(const ConsStringGenerationData&) = delete;
   void Reset();
   inline Handle<String> block(int offset);
   inline Handle<String> block(uint32_t offset);
@@ -270,9 +273,6 @@ class ConsStringGenerationData {
   // Stats.
   ConsStringStats stats_;
   int early_terminations_;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(ConsStringGenerationData);
 };
 
 ConsStringGenerationData::ConsStringGenerationData(bool long_blocks) {
@@ -1829,14 +1829,14 @@ void TestString(i::Isolate* isolate, const IndexData& data) {
     size_t index;
     CHECK(s->AsIntegerIndex(&index));
     CHECK_EQ(data.integer_index, index);
-    s->Hash();
-    CHECK_EQ(0, s->hash_field() & String::kIsNotIntegerIndexMask);
+    s->EnsureHash();
+    CHECK_EQ(0, s->raw_hash_field() & String::kIsNotIntegerIndexMask);
     CHECK(s->HasHashCode());
   }
-  if (!s->HasHashCode()) s->Hash();
+  if (!s->HasHashCode()) s->EnsureHash();
   CHECK(s->HasHashCode());
   if (!data.is_integer_index) {
-    CHECK_NE(0, s->hash_field() & String::kIsNotIntegerIndexMask);
+    CHECK_NE(0, s->raw_hash_field() & String::kIsNotIntegerIndexMask);
   }
 }
 
@@ -1850,11 +1850,11 @@ TEST(HashArrayIndexStrings) {
 
   CHECK_EQ(StringHasher::MakeArrayIndexHash(0 /* value */, 1 /* length */) >>
                Name::kHashShift,
-           isolate->factory()->zero_string()->Hash());
+           isolate->factory()->zero_string()->hash());
 
   CHECK_EQ(StringHasher::MakeArrayIndexHash(1 /* value */, 1 /* length */) >>
                Name::kHashShift,
-           isolate->factory()->one_string()->Hash());
+           isolate->factory()->one_string()->hash());
 
   IndexData tests[] = {
     {"", false, 0, false, 0},

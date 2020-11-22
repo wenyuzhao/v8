@@ -32,15 +32,38 @@ namespace internal {
 class SharedStringAccessGuardIfNeeded {
  public:
   explicit SharedStringAccessGuardIfNeeded(String str) {
-    // If we can get the isolate from the String, it means it is not a read only
-    // string.
     Isolate* isolate;
-    if (GetIsolateFromHeapObject(str, &isolate) &&
-        ThreadId::Current() != isolate->thread_id())
-      mutex_guard.emplace(isolate->string_access());
+    if (IsNeeded(str, &isolate)) mutex_guard.emplace(isolate->string_access());
+  }
+
+  static SharedStringAccessGuardIfNeeded NotNeeded() {
+    return SharedStringAccessGuardIfNeeded();
+  }
+
+  static bool IsNeeded(String str, Isolate** out_isolate = nullptr) {
+    LocalHeap* local_heap = LocalHeap::Current();
+    // Don't acquire the lock for the main thread.
+    if (!local_heap || local_heap->is_main_thread()) return false;
+
+    Isolate* isolate;
+    if (!GetIsolateFromHeapObject(str, &isolate)) {
+      // If we can't get the isolate from the String, it must be read-only.
+      DCHECK(ReadOnlyHeap::Contains(str));
+      return false;
+    }
+    if (out_isolate) *out_isolate = isolate;
+    return true;
   }
 
  private:
+  // Default constructor and move constructor required for the NotNeeded()
+  // static constructor.
+  constexpr SharedStringAccessGuardIfNeeded() = default;
+  constexpr SharedStringAccessGuardIfNeeded(SharedStringAccessGuardIfNeeded&&)
+      V8_NOEXCEPT {
+    DCHECK(!mutex_guard.has_value());
+  }
+
   base::Optional<base::SharedMutexGuard<base::kShared>> mutex_guard;
 };
 
@@ -275,38 +298,39 @@ class SequentialStringKey final : public StringTableKey {
                                 chars.begin(), chars.length(), seed),
                             chars, convert) {}
 
-  SequentialStringKey(int hash, const Vector<const Char>& chars,
+  SequentialStringKey(int raw_hash_field, const Vector<const Char>& chars,
                       bool convert = false)
-      : StringTableKey(hash, chars.length()),
+      : StringTableKey(raw_hash_field, chars.length()),
         chars_(chars),
         convert_(convert) {}
 
   bool IsMatch(String s) override {
+    SharedStringAccessGuardIfNeeded access_guard(s);
     DisallowHeapAllocation no_gc;
     if (s.IsOneByteRepresentation()) {
-      const uint8_t* chars = s.GetChars<uint8_t>(no_gc);
+      const uint8_t* chars = s.GetChars<uint8_t>(no_gc, access_guard);
       return CompareChars(chars, chars_.begin(), chars_.length()) == 0;
     }
-    const uint16_t* chars = s.GetChars<uint16_t>(no_gc);
+    const uint16_t* chars = s.GetChars<uint16_t>(no_gc, access_guard);
     return CompareChars(chars, chars_.begin(), chars_.length()) == 0;
   }
 
   Handle<String> AsHandle(Isolate* isolate) {
     if (sizeof(Char) == 1) {
       return isolate->factory()->NewOneByteInternalizedString(
-          Vector<const uint8_t>::cast(chars_), hash_field());
+          Vector<const uint8_t>::cast(chars_), raw_hash_field());
     }
     return isolate->factory()->NewTwoByteInternalizedString(
-        Vector<const uint16_t>::cast(chars_), hash_field());
+        Vector<const uint16_t>::cast(chars_), raw_hash_field());
   }
 
   Handle<String> AsHandle(LocalIsolate* isolate) {
     if (sizeof(Char) == 1) {
       return isolate->factory()->NewOneByteInternalizedString(
-          Vector<const uint8_t>::cast(chars_), hash_field());
+          Vector<const uint8_t>::cast(chars_), raw_hash_field());
     }
     return isolate->factory()->NewTwoByteInternalizedString(
-        Vector<const uint16_t>::cast(chars_), hash_field());
+        Vector<const uint16_t>::cast(chars_), raw_hash_field());
   }
 
  private:
@@ -337,9 +361,9 @@ class SeqSubStringKey final : public StringTableKey {
         convert_(convert) {
     // We have to set the hash later.
     DisallowHeapAllocation no_gc;
-    uint32_t hash = StringHasher::HashSequentialString(
+    uint32_t raw_hash_field = StringHasher::HashSequentialString(
         string->GetChars(no_gc) + from, len, HashSeed(isolate));
-    set_hash_field(hash);
+    set_raw_hash_field(raw_hash_field);
 
     DCHECK_LE(0, length());
     DCHECK_LE(from_ + length(), string_->length());
@@ -366,15 +390,15 @@ class SeqSubStringKey final : public StringTableKey {
     if (sizeof(Char) == 1 || (sizeof(Char) == 2 && convert_)) {
       Handle<SeqOneByteString> result =
           isolate->factory()->AllocateRawOneByteInternalizedString(
-              length(), hash_field());
+              length(), raw_hash_field());
       DisallowHeapAllocation no_gc;
       CopyChars(result->GetChars(no_gc), string_->GetChars(no_gc) + from_,
                 length());
       return result;
     }
     Handle<SeqTwoByteString> result =
-        isolate->factory()->AllocateRawTwoByteInternalizedString(length(),
-                                                                 hash_field());
+        isolate->factory()->AllocateRawTwoByteInternalizedString(
+            length(), raw_hash_field());
     DisallowHeapAllocation no_gc;
     CopyChars(result->GetChars(no_gc), string_->GetChars(no_gc) + from_,
               length());
@@ -411,6 +435,16 @@ const Char* String::GetChars(const DisallowHeapAllocation& no_gc) {
   return StringShape(*this).IsExternal()
              ? CharTraits<Char>::ExternalString::cast(*this).GetChars()
              : CharTraits<Char>::String::cast(*this).GetChars(no_gc);
+}
+
+template <typename Char>
+const Char* String::GetChars(
+    const DisallowHeapAllocation& no_gc,
+    const SharedStringAccessGuardIfNeeded& access_guard) {
+  return StringShape(*this).IsExternal()
+             ? CharTraits<Char>::ExternalString::cast(*this).GetChars()
+             : CharTraits<Char>::String::cast(*this).GetChars(no_gc,
+                                                              access_guard);
 }
 
 Handle<String> String::Flatten(Isolate* isolate, Handle<String> string,
@@ -582,6 +616,15 @@ Address SeqOneByteString::GetCharsAddress() {
 
 uint8_t* SeqOneByteString::GetChars(const DisallowHeapAllocation& no_gc) {
   USE(no_gc);
+  DCHECK(!SharedStringAccessGuardIfNeeded::IsNeeded(*this));
+  return reinterpret_cast<uint8_t*>(GetCharsAddress());
+}
+
+uint8_t* SeqOneByteString::GetChars(
+    const DisallowHeapAllocation& no_gc,
+    const SharedStringAccessGuardIfNeeded& access_guard) {
+  USE(no_gc);
+  USE(access_guard);
   return reinterpret_cast<uint8_t*>(GetCharsAddress());
 }
 
@@ -591,6 +634,15 @@ Address SeqTwoByteString::GetCharsAddress() {
 
 uc16* SeqTwoByteString::GetChars(const DisallowHeapAllocation& no_gc) {
   USE(no_gc);
+  DCHECK(!SharedStringAccessGuardIfNeeded::IsNeeded(*this));
+  return reinterpret_cast<uc16*>(GetCharsAddress());
+}
+
+uc16* SeqTwoByteString::GetChars(
+    const DisallowHeapAllocation& no_gc,
+    const SharedStringAccessGuardIfNeeded& access_guard) {
+  USE(no_gc);
+  USE(access_guard);
   return reinterpret_cast<uc16*>(GetCharsAddress());
 }
 
@@ -834,7 +886,7 @@ void StringCharacterStream::VisitTwoByteString(const uint16_t* chars,
 
 bool String::AsArrayIndex(uint32_t* index) {
   DisallowHeapAllocation no_gc;
-  uint32_t field = hash_field();
+  uint32_t field = raw_hash_field();
   if (ContainsCachedArrayIndex(field)) {
     *index = ArrayIndexValueBits::decode(field);
     return true;
@@ -846,7 +898,7 @@ bool String::AsArrayIndex(uint32_t* index) {
 }
 
 bool String::AsIntegerIndex(size_t* index) {
-  uint32_t field = hash_field();
+  uint32_t field = raw_hash_field();
   if (ContainsCachedArrayIndex(field)) {
     *index = ArrayIndexValueBits::decode(field);
     return true;

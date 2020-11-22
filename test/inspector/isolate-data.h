@@ -32,9 +32,18 @@ class IsolateData : public v8_inspector::V8InspectorClient {
   };
   using SetupGlobalTasks = std::vector<std::unique_ptr<SetupGlobalTask>>;
 
+  IsolateData(const IsolateData&) = delete;
+  IsolateData& operator=(const IsolateData&) = delete;
   IsolateData(TaskRunner* task_runner, SetupGlobalTasks setup_global_tasks,
               v8::StartupData* startup_data, WithInspector with_inspector);
   static IsolateData* FromContext(v8::Local<v8::Context> context);
+
+  ~IsolateData() override {
+    // Enter the isolate before destructing this IsolateData, so that
+    // destructors that run before the Isolate's destructor still see it as
+    // entered.
+    isolate()->Enter();
+  }
 
   v8::Isolate* isolate() const { return isolate_.get(); }
   TaskRunner* task_runner() const { return task_runner_; }
@@ -126,7 +135,11 @@ class IsolateData : public v8_inspector::V8InspectorClient {
   // call {Dispose}. We have to use the unique_ptr so that the isolate get
   // disposed in the right order, relative to other member variables.
   struct IsolateDeleter {
-    void operator()(v8::Isolate* isolate) const { isolate->Dispose(); }
+    void operator()(v8::Isolate* isolate) const {
+      // Exit the isolate after it was entered by ~IsolateData.
+      isolate->Exit();
+      isolate->Dispose();
+    }
   };
 
   TaskRunner* task_runner_;
@@ -148,8 +161,6 @@ class IsolateData : public v8_inspector::V8InspectorClient {
   v8::Global<v8::Private> not_inspectable_private_;
   v8::Global<v8::String> resource_name_prefix_;
   v8::Global<v8::String> additional_console_api_;
-
-  DISALLOW_COPY_AND_ASSIGN(IsolateData);
 };
 
 }  // namespace internal

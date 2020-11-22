@@ -129,6 +129,8 @@ class BreakLocation {
 class V8_EXPORT_PRIVATE BreakIterator {
  public:
   explicit BreakIterator(Handle<DebugInfo> debug_info);
+  BreakIterator(const BreakIterator&) = delete;
+  BreakIterator& operator=(const BreakIterator&) = delete;
 
   BreakLocation GetBreakLocation();
   bool Done() const { return source_position_iterator_.done(); }
@@ -160,8 +162,6 @@ class V8_EXPORT_PRIVATE BreakIterator {
   int statement_position_;
   SourcePositionTableIterator source_position_iterator_;
   DisallowHeapAllocation no_gc_;
-
-  DISALLOW_COPY_AND_ASSIGN(BreakIterator);
 };
 
 // Linked list holding debug info objects. The debug info objects are kept as
@@ -214,6 +214,9 @@ class DebugFeatureTracker {
 // DebugInfo.
 class V8_EXPORT_PRIVATE Debug {
  public:
+  Debug(const Debug&) = delete;
+  Debug& operator=(const Debug&) = delete;
+
   // Debug event triggers.
   void OnDebugBreak(Handle<FixedArray> break_points_hit, StepAction stepAction);
 
@@ -392,6 +395,8 @@ class V8_EXPORT_PRIVATE Debug {
 
   void RemoveBreakInfoAndMaybeFree(Handle<DebugInfo> debug_info);
 
+  static char* Iterate(RootVisitor* v, char* thread_storage);
+
  private:
   explicit Debug(Isolate* isolate);
   ~Debug();
@@ -546,6 +551,8 @@ class V8_EXPORT_PRIVATE Debug {
     bool break_on_next_function_call_;
   };
 
+  static void Iterate(RootVisitor* v, ThreadLocal* thread_local_data);
+
   // Storage location for registers when handling debug break calls
   ThreadLocal thread_local_;
 
@@ -562,8 +569,6 @@ class V8_EXPORT_PRIVATE Debug {
 
   friend Handle<FixedArray> GetDebuggedFunctions();  // In test-debug.cc
   friend void CheckDebuggerUnloaded();               // In test-debug.cc
-
-  DISALLOW_COPY_AND_ASSIGN(Debug);
 };
 
 // This scope is used to load and enter the debug context and create a new
@@ -610,11 +615,12 @@ class DisableBreak {
   ~DisableBreak() {
     debug_->break_disabled_ = previous_break_disabled_;
   }
+  DisableBreak(const DisableBreak&) = delete;
+  DisableBreak& operator=(const DisableBreak&) = delete;
 
  private:
   Debug* debug_;
   bool previous_break_disabled_;
-  DISALLOW_COPY_AND_ASSIGN(DisableBreak);
 };
 
 class SuppressDebug {
@@ -624,11 +630,12 @@ class SuppressDebug {
     debug_->is_suppressed_ = true;
   }
   ~SuppressDebug() { debug_->is_suppressed_ = old_state_; }
+  SuppressDebug(const SuppressDebug&) = delete;
+  SuppressDebug& operator=(const SuppressDebug&) = delete;
 
  private:
   Debug* debug_;
   bool old_state_;
-  DISALLOW_COPY_AND_ASSIGN(SuppressDebug);
 };
 
 // Code generator routines.

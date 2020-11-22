@@ -60,7 +60,7 @@ ACCESSORS_CHECKED(Map, prototype_info, Object,
 // is explicitly allowlisted here. The former is never modified after the map
 // is setup but it's being read by concurrent marker when pointer compression
 // is enabled. The latter bit can be modified on a live objects.
-BIT_FIELD_ACCESSORS(Map, relaxed_bit_field, has_non_instance_prototype,
+BIT_FIELD_ACCESSORS(Map, bit_field, has_non_instance_prototype,
                     Map::Bits1::HasNonInstancePrototypeBit)
 BIT_FIELD_ACCESSORS(Map, bit_field, is_callable, Map::Bits1::IsCallableBit)
 BIT_FIELD_ACCESSORS(Map, bit_field, has_named_interceptor,
@@ -73,7 +73,7 @@ BIT_FIELD_ACCESSORS(Map, bit_field, is_access_check_needed,
                     Map::Bits1::IsAccessCheckNeededBit)
 BIT_FIELD_ACCESSORS(Map, bit_field, is_constructor,
                     Map::Bits1::IsConstructorBit)
-BIT_FIELD_ACCESSORS(Map, relaxed_bit_field, has_prototype_slot,
+BIT_FIELD_ACCESSORS(Map, bit_field, has_prototype_slot,
                     Map::Bits1::HasPrototypeSlotBit)
 
 // |bit_field2| fields.
@@ -172,7 +172,7 @@ bool Map::TooManyFastProperties(StoreOrigin store_origin) const {
   if (UnusedPropertyFields() != 0) return false;
   if (is_prototype_map()) return false;
   if (store_origin == StoreOrigin::kNamed) {
-    int limit = Max(kMaxFastProperties, GetInObjectProperties());
+    int limit = std::max({kMaxFastProperties, GetInObjectProperties()});
     FieldCounts counts = GetFieldCounts();
     // Only count mutable fields so that objects with large numbers of
     // constant functions do not go to dictionary mode. That would be bad
@@ -180,7 +180,7 @@ bool Map::TooManyFastProperties(StoreOrigin store_origin) const {
     int external = counts.mutable_count() - GetInObjectProperties();
     return external > limit || counts.GetTotal() > kMaxNumberOfDescriptors;
   } else {
-    int limit = Max(kFastPropertiesSoftLimit, GetInObjectProperties());
+    int limit = std::max({kFastPropertiesSoftLimit, GetInObjectProperties()});
     int external = NumberOfFields() - GetInObjectProperties();
     return external > limit;
   }
@@ -448,24 +448,20 @@ void Map::AccountAddedOutOfObjectPropertyField(int unused_in_property_array) {
   DCHECK_EQ(unused_in_property_array, UnusedPropertyFields());
 }
 
-byte Map::bit_field() const { return ReadField<byte>(kBitFieldOffset); }
+byte Map::bit_field() const {
+  return ACQUIRE_READ_BYTE_FIELD(*this, kBitFieldOffset);
+}
 
 void Map::set_bit_field(byte value) {
-  WriteField<byte>(kBitFieldOffset, value);
+  RELEASE_WRITE_BYTE_FIELD(*this, kBitFieldOffset, value);
 }
 
-byte Map::relaxed_bit_field() const {
-  return RELAXED_READ_BYTE_FIELD(*this, kBitFieldOffset);
+byte Map::bit_field2() const {
+  return ACQUIRE_READ_BYTE_FIELD(*this, kBitField2Offset);
 }
-
-void Map::set_relaxed_bit_field(byte value) {
-  RELAXED_WRITE_BYTE_FIELD(*this, kBitFieldOffset, value);
-}
-
-byte Map::bit_field2() const { return ReadField<byte>(kBitField2Offset); }
 
 void Map::set_bit_field2(byte value) {
-  WriteField<byte>(kBitField2Offset, value);
+  RELEASE_WRITE_BYTE_FIELD(*this, kBitField2Offset, value);
 }
 
 bool Map::is_abandoned_prototype_map() const {
@@ -565,11 +561,7 @@ bool Map::is_stable() const {
 bool Map::CanBeDeprecated() const {
   for (InternalIndex i : IterateOwnDescriptors()) {
     PropertyDetails details = instance_descriptors(kRelaxedLoad).GetDetails(i);
-    if (details.representation().IsNone()) return true;
-    if (details.representation().IsSmi()) return true;
-    if (details.representation().IsDouble() && FLAG_unbox_double_fields)
-      return true;
-    if (details.representation().IsHeapObject()) return true;
+    if (details.representation().MightCauseMapDeprecation()) return true;
     if (details.kind() == kData && details.location() == kDescriptor) {
       return true;
     }
@@ -670,11 +662,11 @@ void Map::InitializeDescriptors(Isolate* isolate, DescriptorArray descriptors,
 }
 
 void Map::set_bit_field3(uint32_t bits) {
-  RELAXED_WRITE_UINT32_FIELD(*this, kBitField3Offset, bits);
+  RELEASE_WRITE_UINT32_FIELD(*this, kBitField3Offset, bits);
 }
 
 uint32_t Map::bit_field3() const {
-  return RELAXED_READ_UINT32_FIELD(*this, kBitField3Offset);
+  return ACQUIRE_READ_UINT32_FIELD(*this, kBitField3Offset);
 }
 
 void Map::clear_padding() {
@@ -833,7 +825,7 @@ int Map::SlackForArraySize(int old_size, int size_limit) {
     DCHECK_LE(1, max_slack);
     return 1;
   }
-  return Min(max_slack, old_size / 4);
+  return std::min(max_slack, old_size / 4);
 }
 
 int Map::InstanceSizeFromSlack(int slack) const {

@@ -110,23 +110,17 @@ class StoreRepresentation final {
   StoreRepresentation(MachineRepresentation representation,
                       WriteBarrierKind write_barrier_kind)
       : representation_(representation),
-        write_barrier_kind_(write_barrier_kind) {
-    store_to_header_ = false;
-  }
-  StoreRepresentation(MachineRepresentation representation,
-                      WriteBarrierKind write_barrier_kind, bool store_to_header)
-      : representation_(representation),
-        write_barrier_kind_(write_barrier_kind),
-        store_to_header_(store_to_header) {}
+        write_barrier_kind_(write_barrier_kind) {}
 
   MachineRepresentation representation() const { return representation_; }
   WriteBarrierKind write_barrier_kind() const { return write_barrier_kind_; }
-  bool store_to_header() const { return store_to_header_; }
+  bool store_to_header() const {
+    return representation() == MachineRepresentation::kMapWord;
+  }
 
  private:
   MachineRepresentation representation_;
   WriteBarrierKind write_barrier_kind_;
-  bool store_to_header_;
 };
 
 V8_EXPORT_PRIVATE bool operator==(StoreRepresentation, StoreRepresentation);
@@ -726,6 +720,8 @@ class V8_EXPORT_PRIVATE MachineOperatorBuilder final
   const Operator* I32x4ExtMulLowI16x8U();
   const Operator* I32x4ExtMulHighI16x8U();
   const Operator* I32x4SignSelect();
+  const Operator* I32x4ExtAddPairwiseI16x8S();
+  const Operator* I32x4ExtAddPairwiseI16x8U();
 
   const Operator* I16x8Splat();
   const Operator* I16x8ExtractLaneU(int32_t);
@@ -769,6 +765,8 @@ class V8_EXPORT_PRIVATE MachineOperatorBuilder final
   const Operator* I16x8ExtMulLowI8x16U();
   const Operator* I16x8ExtMulHighI8x16U();
   const Operator* I16x8SignSelect();
+  const Operator* I16x8ExtAddPairwiseI8x16S();
+  const Operator* I16x8ExtAddPairwiseI8x16U();
 
   const Operator* I8x16Splat();
   const Operator* I8x16ExtractLaneU(int32_t);

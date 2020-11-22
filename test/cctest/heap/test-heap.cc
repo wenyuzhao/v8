@@ -47,6 +47,7 @@
 #include "src/heap/mark-compact.h"
 #include "src/heap/memory-chunk.h"
 #include "src/heap/memory-reducer.h"
+#include "src/heap/parked-scope.h"
 #include "src/heap/remembered-set-inl.h"
 #include "src/heap/safepoint.h"
 #include "src/ic/ic.h"
@@ -375,7 +376,7 @@ TEST(GarbageCollection) {
   {
     HandleScope inner_scope(isolate);
     // Allocate a function and keep it in global object's property.
-    Handle<JSFunction> function = factory->NewFunctionForTest(name);
+    Handle<JSFunction> function = factory->NewFunctionForTesting(name);
     Object::SetProperty(isolate, global, name, function).Check();
     // Allocate an object.  Unrooted after leaving the scope.
     Handle<JSObject> obj = factory->NewJSObject(function);
@@ -746,7 +747,7 @@ TEST(FunctionAllocation) {
 
   v8::HandleScope sc(CcTest::isolate());
   Handle<String> name = factory->InternalizeUtf8String("theFunction");
-  Handle<JSFunction> function = factory->NewFunctionForTest(name);
+  Handle<JSFunction> function = factory->NewFunctionForTesting(name);
 
   Handle<Smi> twenty_three(Smi::FromInt(23), isolate);
   Handle<Smi> twenty_four(Smi::FromInt(24), isolate);
@@ -849,7 +850,7 @@ TEST(JSObjectMaps) {
 
   v8::HandleScope sc(CcTest::isolate());
   Handle<String> name = factory->InternalizeUtf8String("theFunction");
-  Handle<JSFunction> function = factory->NewFunctionForTest(name);
+  Handle<JSFunction> function = factory->NewFunctionForTesting(name);
 
   Handle<String> prop_name = factory->InternalizeUtf8String("theSlot");
   Handle<JSObject> obj = factory->NewJSObject(function);
@@ -1011,15 +1012,14 @@ TEST(StringAllocation) {
     Handle<String> one_byte_sym =
         factory->InternalizeString(OneByteVector(one_byte, length));
     CHECK_EQ(length, one_byte_sym->length());
+    CHECK(one_byte_sym->HasHashCode());
     Handle<String> non_one_byte_str =
         factory->NewStringFromUtf8(Vector<const char>(non_one_byte, 3 * length))
             .ToHandleChecked();
-    non_one_byte_str->Hash();
     CHECK_EQ(length, non_one_byte_str->length());
     Handle<String> one_byte_str =
         factory->NewStringFromUtf8(Vector<const char>(one_byte, length))
             .ToHandleChecked();
-    one_byte_str->Hash();
     CHECK_EQ(length, one_byte_str->length());
     DeleteArray(non_one_byte);
     DeleteArray(one_byte);
@@ -1252,7 +1252,7 @@ UNINITIALIZED_TEST(Regress10843) {
 TEST(Regress10774) {
   i::FLAG_allow_natives_syntax = true;
   i::FLAG_turboprop = true;
-  i::FLAG_turboprop_dynamic_map_checks = true;
+  i::FLAG_turbo_dynamic_map_checks = true;
 #ifdef VERIFY_HEAP
   i::FLAG_verify_heap = true;
 #endif
@@ -7119,12 +7119,11 @@ TEST(GarbageCollectionWithLocalHeap) {
   ManualGCScope manual_gc_scope;
   CcTest::InitializeVM();
 
-  Heap* heap = CcTest::i_isolate()->heap();
+  LocalHeap* local_heap = CcTest::i_isolate()->main_thread_local_heap();
 
-  LocalHeap local_heap(heap, ThreadKind::kMain);
-  UnparkedScope unparked_scope(&local_heap);
   CcTest::CollectGarbage(OLD_SPACE);
-  { ParkedScope parked_scope(&local_heap); }
+
+  { ParkedScope parked_scope(local_heap); }
   CcTest::CollectGarbage(OLD_SPACE);
 }
 
@@ -7246,6 +7245,56 @@ UNINITIALIZED_HEAP_TEST(CodeLargeObjectSpace64k) {
   }
 
   isolate->Dispose();
+}
+
+TEST(IsPendingAllocationNewSpace) {
+  CcTest::InitializeVM();
+  Isolate* isolate = CcTest::i_isolate();
+  Heap* heap = isolate->heap();
+  Factory* factory = isolate->factory();
+  HandleScope handle_scope(isolate);
+  Handle<FixedArray> object = factory->NewFixedArray(5, AllocationType::kYoung);
+  CHECK(heap->IsPendingAllocation(*object));
+  heap->PublishPendingAllocations();
+  CHECK(!heap->IsPendingAllocation(*object));
+}
+
+TEST(IsPendingAllocationNewLOSpace) {
+  CcTest::InitializeVM();
+  Isolate* isolate = CcTest::i_isolate();
+  Heap* heap = isolate->heap();
+  Factory* factory = isolate->factory();
+  HandleScope handle_scope(isolate);
+  Handle<FixedArray> object = factory->NewFixedArray(
+      FixedArray::kMaxRegularLength + 1, AllocationType::kYoung);
+  CHECK(heap->IsPendingAllocation(*object));
+  heap->PublishPendingAllocations();
+  CHECK(!heap->IsPendingAllocation(*object));
+}
+
+TEST(IsPendingAllocationOldSpace) {
+  CcTest::InitializeVM();
+  Isolate* isolate = CcTest::i_isolate();
+  Heap* heap = isolate->heap();
+  Factory* factory = isolate->factory();
+  HandleScope handle_scope(isolate);
+  Handle<FixedArray> object = factory->NewFixedArray(5, AllocationType::kOld);
+  CHECK(heap->IsPendingAllocation(*object));
+  heap->PublishPendingAllocations();
+  CHECK(!heap->IsPendingAllocation(*object));
+}
+
+TEST(IsPendingAllocationLOSpace) {
+  CcTest::InitializeVM();
+  Isolate* isolate = CcTest::i_isolate();
+  Heap* heap = isolate->heap();
+  Factory* factory = isolate->factory();
+  HandleScope handle_scope(isolate);
+  Handle<FixedArray> object = factory->NewFixedArray(
+      FixedArray::kMaxRegularLength + 1, AllocationType::kOld);
+  CHECK(heap->IsPendingAllocation(*object));
+  heap->PublishPendingAllocations();
+  CHECK(!heap->IsPendingAllocation(*object));
 }
 
 TEST(Regress10900) {

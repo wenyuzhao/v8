@@ -294,14 +294,18 @@ Reduction MemoryLowering::ReduceLoadFromObject(Node* node) {
   DCHECK_EQ(IrOpcode::kLoadFromObject, node->opcode());
   ObjectAccess const& access = ObjectAccessOf(node->op());
 
-  MachineType m_type = access.machine_type;
-  if (m_type.in_header()) {
-    DCHECK(IsAnyTagged(m_type.representation()));
-    CHECK_EQ(m_type.semantic(), MachineSemantic::kAny);
+  MachineType machine_type = access.machine_type;
+
+  if (machine_type.IsMapWord()) {
+#ifdef V8_MAP_PACKING
+    CHECK_EQ(machine_type.semantic(), MachineSemantic::kAny);
     return UnpackMapWord(node);
+#else
+    machine_type = MachineType::TaggedPointer();
+#endif
   }
 
-  NodeProperties::ChangeOp(node, machine()->Load(m_type));
+  NodeProperties::ChangeOp(node, machine()->Load(machine_type));
   return Changed(node);
 }
 
@@ -311,7 +315,7 @@ Reduction MemoryLowering::ReduceLoadElement(Node* node) {
   Node* index = node->InputAt(1);
   node->ReplaceInput(1, ComputeIndex(access, index));
   MachineType type = access.machine_type;
-  DCHECK(!type.in_header());
+  DCHECK(!type.IsMapWord());
   if (NeedsPoisoning(access.load_sensitivity)) {
     NodeProperties::ChangeOp(node, machine()->PoisonedLoad(type));
   } else {
@@ -358,20 +362,18 @@ Node* MemoryLowering::DecodeExternalPointer(
 #endif  // V8_HEAP_SANDBOX
 }
 
+#ifdef V8_MAP_PACKING
 Reduction MemoryLowering::UnpackMapWord(Node* node) {
   Node* effect = NodeProperties::GetEffectInput(node);
   Node* control = NodeProperties::GetControlInput(node);
   __ InitializeEffectControl(effect, control);
 
-  NodeProperties::ChangeOp(node, machine()->Load(MachineType::TaggedPointer()));
+  NodeProperties::ChangeOp(node, machine()->Load(MachineType::Uint64()));
 
-#ifdef V8_MAP_PACKING
   node = __ AddNode(graph()->CloneNode(node));
   return Replace(__ UnpackMapWord(node));
-#else
-  return Changed(node);
-#endif
 }
+#endif
 
 Reduction MemoryLowering::ReduceLoadField(Node* node) {
   DCHECK_EQ(IrOpcode::kLoadField, node->opcode());
@@ -384,15 +386,23 @@ Reduction MemoryLowering::ReduceLoadField(Node* node) {
     // External pointer table indices are 32bit numbers
     type = MachineType::Uint32();
   }
+
+  if (type.IsMapWord()) {
+#ifdef V8_MAP_PACKING
+    return UnpackMapWord(node);
+#else
+    type = MachineType::TaggedPointer();
+#endif
+  }
+
   if (NeedsPoisoning(access.load_sensitivity)) {
     NodeProperties::ChangeOp(node, machine()->PoisonedLoad(type));
   } else {
     NodeProperties::ChangeOp(node, machine()->Load(type));
   }
-  if (type.in_header()) {
-    return UnpackMapWord(node);
-  } else if (V8_HEAP_SANDBOX_BOOL &&
-             access.type.Is(Type::SandboxedExternalPointer())) {
+
+  if (V8_HEAP_SANDBOX_BOOL &&
+      access.type.Is(Type::SandboxedExternalPointer())) {
 #ifdef V8_HEAP_SANDBOX
     ExternalPointerTag tag = access.external_pointer_tag;
 #else
@@ -417,13 +427,13 @@ Reduction MemoryLowering::ReduceStoreToObject(Node* node,
   Node* control = NodeProperties::GetControlInput(node);
   __ InitializeEffectControl(effect, control);
 
-  MachineType m_type = access.machine_type;
+  MachineType machine_type = access.machine_type;
   WriteBarrierKind write_barrier_kind = ComputeWriteBarrierKind(
       node, object, value, state, access.write_barrier_kind);
-  DCHECK(!m_type.in_header());
-  NodeProperties::ChangeOp(node, machine()->Store(StoreRepresentation(
-                                     m_type.representation(),
-                                     write_barrier_kind, m_type.in_header())));
+  DCHECK(!machine_type.IsMapWord());
+  NodeProperties::ChangeOp(
+      node, machine()->Store(StoreRepresentation(machine_type.representation(),
+                                                 write_barrier_kind)));
   return Changed(node);
 }
 
@@ -437,9 +447,9 @@ Reduction MemoryLowering::ReduceStoreElement(Node* node,
   node->ReplaceInput(1, ComputeIndex(access, index));
   WriteBarrierKind write_barrier_kind = ComputeWriteBarrierKind(
       node, object, value, state, access.write_barrier_kind);
-  NodeProperties::ChangeOp(node, machine()->Store(StoreRepresentation(
-                                     access.machine_type.representation(),
-                                     write_barrier_kind, false)));
+  NodeProperties::ChangeOp(
+      node, machine()->Store(StoreRepresentation(
+                access.machine_type.representation(), write_barrier_kind)));
   return Changed(node);
 }
 
@@ -451,7 +461,7 @@ Reduction MemoryLowering::ReduceStoreField(Node* node,
   DCHECK_IMPLIES(V8_HEAP_SANDBOX_BOOL,
                  !access.type.Is(Type::ExternalPointer()) &&
                      !access.type.Is(Type::SandboxedExternalPointer()));
-  MachineType m_type = access.machine_type;
+  MachineType machine_type = access.machine_type;
   Node* object = node->InputAt(0);
   Node* value = node->InputAt(1);
 
@@ -459,27 +469,21 @@ Reduction MemoryLowering::ReduceStoreField(Node* node,
   Node* control = NodeProperties::GetControlInput(node);
   __ InitializeEffectControl(effect, control);
 
-  DCHECK_IMPLIES(m_type.in_header(),
-                 access.offset == HeapObject::kMapOffset &&
-                     access.base_is_tagged != kUntaggedBase);
-  DCHECK_IMPLIES(m_type.in_header(),
-                 (access.write_barrier_kind == kMapWriteBarrier ||
-                  access.write_barrier_kind == kNoWriteBarrier ||
-                  access.write_barrier_kind == kAssertNoWriteBarrier));
   WriteBarrierKind write_barrier_kind = ComputeWriteBarrierKind(
       node, object, value, state, access.write_barrier_kind);
   Node* offset = __ IntPtrConstant(access.offset - access.tag());
   node->InsertInput(graph_zone(), 1, offset);
+
+  if (machine_type.IsMapWord()) {
+    machine_type = MachineType::TaggedPointer();
 #ifdef V8_MAP_PACKING
-  if (m_type.in_header()) {
-    m_type = MachineType::TaggedPointer();
     Node* mapword = __ PackMapWord(TNode<Map>::UncheckedCast(value));
     node->ReplaceInput(2, mapword);
-  }
 #endif
-  NodeProperties::ChangeOp(node, machine()->Store(StoreRepresentation(
-                                     m_type.representation(),
-                                     write_barrier_kind, m_type.in_header())));
+  }
+  NodeProperties::ChangeOp(
+      node, machine()->Store(StoreRepresentation(machine_type.representation(),
+                                                 write_barrier_kind)));
   return Changed(node);
 }
 
@@ -494,7 +498,7 @@ Reduction MemoryLowering::ReduceStore(Node* node,
   if (write_barrier_kind != representation.write_barrier_kind()) {
     NodeProperties::ChangeOp(
         node, machine()->Store(StoreRepresentation(
-                  representation.representation(), write_barrier_kind, false)));
+                  representation.representation(), write_barrier_kind)));
     return Changed(node);
   }
   return NoChange();

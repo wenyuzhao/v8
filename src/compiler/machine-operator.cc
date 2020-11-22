@@ -463,6 +463,8 @@ ShiftKind ShiftKindOf(Operator const* op) {
   V(I32x4ExtMulLowI16x8U, Operator::kCommutative, 2, 0, 1)                 \
   V(I32x4ExtMulHighI16x8U, Operator::kCommutative, 2, 0, 1)                \
   V(I32x4SignSelect, Operator::kNoProperties, 3, 0, 1)                     \
+  V(I32x4ExtAddPairwiseI16x8S, Operator::kNoProperties, 1, 0, 1)           \
+  V(I32x4ExtAddPairwiseI16x8U, Operator::kNoProperties, 1, 0, 1)           \
   V(I16x8Splat, Operator::kNoProperties, 1, 0, 1)                          \
   V(I16x8SConvertI8x16Low, Operator::kNoProperties, 1, 0, 1)               \
   V(I16x8SConvertI8x16High, Operator::kNoProperties, 1, 0, 1)              \
@@ -501,6 +503,8 @@ ShiftKind ShiftKindOf(Operator const* op) {
   V(I16x8ExtMulLowI8x16U, Operator::kCommutative, 2, 0, 1)                 \
   V(I16x8ExtMulHighI8x16U, Operator::kCommutative, 2, 0, 1)                \
   V(I16x8SignSelect, Operator::kNoProperties, 3, 0, 1)                     \
+  V(I16x8ExtAddPairwiseI8x16S, Operator::kNoProperties, 1, 0, 1)           \
+  V(I16x8ExtAddPairwiseI8x16U, Operator::kNoProperties, 1, 0, 1)           \
   V(I8x16Splat, Operator::kNoProperties, 1, 0, 1)                          \
   V(I8x16Neg, Operator::kNoProperties, 1, 0, 1)                            \
   V(I8x16Shl, Operator::kNoProperties, 2, 0, 1)                            \
@@ -607,6 +611,7 @@ ShiftKind ShiftKindOf(Operator const* op) {
   V(kWord16)                           \
   V(kWord32)                           \
   V(kWord64)                           \
+  V(kMapWord)                          \
   V(kTaggedSigned)                     \
   V(kTaggedPointer)                    \
   V(kTagged)                           \
@@ -776,24 +781,12 @@ const Operator* MachineOperatorBuilder::Word64Sar(ShiftKind kind) {
   }
 }
 
-template <MachineRepresentation rep, MachineSemantic sem, bool in_header>
+template <MachineRepresentation rep, MachineSemantic sem>
 struct LoadOperator : public Operator1<LoadRepresentation> {
   LoadOperator()
       : Operator1(IrOpcode::kLoad, Operator::kEliminatable, "Load", 2, 1, 1, 1,
-                  1, 0, LoadRepresentation(rep, sem, in_header)) {}
+                  1, 0, LoadRepresentation(rep, sem)) {}
 };
-
-template <MachineRepresentation rep, MachineSemantic sem>
-const Operator* GetCachedLoadOperator(bool in_header) {
-  STATIC_ASSERT(
-      (std::is_trivially_destructible<LoadOperator<rep, sem, true>>::value));
-  STATIC_ASSERT(
-      (std::is_trivially_destructible<LoadOperator<rep, sem, false>>::value));
-  static const LoadOperator<rep, sem, true> op_header;
-  static const LoadOperator<rep, sem, false> op_non_header;
-  return in_header ? (const Operator*)&op_header
-                   : (const Operator*)&op_non_header;
-}
 
 template <MachineRepresentation rep, MachineSemantic sem>
 struct PoisonedLoadOperator : public Operator1<LoadRepresentation> {
@@ -1170,11 +1163,12 @@ MACHINE_PURE_OP_LIST(PURE)
 #undef PURE
 
 const Operator* MachineOperatorBuilder::Load(LoadRepresentation rep) {
-#define LOAD(Type)                                                     \
-  if (rep == MachineType::Type()) {                                    \
-    return GetCachedLoadOperator<MachineType::Type().representation(), \
-                                 MachineType::Type().semantic()>(      \
-        rep == MachineType::MapInHeader());                            \
+  DCHECK(!rep.IsMapWord());
+#define LOAD(Type)                                         \
+  if (rep == MachineType::Type()) {                        \
+    return GetCachedOperator<                              \
+        LoadOperator<MachineType::Type().representation(), \
+                     MachineType::Type().semantic()>>();   \
   }
   MACHINE_TYPE_LIST(LOAD)
 #undef LOAD
@@ -1311,6 +1305,7 @@ const Operator* MachineOperatorBuilder::StackSlot(MachineRepresentation rep,
 }
 
 const Operator* MachineOperatorBuilder::Store(StoreRepresentation store_rep) {
+  DCHECK(!store_rep.store_to_header());
   switch (store_rep.representation()) {
 #define STORE(kRep)                                                           \
   case MachineRepresentation::kRep:                                           \
@@ -1680,13 +1675,13 @@ const Operator* MachineOperatorBuilder::Word64PoisonOnSpeculation() {
   return GetCachedOperator<Word64PoisonOnSpeculationOperator>();
 }
 
-#define EXTRACT_LANE_OP(Type, Sign, lane_count)                                \
-  const Operator* MachineOperatorBuilder::Type##ExtractLane##Sign(             \
-      int32_t lane_index) {                                                    \
-    DCHECK(0 <= lane_index && lane_index < lane_count);                        \
-    return zone_->New<Operator1<int32_t>>(                                     \
-        IrOpcode::k##Type##ExtractLane##Sign, Operator::kPure, "Extract lane", \
-        1, 0, 0, 1, 0, 0, lane_index);                                         \
+#define EXTRACT_LANE_OP(Type, Sign, lane_count)                      \
+  const Operator* MachineOperatorBuilder::Type##ExtractLane##Sign(   \
+      int32_t lane_index) {                                          \
+    DCHECK(0 <= lane_index && lane_index < lane_count);              \
+    return zone_->New<Operator1<int32_t>>(                           \
+        IrOpcode::k##Type##ExtractLane##Sign, Operator::kPure,       \
+        "" #Type "ExtractLane" #Sign, 1, 0, 0, 1, 0, 0, lane_index); \
   }
 EXTRACT_LANE_OP(F64x2, , 2)
 EXTRACT_LANE_OP(F32x4, , 4)

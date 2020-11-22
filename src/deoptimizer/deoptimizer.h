@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "src/base/macros.h"
+#include "src/base/platform/wrappers.h"
 #include "src/codegen/label.h"
 #include "src/codegen/register-arch.h"
 #include "src/codegen/source-position.h"
@@ -695,12 +696,14 @@ class FrameDescription {
   void* operator new(size_t size, uint32_t frame_size) {
     // Subtracts kSystemPointerSize, as the member frame_content_ already
     // supplies the first element of the area to store the frame.
-    return malloc(size + frame_size - kSystemPointerSize);
+    return base::Malloc(size + frame_size - kSystemPointerSize);
   }
 
-  void operator delete(void* pointer, uint32_t frame_size) { free(pointer); }
+  void operator delete(void* pointer, uint32_t frame_size) {
+    base::Free(pointer);
+  }
 
-  void operator delete(void* description) { free(description); }
+  void operator delete(void* description) { base::Free(description); }
 
   uint32_t GetFrameSize() const {
     USE(frame_content_);
@@ -712,15 +715,23 @@ class FrameDescription {
     return *GetFrameSlotPointer(offset);
   }
 
-  unsigned GetLastArgumentSlotOffset() {
+  unsigned GetLastArgumentSlotOffset(bool pad_arguments = true) {
     int parameter_slots = parameter_count();
-    if (ShouldPadArguments(parameter_slots)) parameter_slots++;
+    if (pad_arguments && ShouldPadArguments(parameter_slots)) parameter_slots++;
     return GetFrameSize() - parameter_slots * kSystemPointerSize;
   }
 
   Address GetFramePointerAddress() {
-    int fp_offset =
-        GetLastArgumentSlotOffset() - StandardFrameConstants::kCallerSPOffset;
+#ifdef V8_NO_ARGUMENTS_ADAPTOR
+    // We should not pad arguments in the bottom frame, since this
+    // already contain a padding if necessary and it might contain
+    // extra arguments (actual argument count > parameter count).
+    const bool pad_arguments_bottom_frame = false;
+#else
+    const bool pad_arguments_bottom_frame = true;
+#endif
+    int fp_offset = GetLastArgumentSlotOffset(pad_arguments_bottom_frame) -
+                    StandardFrameConstants::kCallerSPOffset;
     return reinterpret_cast<Address>(GetFrameSlotPointer(fp_offset));
   }
 

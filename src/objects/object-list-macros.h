@@ -98,7 +98,6 @@ class ZoneForwardList;
   V(CompilationCacheTable)                     \
   V(ConsString)                                \
   V(Constructor)                               \
-  V(Context)                                   \
   V(CoverageInfo)                              \
   V(ClosureFeedbackCellArray)                  \
   V(DataHandler)                               \
@@ -180,7 +179,6 @@ class ZoneForwardList;
   V(NumberWrapper)                             \
   V(ObjectHashSet)                             \
   V(ObjectHashTable)                           \
-  V(Oddball)                                   \
   V(OrderedHashMap)                            \
   V(OrderedHashSet)                            \
   V(OrderedNameDictionary)                     \
@@ -217,9 +215,6 @@ class ZoneForwardList;
   V(TemplateList)                              \
   V(ThinString)                                \
   V(TransitionArray)                           \
-  V(UncompiledData)                            \
-  V(UncompiledDataWithPreparseData)            \
-  V(UncompiledDataWithoutPreparseData)         \
   V(Undetectable)                              \
   V(UniqueName)                                \
   V(WasmArray)                                 \

@@ -91,10 +91,13 @@
   }                                                     \
   type holder::name(IsolateRoot isolate) const
 
-#define DECL_ACCESSORS(name, type)   \
-  DECL_GETTER(name, type)            \
+#define DECL_SETTER(name, type)      \
   inline void set_##name(type value, \
                          WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
+
+#define DECL_ACCESSORS(name, type) \
+  DECL_GETTER(name, type)          \
+  DECL_SETTER(name, type)
 
 #define DECL_ACCESSORS_LOAD_TAG(name, type, tag_type) \
   inline type name(tag_type tag) const;               \
@@ -484,8 +487,17 @@
   static_cast<uint32_t>(base::Relaxed_Load(  \
       reinterpret_cast<const base::Atomic32*>(FIELD_ADDR(p, offset))))
 
+#define ACQUIRE_READ_UINT32_FIELD(p, offset) \
+  static_cast<uint32_t>(base::Acquire_Load(  \
+      reinterpret_cast<const base::Atomic32*>(FIELD_ADDR(p, offset))))
+
 #define RELAXED_WRITE_UINT32_FIELD(p, offset, value)            \
   base::Relaxed_Store(                                          \
+      reinterpret_cast<base::Atomic32*>(FIELD_ADDR(p, offset)), \
+      static_cast<base::Atomic32>(value));
+
+#define RELEASE_WRITE_UINT32_FIELD(p, offset, value)            \
+  base::Release_Store(                                          \
       reinterpret_cast<base::Atomic32*>(FIELD_ADDR(p, offset)), \
       static_cast<base::Atomic32>(value));
 
@@ -507,8 +519,16 @@
   static_cast<byte>(base::Relaxed_Load(    \
       reinterpret_cast<const base::Atomic8*>(FIELD_ADDR(p, offset))))
 
+#define ACQUIRE_READ_BYTE_FIELD(p, offset) \
+  static_cast<byte>(base::Acquire_Load(    \
+      reinterpret_cast<const base::Atomic8*>(FIELD_ADDR(p, offset))))
+
 #define RELAXED_WRITE_BYTE_FIELD(p, offset, value)                             \
   base::Relaxed_Store(reinterpret_cast<base::Atomic8*>(FIELD_ADDR(p, offset)), \
+                      static_cast<base::Atomic8>(value));
+
+#define RELEASE_WRITE_BYTE_FIELD(p, offset, value)                             \
+  base::Release_Store(reinterpret_cast<base::Atomic8*>(FIELD_ADDR(p, offset)), \
                       static_cast<base::Atomic8>(value));
 
 #ifdef OBJECT_PRINT

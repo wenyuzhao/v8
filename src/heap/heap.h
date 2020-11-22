@@ -68,6 +68,7 @@ class BasicMemoryChunk;
 class CodeLargeObjectSpace;
 class CollectionBarrier;
 class ConcurrentMarking;
+class CppHeap;
 class GCIdleTimeHandler;
 class GCIdleTimeHeapState;
 class GCTracer;
@@ -1134,6 +1135,15 @@ class Heap {
   EmbedderHeapTracer::TraceFlags flags_for_embedder_tracer() const;
 
   // ===========================================================================
+  // Unified heap (C++) support. ===============================================
+  // ===========================================================================
+
+  V8_EXPORT_PRIVATE void ConfigureCppHeap(
+      std::shared_ptr<CppHeapCreateParams> params);
+
+  v8::CppHeap* cpp_heap() const { return cpp_heap_.get(); }
+
+  // ===========================================================================
   // External string table API. ================================================
   // ===========================================================================
 
@@ -1446,6 +1456,16 @@ class Heap {
   // space.
   void RemoveAllocationObserversFromAllSpaces(
       AllocationObserver* observer, AllocationObserver* new_space_observer);
+
+  // Check if the given object was recently allocated and its fields may appear
+  // as uninitialized to background threads.
+  // This predicate may be invoked from a background thread.
+  inline bool IsPendingAllocation(HeapObject object);
+
+  // Notifies that all previously allocated objects are properly initialized
+  // and ensures that IsPendingAllocation returns false for them. This function
+  // may be invoked only on the main thread.
+  V8_EXPORT_PRIVATE void PublishPendingAllocations();
 
   // ===========================================================================
   // Heap object allocation tracking. ==========================================
@@ -2209,6 +2229,7 @@ class Heap {
   std::unique_ptr<AllocationObserver> stress_concurrent_allocation_observer_;
   std::unique_ptr<LocalEmbedderHeapTracer> local_embedder_heap_tracer_;
   std::unique_ptr<MarkingBarrier> marking_barrier_;
+  std::unique_ptr<v8::CppHeap> cpp_heap_;
 
   StrongRootsEntry* strong_roots_head_ = nullptr;
   base::Mutex strong_roots_mutex_;
