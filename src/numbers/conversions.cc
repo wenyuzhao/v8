@@ -229,12 +229,12 @@ class StringToIntHelper {
     if (raw_one_byte_subject_ != nullptr) {
       return Vector<const uint8_t>(raw_one_byte_subject_, length_);
     }
-    DisallowHeapAllocation no_gc;
+    DisallowGarbageCollection no_gc;
     return subject_->GetFlatContent(no_gc).ToOneByteVector();
   }
 
   Vector<const uc16> GetTwoByteVector() {
-    DisallowHeapAllocation no_gc;
+    DisallowGarbageCollection no_gc;
     return subject_->GetFlatContent(no_gc).ToUC16Vector();
   }
 
@@ -269,7 +269,7 @@ class StringToIntHelper {
 template <typename LocalIsolate>
 void StringToIntHelper<LocalIsolate>::ParseInt() {
   {
-    DisallowHeapAllocation no_gc;
+    DisallowGarbageCollection no_gc;
     if (IsOneByte()) {
       Vector<const uint8_t> vector = GetOneByteVector();
       DetectRadixInternal(vector.begin(), vector.length());
@@ -284,7 +284,7 @@ void StringToIntHelper<LocalIsolate>::ParseInt() {
   if (state_ != State::kRunning) return;
   do {
     {
-      DisallowHeapAllocation no_gc;
+      DisallowGarbageCollection no_gc;
       if (IsOneByte()) {
         Vector<const uint8_t> vector = GetOneByteVector();
         DCHECK_EQ(length_, vector.length());
@@ -498,7 +498,7 @@ class NumberParseIntHelper : public StringToIntHelper<Isolate> {
   void HandleSpecialCases() override {
     bool is_power_of_two = base::bits::IsPowerOfTwo(radix());
     if (!is_power_of_two && radix() != 10) return;
-    DisallowHeapAllocation no_gc;
+    DisallowGarbageCollection no_gc;
     if (IsOneByte()) {
       Vector<const uint8_t> vector = GetOneByteVector();
       DCHECK_EQ(length(), vector.length());
@@ -1243,7 +1243,7 @@ char* DoubleToPrecisionCString(double value, int p) {
       builder.AddString(decimal_rep);
       builder.AddPadding('0', p - decimal_rep_length);
     } else {
-      const int m = Min(decimal_rep_length, decimal_point);
+      const int m = std::min(decimal_rep_length, decimal_point);
       builder.AddSubstring(decimal_rep, m);
       builder.AddPadding('0', decimal_point - decimal_rep_length);
       if (decimal_point < p) {
@@ -1253,7 +1253,7 @@ char* DoubleToPrecisionCString(double value, int p) {
           const size_t len = strlen(decimal_rep + decimal_point);
           DCHECK_GE(kMaxInt, len);
           const int n =
-              Min(static_cast<int>(len), p - (builder.position() - extra));
+              std::min(static_cast<int>(len), p - (builder.position() - extra));
           builder.AddSubstring(decimal_rep + decimal_point, n);
         }
         builder.AddPadding('0', extra + (p - builder.position()));
@@ -1358,7 +1358,7 @@ double StringToDouble(Isolate* isolate, Handle<String> string, int flags,
                       double empty_string_val) {
   Handle<String> flattened = String::Flatten(isolate, string);
   {
-    DisallowHeapAllocation no_gc;
+    DisallowGarbageCollection no_gc;
     String::FlatContent flat = flattened->GetFlatContent(no_gc);
     DCHECK(flat.IsFlat());
     if (flat.IsOneByte()) {

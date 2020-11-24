@@ -1114,11 +1114,10 @@ void V8HeapExplorer::ExtractMapReferences(HeapEntry* entry, Map map) {
 
 void V8HeapExplorer::ExtractSharedFunctionInfoReferences(
     HeapEntry* entry, SharedFunctionInfo shared) {
-  String shared_name = shared.DebugName();
-  const char* name = nullptr;
-  if (shared_name != ReadOnlyRoots(heap_).empty_string()) {
-    name = names_->GetName(shared_name);
-    TagObject(shared.GetCode(), names_->GetFormatted("(code for %s)", name));
+  std::unique_ptr<char[]> name = shared.DebugNameCStr();
+  if (name[0] != '\0') {
+    TagObject(shared.GetCode(),
+              names_->GetFormatted("(code for %s)", name.get()));
   } else {
     TagObject(shared.GetCode(),
               names_->GetFormatted("(%s code)",
@@ -1449,7 +1448,7 @@ void V8HeapExplorer::ExtractInternalReferences(JSObject js_obj,
 
 JSFunction V8HeapExplorer::GetConstructor(JSReceiver receiver) {
   Isolate* isolate = receiver.GetIsolate();
-  DisallowHeapAllocation no_gc;
+  DisallowGarbageCollection no_gc;
   HandleScope scope(isolate);
   MaybeHandle<JSFunction> maybe_constructor =
       JSReceiver::GetConstructor(handle(receiver, isolate));
@@ -1462,7 +1461,7 @@ JSFunction V8HeapExplorer::GetConstructor(JSReceiver receiver) {
 String V8HeapExplorer::GetConstructorName(JSObject object) {
   Isolate* isolate = object.GetIsolate();
   if (object.IsJSFunction()) return ReadOnlyRoots(isolate).closure_string();
-  DisallowHeapAllocation no_gc;
+  DisallowGarbageCollection no_gc;
   HandleScope scope(isolate);
   return *JSReceiver::GetConstructorName(handle(object, isolate));
 }
@@ -2041,7 +2040,7 @@ bool NativeObjectsExplorer::IterateAndExtractReferences(
   if (FLAG_heap_profiler_use_embedder_graph &&
       snapshot_->profiler()->HasBuildEmbedderGraphCallback()) {
     v8::HandleScope scope(reinterpret_cast<v8::Isolate*>(isolate_));
-    DisallowHeapAllocation no_allocation;
+    DisallowGarbageCollection no_gc;
     EmbedderGraphImpl graph;
     snapshot_->profiler()->BuildEmbedderGraph(isolate_, &graph);
     for (const auto& node : graph.nodes()) {
@@ -2218,7 +2217,7 @@ class OutputStreamWriter {
     const char* s_end = s + n;
     while (s < s_end) {
       int s_chunk_size =
-          Min(chunk_size_ - chunk_pos_, static_cast<int>(s_end - s));
+          std::min(chunk_size_ - chunk_pos_, static_cast<int>(s_end - s));
       DCHECK_GT(s_chunk_size, 0);
       MemCopy(chunk_.begin() + chunk_pos_, s, s_chunk_size);
       s += s_chunk_size;

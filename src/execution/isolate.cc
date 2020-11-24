@@ -380,7 +380,7 @@ size_t Isolate::HashIsolateForEmbeddedBlob() {
   DCHECK(builtins_.is_initialized());
   DCHECK(Builtins::AllBuiltinsAreIsolateIndependent());
 
-  DisallowHeapAllocation no_gc;
+  DisallowGarbageCollection no_gc;
 
   static constexpr size_t kSeed = 0;
   size_t hash = kSeed;
@@ -638,7 +638,7 @@ class FrameArrayBuilder {
         break;
     }
 
-    elements_ = isolate->factory()->NewFrameArray(Min(limit, 10));
+    elements_ = isolate->factory()->NewFrameArray(std::min(limit, 10));
   }
 
   void AppendAsyncFrame(Handle<JSGeneratorObject> generator_object) {
@@ -880,7 +880,7 @@ bool GetStackTraceLimit(Isolate* isolate, int* result) {
   if (!stack_trace_limit->IsNumber()) return false;
 
   // Ensure that limit is not negative.
-  *result = Max(FastD2IChecked(stack_trace_limit->Number()), 0);
+  *result = std::max(FastD2IChecked(stack_trace_limit->Number()), 0);
 
   if (*result != FLAG_stack_trace_limit) {
     isolate->CountUsage(v8::Isolate::kErrorStackTraceLimit);
@@ -1261,7 +1261,7 @@ Address Isolate::GetAbstractPC(int* line, int* column) {
 Handle<FixedArray> Isolate::CaptureCurrentStackTrace(
     int frame_limit, StackTrace::StackTraceOptions stack_trace_options) {
   CaptureStackTraceOptions options;
-  options.limit = Max(frame_limit, 0);  // Ensure no negative values.
+  options.limit = std::max(frame_limit, 0);  // Ensure no negative values.
   options.skip_mode = SKIP_NONE;
   options.capture_builtin_exit_frames = false;
   options.async_stack_trace = false;
@@ -1343,10 +1343,10 @@ void Isolate::ReportFailedAccessCheck(Handle<JSObject> receiver) {
   HandleScope scope(this);
   Handle<Object> data;
   {
-    DisallowHeapAllocation no_gc;
+    DisallowGarbageCollection no_gc;
     AccessCheckInfo access_check_info = AccessCheckInfo::Get(this, receiver);
     if (access_check_info.is_null()) {
-      AllowHeapAllocation doesnt_matter_anymore;
+      no_gc.Release();
       return ScheduleThrow(
           *factory()->NewTypeError(MessageTemplate::kNoAccess));
     }
@@ -1369,7 +1369,7 @@ bool Isolate::MayAccess(Handle<Context> accessing_context,
   // During bootstrapping, callback functions are not enabled yet.
   if (bootstrapper()->IsActive()) return true;
   {
-    DisallowHeapAllocation no_gc;
+    DisallowGarbageCollection no_gc;
 
     if (receiver->IsJSGlobalProxy()) {
       Object receiver_context = JSGlobalProxy::cast(*receiver).native_context();
@@ -1391,7 +1391,7 @@ bool Isolate::MayAccess(Handle<Context> accessing_context,
   Handle<Object> data;
   v8::AccessCheckCallback callback = nullptr;
   {
-    DisallowHeapAllocation no_gc;
+    DisallowGarbageCollection no_gc;
     AccessCheckInfo access_check_info = AccessCheckInfo::Get(this, receiver);
     if (access_check_info.is_null()) return false;
     Object fun_obj = access_check_info.callback();
@@ -3110,9 +3110,12 @@ void Isolate::Deinit() {
   // This stops cancelable tasks (i.e. concurrent marking tasks)
   cancelable_task_manager()->CancelAndWait();
 
-  main_thread_local_isolate_.reset();
+  main_thread_local_isolate_->heap()->FreeLinearAllocationArea();
 
   heap_.TearDown();
+
+  main_thread_local_isolate_.reset();
+
   FILE* logfile = logger_->TearDownAndGetLogFile();
   if (logfile != nullptr) base::Fclose(logfile);
 
@@ -3847,7 +3850,7 @@ void Isolate::DumpAndResetStats() {
 
 void Isolate::AbortConcurrentOptimization(BlockingBehavior behavior) {
   if (concurrent_recompilation_enabled()) {
-    DisallowHeapAllocation no_recursive_gc;
+    DisallowGarbageCollection no_recursive_gc;
     optimizing_compile_dispatcher()->Flush(behavior);
   }
 }
@@ -3947,7 +3950,7 @@ Isolate::KnownPrototype Isolate::IsArrayOrObjectOrStringPrototype(
 }
 
 bool Isolate::IsInAnyContext(Object object, uint32_t index) {
-  DisallowHeapAllocation no_gc;
+  DisallowGarbageCollection no_gc;
   Object context = heap()->native_contexts_list();
   while (!context.IsUndefined(this)) {
     Context current_context = Context::cast(context);
@@ -3960,7 +3963,7 @@ bool Isolate::IsInAnyContext(Object object, uint32_t index) {
 }
 
 void Isolate::UpdateNoElementsProtectorOnSetElement(Handle<JSObject> object) {
-  DisallowHeapAllocation no_gc;
+  DisallowGarbageCollection no_gc;
   if (!object->map().is_prototype_map()) return;
   if (!Protectors::IsNoElementsIntact(this)) return;
   KnownPrototype obj_type = IsArrayOrObjectOrStringPrototype(*object);
@@ -3974,7 +3977,7 @@ void Isolate::UpdateNoElementsProtectorOnSetElement(Handle<JSObject> object) {
 }
 
 bool Isolate::IsAnyInitialArrayPrototype(Handle<JSArray> array) {
-  DisallowHeapAllocation no_gc;
+  DisallowGarbageCollection no_gc;
   return IsInAnyContext(*array, Context::INITIAL_ARRAY_PROTOTYPE_INDEX);
 }
 
@@ -4551,7 +4554,7 @@ void Isolate::CollectSourcePositionsForAllBytecodeArrays() {
   HandleScope scope(this);
   std::vector<Handle<SharedFunctionInfo>> sfis;
   {
-    DisallowHeapAllocation no_gc;
+    DisallowGarbageCollection no_gc;
     HeapObjectIterator iterator(heap());
     for (HeapObject obj = iterator.Next(); !obj.is_null();
          obj = iterator.Next()) {

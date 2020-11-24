@@ -111,13 +111,12 @@ void JsonPrintFunctionSource(std::ostream& os, int source_id,
     }
     os << "\"";
     {
-      DisallowHeapAllocation no_allocation;
+      DisallowGarbageCollection no_gc;
       start = shared->StartPosition();
       end = shared->EndPosition();
       os << ", \"sourceText\": \"";
       int len = shared->EndPosition() - start;
-      SubStringRange source(String::cast(script->source()), no_allocation,
-                            start, len);
+      SubStringRange source(String::cast(script->source()), no_gc, start, len);
       for (const auto& c : source) {
         os << AsEscapedUC16ForJSON(c);
       }
@@ -174,7 +173,7 @@ void JsonPrintAllSourceWithPositions(std::ostream& os,
   JsonPrintFunctionSource(os, -1,
                           info->shared_info().is_null()
                               ? std::unique_ptr<char[]>(new char[1]{0})
-                              : info->shared_info()->DebugName().ToCString(),
+                              : info->shared_info()->DebugNameCStr(),
                           script, isolate, info->shared_info(), true);
   const auto& inlined = info->inlined_functions();
   SourceIdAssigner id_assigner(info->inlined_functions().size());
@@ -182,7 +181,7 @@ void JsonPrintAllSourceWithPositions(std::ostream& os,
     os << ", ";
     Handle<SharedFunctionInfo> shared = inlined[id].shared_info;
     const int source_id = id_assigner.GetIdFor(shared);
-    JsonPrintFunctionSource(os, source_id, shared->DebugName().ToCString(),
+    JsonPrintFunctionSource(os, source_id, shared->DebugNameCStr(),
                             handle(Script::cast(shared->script()), isolate),
                             isolate, shared, true);
   }

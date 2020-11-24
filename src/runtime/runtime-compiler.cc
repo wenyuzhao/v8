@@ -65,6 +65,8 @@ Object CompileOptimized(Isolate* isolate, Handle<JSFunction> function,
     return ReadOnlyRoots(isolate).exception();
   }
 
+  // As a post-condition of CompileOptimized, the function *must* be compiled,
+  // i.e. the installed Code object must not be the CompileLazy builtin.
   DCHECK(function->is_compiled());
   return function->code();
 }
@@ -164,9 +166,10 @@ RUNTIME_FUNCTION(Runtime_FunctionFirstExecution) {
             OptimizationMarker::kLogFirstExecution);
   DCHECK(FLAG_log_function_events);
   Handle<SharedFunctionInfo> sfi(function->shared(), isolate);
-  LOG(isolate, FunctionEvent(
-                   "first-execution", Script::cast(sfi->script()).id(), 0,
-                   sfi->StartPosition(), sfi->EndPosition(), sfi->DebugName()));
+  Handle<String> name = SharedFunctionInfo::DebugName(sfi);
+  LOG(isolate,
+      FunctionEvent("first-execution", Script::cast(sfi->script()).id(), 0,
+                    sfi->StartPosition(), sfi->EndPosition(), *name));
   function->feedback_vector().ClearOptimizationMarker();
   // Return the code to continue execution, we don't care at this point whether
   // this is for lazy compilation or has been eagerly complied.

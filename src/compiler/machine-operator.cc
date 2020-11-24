@@ -1162,6 +1162,18 @@ std::ostream& operator<<(std::ostream& os, TruncateKind kind) {
 MACHINE_PURE_OP_LIST(PURE)
 #undef PURE
 
+const Operator* MachineOperatorBuilder::PrefetchTemporal() {
+  return GetCachedOperator<
+      CachedOperator<IrOpcode::kPrefetchTemporal, 2, 1, 1, 0, 1, 0>>(
+      Operator::kNoDeopt | Operator::kNoThrow, "PrefetchTemporal");
+}
+
+const Operator* MachineOperatorBuilder::PrefetchNonTemporal() {
+  return GetCachedOperator<
+      CachedOperator<IrOpcode::kPrefetchNonTemporal, 2, 1, 1, 0, 1, 0>>(
+      Operator::kNoDeopt | Operator::kNoThrow, "PrefetchNonTemporal");
+}
+
 const Operator* MachineOperatorBuilder::Load(LoadRepresentation rep) {
   DCHECK(!rep.IsMapWord());
 #define LOAD(Type)                                         \
