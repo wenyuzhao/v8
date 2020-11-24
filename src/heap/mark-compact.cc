@@ -544,9 +544,14 @@ void MarkCompactCollector::CollectGarbage() {
   heap()->memory_measurement()->FinishProcessing(native_context_stats_);
   RecordObjectStats();
 
+  printf("Mark Finished\n");
+  // heap()->map_space()->Remark();
+
   StartSweepSpaces();
   Evacuate();
   Finish();
+
+  printf("MarkCompact Finished\n");
 }
 
 #ifdef VERIFY_HEAP
@@ -563,6 +568,7 @@ void MarkCompactCollector::VerifyMarkbitsAreClean(PagedSpace* space) {
   for (Page* p : *space) {
     CHECK(non_atomic_marking_state()->bitmap(p)->IsClean());
     CHECK_EQ(0, non_atomic_marking_state()->live_bytes(p));
+    // non_atomic_marking_state()->SetLiveBytes(p, 0);
   }
 }
 
@@ -988,7 +994,7 @@ class MarkCompactCollector::RootMarkingVisitor final : public RootVisitor {
 
   void VisitRootPointer(Root root, const char* description,
                         FullObjectSlot p) final {
-    DCHECK(!Internals::IsMapWord(p.Relaxed_Load().ptr()));
+    // DCHECK(!Internals::IsMapWord(p.Relaxed_Load().ptr()));
     MarkObjectByPointer(root, p);
   }
 
@@ -1630,6 +1636,29 @@ void MarkCompactCollector::MarkRoots(RootVisitor* root_visitor,
 
   // Custom marking for top optimized frame.
   ProcessTopOptimizedFrame(custom_root_body_visitor);
+  printf("map roots start\n");
+  {
+    maps->clear();
+    for (Page* page : *heap()->map_space()) {
+      printf("map page %p\n", page);
+      auto cursor = page->area_start();
+      auto end = page->area_end();
+      printf(" - map page start %p\n", (void*) cursor);
+      printf(" - map page end %p\n", (void*) end);
+      while (cursor < end) {
+        // printf(" - cursor %p\n", (void*) cursor);
+        auto obj = HeapObject::FromAddress(cursor);
+        auto map = obj.map();
+        auto size = obj.SizeFromMap(map);
+        if (marking_state()->WhiteToGrey(obj)) {
+          printf(" - grey object %p\n", (void*) obj.ptr());
+          local_marking_worklists()->Push(obj);
+        }
+        cursor += size;
+      }
+    }
+  }
+  printf("map roots end\n");
 }
 
 void MarkCompactCollector::VisitObject(HeapObject obj) {

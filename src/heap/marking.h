@@ -421,7 +421,7 @@ class Marking : public AllStatic {
   template <AccessMode mode = AccessMode::NON_ATOMIC>
   V8_INLINE static bool IsBlackOrGrey(MarkBit mark_bit) {
     if (mark_bit.InReadOnlySpace()) return true;
-    return !IsWhite<mode>(mark_bit);
+    return IsBlack<mode>(mark_bit) || IsGrey<mode>(mark_bit);
   }
 
   template <AccessMode mode = AccessMode::NON_ATOMIC>

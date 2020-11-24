@@ -989,10 +989,10 @@ DEFINE_BOOL(minor_mc_trace_fragmentation, false,
 DEFINE_BOOL(trace_evacuation, false, "report evacuation statistics")
 DEFINE_BOOL(trace_mutator_utilization, false,
             "print mutator utilization, allocation speed, gc speed")
-DEFINE_BOOL(incremental_marking, true, "use incremental marking")
-DEFINE_BOOL(incremental_marking_wrappers, true,
+DEFINE_BOOL(incremental_marking, false, "use incremental marking")
+DEFINE_BOOL(incremental_marking_wrappers, false,
             "use incremental marking for marking wrappers")
-DEFINE_BOOL(incremental_marking_task, true, "use tasks for incremental marking")
+DEFINE_BOOL(incremental_marking_task, false, "use tasks for incremental marking")
 DEFINE_INT(incremental_marking_soft_trigger, 0,
            "threshold for starting incremental marking via a task in percent "
            "of available space: limit - size")
@@ -1000,8 +1000,8 @@ DEFINE_INT(incremental_marking_hard_trigger, 0,
            "threshold for starting incremental marking immediately in percent "
            "of available space: limit - size")
 DEFINE_BOOL(trace_unmapper, false, "Trace the unmapping")
-DEFINE_BOOL(parallel_scavenge, true, "parallel scavenge")
-DEFINE_BOOL(scavenge_task, true, "schedule scavenge tasks")
+DEFINE_BOOL(parallel_scavenge, false, "parallel scavenge")
+DEFINE_BOOL(scavenge_task, false, "schedule scavenge tasks")
 DEFINE_INT(scavenge_task_trigger, 80,
            "scavenge task trigger in percent of the current heap limit")
 DEFINE_BOOL(scavenge_separate_stack_scanning, false,
@@ -1906,7 +1906,7 @@ DEFINE_NEG_IMPLICATION(single_threaded, compiler_dispatcher)
 //
 // Parallel and concurrent GC (Orinoco) related flags.
 //
-DEFINE_BOOL(single_threaded_gc, false, "disable the use of background gc tasks")
+DEFINE_BOOL(single_threaded_gc, true, "disable the use of background gc tasks")
 DEFINE_NEG_IMPLICATION(single_threaded_gc, concurrent_marking)
 DEFINE_NEG_IMPLICATION(single_threaded_gc, concurrent_sweeping)
 DEFINE_NEG_IMPLICATION(single_threaded_gc, parallel_compaction)

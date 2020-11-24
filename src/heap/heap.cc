@@ -1984,12 +1984,15 @@ size_t Heap::PerformGarbageCollection(
 
   switch (collector) {
     case MARK_COMPACTOR:
+      printf(" - MarkCompact\n");
       MarkCompact();
       break;
     case MINOR_MARK_COMPACTOR:
+      printf(" - MinorMarkCompact\n");
       MinorMarkCompact();
       break;
     case SCAVENGER:
+      printf(" - Scavenge\n");
       Scavenge();
       break;
   }
@@ -4373,12 +4376,15 @@ class FixStaleLeftTrimmedHandlesVisitor : public RootVisitor {
   Heap* heap_;
 };
 
+static std::vector<Address>* maps = new std::vector<Address>();
+
 void Heap::IterateRoots(RootVisitor* v, base::EnumSet<SkipRoot> options) {
   v->VisitRootPointers(Root::kStrongRootList, nullptr,
                        roots_table().strong_roots_begin(),
                        roots_table().strong_roots_end());
   v->Synchronize(VisitorSynchronization::kStrongRootList);
 
+  printf("ir 3\n");
   isolate_->bootstrapper()->Iterate(v);
   v->Synchronize(VisitorSynchronization::kBootstrapper);
   Relocatable::Iterate(isolate_, v);
@@ -4386,6 +4392,7 @@ void Heap::IterateRoots(RootVisitor* v, base::EnumSet<SkipRoot> options) {
   isolate_->debug()->Iterate(v);
   v->Synchronize(VisitorSynchronization::kDebug);
 
+  printf("ir 2\n");
   isolate_->compilation_cache()->Iterate(v);
   v->Synchronize(VisitorSynchronization::kCompilationCache);
 
