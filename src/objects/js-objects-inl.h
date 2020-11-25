@@ -102,7 +102,7 @@ V8_WARN_UNUSED_RESULT MaybeHandle<FixedArray> JSReceiver::OwnPropertyKeys(
 }
 
 bool JSObject::PrototypeHasNoElements(Isolate* isolate, JSObject object) {
-  DisallowHeapAllocation no_gc;
+  DisallowGarbageCollection no_gc;
   HeapObject prototype = HeapObject::cast(object.map().prototype());
   ReadOnlyRoots roots(isolate);
   HeapObject null = roots.null_value();
@@ -146,7 +146,7 @@ void JSObject::EnsureCanContainElements(Handle<JSObject> object, TSlot objects,
   ElementsKind current_kind = object->GetElementsKind();
   ElementsKind target_kind = current_kind;
   {
-    DisallowHeapAllocation no_allocation;
+    DisallowGarbageCollection no_gc;
     DCHECK(mode != ALLOW_COPIED_DOUBLE_ELEMENTS);
     bool is_holey = IsHoleyElementsKind(current_kind);
     if (current_kind == HOLEY_ELEMENTS) return;
@@ -359,16 +359,6 @@ void JSObject::RawFastPropertyAtPut(FieldIndex index, Object value,
   }
 }
 
-void JSObject::RawFastPropertyAtPutNoWriteBarrier(FieldIndex index,
-                                                  Object value) {
-  if (index.is_inobject()) {
-    RawFastInobjectPropertyAtPut(index, value, SKIP_WRITE_BARRIER);
-  } else {
-    property_array().set(index.outobject_array_index(), value,
-                         SKIP_WRITE_BARRIER);
-  }
-}
-
 void JSObject::RawFastDoublePropertyAsBitsAtPut(FieldIndex index,
                                                 uint64_t bits) {
   // Double unboxing is enabled only on 64-bit platforms without pointer
@@ -394,7 +384,7 @@ void JSObject::WriteToField(InternalIndex descriptor, PropertyDetails details,
                             Object value) {
   DCHECK_EQ(kField, details.location());
   DCHECK_EQ(kData, details.kind());
-  DisallowHeapAllocation no_gc;
+  DisallowGarbageCollection no_gc;
   FieldIndex index = FieldIndex::ForDescriptor(map(), descriptor);
   if (details.representation().IsDouble()) {
     // Manipulating the signaling NaN used for the hole and uninitialized
@@ -439,11 +429,12 @@ Object JSObject::InObjectPropertyAtPut(int index, Object value,
   return value;
 }
 
-void JSObject::InitializeBody(Map map, int start_offset, bool use_object_filler,
+void JSObject::InitializeBody(Map map, int start_offset,
+                              bool is_slack_tracking_in_progress,
                               MapWord filler_map, Object undefined_filler) {
   int size = map.instance_size();
   int offset = start_offset;
-  if (use_object_filler) {
+  if (is_slack_tracking_in_progress) {
     int end_of_pre_allocated_offset =
         size - (map.UnusedPropertyFields() * kTaggedSize);
     DCHECK_LE(kHeaderSize, end_of_pre_allocated_offset);
@@ -712,12 +703,6 @@ DEF_GETTER(JSReceiver, property_array, PropertyArray) {
     return GetReadOnlyRoots(isolate).empty_property_array();
   }
   return PropertyArray::cast(prop);
-}
-
-bool JSReceiver::MapOK() {
-  IsolateRoot isolate = GetIsolateForPtrCompr(*this);
-  Map m = map(isolate);
-  return m.IsMap();
 }
 
 Maybe<bool> JSReceiver::HasProperty(Handle<JSReceiver> object,

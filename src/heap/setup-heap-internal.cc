@@ -223,7 +223,7 @@ bool Heap::CreateInitialMaps() {
   // Map::cast cannot be used due to uninitialized map field.
   Map new_meta_map = Map::unchecked_cast(obj);
   set_meta_map(new_meta_map);
-  new_meta_map.set_map_after_allocation_no_check(new_meta_map);
+  new_meta_map.set_map_after_allocation(new_meta_map);
 
   ReadOnlyRoots roots(this);
   {  // Partial map allocation
@@ -423,7 +423,7 @@ bool Heap::CreateInitialMaps() {
                          small_ordered_name_dictionary)
 
 #define TORQUE_ALLOCATE_MAP(NAME, Name, name) \
-  ALLOCATE_MAP(NAME, Name::kSize, name)
+  ALLOCATE_MAP(NAME, Name::SizeFor(), name)
     TORQUE_DEFINED_FIXED_INSTANCE_TYPE_LIST(TORQUE_ALLOCATE_MAP);
 #undef TORQUE_ALLOCATE_MAP
 

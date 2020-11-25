@@ -130,7 +130,7 @@ void MarkingVerifier::VerifyMarkingOnPage(const Page* page, Address start,
   for (auto object_and_size :
        LiveObjectRange<kAllLiveObjects>(page, bitmap(page))) {
     HeapObject object = object_and_size.first;
-    DCHECK(!Internals::IsMapWord(object.ptr()));
+    DCHECK(!MapWord::IsPacked(object.ptr()));
     size_t size = object_and_size.second;
     Address current = object.address();
     if (current < start) continue;
@@ -176,7 +176,7 @@ void MarkingVerifier::VerifyMarking(PagedSpace* space) {
 void MarkingVerifier::VerifyMarking(LargeObjectSpace* lo_space) {
   LargeObjectSpaceObjectIterator it(lo_space);
   for (HeapObject obj = it.Next(); !obj.is_null(); obj = it.Next()) {
-    DCHECK(!Internals::IsMapWord(obj.ptr()));
+    DCHECK(!MapWord::IsPacked(obj.ptr()));
     if (IsBlackOrGrey(obj)) {
       obj.Iterate(this);
     }
@@ -238,14 +238,14 @@ class FullMarkingVerifier : public MarkingVerifier {
     DCHECK(RelocInfo::IsEmbeddedObjectMode(rinfo->rmode()));
     if (!host.IsWeakObject(rinfo->target_object())) {
       HeapObject object = rinfo->target_object();
-      DCHECK(!Internals::IsMapWord(object.ptr()));
+      DCHECK(!MapWord::IsPacked(object.ptr()));
       VerifyHeapObjectImpl(object);
     }
   }
 
  private:
   V8_INLINE void VerifyHeapObjectImpl(HeapObject heap_object) {
-    CHECK(!Internals::IsMapWord(heap_object.ptr()));
+    CHECK(!MapWord::IsPacked(heap_object.ptr()));
     CHECK(marking_state_->IsBlackOrGrey(heap_object));
   }
 
@@ -255,7 +255,7 @@ class FullMarkingVerifier : public MarkingVerifier {
       typename TSlot::TObject object = *slot;
       HeapObject heap_object;
       if (object.GetHeapObjectIfStrong(&heap_object)) {
-        DCHECK(!Internals::IsMapWord(heap_object.ptr()));
+        DCHECK(!MapWord::IsPacked(heap_object.ptr()));
         VerifyHeapObjectImpl(heap_object);
       }
     }
@@ -368,7 +368,7 @@ class FullEvacuationVerifier : public EvacuationVerifier {
       typename TSlot::TObject object = *current;
       HeapObject heap_object;
       if (object.GetHeapObjectIfStrong(&heap_object)) {
-        DCHECK(!Internals::IsMapWord(heap_object.ptr()));
+        DCHECK(!MapWord::IsPacked(heap_object.ptr()));
         VerifyHeapObjectImpl(heap_object);
       }
     }
@@ -454,6 +454,7 @@ void MarkCompactCollector::TearDown() {
     // Marking barriers of LocalHeaps will be published in their destructors.
     marking_worklists()->Clear();
   }
+  sweeper()->TearDown();
 }
 
 void MarkCompactCollector::AddEvacuationCandidate(Page* p) {
@@ -559,7 +560,7 @@ void MarkCompactCollector::VerifyMarkbitsAreDirty(ReadOnlySpace* space) {
   ReadOnlyHeapObjectIterator iterator(space);
   for (HeapObject object = iterator.Next(); !object.is_null();
        object = iterator.Next()) {
-    DCHECK(!Internals::IsMapWord(object.ptr()));
+    DCHECK(!MapWord::IsPacked(object.ptr()));
     CHECK(non_atomic_marking_state()->IsBlack(object));
   }
 }
@@ -582,7 +583,7 @@ void MarkCompactCollector::VerifyMarkbitsAreClean(NewSpace* space) {
 void MarkCompactCollector::VerifyMarkbitsAreClean(LargeObjectSpace* space) {
   LargeObjectSpaceObjectIterator it(space);
   for (HeapObject obj = it.Next(); !obj.is_null(); obj = it.Next()) {
-    DCHECK(!Internals::IsMapWord(obj.ptr()));
+    DCHECK(!MapWord::IsPacked(obj.ptr()));
     CHECK(non_atomic_marking_state()->IsWhite(obj));
     CHECK_EQ(0, non_atomic_marking_state()->live_bytes(
                     MemoryChunk::FromHeapObject(obj)));
@@ -994,7 +995,7 @@ class MarkCompactCollector::RootMarkingVisitor final : public RootVisitor {
 
   void VisitRootPointer(Root root, const char* description,
                         FullObjectSlot p) final {
-    // DCHECK(!Internals::IsMapWord(p.Relaxed_Load().ptr()));
+    // DCHECK(!MapWord::IsPacked(p.Relaxed_Load().ptr()));
     MarkObjectByPointer(root, p);
   }
 
@@ -1038,7 +1039,7 @@ class MarkCompactCollector::CustomRootBodyMarkingVisitor final
 
   void VisitPointers(HeapObject host, ObjectSlot start, ObjectSlot end) final {
     for (ObjectSlot p = start; p < end; ++p) {
-      DCHECK(!Internals::IsMapWord(p.Relaxed_Load().ptr()));
+      DCHECK(!MapWord::IsPacked(p.Relaxed_Load().ptr()));
       DCHECK_NE(host.map_slot(),
                 p);  // don't blindly iterate over the map field
       DCHECK(!HasWeakHeapObjectTag(*p));
@@ -1091,7 +1092,7 @@ class InternalizedStringTableCleaner : public RootVisitor {
     for (OffHeapObjectSlot p = start; p < end; ++p) {
       Object o = p.load(isolate);
       if (o.IsHeapObject()) {
-        DCHECK(!Internals::IsMapWord(p.Relaxed_Load(isolate).ptr()));
+        DCHECK(!MapWord::IsPacked(p.Relaxed_Load(isolate).ptr()));
         HeapObject heap_object = HeapObject::cast(o);
         DCHECK(!Heap::InYoungGeneration(heap_object));
         if (marking_state->IsWhite(heap_object)) {
@@ -1123,7 +1124,7 @@ class ExternalStringTableCleaner : public RootVisitor {
     for (FullObjectSlot p = start; p < end; ++p) {
       Object o = *p;
       if (o.IsHeapObject()) {
-        DCHECK(!Internals::IsMapWord(p.Relaxed_Load().ptr()));
+        DCHECK(!MapWord::IsPacked(p.Relaxed_Load().ptr()));
         HeapObject heap_object = HeapObject::cast(o);
         if (marking_state->IsWhite(heap_object)) {
           if (o.IsExternalString()) {
@@ -1190,15 +1191,12 @@ class RecordMigratedSlotVisitor : public ObjectVisitor {
         ephemeron_remembered_set_(ephemeron_remembered_set) {}
 
   inline void VisitPointer(HeapObject host, ObjectSlot p) final {
-    if (!p.Relaxed_Load().IsFillerMap(collector_->isolate())) {
-      DCHECK(!Internals::IsMapWord(p.Relaxed_Load().ptr()));
-      DCHECK(!HasWeakHeapObjectTag(*p));
-      RecordMigratedSlot(host, MaybeObject::FromObject(*p), p.address());
-    }
+    DCHECK(!HasWeakHeapObjectTag(*p));
+    RecordMigratedSlot(host, MaybeObject::FromObject(*p), p.address());
   }
 
   inline void VisitPointer(HeapObject host, MaybeObjectSlot p) final {
-    DCHECK(!Internals::IsMapWord(p.Relaxed_Load().ptr()));
+    DCHECK(!MapWord::IsPacked(p.Relaxed_Load().ptr()));
     RecordMigratedSlot(host, *p, p.address());
   }
 
@@ -1448,7 +1446,7 @@ class EvacuateNewSpaceVisitor final : public EvacuateVisitorBase {
         always_promote_young_(always_promote_young) {}
 
   inline bool Visit(HeapObject object, int size) override {
-    DCHECK(!Internals::IsMapWord(object.ptr()));
+    DCHECK(!MapWord::IsPacked(object.ptr()));
     if (TryEvacuateWithoutCopy(object)) return true;
     HeapObject target_object;
 
@@ -1871,7 +1869,7 @@ size_t MarkCompactCollector::ProcessMarkingWorklist(size_t bytes_to_process) {
          local_marking_worklists()->PopOnHold(&object)) {
     // Left trimming may result in grey or black filler objects on the marking
     // worklist. Ignore these objects.
-    DCHECK(!Internals::IsMapWord(object.ptr()));
+    DCHECK(!MapWord::IsPacked(object.ptr()));
     if (object.IsFreeSpaceOrFiller()) {
       // Due to copying mark bits and the fact that grey and black have their
       // first bit set, one word fillers are always black.
@@ -2196,7 +2194,7 @@ void MarkCompactCollector::ClearPotentialSimpleMapTransition(Map dead_target) {
   Object potential_parent = dead_target.constructor_or_backpointer();
   if (potential_parent.IsMap()) {
     Map parent = Map::cast(potential_parent);
-    DisallowHeapAllocation no_gc_obviously;
+    DisallowGarbageCollection no_gc_obviously;
     if (non_atomic_marking_state()->IsBlackOrGrey(parent) &&
         TransitionsAccessor(isolate(), parent, &no_gc_obviously)
             .HasSimpleTransitionTo(dead_target)) {
@@ -2726,7 +2724,7 @@ static inline SlotCallbackResult UpdateSlot(TSlot slot,
                     std::is_same<TSlot, OffHeapObjectSlot>::value,
                 "Only [Full|OffHeap]ObjectSlot and [Full]MaybeObjectSlot are "
                 "expected here");
-  DCHECK(!Internals::IsMapWord(heap_obj.ptr()));
+  DCHECK(!MapWord::IsPacked(heap_obj.ptr()));
   MapWord map_word = heap_obj.map_word();
   if (map_word.IsForwardingAddress()) {
     DCHECK_IMPLIES(!Heap::InFromPage(heap_obj),
@@ -2796,7 +2794,7 @@ class PointersUpdatingVisitor : public ObjectVisitor, public RootVisitor {
     for (ObjectSlot p = start; p < end; ++p) {
       DCHECK_IMPLIES(!p.Relaxed_Load().IsFillerMap(
                          internal::GetIsolateFromWritableObject(host)),
-                     !Internals::IsMapWord((*p).ptr()));
+                     !MapWord::IsPacked((*p).ptr()));
       UpdateStrongSlotInternal(isolate_, p);
     }
   }
@@ -2804,14 +2802,14 @@ class PointersUpdatingVisitor : public ObjectVisitor, public RootVisitor {
   void VisitPointers(HeapObject host, MaybeObjectSlot start,
                      MaybeObjectSlot end) final {
     for (MaybeObjectSlot p = start; p < end; ++p) {
-      DCHECK(!Internals::IsMapWord(p.Relaxed_Load().ptr()));
+      DCHECK(!MapWord::IsPacked(p.Relaxed_Load().ptr()));
       UpdateSlotInternal(isolate_, p);
     }
   }
 
   void VisitRootPointer(Root root, const char* description,
                         FullObjectSlot p) override {
-    DCHECK(!Internals::IsMapWord(p.Relaxed_Load().ptr()));
+    DCHECK(!MapWord::IsPacked(p.Relaxed_Load().ptr()));
     UpdateRootSlotInternal(isolate_, p);
   }
 
@@ -4253,7 +4251,7 @@ class YoungGenerationMarkingVerifier : public MarkingVerifier {
       HeapObject heap_object;
       // Minor MC treats weak references as strong.
       if (object.GetHeapObject(&heap_object)) {
-        DCHECK(!Internals::IsMapWord(object.ptr()));
+        DCHECK(!MapWord::IsPacked(object.ptr()));
         VerifyHeapObjectImpl(heap_object);
       }
     }
@@ -4287,7 +4285,7 @@ class YoungGenerationEvacuationVerifier : public EvacuationVerifier {
       typename TSlot::TObject object = *current;
       HeapObject heap_object;
       if (object.GetHeapObject(&heap_object)) {
-        DCHECK(!Internals::IsMapWord(object.ptr()));
+        DCHECK(!MapWord::IsPacked(object.ptr()));
         VerifyHeapObjectImpl(heap_object);
       }
     }
@@ -4371,7 +4369,10 @@ class YoungGenerationMarkingVisitor final
     for (TSlot slot = start; slot < end; ++slot) {
       DCHECK_IMPLIES(!slot.Relaxed_Load().IsFillerMap(
                          internal::GetIsolateFromWritableObject(host)),
-                     !Internals::IsMapWord((*slot).ptr()));
+                     !MapWord::IsPacked((*slot).ptr()));
+      DCHECK_IMPLIES(MapWord::IsPacked((*slot).ptr()),
+                     slot.Relaxed_Load().IsFillerMap(
+                         internal::GetIsolateFromWritableObject(host)));
       VisitPointer(host, slot);
     }
   }
@@ -4565,7 +4566,7 @@ class MinorMarkCompactCollector::RootMarkingVisitor : public RootVisitor {
   void VisitRootPointers(Root root, const char* description,
                          FullObjectSlot start, FullObjectSlot end) final {
     for (FullObjectSlot p = start; p < end; ++p) {
-      DCHECK(!Internals::IsMapWord((*p).ptr()));
+      DCHECK(!MapWord::IsPacked((*p).ptr()));
       MarkObjectByPointer(p);
     }
   }
@@ -4698,7 +4699,7 @@ class YoungGenerationExternalStringTableCleaner : public RootVisitor {
     for (FullObjectSlot p = start; p < end; ++p) {
       Object o = *p;
       if (o.IsHeapObject()) {
-        DCHECK(!Internals::IsMapWord(o.ptr()));
+        DCHECK(!MapWord::IsPacked(o.ptr()));
         HeapObject heap_object = HeapObject::cast(o);
         if (marking_state_->IsWhite(heap_object)) {
           if (o.IsExternalString()) {

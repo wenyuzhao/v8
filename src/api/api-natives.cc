@@ -25,8 +25,6 @@ class InvokeScope {
   ~InvokeScope() {
     bool has_exception = isolate_->has_pending_exception();
     if (has_exception) {
-      DCHECK(!Internals::IsMapWord(
-          isolate_->thread_local_top()->pending_message_obj_.ptr()));
       isolate_->ReportPendingMessages();
     } else {
       isolate_->clear_pending_message();
@@ -359,7 +357,7 @@ void UncacheTemplateInstantiation(Isolate* isolate,
 
 bool IsSimpleInstantiation(Isolate* isolate, ObjectTemplateInfo info,
                            JSReceiver new_target) {
-  DisallowHeapAllocation no_gc;
+  DisallowGarbageCollection no_gc;
 
   if (!new_target.IsJSFunction()) return false;
   JSFunction fun = JSFunction::cast(new_target);

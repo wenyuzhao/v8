@@ -114,9 +114,6 @@ class StoreRepresentation final {
 
   MachineRepresentation representation() const { return representation_; }
   WriteBarrierKind write_barrier_kind() const { return write_barrier_kind_; }
-  bool store_to_header() const {
-    return representation() == MachineRepresentation::kMapWord;
-  }
 
  private:
   MachineRepresentation representation_;
@@ -831,6 +828,9 @@ class V8_EXPORT_PRIVATE MachineOperatorBuilder final
 
   const Operator* LoadTransform(MemoryAccessKind kind,
                                 LoadTransformation transform);
+
+  const Operator* PrefetchTemporal();
+  const Operator* PrefetchNonTemporal();
 
   // SIMD load: replace a specified lane with [base + index].
   const Operator* LoadLane(MemoryAccessKind kind, LoadRepresentation rep,

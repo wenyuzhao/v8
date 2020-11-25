@@ -668,9 +668,9 @@ MaybeObjectSlot HeapObject::RawMaybeWeakField(int byte_offset) const {
 }
 
 MapWord MapWord::FromMap(const Map map) {
-  DCHECK(map.is_null() || !Internals::IsMapWord(map.ptr()));
+  DCHECK(map.is_null() || !MapWord::IsPacked(map.ptr()));
 #ifdef V8_MAP_PACKING
-  return MapWord(Internals::PackMapWord(map.ptr()));
+  return MapWord(Pack(map.ptr()));
 #else
   return MapWord(map.ptr());
 #endif
@@ -678,7 +678,7 @@ MapWord MapWord::FromMap(const Map map) {
 
 Map MapWord::ToMap() const {
 #ifdef V8_MAP_PACKING
-  return Map::unchecked_cast(Object(Internals::UnpackMapWord(value_)));
+  return Map::unchecked_cast(Object(Unpack(value_)));
 #else
   return Map::unchecked_cast(Object(value_));
 #endif
@@ -790,25 +790,12 @@ void HeapObject::set_map_after_allocation(Map value, WriteBarrierMode mode) {
 #endif
 }
 
-void HeapObject::set_map_after_allocation_no_check(Map value,
-                                                   WriteBarrierMode mode) {
-  set_map_word(MapWord::FromMap(value));
-#ifndef V8_DISABLE_WRITE_BARRIERS
-  if (mode != SKIP_WRITE_BARRIER) {
-    DCHECK(!value.is_null());
-    // TODO(1600) We are passing kNullAddress as a slot because maps can never
-    // be on an evacuation candidate.
-    WriteBarrier::Marking(*this, ObjectSlot(kNullAddress), value);
-  }
-#endif
-}
-
 ObjectSlot HeapObject::map_slot() const {
   return ObjectSlot(MapField::address(*this));
 }
 
 DEF_GETTER(HeapObject, map_word, MapWord) {
-  return MapField::Acquire_Load_No_Unpack(isolate, *this);
+  return MapField::Relaxed_Load_No_Unpack(isolate, *this);
 }
 
 void HeapObject::set_map_word(MapWord map_word) {
@@ -932,7 +919,7 @@ void RegExpMatchInfo::SetCapture(int i, int value) {
 }
 
 WriteBarrierMode HeapObject::GetWriteBarrierMode(
-    const DisallowHeapAllocation& promise) {
+    const DisallowGarbageCollection& promise) {
   return GetWriteBarrierModeForObject(*this, &promise);
 }
 
@@ -1056,7 +1043,7 @@ MaybeHandle<Object> Object::GetPropertyOrElement(Handle<Object> receiver,
 
 // static
 Object Object::GetSimpleHash(Object object) {
-  DisallowHeapAllocation no_gc;
+  DisallowGarbageCollection no_gc;
   if (object.IsSmi()) {
     uint32_t hash = ComputeUnseededHash(Smi::ToInt(object));
     return Smi::FromInt(hash & Smi::kMaxValue);
@@ -1096,7 +1083,7 @@ Object Object::GetSimpleHash(Object object) {
 }
 
 Object Object::GetHash() {
-  DisallowHeapAllocation no_gc;
+  DisallowGarbageCollection no_gc;
   Object hash = GetSimpleHash(*this);
   if (hash.IsSmi()) return hash;
 

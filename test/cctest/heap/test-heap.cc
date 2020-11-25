@@ -2915,7 +2915,7 @@ TEST(OptimizedAllocationArrayLiterals) {
 }
 
 static int CountMapTransitions(i::Isolate* isolate, Map map) {
-  DisallowHeapAllocation no_gc;
+  DisallowGarbageCollection no_gc;
   return TransitionsAccessor(isolate, map, &no_gc).NumberOfTransitions();
 }
 
@@ -5373,7 +5373,7 @@ static void CheckLeak(const v8::FunctionCallbackInfo<v8::Value>& args) {
   Isolate* isolate = CcTest::i_isolate();
   Object message(
       *reinterpret_cast<Address*>(isolate->pending_message_obj_address()));
-  CHECK((Internals::IsMapWord(message.ptr()) || message.IsTheHole(isolate)));
+  CHECK((MapWord::IsPacked(message.ptr()) || message.IsTheHole(isolate)));
 }
 
 

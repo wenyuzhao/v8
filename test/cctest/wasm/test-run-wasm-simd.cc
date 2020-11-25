@@ -1630,7 +1630,7 @@ WASM_SIMD_TEST(I32x4BitMask) {
 }
 
 // TODO(v8:10997) Prototyping i64x2.bitmask.
-#if V8_TARGET_ARCH_X64
+#if V8_TARGET_ARCH_X64 || V8_TARGET_ARCH_ARM64
 WASM_SIMD_TEST_NO_LOWERING(I64x2BitMask) {
   FLAG_SCOPE(wasm_simd_post_mvp);
   WasmRunner<int32_t, int64_t> r(execution_tier, lower_simd);
@@ -1648,7 +1648,7 @@ WASM_SIMD_TEST_NO_LOWERING(I64x2BitMask) {
     CHECK_EQ(actual, expected);
   }
 }
-#endif  // V8_TARGET_ARCH_X64
+#endif  // V8_TARGET_ARCH_X64 || V8_TARGET_ARCH_ARM64
 
 WASM_SIMD_TEST(I8x16Splat) {
   WasmRunner<int32_t, int32_t> r(execution_tier, lower_simd);
@@ -3564,6 +3564,60 @@ WASM_SIMD_TEST(SimdF32x4SetGlobal) {
   CHECK_EQ(GetScalar(global, 2), 32.25f);
   CHECK_EQ(GetScalar(global, 3), 65.0f);
 }
+
+#if V8_TARGET_ARCH_ARM64
+// TODO(v8:11168): Prototyping prefetch.
+WASM_SIMD_TEST(SimdPrefetch) {
+  FLAG_SCOPE(wasm_simd_post_mvp);
+
+  {
+    // Test PrefetchT.
+    WasmRunner<int32_t> r(execution_tier, lower_simd);
+    int32_t* memory =
+        r.builder().AddMemoryElems<int32_t>(kWasmPageSize / sizeof(int32_t));
+    BUILD(r, WASM_ZERO, WASM_SIMD_OP(kExprPrefetchT), ZERO_ALIGNMENT,
+          ZERO_OFFSET,
+          WASM_SIMD_I32x4_EXTRACT_LANE(0, WASM_SIMD_LOAD_MEM(WASM_ZERO)));
+
+    FOR_INT32_INPUTS(i) {
+      r.builder().WriteMemory(&memory[0], i);
+      CHECK_EQ(i, r.Call());
+    }
+  }
+
+  {
+    // Test PrefetchNT.
+    WasmRunner<int32_t> r(execution_tier, lower_simd);
+    int32_t* memory =
+        r.builder().AddMemoryElems<int32_t>(kWasmPageSize / sizeof(int32_t));
+    BUILD(r, WASM_ZERO, WASM_SIMD_OP(kExprPrefetchNT), ZERO_ALIGNMENT,
+          ZERO_OFFSET,
+          WASM_SIMD_I32x4_EXTRACT_LANE(0, WASM_SIMD_LOAD_MEM(WASM_ZERO)));
+
+    FOR_INT32_INPUTS(i) {
+      r.builder().WriteMemory(&memory[0], i);
+      CHECK_EQ(i, r.Call());
+    }
+  }
+
+  {
+    // Test OOB.
+    WasmRunner<int32_t> r(execution_tier, lower_simd);
+    int32_t* memory =
+        r.builder().AddMemoryElems<int32_t>(kWasmPageSize / sizeof(int32_t));
+
+    // Prefetch kWasmPageSize+1 but still load from 0.
+    BUILD(r, WASM_I32V(kWasmPageSize + 1), WASM_SIMD_OP(kExprPrefetchNT),
+          ZERO_ALIGNMENT, ZERO_OFFSET,
+          WASM_SIMD_I32x4_EXTRACT_LANE(0, WASM_SIMD_LOAD_MEM(WASM_ZERO)));
+
+    FOR_INT32_INPUTS(i) {
+      r.builder().WriteMemory(&memory[0], i);
+      CHECK_EQ(i, r.Call());
+    }
+  }
+}
+#endif  // V8_TARGET_ARCH_ARM64
 
 WASM_SIMD_TEST(SimdLoadStoreLoad) {
   WasmRunner<int32_t> r(execution_tier, lower_simd);

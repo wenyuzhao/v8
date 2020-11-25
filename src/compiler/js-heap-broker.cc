@@ -137,7 +137,7 @@ class AllowHeapAllocationIfNeeded {
 
 namespace {
 bool IsReadOnlyHeapObject(Object object) {
-  DisallowHeapAllocation no_gc;
+  DisallowGarbageCollection no_gc;
   return (object.IsCode() && Code::cast(object).is_builtin()) ||
          (object.IsHeapObject() &&
           ReadOnlyHeap::Contains(HeapObject::cast(object)));
@@ -2345,6 +2345,12 @@ void JSRegExpData::SerializeAsRegExpBoilerplate(JSHeapBroker* broker) {
   last_index_ = broker->GetOrCreateData(boilerplate->last_index());
 }
 
+#ifdef DEBUG
+bool ObjectRef::IsNeverSerializedHeapObject() const {
+  return data_->kind() == ObjectDataKind::kNeverSerializedHeapObject;
+}
+#endif  // DEBUG
+
 bool ObjectRef::equals(const ObjectRef& other) const {
 #ifdef DEBUG
   if (broker()->mode() == JSHeapBroker::kSerialized &&
@@ -2601,7 +2607,7 @@ void JSHeapBroker::SetTargetNativeContextRef(
 }
 
 void JSHeapBroker::CollectArrayAndObjectPrototypes() {
-  DisallowHeapAllocation no_gc;
+  DisallowGarbageCollection no_gc;
   CHECK_EQ(mode(), kSerializing);
   CHECK(array_and_object_prototypes_.empty());
 
@@ -3200,7 +3206,13 @@ uint16_t StringRef::GetFirstChar() {
   if (data_->should_access_heap()) {
     AllowHandleDereferenceIfNeeded allow_handle_dereference(data()->kind(),
                                                             broker()->mode());
-    return object()->Get(0);
+    if (broker()->local_isolate()) {
+      return object()->Get(0, broker()->local_isolate());
+    } else {
+      // TODO(solanes, v8:7790): Remove this case once we always have a local
+      // isolate, i.e. the inlining phase is done concurrently all the time.
+      return object()->Get(0);
+    }
   }
   return data()->AsString()->first_char();
 }

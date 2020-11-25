@@ -1416,6 +1416,12 @@ void InstructionSelector::VisitNode(Node* node) {
       MarkAsRepresentation(MachineRepresentation::kSimd128, node);
       return VisitLoadTransform(node);
     }
+    case IrOpcode::kPrefetchTemporal: {
+      return VisitPrefetchTemporal(node);
+    }
+    case IrOpcode::kPrefetchNonTemporal: {
+      return VisitPrefetchNonTemporal(node);
+    }
     case IrOpcode::kLoadLane: {
       MarkAsRepresentation(MachineRepresentation::kSimd128, node);
       return VisitLoadLane(node);
@@ -2795,6 +2801,12 @@ void InstructionSelector::VisitI16x8ExtAddPairwiseI8x16S(Node* node) {
 void InstructionSelector::VisitI16x8ExtAddPairwiseI8x16U(Node* node) {
   UNIMPLEMENTED();
 }
+
+// TODO(v8:11168): Prototyping prefetch.
+void InstructionSelector::VisitPrefetchTemporal(Node* node) { UNIMPLEMENTED(); }
+void InstructionSelector::VisitPrefetchNonTemporal(Node* node) {
+  UNIMPLEMENTED();
+}
 #endif  // !V8_TARGET_ARCH_ARM64
 
 #if !V8_TARGET_ARCH_X64
@@ -2802,15 +2814,17 @@ void InstructionSelector::VisitI16x8ExtAddPairwiseI8x16U(Node* node) {
 void InstructionSelector::VisitLoadLane(Node* node) { UNIMPLEMENTED(); }
 void InstructionSelector::VisitStoreLane(Node* node) { UNIMPLEMENTED(); }
 
-// TODO(v8:10997) Prototype i64x2.bitmask.
-void InstructionSelector::VisitI64x2BitMask(Node* node) { UNIMPLEMENTED(); }
-
 // TODO(v8:10983) Prototyping sign select.
 void InstructionSelector::VisitI8x16SignSelect(Node* node) { UNIMPLEMENTED(); }
 void InstructionSelector::VisitI16x8SignSelect(Node* node) { UNIMPLEMENTED(); }
 void InstructionSelector::VisitI32x4SignSelect(Node* node) { UNIMPLEMENTED(); }
 void InstructionSelector::VisitI64x2SignSelect(Node* node) { UNIMPLEMENTED(); }
 #endif  // !V8_TARGET_ARCH_X64
+
+#if !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_ARM64
+// TODO(v8:10997) Prototype i64x2.bitmask.
+void InstructionSelector::VisitI64x2BitMask(Node* node) { UNIMPLEMENTED(); }
+#endif  // !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_ARM64
 
 void InstructionSelector::VisitFinishRegion(Node* node) { EmitIdentity(node); }
 

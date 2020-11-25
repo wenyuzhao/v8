@@ -419,6 +419,12 @@ class WasmGraphBuildingInterface {
     SetEnv(if_block->false_env);
   }
 
+  void Prefetch(FullDecoder* decoder,
+                const MemoryAccessImmediate<validate>& imm, const Value& index,
+                bool temporal) {
+    BUILD(Prefetch, index.node, imm.offset, imm.alignment, temporal);
+  }
+
   void LoadMem(FullDecoder* decoder, LoadType type,
                const MemoryAccessImmediate<validate>& imm, const Value& index,
                Value* result) {
@@ -1074,9 +1080,8 @@ class WasmGraphBuildingInterface {
     TFNode* effect_inputs[] = {effect(), control()};
     builder_->SetEffect(builder_->EffectPhi(1, effect_inputs));
     builder_->TerminateLoop(effect(), control());
-    // The '+ 1' here is to be able to set the instance cache as assigned.
     BitVector* assigned = WasmDecoder<validate>::AnalyzeLoopAssignment(
-        decoder, decoder->pc(), decoder->num_locals() + 1, decoder->zone());
+        decoder, decoder->pc(), decoder->num_locals(), decoder->zone());
     if (decoder->failed()) return;
     DCHECK_NOT_NULL(assigned);
 

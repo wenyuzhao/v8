@@ -542,7 +542,7 @@ class ReadOnlyRoots {
 
   // For `v8_enable_map_packing=true`, this will return a packed (also untagged)
   // map-word instead of a tagged heap pointer.
-  inline MapWord one_pointer_filler_map_word();
+  MapWord one_pointer_filler_map_word();
 
 #define ROOT_ACCESSOR(Type, name, CamelName)     \
   V8_INLINE class Type name() const;             \

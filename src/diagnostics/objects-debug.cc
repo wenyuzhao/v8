@@ -133,7 +133,7 @@ void MaybeObject::VerifyMaybeObjectPointer(Isolate* isolate, MaybeObject p) {
   if (p->GetHeapObject(&heap_object)) {
     HeapObject::VerifyHeapPointer(isolate, heap_object);
   } else {
-    CHECK(p->IsSmi() || p->IsCleared() || Internals::IsMapWord(p->ptr()));
+    CHECK(p->IsSmi() || p->IsCleared() || MapWord::IsPacked(p->ptr()));
   }
 }
 
@@ -475,7 +475,7 @@ void Map::MapVerify(Isolate* isolate) {
     }
   }
   SLOW_DCHECK(instance_descriptors(kRelaxedLoad).IsSortedNoDuplicates());
-  DisallowHeapAllocation no_gc;
+  DisallowGarbageCollection no_gc;
   SLOW_DCHECK(
       TransitionsAccessor(isolate, *this, &no_gc).IsSortedNoDuplicates());
   SLOW_DCHECK(TransitionsAccessor(isolate, *this, &no_gc)
@@ -546,7 +546,6 @@ void PropertyArray::PropertyArrayVerify(Isolate* isolate) {
   for (int i = 0; i < length(); i++) {
     Object e = get(i);
     if (!e.IsFillerMap(isolate)) {
-      DCHECK(!Internals::IsMapWord(e.ptr()));
       Object::VerifyPointer(isolate, e);
     }
   }

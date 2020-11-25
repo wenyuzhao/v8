@@ -132,6 +132,8 @@ enum class PrimitiveType { kBoolean, kNumber, kString, kSymbol };
   V(EmptyScopeInfo, empty_scope_info, EmptyScopeInfo)                        \
   V(EmptyPropertyDictionary, empty_property_dictionary,                      \
     EmptyPropertyDictionary)                                                 \
+  V(EmptyOrderedPropertyDictionary, empty_ordered_property_dictionary,       \
+    EmptyOrderedPropertyDictionary)                                          \
   V(EmptySlowElementDictionary, empty_slow_element_dictionary,               \
     EmptySlowElementDictionary)                                              \
   V(empty_string, empty_string, EmptyString)                                 \
@@ -2350,6 +2352,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   TNode<BoolT> IsConstructor(TNode<HeapObject> object);
   TNode<BoolT> IsDeprecatedMap(TNode<Map> map);
   TNode<BoolT> IsNameDictionary(TNode<HeapObject> object);
+  TNode<BoolT> IsOrderedNameDictionary(TNode<HeapObject> object);
   TNode<BoolT> IsGlobalDictionary(TNode<HeapObject> object);
   TNode<BoolT> IsExtensibleMap(TNode<Map> map);
   TNode<BoolT> IsExtensibleNonPrototypeMap(TNode<Map> map);
@@ -2861,10 +2864,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   TNode<IntPtrT> HashTableComputeCapacity(TNode<IntPtrT> at_least_space_for);
 
   template <class Dictionary>
-  TNode<Smi> GetNumberOfElements(TNode<Dictionary> dictionary) {
-    return CAST(
-        LoadFixedArrayElement(dictionary, Dictionary::kNumberOfElementsIndex));
-  }
+  TNode<Smi> GetNumberOfElements(TNode<Dictionary> dictionary);
 
   TNode<Smi> GetNumberDictionaryNumberOfElements(
       TNode<NumberDictionary> dictionary) {
@@ -3064,13 +3064,15 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
 
   // This is a building block for TryLookupProperty() above. Supports only
   // non-special fast and dictionary objects.
+  // TODO(v8:11167, v8:11177) |bailout| only needed for SetDataProperties
+  // workaround.
   void TryLookupPropertyInSimpleObject(TNode<JSObject> object, TNode<Map> map,
                                        TNode<Name> unique_name,
                                        Label* if_found_fast,
                                        Label* if_found_dict,
                                        TVariable<HeapObject>* var_meta_storage,
                                        TVariable<IntPtrT>* var_name_index,
-                                       Label* if_not_found);
+                                       Label* if_not_found, Label* bailout);
 
   // This method jumps to if_found if the element is known to exist. To
   // if_absent if it's known to not exist. To if_not_found if the prototype
@@ -3750,11 +3752,12 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   // complaining about this method, don't make it public, add your root to
   // HEAP_(IM)MUTABLE_IMMOVABLE_OBJECT_LIST instead. If you *really* need
   // LoadRoot, use CodeAssembler::LoadRoot.
-  Node* LoadRootMapWord(RootIndex root_index) {
-    return CodeAssembler::LoadRootMapWord(root_index);
-  }
   TNode<Object> LoadRoot(RootIndex root_index) {
     return CodeAssembler::LoadRoot(root_index);
+  }
+
+  Node* LoadRootMapWord(RootIndex root_index) {
+    return CodeAssembler::LoadRootMapWord(root_index);
   }
 
   template <typename TIndex>
