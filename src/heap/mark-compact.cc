@@ -1638,7 +1638,6 @@ void MarkCompactCollector::MarkRoots(RootVisitor* root_visitor,
   ProcessTopOptimizedFrame(custom_root_body_visitor);
   printf("map roots start\n");
   {
-    maps->clear();
     for (Page* page : *heap()->map_space()) {
       printf("map page %p\n", page);
       auto cursor = page->area_start();
