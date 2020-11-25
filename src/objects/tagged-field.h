@@ -46,6 +46,7 @@ class TaggedField : public AllStatic {
   static inline T Relaxed_Load(HeapObject host, int offset = 0);
   static inline T Relaxed_Load(IsolateRoot isolate, HeapObject host,
                                int offset = 0);
+  static inline T Relaxed_Load_No_Unpack(IsolateRoot isolate, HeapObject host, int offset = 0);
 
   static inline void Relaxed_Store_No_Pack(HeapObject host, T value);
   static inline void Relaxed_Store(HeapObject host, T value);

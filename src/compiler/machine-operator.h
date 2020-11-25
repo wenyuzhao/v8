@@ -114,9 +114,6 @@ class StoreRepresentation final {
 
   MachineRepresentation representation() const { return representation_; }
   WriteBarrierKind write_barrier_kind() const { return write_barrier_kind_; }
-  bool store_to_header() const {
-    return representation() == MachineRepresentation::kMapWord;
-  }
 
  private:
   MachineRepresentation representation_;

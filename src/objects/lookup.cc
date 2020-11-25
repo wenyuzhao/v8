@@ -791,7 +791,7 @@ void LookupIterator::TransitionToAccessorProperty(
 void LookupIterator::TransitionToAccessorPair(Handle<Object> pair,
                                               PropertyAttributes attributes) {
   Handle<JSObject> receiver = GetStoreTarget<JSObject>();
-  DCHECK(receiver->MapOK());
+  DCHECK(receiver->map().IsMap());
   holder_ = receiver;
 
   PropertyDetails details(kAccessor, attributes, PropertyCellType::kMutable);
@@ -820,19 +820,19 @@ void LookupIterator::TransitionToAccessorPair(Handle<Object> pair,
 
     ReloadPropertyInformation<true>();
   } else {
-    DCHECK(receiver->MapOK());
+    DCHECK(receiver->map().IsMap());
 
     PropertyNormalizationMode mode = CLEAR_INOBJECT_PROPERTIES;
     if (receiver->map(isolate_).is_prototype_map()) {
       JSObject::InvalidatePrototypeChains(receiver->map(isolate_));
       mode = KEEP_INOBJECT_PROPERTIES;
     }
-    DCHECK(receiver->MapOK());
+    DCHECK(receiver->map().IsMap());
 
     // Normalize object to make this operation simple.
     JSObject::NormalizeProperties(isolate_, receiver, mode, 0,
                                   "TransitionToAccessorPair");
-    DCHECK(receiver->MapOK());
+    DCHECK(receiver->map().IsMap());
     JSObject::SetNormalizedProperty(receiver, name_, pair, details);
     JSObject::ReoptimizeIfPrototype(receiver);
 

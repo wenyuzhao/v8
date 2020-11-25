@@ -546,7 +546,6 @@ void PropertyArray::PropertyArrayVerify(Isolate* isolate) {
   for (int i = 0; i < length(); i++) {
     Object e = get(i);
     if (!e.IsFillerMap(isolate)) {
-      DCHECK(!Internals::IsMapWord(e.ptr()));
       Object::VerifyPointer(isolate, e);
     }
   }

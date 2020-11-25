@@ -260,19 +260,15 @@ class Internals {
   // incremental GC once the external memory reaches this limit.
   static constexpr int kExternalAllocationSoftLimit = 64 * 1024 * 1024;
 
+#ifdef V8_MAP_PACKING
+  static const uintptr_t kMapWordMetadataMask = 0xffffULL << 48;
+  // The lowest two bits of mapwords are always `0b10`
+  static const uintptr_t kMapWordSignature = 0b10;
   // XORing a (non-compressed) map with this mask ensures that the two
   // low-order bits are 0b10. The 0 at the end makes this look like a Smi,
   // although real Smis have all lower 32 bits unset. We only rely on these
   // values passing as Smis in very few places.
   static const int kMapWordXorMask = 0b11;
-
-#ifdef V8_MAP_PACKING
-  static const uintptr_t kMapWordMetadataMask = 0xffffULL << 48;
-  // The lowest two bits of mapwords are always `0b10`
-  static const uintptr_t kMapWordSignature = 0b10;
-#else
-  static const uintptr_t kMapWordMetadataMask = 0;
-  static const uintptr_t kMapWordSignature = 0;
 #endif
 
   V8_EXPORT static void CheckInitializedImpl(v8::Isolate* isolate);
@@ -394,7 +390,7 @@ class Internals {
   V8_INLINE static bool IsMapWord(internal::Address mw) {
 #ifdef V8_MAP_PACKING
     return (static_cast<intptr_t>(mw) & kMapWordXorMask) == kMapWordSignature &&
-           (0xffffffff00000000 & static_cast<intptr_t>(mw)) != 0;
+           (kMapWordMetadataMask & static_cast<intptr_t>(mw)) != 0;
 #else
     return false;
 #endif

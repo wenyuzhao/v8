@@ -790,25 +790,12 @@ void HeapObject::set_map_after_allocation(Map value, WriteBarrierMode mode) {
 #endif
 }
 
-void HeapObject::set_map_after_allocation_no_check(Map value,
-                                                   WriteBarrierMode mode) {
-  set_map_word(MapWord::FromMap(value));
-#ifndef V8_DISABLE_WRITE_BARRIERS
-  if (mode != SKIP_WRITE_BARRIER) {
-    DCHECK(!value.is_null());
-    // TODO(1600) We are passing kNullAddress as a slot because maps can never
-    // be on an evacuation candidate.
-    WriteBarrier::Marking(*this, ObjectSlot(kNullAddress), value);
-  }
-#endif
-}
-
 ObjectSlot HeapObject::map_slot() const {
   return ObjectSlot(MapField::address(*this));
 }
 
 DEF_GETTER(HeapObject, map_word, MapWord) {
-  return MapField::Acquire_Load_No_Unpack(isolate, *this);
+  return MapField::Relaxed_Load_No_Unpack(isolate, *this);
 }
 
 void HeapObject::set_map_word(MapWord map_word) {

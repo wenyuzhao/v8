@@ -1185,11 +1185,9 @@ class RecordMigratedSlotVisitor : public ObjectVisitor {
         ephemeron_remembered_set_(ephemeron_remembered_set) {}
 
   inline void VisitPointer(HeapObject host, ObjectSlot p) final {
-    if (!p.Relaxed_Load().IsFillerMap(collector_->isolate())) {
-      DCHECK(!Internals::IsMapWord(p.Relaxed_Load().ptr()));
-      DCHECK(!HasWeakHeapObjectTag(*p));
-      RecordMigratedSlot(host, MaybeObject::FromObject(*p), p.address());
-    }
+    DCHECK(!Internals::IsMapWord(p.Relaxed_Load().ptr()));
+    DCHECK(!HasWeakHeapObjectTag(*p));
+    RecordMigratedSlot(host, MaybeObject::FromObject(*p), p.address());
   }
 
   inline void VisitPointer(HeapObject host, MaybeObjectSlot p) final {
@@ -4344,6 +4342,7 @@ class YoungGenerationMarkingVisitor final
       DCHECK_IMPLIES(!slot.Relaxed_Load().IsFillerMap(
                          internal::GetIsolateFromWritableObject(host)),
                      !Internals::IsMapWord((*slot).ptr()));
+      DCHECK_IMPLIES(Internals::IsMapWord((*slot).ptr()), slot.Relaxed_Load().IsFillerMap(internal::GetIsolateFromWritableObject(host)));
       VisitPointer(host, slot);
     }
   }

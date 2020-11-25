@@ -2751,8 +2751,6 @@ MaybeLocal<Script> ScriptCompiler::Compile(Local<Context> context,
   i::MaybeHandle<i::SharedFunctionInfo> maybe_sfi =
       CompileStreamedSource(isolate, v8_source, full_source_string, origin);
   has_pending_exception = !maybe_sfi.ToHandle(&sfi);
-  DCHECK(!internal::Internals::IsMapWord(
-      isolate->thread_local_top()->pending_message_obj_.ptr()));
   if (has_pending_exception) isolate->ReportPendingMessages();
   RETURN_ON_FAILED_EXECUTION(Script);
   Local<UnboundScript> generic = ToApiHandle<UnboundScript>(sfi);
