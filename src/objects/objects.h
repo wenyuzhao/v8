@@ -796,13 +796,13 @@ class MapWord {
   static constexpr bool IsPacked(Address) { return false; }
 #endif
 
+  explicit MapWord(Address value) : value_(value) {}
+
  private:
   // HeapObject calls the private constructor and directly reads the value.
   friend class HeapObject;
   template <typename TFieldType, int kFieldOffset>
   friend class TaggedField;
-
-  explicit MapWord(Address value) : value_(value) {}
 
   Address value_;
 };
