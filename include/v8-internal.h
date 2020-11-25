@@ -376,25 +376,11 @@ class Internals {
   }
 
 #ifdef V8_MAP_PACKING
-  V8_INLINE static constexpr internal::Address PackMapWord(
-      internal::Address map) {
-    return map ^ kMapWordXorMask;
-  }
-
   V8_INLINE static constexpr internal::Address UnpackMapWord(
       internal::Address mapword) {
     return (mapword & ~kMapWordMetadataMask) ^ kMapWordXorMask;
   }
 #endif
-
-  V8_INLINE static bool IsMapWord(internal::Address mw) {
-#ifdef V8_MAP_PACKING
-    return (static_cast<intptr_t>(mw) & kMapWordXorMask) == kMapWordSignature &&
-           (kMapWordMetadataMask & static_cast<intptr_t>(mw)) != 0;
-#else
-    return false;
-#endif
-  }
 
   V8_INLINE static internal::Address ReadTaggedPointerField(
       internal::Address heap_object_ptr, int offset) {

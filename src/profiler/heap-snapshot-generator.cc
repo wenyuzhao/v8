@@ -751,7 +751,7 @@ class IndexedReferencesExtractor : public ObjectVisitor {
     // The last parameter {field_offset} is only used to check some well-known
     // skipped references, so passing -1 * kTaggedSize for objects embedded
     // into code is fine.
-    DCHECK(!Internals::IsMapWord(heap_object.ptr()));
+    DCHECK(!MapWord::IsPacked(heap_object.ptr()));
     generator_->SetHiddenReference(parent_obj_, parent_, next_index_++,
                                    heap_object, field_index * kTaggedSize);
   }
@@ -1491,7 +1491,7 @@ class RootsReferencesExtractor : public RootVisitor {
   void VisitRootPointers(Root root, const char* description,
                          FullObjectSlot start, FullObjectSlot end) override {
     for (FullObjectSlot p = start; p < end; ++p) {
-      DCHECK(!Internals::IsMapWord(p.Relaxed_Load().ptr()));
+      DCHECK(!MapWord::IsPacked(p.Relaxed_Load().ptr()));
       VisitRootPointer(root, description, p);
     }
   }
@@ -1665,7 +1665,7 @@ void V8HeapExplorer::SetHiddenReference(HeapObject parent_obj,
                                         HeapEntry* parent_entry, int index,
                                         Object child_obj, int field_offset) {
   DCHECK_EQ(parent_entry, GetEntry(parent_obj));
-  DCHECK(!Internals::IsMapWord(child_obj.ptr()));
+  DCHECK(!MapWord::IsPacked(child_obj.ptr()));
   HeapEntry* child_entry = GetEntry(child_obj);
   if (child_entry != nullptr && IsEssentialObject(child_obj) &&
       IsEssentialHiddenReference(parent_obj, field_offset)) {
@@ -1827,7 +1827,7 @@ class GlobalObjectsEnumerator : public RootVisitor {
   void VisitRootPointersImpl(Root root, const char* description, TSlot start,
                              TSlot end) {
     for (TSlot p = start; p < end; ++p) {
-      DCHECK(!Internals::IsMapWord(p.Relaxed_Load(isolate_).ptr()));
+      DCHECK(!MapWord::IsPacked(p.Relaxed_Load(isolate_).ptr()));
       Object o = p.load(isolate_);
       if (!o.IsNativeContext(isolate_)) continue;
       JSObject proxy = Context::cast(o).global_proxy();

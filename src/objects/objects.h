@@ -779,6 +779,23 @@ class MapWord {
 
   inline Address ptr() { return value_; }
 
+#ifdef V8_MAP_PACKING
+  static constexpr Address Pack(Address map) {
+    return map ^ Internals::kMapWordXorMask;
+  }
+  static constexpr Address Unpack(Address mapword) {
+    return (mapword & ~Internals::kMapWordMetadataMask) ^ Internals::kMapWordXorMask;
+  }
+  static constexpr bool IsPacked(Address mapword) {
+    return (static_cast<intptr_t>(mapword) & Internals::kMapWordXorMask) == Internals::kMapWordSignature &&
+           (0xffffffff00000000 & static_cast<intptr_t>(mapword)) != 0;
+  }
+#else
+  static constexpr bool IsPacked(Address) {
+    return false;
+  }
+#endif
+
   // Create a map word from an address.
   explicit MapWord(Address value) : value_(value) {}
 

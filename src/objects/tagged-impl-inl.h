@@ -263,7 +263,7 @@ bool TaggedImpl<kRefType, StorageType>::IsFillerMap(Isolate* isolate) const {
   // Unconditionally unpack this pointer.
   // For non filler-maps, the unpacked value will always fail the following
   // comparisons.
-  ptr = Internals::UnpackMapWord(ptr);
+  ptr = MapWord::Unpack(ptr);
 #endif
   return ptr == roots.one_pointer_filler_map().ptr() ||
          ptr == roots.two_pointer_filler_map().ptr() ||

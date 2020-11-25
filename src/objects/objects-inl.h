@@ -668,9 +668,9 @@ MaybeObjectSlot HeapObject::RawMaybeWeakField(int byte_offset) const {
 }
 
 MapWord MapWord::FromMap(const Map map) {
-  DCHECK(map.is_null() || !Internals::IsMapWord(map.ptr()));
+  DCHECK(map.is_null() || !MapWord::IsPacked(map.ptr()));
 #ifdef V8_MAP_PACKING
-  return MapWord(Internals::PackMapWord(map.ptr()));
+  return MapWord(Pack(map.ptr()));
 #else
   return MapWord(map.ptr());
 #endif
@@ -678,7 +678,7 @@ MapWord MapWord::FromMap(const Map map) {
 
 Map MapWord::ToMap() const {
 #ifdef V8_MAP_PACKING
-  return Map::unchecked_cast(Object(Internals::UnpackMapWord(value_)));
+  return Map::unchecked_cast(Object(Unpack(value_)));
 #else
   return Map::unchecked_cast(Object(value_));
 #endif
