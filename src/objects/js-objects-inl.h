@@ -429,7 +429,8 @@ Object JSObject::InObjectPropertyAtPut(int index, Object value,
   return value;
 }
 
-void JSObject::InitializeBody(Map map, int start_offset, bool is_slack_tracking_in_progress,
+void JSObject::InitializeBody(Map map, int start_offset,
+                              bool is_slack_tracking_in_progress,
                               MapWord filler_map, Object undefined_filler) {
   int size = map.instance_size();
   int offset = start_offset;

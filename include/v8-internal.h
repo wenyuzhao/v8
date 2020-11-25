@@ -184,7 +184,6 @@ V8_EXPORT bool ShouldThrowOnError(v8::internal::Isolate* isolate);
  * depend on functions and constants defined here.
  */
 class Internals {
-
 #ifdef V8_MAP_PACKING
   V8_INLINE static constexpr internal::Address UnpackMapWord(
       internal::Address mapword) {

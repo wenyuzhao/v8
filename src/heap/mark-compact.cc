@@ -4341,7 +4341,9 @@ class YoungGenerationMarkingVisitor final
       DCHECK_IMPLIES(!slot.Relaxed_Load().IsFillerMap(
                          internal::GetIsolateFromWritableObject(host)),
                      !MapWord::IsPacked((*slot).ptr()));
-      DCHECK_IMPLIES(MapWord::IsPacked((*slot).ptr()), slot.Relaxed_Load().IsFillerMap(internal::GetIsolateFromWritableObject(host)));
+      DCHECK_IMPLIES(MapWord::IsPacked((*slot).ptr()),
+                     slot.Relaxed_Load().IsFillerMap(
+                         internal::GetIsolateFromWritableObject(host)));
       VisitPointer(host, slot);
     }
   }

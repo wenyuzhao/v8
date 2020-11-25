@@ -113,7 +113,8 @@ T TaggedField<T, kFieldOffset>::Relaxed_Load(IsolateRoot isolate,
 // static
 template <typename T, int kFieldOffset>
 T TaggedField<T, kFieldOffset>::Relaxed_Load_No_Unpack(IsolateRoot isolate,
-                                             HeapObject host, int offset) {
+                                                       HeapObject host,
+                                                       int offset) {
   AtomicTagged_t value = AsAtomicTagged::Relaxed_Load(location(host, offset));
   return T(tagged_to_full(isolate, value));
 }

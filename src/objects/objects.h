@@ -784,26 +784,25 @@ class MapWord {
     return map ^ Internals::kMapWordXorMask;
   }
   static constexpr Address Unpack(Address mapword) {
-    return (mapword & ~Internals::kMapWordMetadataMask) ^ Internals::kMapWordXorMask;
+    return (mapword & ~Internals::kMapWordMetadataMask) ^
+           Internals::kMapWordXorMask;
   }
   static constexpr bool IsPacked(Address mapword) {
-    return (static_cast<intptr_t>(mapword) & Internals::kMapWordXorMask) == Internals::kMapWordSignature &&
+    return (static_cast<intptr_t>(mapword) & Internals::kMapWordXorMask) ==
+               Internals::kMapWordSignature &&
            (0xffffffff00000000 & static_cast<intptr_t>(mapword)) != 0;
   }
 #else
-  static constexpr bool IsPacked(Address) {
-    return false;
-  }
+  static constexpr bool IsPacked(Address) { return false; }
 #endif
-
-  // Create a map word from an address.
-  explicit MapWord(Address value) : value_(value) {}
 
  private:
   // HeapObject calls the private constructor and directly reads the value.
   friend class HeapObject;
   template <typename TFieldType, int kFieldOffset>
   friend class TaggedField;
+
+  explicit MapWord(Address value) : value_(value) {}
 
   Address value_;
 };

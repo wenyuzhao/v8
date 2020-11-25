@@ -4126,8 +4126,7 @@ class OldToNewSlotVerifyingVisitor : public SlotVerifyingVisitor {
                        !MapWord::IsPacked(target.ptr()) &&
                        Heap::InYoungGeneration(target),
                    Heap::InToPage(target));
-    DCHECK_IMPLIES(target->IsStrongOrWeak(),
-                   !MapWord::IsPacked(target.ptr()));
+    DCHECK_IMPLIES(target->IsStrongOrWeak(), !MapWord::IsPacked(target.ptr()));
     return target->IsStrongOrWeak() && Heap::InYoungGeneration(target) &&
            !Heap::InYoungGeneration(host);
   }
