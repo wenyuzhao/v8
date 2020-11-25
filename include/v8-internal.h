@@ -184,6 +184,14 @@ V8_EXPORT bool ShouldThrowOnError(v8::internal::Isolate* isolate);
  * depend on functions and constants defined here.
  */
 class Internals {
+
+#ifdef V8_MAP_PACKING
+  V8_INLINE static constexpr internal::Address UnpackMapWord(
+      internal::Address mapword) {
+    return (mapword & ~kMapWordMetadataMask) ^ kMapWordXorMask;
+  }
+#endif
+
  public:
   // These values match non-compiler-dependent values defined within
   // the implementation of v8.
@@ -374,13 +382,6 @@ class Internals {
 #endif
     return *reinterpret_cast<const T*>(addr);
   }
-
-#ifdef V8_MAP_PACKING
-  V8_INLINE static constexpr internal::Address UnpackMapWord(
-      internal::Address mapword) {
-    return (mapword & ~kMapWordMetadataMask) ^ kMapWordXorMask;
-  }
-#endif
 
   V8_INLINE static internal::Address ReadTaggedPointerField(
       internal::Address heap_object_ptr, int offset) {

@@ -207,6 +207,7 @@ void TurboAssembler::LoadTaggedPointerField(Register destination,
 
 #ifdef V8_MAP_PACKING
 void TurboAssembler::UnpackMapWord(Register r) {
+  // Clear the top two bytes (which may include metadata). Must be in sync with MapWord::Unpack, and vice versa.
   shlq(r, Immediate(16));
   shrq(r, Immediate(16));
   xorq(r, Immediate(Internals::kMapWordXorMask));

@@ -714,7 +714,7 @@ class IndexedReferencesExtractor : public ObjectVisitor {
     if (generator_->visited_fields_[0]) {
       generator_->visited_fields_[0] = false;
     } else {
-      VisitHeapObjectImpl(object.map(), -1);
+      VisitHeapObjectImpl(object.map(), 0);
     }
   }
   void VisitPointers(HeapObject host, MaybeObjectSlot start,
