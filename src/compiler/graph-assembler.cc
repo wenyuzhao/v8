@@ -529,9 +529,8 @@ Node* JSGraphAssembler::StoreField(FieldAccess const& access, Node* object,
 #ifdef V8_MAP_PACKING
 TNode<Map> GraphAssembler::UnpackMapWord(Node* map_word) {
   map_word = BitcastTaggedToWordForTagAndSmiBits(map_word);
-  Node* map = WordXor(
-      WordAnd(map_word, IntPtrConstant(~Internals::kMapWordMetadataMask)),
-      IntPtrConstant(Internals::kMapWordXorMask));
+  // TODO(wenyuzhao): Clear header metadata.
+  Node* map = WordXor(map_word, IntPtrConstant(Internals::kMapWordXorMask));
   return TNode<Map>::UncheckedCast(BitcastWordToTaggedSigned(map));
 }
 
