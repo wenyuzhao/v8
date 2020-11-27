@@ -366,9 +366,11 @@ Node* MemoryLowering::DecodeExternalPointer(
 Reduction MemoryLowering::UnpackMapWord(Node* node) {
   Node* effect = NodeProperties::GetEffectInput(node);
   Node* control = NodeProperties::GetControlInput(node);
-  __ InitializeEffectControl(effect, control);
+  // TODO(wenyuzhao): node is a Load, but it's control input can also be a Load?
+  __ InitializeEffectControl(
+      effect, control->op()->ControlOutputCount() > 0 ? control : nullptr);
 
-  NodeProperties::ChangeOp(node, machine()->Load(MachineType::Uint64()));
+  NodeProperties::ChangeOp(node, machine()->Load(MachineType::AnyTagged()));
 
   node = __ AddNode(graph()->CloneNode(node));
   return Replace(__ UnpackMapWord(node));
