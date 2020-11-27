@@ -1647,8 +1647,12 @@ void MarkCompactCollector::MarkRoots(RootVisitor* root_visitor,
         auto obj = HeapObject::FromAddress(cursor);
         auto map = obj.map();
         auto size = obj.SizeFromMap(map);
-        if (marking_state()->WhiteToGrey(obj)) {
-          printf(" - grey object %p\n", (void*) obj.ptr());
+        if (obj.IsFreeSpaceOrFiller()) {
+          marking_state()->WhiteToBlack(obj);
+          marking_state()->GreyToBlack(obj);
+        }
+        if (!obj.IsFreeSpaceOrFiller() && marking_state()->WhiteToGrey(obj)) {
+          // printf(" - grey object %p\n", (void*) obj.ptr());
           local_marking_worklists()->Push(obj);
         }
         cursor += size;
