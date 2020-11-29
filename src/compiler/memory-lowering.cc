@@ -298,6 +298,7 @@ Reduction MemoryLowering::ReduceLoadFromObject(Node* node) {
 
   if (machine_type.IsMapWord()) {
 #ifdef V8_MAP_PACKING
+    NodeProperties::ChangeOp(node, machine()->Load(MachineType::AnyTagged()));
     CHECK_EQ(machine_type.semantic(), MachineSemantic::kAny);
     return UnpackMapWord(node);
 #else
@@ -366,11 +367,8 @@ Node* MemoryLowering::DecodeExternalPointer(
 Reduction MemoryLowering::UnpackMapWord(Node* node) {
   Node* effect = NodeProperties::GetEffectInput(node);
   Node* control = NodeProperties::GetControlInput(node);
-  // TODO(wenyuzhao): node is a Load, but it's control input can also be a Load?
   __ InitializeEffectControl(
       effect, control->op()->ControlOutputCount() > 0 ? control : nullptr);
-
-  NodeProperties::ChangeOp(node, machine()->Load(MachineType::AnyTagged()));
 
   node = __ AddNode(graph()->CloneNode(node));
   return Replace(__ UnpackMapWord(node));
@@ -391,6 +389,7 @@ Reduction MemoryLowering::ReduceLoadField(Node* node) {
 
   if (type.IsMapWord()) {
 #ifdef V8_MAP_PACKING
+    NodeProperties::ChangeOp(node, machine()->Load(MachineType::AnyTagged()));
     return UnpackMapWord(node);
 #else
     type = MachineType::TaggedPointer();
