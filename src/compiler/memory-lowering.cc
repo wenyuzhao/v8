@@ -367,8 +367,7 @@ Node* MemoryLowering::DecodeExternalPointer(
 Reduction MemoryLowering::UnpackMapWord(Node* node) {
   Node* effect = NodeProperties::GetEffectInput(node);
   Node* control = NodeProperties::GetControlInput(node);
-  __ InitializeEffectControl(
-      effect, control->op()->ControlOutputCount() > 0 ? control : nullptr);
+  __ InitializeEffectControl(effect, control);
 
   node = __ AddNode(graph()->CloneNode(node));
   return Replace(__ UnpackMapWord(node));
