@@ -300,7 +300,7 @@ Reduction MemoryLowering::ReduceLoadFromObject(Node* node) {
 #ifdef V8_MAP_PACKING
     NodeProperties::ChangeOp(node, machine()->Load(MachineType::AnyTagged()));
     CHECK_EQ(machine_type.semantic(), MachineSemantic::kAny);
-    return UnpackMapWord(node);
+    return ReduceLoadMap(node);
 #else
     machine_type = MachineType::TaggedPointer();
 #endif
@@ -364,7 +364,7 @@ Node* MemoryLowering::DecodeExternalPointer(
 }
 
 #ifdef V8_MAP_PACKING
-Reduction MemoryLowering::UnpackMapWord(Node* node) {
+Reduction MemoryLowering::ReduceLoadMap(Node* node) {
   Node* effect = NodeProperties::GetEffectInput(node);
   Node* control = NodeProperties::GetControlInput(node);
   __ InitializeEffectControl(effect, control);
@@ -389,7 +389,7 @@ Reduction MemoryLowering::ReduceLoadField(Node* node) {
   if (type.IsMapWord()) {
 #ifdef V8_MAP_PACKING
     NodeProperties::ChangeOp(node, machine()->Load(MachineType::AnyTagged()));
-    return UnpackMapWord(node);
+    return ReduceLoadMap(node);
 #else
     type = MachineType::TaggedPointer();
 #endif
