@@ -21,8 +21,7 @@ enum class MachineRepresentation : uint8_t {
   kWord16,
   kWord32,
   kWord64,
-  kMapWord,        // (uncompressed) MapWord (can be untagged and may contain
-                   // metadata)
+  kMapWord,        // (uncompressed) MapWord
   kTaggedSigned,   // (uncompressed) Smi
   kTaggedPointer,  // (uncompressed) HeapObject
   kTagged,         // (uncompressed) Object (Smi or HeapObject)
