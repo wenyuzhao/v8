@@ -778,7 +778,7 @@ void InstructionSelector::VisitLoad(Node* node) {
       opcode = kArm64LdrQ;
       immediate_mode = kNoImmediate;
       break;
-    case MachineRepresentation::kMapWord:        // Fall through.
+    case MachineRepresentation::kMapWord:  // Fall through.
     case MachineRepresentation::kNone:
       UNREACHABLE();
   }
