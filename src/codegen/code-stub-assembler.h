@@ -3133,6 +3133,9 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
 
   // Load type feedback vector from the stub caller's frame.
   TNode<FeedbackVector> LoadFeedbackVectorForStub();
+  // Load type feedback vector from the stub caller's frame, skipping an
+  // intermediate trampoline frame.
+  TNode<FeedbackVector> LoadFeedbackVectorForStubWithTrampoline();
 
   // Load the value from closure's feedback cell.
   TNode<HeapObject> LoadFeedbackCellValue(TNode<JSFunction> closure);
@@ -3825,7 +3828,10 @@ class V8_EXPORT_PRIVATE CodeStubArguments {
   TNode<Object> AtIndex(TNode<IntPtrT> index) const;
   TNode<Object> AtIndex(int index) const;
 
+  // Return the number of arguments (excluding the receiver).
   TNode<IntPtrT> GetLength() const { return argc_; }
+  // Return the number of arguments (including the receiver).
+  TNode<IntPtrT> GetLengthWithReceiver() const;
 
   TorqueStructArguments GetTorqueArguments() const {
     return TorqueStructArguments{fp_, base_, argc_};

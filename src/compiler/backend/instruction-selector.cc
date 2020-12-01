@@ -785,6 +785,12 @@ Instruction* InstructionSelector::EmitWithContinuation(
     continuation_inputs_.push_back(g.Label(cont->true_block()));
     continuation_inputs_.push_back(g.Label(cont->false_block()));
   } else if (cont->IsDeoptimize()) {
+    if (cont->has_extra_args()) {
+      for (int i = 0; i < cont->extra_args_count(); i++) {
+        continuation_inputs_.push_back(cont->extra_args()[i]);
+        input_count++;
+      }
+    }
     opcode |= MiscField::encode(static_cast<int>(input_count));
     AppendDeoptimizeArguments(&continuation_inputs_, cont->kind(),
                               cont->reason(), cont->feedback(),
@@ -883,13 +889,9 @@ void InstructionSelector::InitializeCallBuffer(Node* call, CallBuffer* buffer,
       buffer->output_nodes.push_back(result);
     } else {
       buffer->output_nodes.resize(ret_count);
-      int stack_count = 0;
       for (size_t i = 0; i < ret_count; ++i) {
         LinkageLocation location = buffer->descriptor->GetReturnLocation(i);
         buffer->output_nodes[i] = PushParameter(nullptr, location);
-        if (location.IsCallerFrameSlot()) {
-          stack_count += location.GetSizeInPointers();
-        }
       }
       for (Edge const edge : call->use_edges()) {
         if (!NodeProperties::IsValueEdge(edge)) continue;
@@ -901,7 +903,9 @@ void InstructionSelector::InitializeCallBuffer(Node* call, CallBuffer* buffer,
         DCHECK(!buffer->output_nodes[index].node);
         buffer->output_nodes[index].node = node;
       }
-      frame_->EnsureReturnSlots(stack_count);
+
+      frame_->EnsureReturnSlots(
+          static_cast<int>(buffer->descriptor->StackReturnCount()));
     }
 
     // Filter out the outputs that aren't live because no projection uses them.
@@ -1378,6 +1382,8 @@ void InstructionSelector::VisitNode(Node* node) {
       return VisitDeoptimizeIf(node);
     case IrOpcode::kDeoptimizeUnless:
       return VisitDeoptimizeUnless(node);
+    case IrOpcode::kDynamicMapCheckUnless:
+      return VisitDynamicMapCheckUnless(node);
     case IrOpcode::kTrapIf:
       return VisitTrapIf(node, TrapIdOf(node->op()));
     case IrOpcode::kTrapUnless:
@@ -2809,11 +2815,13 @@ void InstructionSelector::VisitPrefetchNonTemporal(Node* node) {
 }
 #endif  // !V8_TARGET_ARCH_ARM64
 
-#if !V8_TARGET_ARCH_X64
+#if !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_IA32
 // TODO(v8:10975): Prototyping load lane and store lane.
 void InstructionSelector::VisitLoadLane(Node* node) { UNIMPLEMENTED(); }
 void InstructionSelector::VisitStoreLane(Node* node) { UNIMPLEMENTED(); }
+#endif  // !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_IA32
 
+#if !V8_TARGET_ARCH_X64
 // TODO(v8:10983) Prototyping sign select.
 void InstructionSelector::VisitI8x16SignSelect(Node* node) { UNIMPLEMENTED(); }
 void InstructionSelector::VisitI16x8SignSelect(Node* node) { UNIMPLEMENTED(); }
@@ -2821,10 +2829,13 @@ void InstructionSelector::VisitI32x4SignSelect(Node* node) { UNIMPLEMENTED(); }
 void InstructionSelector::VisitI64x2SignSelect(Node* node) { UNIMPLEMENTED(); }
 #endif  // !V8_TARGET_ARCH_X64
 
-#if !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_ARM64
+#if !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_ARM64 && !V8_TARGET_ARCH_ARM && \
+    !V8_TARGET_ARCH_IA32 && !V8_TARGET_ARCH_MIPS64 && !V8_TARGET_ARCH_MIPS
 // TODO(v8:10997) Prototype i64x2.bitmask.
 void InstructionSelector::VisitI64x2BitMask(Node* node) { UNIMPLEMENTED(); }
-#endif  // !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_ARM64
+#endif  // !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_ARM64 && !V8_TARGET_ARCH_ARM
+        // && !V8_TARGET_ARCH_IA32 && !V8_TARGET_ARCH_MIPS64
+        // && !V8_TARGET_ARCH_MIPS
 
 void InstructionSelector::VisitFinishRegion(Node* node) { EmitIdentity(node); }
 
@@ -3158,6 +3169,39 @@ void InstructionSelector::VisitDeoptimizeUnless(Node* node) {
     FlagsContinuation cont = FlagsContinuation::ForDeoptimize(
         kEqual, p.kind(), p.reason(), p.feedback(), node->InputAt(1));
     VisitWordCompareZero(node, node->InputAt(0), &cont);
+  }
+}
+
+void InstructionSelector::VisitDynamicMapCheckUnless(Node* node) {
+  OperandGenerator g(this);
+  DynamicMapChecksUnlessNode n(node);
+  DeoptimizeParameters p = DeoptimizeParametersOf(node->op());
+
+  DynamicMapChecksDescriptor descriptor;
+  // Note: We use Operator::kNoDeopt here because this builtin does not lazy
+  // deoptimize (which is the meaning of Operator::kNoDeopt), even though it can
+  // eagerly deoptimize.
+  CallDescriptor* call_descriptor = Linkage::GetStubCallDescriptor(
+      zone(), descriptor, descriptor.GetStackParameterCount(),
+      CallDescriptor::kNoFlags, Operator::kNoDeopt | Operator::kNoThrow);
+  // TODO(rmcilroy): Pass the constant values as immediates and move them into
+  // the correct location out of the fast-path (e.g., at deopt or in trampoline)
+  InstructionOperand dynamic_check_args[] = {
+      g.UseLocation(n.slot(), call_descriptor->GetInputLocation(1)),
+      g.UseLocation(n.map(), call_descriptor->GetInputLocation(2)),
+      g.UseLocation(n.handler(), call_descriptor->GetInputLocation(3)),
+  };
+
+  if (NeedsPoisoning(IsSafetyCheck::kCriticalSafetyCheck)) {
+    FlagsContinuation cont = FlagsContinuation::ForDeoptimizeAndPoison(
+        kEqual, p.kind(), p.reason(), p.feedback(), n.frame_state(),
+        dynamic_check_args, 3);
+    VisitWordCompareZero(node, n.condition(), &cont);
+  } else {
+    FlagsContinuation cont = FlagsContinuation::ForDeoptimize(
+        kEqual, p.kind(), p.reason(), p.feedback(), n.frame_state(),
+        dynamic_check_args, 3);
+    VisitWordCompareZero(node, n.condition(), &cont);
   }
 }
 

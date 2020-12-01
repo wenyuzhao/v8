@@ -1628,7 +1628,7 @@ void Assembler::jmp_rel(int offset) {
   EnsureSpace ensure_space(this);
   const int short_size = 2;
   const int long_size = 5;
-  if (is_int8(offset - short_size)) {
+  if (is_int8(offset - short_size) && !predictable_code_size()) {
     // 1110 1011 #8-bit disp.
     EMIT(0xEB);
     EMIT((offset - short_size) & 0xFF);
@@ -2414,6 +2414,20 @@ void Assembler::shufpd(XMMRegister dst, XMMRegister src, byte imm8) {
   EMIT(imm8);
 }
 
+void Assembler::movlps(XMMRegister dst, Operand src) {
+  EnsureSpace ensure_space(this);
+  EMIT(0x0F);
+  EMIT(0x12);
+  emit_sse_operand(dst, src);
+}
+
+void Assembler::movhps(XMMRegister dst, Operand src) {
+  EnsureSpace ensure_space(this);
+  EMIT(0x0F);
+  EMIT(0x16);
+  emit_sse_operand(dst, src);
+}
+
 void Assembler::movdqa(Operand dst, XMMRegister src) {
   EnsureSpace ensure_space(this);
   EMIT(0x66);
@@ -2835,6 +2849,14 @@ void Assembler::vshufpd(XMMRegister dst, XMMRegister src1, Operand src2,
   EMIT(imm8);
 }
 
+void Assembler::vmovlps(XMMRegister dst, XMMRegister src1, Operand src2) {
+  vinstr(0x12, dst, src1, src2, kNone, k0F, kWIG);
+}
+
+void Assembler::vmovhps(XMMRegister dst, XMMRegister src1, Operand src2) {
+  vinstr(0x16, dst, src1, src2, kNone, k0F, kWIG);
+}
+
 void Assembler::vcmpps(XMMRegister dst, XMMRegister src1, Operand src2,
                        uint8_t cmp) {
   vps(0xC2, dst, src1, src2);
@@ -2975,6 +2997,14 @@ void Assembler::vroundps(XMMRegister dst, XMMRegister src, RoundingMode mode) {
 void Assembler::vroundpd(XMMRegister dst, XMMRegister src, RoundingMode mode) {
   vinstr(0x09, dst, xmm0, Operand(src), k66, k0F3A, kWIG);
   EMIT(static_cast<byte>(mode) | 0x8);  // Mask precision exception.
+}
+
+void Assembler::vmovmskpd(Register dst, XMMRegister src) {
+  DCHECK(IsEnabled(AVX));
+  EnsureSpace ensure_space(this);
+  emit_vex_prefix(xmm0, kL128, k66, k0F, kWIG);
+  EMIT(0x50);
+  emit_sse_operand(dst, src);
 }
 
 void Assembler::vmovmskps(Register dst, XMMRegister src) {

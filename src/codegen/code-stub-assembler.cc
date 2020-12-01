@@ -9581,6 +9581,16 @@ TNode<FeedbackVector> CodeStubAssembler::LoadFeedbackVectorForStub() {
   return CAST(LoadFeedbackVector(function));
 }
 
+TNode<FeedbackVector>
+CodeStubAssembler::LoadFeedbackVectorForStubWithTrampoline() {
+  TNode<RawPtrT> frame_pointer = LoadParentFramePointer();
+  TNode<RawPtrT> parent_frame_pointer = Load<RawPtrT>(frame_pointer);
+  TNode<JSFunction> function = CAST(
+      LoadFullTagged(parent_frame_pointer,
+                     IntPtrConstant(StandardFrameConstants::kFunctionOffset)));
+  return CAST(LoadFeedbackVector(function));
+}
+
 void CodeStubAssembler::UpdateFeedback(TNode<Smi> feedback,
                                        TNode<HeapObject> maybe_vector,
                                        TNode<UintPtrT> slot_id) {
@@ -12995,6 +13005,7 @@ CodeStubArguments::CodeStubArguments(CodeStubAssembler* assembler,
   TNode<IntPtrT> offset = assembler_->IntPtrConstant(
       (StandardFrameConstants::kFixedSlotCountAboveFp + 1) *
       kSystemPointerSize);
+  DCHECK_NOT_NULL(argc_);
   // base_ points to the first argument, not the receiver
   // whether present or not.
   base_ = assembler_->RawPtrAdd(fp_, offset);
@@ -13025,6 +13036,12 @@ TNode<Object> CodeStubArguments::AtIndex(TNode<IntPtrT> index) const {
 
 TNode<Object> CodeStubArguments::AtIndex(int index) const {
   return AtIndex(assembler_->IntPtrConstant(index));
+}
+
+TNode<IntPtrT> CodeStubArguments::GetLengthWithReceiver() const {
+  TNode<IntPtrT> argc = GetLength();
+  argc = assembler_->IntPtrAdd(argc, assembler_->IntPtrConstant(1));
+  return argc;
 }
 
 TNode<Object> CodeStubArguments::GetOptionalArgumentValue(

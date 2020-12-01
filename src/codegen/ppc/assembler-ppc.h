@@ -922,6 +922,7 @@ class Assembler : public AssemblerBase {
   void mtxer(Register src);
   void mcrfs(CRegister cr, FPSCRBit bit);
   void mfcr(Register dst);
+  void mtcrf(unsigned char FXM, Register src);
 #if V8_TARGET_ARCH_PPC64
   void mffprd(Register dst, DoubleRegister src);
   void mffprwz(Register dst, DoubleRegister src);
@@ -1021,6 +1022,10 @@ class Assembler : public AssemblerBase {
   void mtvsrd(const Simd128Register rt, const Register ra);
   void mtvsrdd(const Simd128Register rt, const Register ra, const Register rb);
   void lxvd(const Simd128Register rt, const MemOperand& src);
+  void lxsdx(const Simd128Register rt, const MemOperand& src);
+  void lxsibzx(const Simd128Register rt, const MemOperand& src);
+  void lxsihzx(const Simd128Register rt, const MemOperand& src);
+  void lxsiwzx(const Simd128Register rt, const MemOperand& src);
   void stxvd(const Simd128Register rt, const MemOperand& src);
   void xxspltib(const Simd128Register rt, const Operand& imm);
 
@@ -1076,7 +1081,7 @@ class Assembler : public AssemblerBase {
   }
 
   // Class for scoping postponing the trampoline pool generation.
-  class BlockTrampolinePoolScope {
+  class V8_NODISCARD BlockTrampolinePoolScope {
    public:
     explicit BlockTrampolinePoolScope(Assembler* assem) : assem_(assem) {
       assem_->StartBlockTrampolinePool();
@@ -1090,7 +1095,7 @@ class Assembler : public AssemblerBase {
   };
 
   // Class for scoping disabling constant pool entry merging
-  class BlockConstantPoolEntrySharingScope {
+  class V8_NODISCARD BlockConstantPoolEntrySharingScope {
    public:
     explicit BlockConstantPoolEntrySharingScope(Assembler* assem)
         : assem_(assem) {
@@ -1416,7 +1421,7 @@ class PatchingAssembler : public Assembler {
   ~PatchingAssembler();
 };
 
-class V8_EXPORT_PRIVATE UseScratchRegisterScope {
+class V8_EXPORT_PRIVATE V8_NODISCARD UseScratchRegisterScope {
  public:
   explicit UseScratchRegisterScope(Assembler* assembler);
   ~UseScratchRegisterScope();

@@ -2,16 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {FocusEvent, SelectionEvent, SelectTimeEvent} from '../events.mjs';
 import {Group} from '../ic-model.mjs';
 import {IcLogEntry} from '../log/ic.mjs';
 import {MapLogEntry} from '../log/map.mjs';
 
+import {FocusEvent, SelectionEvent, SelectTimeEvent} from './events.mjs';
 import {DOM, V8CustomElement} from './helper.mjs';
 
 DOM.defineCustomElement(
     'view/ic-panel', (templateText) => class ICPanel extends V8CustomElement {
       _selectedLogEntries;
+      _selectedLogEntry;
       _timeline;
 
       _detailsClickHandler = this.handleDetailsClick.bind(this);
@@ -54,6 +55,10 @@ DOM.defineCustomElement(
         this.update();
       }
 
+      set selectedLogEntry(entry) {
+        // TODO: show details
+      }
+
       _update() {
         this._updateCount();
         this._updateTable();
@@ -82,7 +87,7 @@ DOM.defineCustomElement(
       }
 
       handleMapClick(e) {
-        const group = e.target.parentNode.entry;
+        const group = e.target.parentNode.group;
         const id = group.key;
         const selectedMapLogEntries =
             this.searchIcLogEntryToMapLogEntry(id, group.entries);

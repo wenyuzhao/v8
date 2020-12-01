@@ -1532,7 +1532,7 @@ namespace {
 // A scope object that ensures a parse info's runtime call stats and stack limit
 // are set correctly during worker-thread compile, and restores it after going
 // out of scope.
-class OffThreadParseInfoScope {
+class V8_NODISCARD OffThreadParseInfoScope {
  public:
   OffThreadParseInfoScope(
       ParseInfo* parse_info,
@@ -1744,7 +1744,7 @@ bool Compiler::CollectSourcePositions(Isolate* isolate,
       shared_info->GetDebugInfo().HasInstrumentedBytecodeArray()) {
     ByteArray source_position_table =
         job->compilation_info()->bytecode_array()->SourcePositionTable();
-    shared_info->GetDebugBytecodeArray().set_source_position_table(
+    shared_info->GetActiveBytecodeArray().set_source_position_table(
         source_position_table, kReleaseStore);
   }
 

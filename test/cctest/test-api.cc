@@ -82,6 +82,7 @@ using ::v8::Boolean;
 using ::v8::BooleanObject;
 using ::v8::Context;
 using ::v8::Extension;
+using ::v8::FixedArray;
 using ::v8::Function;
 using ::v8::FunctionTemplate;
 using ::v8::HandleScope;
@@ -2276,6 +2277,7 @@ THREADED_TEST(TestDataTypeChecks) {
     CHECK(!x->IsObjectTemplate());
     CHECK(!x->IsFunctionTemplate());
     v8::Local<v8::Value>::Cast(x);
+    x.As<v8::Value>();
   }
 
   v8::ScriptOrigin origin(v8_str(""), 0, 0, false, -1, Local<v8::Value>(),
@@ -2290,6 +2292,7 @@ THREADED_TEST(TestDataTypeChecks) {
   CHECK(!module->IsObjectTemplate());
   CHECK(!module->IsFunctionTemplate());
   v8::Local<v8::Module>::Cast(module);
+  module.As<v8::Module>();
 
   v8::Local<v8::Data> p = v8::Private::New(isolate);
   CHECK(!p->IsModule());
@@ -2604,7 +2607,7 @@ THREADED_TEST(DescriptorInheritance2) {
 
 void SimpleAccessorGetter(Local<String> name,
                           const v8::PropertyCallbackInfo<v8::Value>& info) {
-  Local<Object> self = Local<Object>::Cast(info.This());
+  Local<Object> self = info.This().As<Object>();
   info.GetReturnValue().Set(
       self->Get(info.GetIsolate()->GetCurrentContext(),
                 String::Concat(info.GetIsolate(), v8_str("accessor_"), name))
@@ -2613,7 +2616,7 @@ void SimpleAccessorGetter(Local<String> name,
 
 void SimpleAccessorSetter(Local<String> name, Local<Value> value,
                           const v8::PropertyCallbackInfo<void>& info) {
-  Local<Object> self = Local<Object>::Cast(info.This());
+  Local<Object> self = info.This().As<Object>();
   CHECK(self->Set(info.GetIsolate()->GetCurrentContext(),
                   String::Concat(info.GetIsolate(), v8_str("accessor_"), name),
                   value)
@@ -2623,7 +2626,7 @@ void SimpleAccessorSetter(Local<String> name, Local<Value> value,
 void SymbolAccessorGetter(Local<Name> name,
                           const v8::PropertyCallbackInfo<v8::Value>& info) {
   CHECK(name->IsSymbol());
-  Local<Symbol> sym = Local<Symbol>::Cast(name);
+  Local<Symbol> sym = name.As<Symbol>();
   if (sym->Description()->IsUndefined()) return;
   SimpleAccessorGetter(Local<String>::Cast(sym->Description()), info);
 }
@@ -2631,7 +2634,7 @@ void SymbolAccessorGetter(Local<Name> name,
 void SymbolAccessorSetter(Local<Name> name, Local<Value> value,
                           const v8::PropertyCallbackInfo<void>& info) {
   CHECK(name->IsSymbol());
-  Local<Symbol> sym = Local<Symbol>::Cast(name);
+  Local<Symbol> sym = name.As<Symbol>();
   if (sym->Description()->IsUndefined()) return;
   SimpleAccessorSetter(Local<String>::Cast(sym->Description()), value, info);
 }
@@ -2639,7 +2642,7 @@ void SymbolAccessorSetter(Local<Name> name, Local<Value> value,
 void SymbolAccessorGetterReturnsDefault(
     Local<Name> name, const v8::PropertyCallbackInfo<v8::Value>& info) {
   CHECK(name->IsSymbol());
-  Local<Symbol> sym = Local<Symbol>::Cast(name);
+  Local<Symbol> sym = name.As<Symbol>();
   if (sym->Description()->IsUndefined()) return;
   info.GetReturnValue().Set(info.Data());
 }
@@ -8828,7 +8831,7 @@ static void YGetter(Local<String> name,
 static void YSetter(Local<String> name,
                     Local<Value> value,
                     const v8::PropertyCallbackInfo<void>& info) {
-  Local<Object> this_obj = Local<Object>::Cast(info.This());
+  Local<Object> this_obj = info.This().As<Object>();
   v8::Local<v8::Context> context = info.GetIsolate()->GetCurrentContext();
   if (this_obj->Has(context, name).FromJust())
     this_obj->Delete(context, name).FromJust();
@@ -17588,7 +17591,8 @@ static void SetterWhichSetsYOnThisTo23(
     const v8::PropertyCallbackInfo<void>& info) {
   CHECK(v8::Utils::OpenHandle(*info.This())->IsJSObject());
   CHECK(v8::Utils::OpenHandle(*info.Holder())->IsJSObject());
-  Local<Object>::Cast(info.This())
+  info.This()
+      .As<Object>()
       ->Set(info.GetIsolate()->GetCurrentContext(), v8_str("y"), v8_num(23))
       .FromJust();
 }
@@ -17614,7 +17618,8 @@ void FooSetInterceptor(Local<Name> name, Local<Value> value,
            .FromJust()) {
     return;
   }
-  Local<Object>::Cast(info.This())
+  info.This()
+      .As<Object>()
       ->Set(info.GetIsolate()->GetCurrentContext(), v8_str("y"), v8_num(23))
       .FromJust();
   info.GetReturnValue().Set(v8_num(23));
@@ -17678,7 +17683,8 @@ static void NamedPropertySetterWhichSetsYOnThisTo23(
     const v8::PropertyCallbackInfo<v8::Value>& info) {
   if (name->Equals(info.GetIsolate()->GetCurrentContext(), v8_str("x"))
           .FromJust()) {
-    Local<Object>::Cast(info.This())
+    info.This()
+        .As<Object>()
         ->Set(info.GetIsolate()->GetCurrentContext(), v8_str("y"), v8_num(23))
         .FromJust();
   }
@@ -23520,9 +23526,14 @@ class TestSourceStream : public v8::ScriptCompiler::ExternalSourceStream {
   unsigned index_;
 };
 
+v8::MaybeLocal<Module> UnexpectedModuleResolveCallback(
+    Local<Context> context, Local<String> specifier,
+    Local<FixedArray> import_assertions, Local<Module> referrer) {
+  CHECK_WITH_MSG(false, "Unexpected call to resolve callback");
+}
 
 // Helper function for running streaming tests.
-void RunStreamingTest(const char** chunks, i::ScriptType type,
+void RunStreamingTest(const char** chunks, v8::ScriptType type,
                       v8::ScriptCompiler::StreamedSource::Encoding encoding =
                           v8::ScriptCompiler::StreamedSource::ONE_BYTE,
                       bool expected_success = true,
@@ -23536,9 +23547,7 @@ void RunStreamingTest(const char** chunks, i::ScriptType type,
   v8::ScriptCompiler::StreamedSource source(
       std::make_unique<TestSourceStream>(chunks), encoding);
   v8::ScriptCompiler::ScriptStreamingTask* task =
-      type == i::ScriptType::kClassic
-          ? v8::ScriptCompiler::StartStreaming(isolate, &source)
-          : v8::ScriptCompiler::StartStreamingModule(isolate, &source);
+      v8::ScriptCompiler::StartStreaming(isolate, &source, type);
 
   // TestSourceStream::GetMoreData won't block, so it's OK to just run the
   // task here in the main thread.
@@ -23550,10 +23559,10 @@ void RunStreamingTest(const char** chunks, i::ScriptType type,
 
   v8::ScriptOrigin origin(v8_str("http://foo.com"), 0, 0, false, -1,
                           v8::Local<v8::Value>(), false, false,
-                          type == i::ScriptType::kModule);
+                          type == v8::ScriptType::kModule);
 
   char* full_source = TestSourceStream::FullSourceString(chunks);
-  if (type == i::ScriptType::kClassic) {
+  if (type == v8::ScriptType::kClassic) {
     v8::MaybeLocal<Script> script = v8::ScriptCompiler::Compile(
         env.local(), &source, v8_str(full_source), origin);
     if (expected_success) {
@@ -23572,7 +23581,10 @@ void RunStreamingTest(const char** chunks, i::ScriptType type,
         env.local(), &source, v8_str(full_source), origin);
     if (expected_success) {
       v8::Local<v8::Module> module = maybe_module.ToLocalChecked();
-      CHECK(module->InstantiateModule(env.local(), nullptr).FromJust());
+      CHECK(
+          module
+              ->InstantiateModule(env.local(), UnexpectedModuleResolveCallback)
+              .FromJust());
       CHECK_EQ(Module::kInstantiated, module->GetStatus());
       v8::Local<Value> result = module->Evaluate(env.local()).ToLocalChecked();
       CHECK_EQ(Module::kEvaluated, module->GetStatus());
@@ -23598,9 +23610,9 @@ void RunStreamingTest(const char** chunks,
                       bool expected_success = true,
                       const char* expected_source_url = nullptr,
                       const char* expected_source_mapping_url = nullptr) {
-  RunStreamingTest(chunks, i::ScriptType::kClassic, encoding, expected_success,
+  RunStreamingTest(chunks, v8::ScriptType::kClassic, encoding, expected_success,
                    expected_source_url, expected_source_mapping_url);
-  RunStreamingTest(chunks, i::ScriptType::kModule, encoding, expected_success,
+  RunStreamingTest(chunks, v8::ScriptType::kModule, encoding, expected_success,
                    expected_source_url, expected_source_mapping_url);
 }
 
@@ -23637,7 +23649,7 @@ TEST(StreamingScriptEvalShadowing) {
       "})()\n";
   const char* chunks[] = {chunk1, nullptr};
   // Only run the script version of this test.
-  RunStreamingTest(chunks, i::ScriptType::kClassic);
+  RunStreamingTest(chunks, v8::ScriptType::kClassic);
 }
 
 TEST(StreamingBiggerScript) {
@@ -24033,12 +24045,6 @@ TEST(CodeCache) {
   isolate2->Dispose();
 }
 
-v8::MaybeLocal<Module> UnexpectedModuleResolveCallback(Local<Context> context,
-                                                       Local<String> specifier,
-                                                       Local<Module> referrer) {
-  CHECK_WITH_MSG(false, "Unexpected call to resolve callback");
-}
-
 v8::MaybeLocal<Value> UnexpectedSyntheticModuleEvaluationStepsCallback(
     Local<Context> context, Local<Module> module) {
   CHECK_WITH_MSG(false, "Unexpected call to synthetic module re callback");
@@ -24121,9 +24127,9 @@ Local<Module> CompileAndInstantiateModuleFromCache(
 
 }  // namespace
 
-v8::MaybeLocal<Module> SyntheticModuleResolveCallback(Local<Context> context,
-                                                      Local<String> specifier,
-                                                      Local<Module> referrer) {
+v8::MaybeLocal<Module> SyntheticModuleResolveCallback(
+    Local<Context> context, Local<String> specifier,
+    Local<FixedArray> import_assertions, Local<Module> referrer) {
   std::vector<v8::Local<v8::String>> export_names{v8_str("test_export")};
   Local<Module> module = CreateAndInstantiateSyntheticModule(
       context->GetIsolate(),
@@ -24133,7 +24139,8 @@ v8::MaybeLocal<Module> SyntheticModuleResolveCallback(Local<Context> context,
 }
 
 v8::MaybeLocal<Module> SyntheticModuleThatThrowsDuringEvaluateResolveCallback(
-    Local<Context> context, Local<String> specifier, Local<Module> referrer) {
+    Local<Context> context, Local<String> specifier,
+    Local<FixedArray> import_assertions, Local<Module> referrer) {
   std::vector<v8::Local<v8::String>> export_names{v8_str("test_export")};
   Local<Module> module = CreateAndInstantiateSyntheticModule(
       context->GetIsolate(),
@@ -28250,13 +28257,6 @@ TEST(FastApiCalls) {
   CallAndCheck<uint64_t>(0, Behavior::kNoException,
                          expected_path_for_64bit_test, v8_num(-0.0));
 
-#if defined(V8_TARGET_ARCH_ARM64) || defined(V8_TARGET_ARCH_MIPS64)
-  // TODO(v8:11121): Currently the tests below are executed for non-arm64
-  // and non-mips64 because they fall down the fast path due to incorrect
-  // behaviour of CheckedFloat64ToInt64 on arm64 and mips64 (see the
-  // linked issue for details). Eventually we want to remove the conditional
-  // compilation and ensure consistent behaviour on all platforms.
-#else
   // TODO(mslekova): We deopt for unsafe integers, but ultimately we want to
   // stay on the fast path.
   CallAndCheck<int64_t>(std::numeric_limits<int64_t>::min(),
@@ -28275,7 +28275,6 @@ TEST(FastApiCalls) {
   CallAndCheck<uint64_t>(1ull << 63, Behavior::kNoException,
                          ApiCheckerResult::kSlowCalled,
                          v8_num(static_cast<double>(1ull << 63)));
-#endif  // V8_TARGET_ARCH_ARM64 || V8_TARGET_ARCH_MIPS64
 
   // Corner cases - float and double
 #ifdef V8_ENABLE_FP_PARAMS_IN_C_LINKAGE

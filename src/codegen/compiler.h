@@ -330,15 +330,15 @@ class OptimizedCompilationJob : public CompilationJob {
         compiler_name_(compiler_name) {}
 
   // Prepare the compile job. Must be called on the main thread.
-  V8_WARN_UNUSED_RESULT Status PrepareJob(Isolate* isolate);
+  V8_EXPORT_PRIVATE V8_WARN_UNUSED_RESULT Status PrepareJob(Isolate* isolate);
 
   // Executes the compile job. Can be called on a background thread if
   // can_execute_on_background_thread() returns true.
-  V8_WARN_UNUSED_RESULT Status
+  V8_EXPORT_PRIVATE V8_WARN_UNUSED_RESULT Status
   ExecuteJob(RuntimeCallStats* stats, LocalIsolate* local_isolate = nullptr);
 
   // Finalizes the compile job. Must be called on the main thread.
-  V8_WARN_UNUSED_RESULT Status FinalizeJob(Isolate* isolate);
+  V8_EXPORT_PRIVATE V8_WARN_UNUSED_RESULT Status FinalizeJob(Isolate* isolate);
 
   // Report a transient failure, try again next time. Should only be called on
   // optimization compilation jobs.
@@ -438,12 +438,12 @@ class DeferredFinalizationJobData {
 // A wrapper around a OptimizedCompilationInfo that detaches the Handles from
 // the underlying PersistentHandlesScope and stores them in info_ on
 // destruction.
-class CompilationHandleScope final {
+class V8_NODISCARD CompilationHandleScope final {
  public:
   explicit CompilationHandleScope(Isolate* isolate,
                                   OptimizedCompilationInfo* info)
       : persistent_(isolate), info_(info) {}
-  ~CompilationHandleScope();
+  V8_EXPORT_PRIVATE ~CompilationHandleScope();
 
  private:
   PersistentHandlesScope persistent_;
@@ -460,7 +460,7 @@ class V8_EXPORT_PRIVATE BackgroundCompileTask {
   // Compiler::GetSharedFunctionInfoForStreamedScript.
   // Note: does not take ownership of |data|.
   BackgroundCompileTask(ScriptStreamingData* data, Isolate* isolate,
-                        ScriptType type);
+                        v8::ScriptType type);
   ~BackgroundCompileTask();
 
   // Creates a new task that when run will parse and compile the

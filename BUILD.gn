@@ -433,6 +433,7 @@ config("internal_config") {
     "//build/config/compiler:wexit_time_destructors",
     ":internal_config_base",
     ":v8_header_features",
+    ":cppgc_header_features",
   ]
 
   if (is_component_build) {
@@ -477,17 +478,8 @@ assert(!cppgc_is_standalone || !v8_use_perfetto)
 # This config should be applied to code using the cppgc_base.
 config("cppgc_base_config") {
   defines = []
-  if (cppgc_enable_object_names) {
-    defines += [ "CPPGC_SUPPORTS_OBJECT_NAMES" ]
-  }
-  if (cppgc_enable_caged_heap) {
-    defines += [ "CPPGC_CAGED_HEAP" ]
-  }
-  if (cppgc_enable_young_generation) {
-    defines += [ "CPPGC_YOUNG_GENERATION" ]
-  }
-  if (!cppgc_is_standalone) {
-    defines += [ "CPPGC_BUILD_IN_V8" ]
+  if (cppgc_is_standalone) {
+    defines += [ "CPPGC_IS_STANDALONE" ]
   }
 }
 
@@ -500,7 +492,10 @@ config("libsampler_config") {
 # itself.
 config("external_config") {
   defines = []
-  configs = [ ":v8_header_features" ]
+  configs = [
+    ":v8_header_features",
+    ":cppgc_header_features",
+  ]
   if (is_component_build) {
     defines += [ "USING_V8_SHARED" ]
   }
@@ -554,6 +549,22 @@ config("v8_header_features") {
   }
 }
 
+config("cppgc_header_features") {
+  visibility = [ ":*" ]
+
+  defines = []
+
+  if (cppgc_enable_object_names) {
+    defines += [ "CPPGC_SUPPORTS_OBJECT_NAMES" ]
+  }
+  if (cppgc_enable_caged_heap) {
+    defines += [ "CPPGC_CAGED_HEAP" ]
+  }
+  if (cppgc_enable_young_generation) {
+    defines += [ "CPPGC_YOUNG_GENERATION" ]
+  }
+}
+
 # Put defines here that are only used in our internal files and NEVER in
 # external headers that embedders (such as chromium and node) might include.
 config("features") {
@@ -562,7 +573,10 @@ config("features") {
 
   defines = []
 
-  configs = [ ":v8_header_features" ]
+  configs = [
+    ":v8_header_features",
+    ":cppgc_header_features",
+  ]
 
   if (v8_embedder_string != "") {
     defines += [ "V8_EMBEDDER_STRING=\"$v8_embedder_string\"" ]
@@ -1986,7 +2000,10 @@ v8_header_set("v8_version") {
 # can depend upon to get basic v8 types.
 v8_header_set("v8_headers") {
   configs = [ ":internal_config" ]
-  public_configs = [ ":v8_header_features" ]
+  public_configs = [
+    ":v8_header_features",
+    ":cppgc_header_features",
+  ]
 
   sources = [
     "include/v8-cppgc.h",
@@ -4428,7 +4445,10 @@ v8_source_set("v8_cppgc_shared") {
 # can depend upon to get basic cppgc types.
 v8_header_set("cppgc_headers") {
   configs = [ ":internal_config" ]
-  public_configs = [ ":v8_header_features" ]
+  public_configs = [
+    ":v8_header_features",
+    ":cppgc_header_features",
+  ]
 
   sources = [
     "include/cppgc/garbage-collected.h",
@@ -4483,6 +4503,7 @@ v8_source_set("cppgc_base") {
     "src/heap/cppgc/compactor.h",
     "src/heap/cppgc/concurrent-marker.cc",
     "src/heap/cppgc/concurrent-marker.h",
+    "src/heap/cppgc/default-platform.cc",
     "src/heap/cppgc/free-list.cc",
     "src/heap/cppgc/free-list.h",
     "src/heap/cppgc/garbage-collector.h",
@@ -4551,6 +4572,8 @@ v8_source_set("cppgc_base") {
 
   if (cppgc_is_standalone) {
     sources += [ "//base/trace_event/common/trace_event_common.h" ]
+  } else {
+    deps = [ ":v8_tracing" ]
   }
 
   if (cppgc_enable_caged_heap) {
@@ -5116,33 +5139,21 @@ if (want_v8_shell) {
   }
 }
 
-if (cppgc_is_standalone) {
-  v8_executable("cppgc_standalone") {
-    sources = [ "samples/cppgc/cppgc-standalone.cc" ]
+v8_executable("cppgc_sample") {
+  sources = [ "samples/cppgc/cppgc-sample.cc" ]
 
-    configs = [
-      # Note: don't use :internal_config here because this target will get
-      # the :external_config applied to it by virtue of depending on :cppgc, and
-      # you can't have both applied to the same target.
-      ":internal_config_base",
-    ]
+  configs = [
+    # Note: don't use :internal_config here because this target will get
+    # the :external_config applied to it by virtue of depending on :cppgc, and
+    # you can't have both applied to the same target.
+    ":internal_config_base",
+    ":cppgc_base_config",
+  ]
 
-    deps = [ ":cppgc" ]
-  }
-} else {
-  v8_executable("cppgc_for_v8_embedders") {
-    sources = [ "samples/cppgc/cppgc-for-v8-embedders.cc" ]
-
-    configs = [
-      # Note: don't use :internal_config here because this target will get
-      # the :external_config applied to it by virtue of depending on :cppgc, and
-      # you can't have both applied to the same target.
-      ":internal_config_base",
-    ]
-
-    deps = [
+  deps = [ ":cppgc" ]
+  if (!cppgc_is_standalone) {
+    deps += [
       ":v8",
-      ":v8_libplatform",
       "//build/win:default_exe_manifest",
     ]
   }

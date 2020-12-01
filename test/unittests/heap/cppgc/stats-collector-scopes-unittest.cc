@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#if !CPPGC_BUILD_IN_V8
+#if CPPGC_IS_STANDALONE
 
 #include "src/heap/cppgc/stats-collector.h"
 #include "test/unittests/heap/cppgc/tests.h"
@@ -56,7 +56,7 @@ std::vector<std::string> DelegatingTracingControllerImpl::stored_arg_names;
 std::vector<uint8_t> DelegatingTracingControllerImpl::stored_arg_types;
 std::vector<uint64_t> DelegatingTracingControllerImpl::stored_arg_values;
 
-class CppgcTracingScopesTest : public testing::TestWithHeap {
+class V8_NODISCARD CppgcTracingScopesTest : public testing::TestWithHeap {
   using Config = Marker::MarkingConfig;
 
  public:
@@ -303,4 +303,4 @@ TEST_F(CppgcTracingScopesTest, TestIndividualConcurrentScopes) {
 }  // namespace internal
 }  // namespace cppgc
 
-#endif  // !CPPGC_BUILD_IN_V8
+#endif  // CPPGC_IS_STANDALONE

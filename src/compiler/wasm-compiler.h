@@ -316,12 +316,12 @@ class WasmGraphBuilder {
                       wasm::LoadTransformationKind transform, Node* index,
                       uint64_t offset, uint32_t alignment,
                       wasm::WasmCodePosition position);
-  Node* LoadLane(MachineType memtype, Node* value, Node* index, uint32_t offset,
+  Node* LoadLane(MachineType memtype, Node* value, Node* index, uint64_t offset,
                  uint8_t laneidx, wasm::WasmCodePosition position);
   Node* StoreMem(MachineRepresentation mem_rep, Node* index, uint64_t offset,
                  uint32_t alignment, Node* val, wasm::WasmCodePosition position,
                  wasm::ValueType type);
-  Node* StoreLane(MachineRepresentation mem_rep, Node* index, uint32_t offset,
+  Node* StoreLane(MachineRepresentation mem_rep, Node* index, uint64_t offset,
                   uint32_t alignment, Node* val, uint8_t laneidx,
                   wasm::WasmCodePosition position, wasm::ValueType type);
   static void PrintDebugName(Node* node);
@@ -425,7 +425,8 @@ class WasmGraphBuilder {
   Node* ArraySet(Node* array_object, const wasm::ArrayType* type, Node* index,
                  Node* value, CheckForNull null_check,
                  wasm::WasmCodePosition position);
-  Node* ArrayLen(Node* array_object, wasm::WasmCodePosition position);
+  Node* ArrayLen(Node* array_object, CheckForNull null_check,
+                 wasm::WasmCodePosition position);
   Node* I31New(Node* input);
   Node* I31GetS(Node* input);
   Node* I31GetU(Node* input);

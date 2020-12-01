@@ -317,11 +317,24 @@ class String : public TorqueGeneratedString<String, Name> {
   inline static bool Equals(Isolate* isolate, Handle<String> one,
                             Handle<String> two);
 
-  enum class EqualityType { kWholeString, kPrefix };
-  template <typename Char>
-  inline bool IsEqualTo(
-      Vector<const Char> str,
-      EqualityType eq_type = EqualityType::kWholeString) const;
+  enum class EqualityType { kWholeString, kPrefix, kNoLengthCheck };
+
+  // Check if this string matches the given vector of characters, either as a
+  // whole string or just a prefix.
+  //
+  // The Isolate is passed as "evidence" that this call is on the main thread,
+  // and to distiguish from the LocalIsolate overload.
+  template <EqualityType kEqType = EqualityType::kWholeString, typename Char>
+  inline bool IsEqualTo(Vector<const Char> str,
+                        Isolate* isolate = nullptr) const;
+
+  // Check if this string matches the given vector of characters, either as a
+  // whole string or just a prefix.
+  //
+  // The LocalIsolate is passed to provide access to the string access lock,
+  // which is taken when reading the string's contents on a background thread.
+  template <EqualityType kEqType = EqualityType::kWholeString, typename Char>
+  inline bool IsEqualTo(Vector<const Char> str, LocalIsolate* isolate) const;
 
   V8_EXPORT_PRIVATE bool HasOneBytePrefix(Vector<const char> str);
   V8_EXPORT_PRIVATE inline bool IsOneByteEqualTo(Vector<const char> str);
@@ -444,6 +457,9 @@ class String : public TorqueGeneratedString<String, Name> {
   template <typename sinkchar>
   EXPORT_TEMPLATE_DECLARE(V8_EXPORT_PRIVATE)
   static void WriteToFlat(String source, sinkchar* sink, int from, int to);
+  template <typename sinkchar>
+  static void WriteToFlat(String source, sinkchar* sink, int from, int to,
+                          const SharedStringAccessGuardIfNeeded&);
 
   static inline bool IsAscii(const char* chars, int length) {
     return IsAscii(reinterpret_cast<const uint8_t*>(chars), length);
@@ -514,6 +530,12 @@ class String : public TorqueGeneratedString<String, Name> {
   // Implementation of the Get() public methods. Do not use directly.
   V8_INLINE uint16_t GetImpl(int index);
 
+  // Implementation of the IsEqualTo() public methods. Do not use directly.
+  template <EqualityType kEqType, typename Char>
+  V8_INLINE bool IsEqualToImpl(
+      Vector<const Char> str,
+      const SharedStringAccessGuardIfNeeded& access_guard) const;
+
   V8_EXPORT_PRIVATE static Handle<String> SlowFlatten(
       Isolate* isolate, Handle<ConsString> cons, AllocationType allocation);
 
@@ -535,6 +557,8 @@ class String : public TorqueGeneratedString<String, Name> {
 };
 
 // clang-format off
+extern template EXPORT_TEMPLATE_DECLARE(V8_EXPORT_PRIVATE)
+void String::WriteToFlat(String source, uint8_t* sink, int from, int to);
 extern template EXPORT_TEMPLATE_DECLARE(V8_EXPORT_PRIVATE)
 void String::WriteToFlat(String source, uint16_t* sink, int from, int to);
 // clang-format on

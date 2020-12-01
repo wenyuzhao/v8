@@ -1675,7 +1675,6 @@ void InstructionSelector::EmitPrepareResults(
     Node* node) {
   ArmOperandGenerator g(this);
 
-  int reverse_slot = 1;
   for (PushParameter output : *results) {
     if (!output.location.IsCallerFrameSlot()) continue;
     // Skip any alignment holes in nodes.
@@ -1688,10 +1687,11 @@ void InstructionSelector::EmitPrepareResults(
       } else if (output.location.GetType() == MachineType::Simd128()) {
         MarkAsSimd128(output.node);
       }
+      int offset = call_descriptor->GetOffsetToReturns();
+      int reverse_slot = -output.location.GetLocation() - offset;
       Emit(kArmPeek, g.DefineAsRegister(output.node),
            g.UseImmediate(reverse_slot));
     }
-    reverse_slot += output.location.GetSizeInPointers();
   }
 }
 
@@ -2984,6 +2984,10 @@ void InstructionSelector::VisitI16x8BitMask(Node* node) {
 
 void InstructionSelector::VisitI32x4BitMask(Node* node) {
   VisitBitMask<kArmI32x4BitMask>(this, node);
+}
+
+void InstructionSelector::VisitI64x2BitMask(Node* node) {
+  VisitBitMask<kArmI64x2BitMask>(this, node);
 }
 
 namespace {
