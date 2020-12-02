@@ -298,6 +298,7 @@ Reduction MemoryLowering::ReduceLoadFromObject(Node* node) {
 
   if (machine_type.IsMapWord()) {
 #ifdef V8_MAP_PACKING
+    NodeProperties::ChangeOp(node, machine()->Load(MachineType::AnyTagged()));
     CHECK_EQ(machine_type.semantic(), MachineSemantic::kAny);
     return UnpackMapWord(node);
 #else
@@ -368,7 +369,7 @@ Reduction MemoryLowering::UnpackMapWord(Node* node) {
   Node* control = NodeProperties::GetControlInput(node);
   __ InitializeEffectControl(effect, control);
 
-  NodeProperties::ChangeOp(node, machine()->Load(MachineType::Uint64()));
+  // NodeProperties::ChangeOp(node, machine()->Load(MachineType::Uint64()));
 
   node = __ AddNode(graph()->CloneNode(node));
   return Replace(__ UnpackMapWord(node));
@@ -389,6 +390,7 @@ Reduction MemoryLowering::ReduceLoadField(Node* node) {
 
   if (type.IsMapWord()) {
 #ifdef V8_MAP_PACKING
+    NodeProperties::ChangeOp(node, machine()->Load(MachineType::AnyTagged()));
     return UnpackMapWord(node);
 #else
     type = MachineType::TaggedPointer();

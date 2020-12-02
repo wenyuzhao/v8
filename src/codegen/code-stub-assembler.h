@@ -1089,7 +1089,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
     const MachineType machine_type = offset == HeapObject::kMapOffset
                                          ? MachineType::MapInHeader()
                                          : MachineTypeOf<T>::value;
-    return CAST(LoadFromObject(machine_type, object,
+    return UncheckedCast<T>(LoadFromObject(machine_type, object,
                                IntPtrConstant(offset - kHeapObjectTag)));
   }
   template <class T, typename std::enable_if<
