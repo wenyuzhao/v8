@@ -42,7 +42,7 @@ void FullObjectSlot::store(Object value) const { *location() = value.ptr(); }
 
 void FullObjectSlot::store_map(Map map) const {
 #ifdef V8_MAP_PACKING
-  *location() = Internals::PackMapWord(map.ptr());
+  *location() = MapWord::Pack(map.ptr());
 #else
   store(map);
 #endif
@@ -50,7 +50,7 @@ void FullObjectSlot::store_map(Map map) const {
 
 Map FullObjectSlot::load_map() const {
 #ifdef V8_MAP_PACKING
-  return Map::unchecked_cast(Object(Internals::UnpackMapWord(*location())));
+  return Map::unchecked_cast(Object(MapWord::Unpack(*location())));
 #else
   return Map::unchecked_cast(Object(*location()));
 #endif

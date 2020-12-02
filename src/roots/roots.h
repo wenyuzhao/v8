@@ -109,10 +109,6 @@ class Symbol;
   V(Map, small_ordered_name_dictionary_map, SmallOrderedNameDictionaryMap)     \
   V(Map, source_text_module_map, SourceTextModuleMap)                          \
   V(Map, synthetic_module_map, SyntheticModuleMap)                             \
-  V(Map, uncompiled_data_without_preparse_data_map,                            \
-    UncompiledDataWithoutPreparseDataMap)                                      \
-  V(Map, uncompiled_data_with_preparse_data_map,                               \
-    UncompiledDataWithPreparseDataMap)                                         \
   V(Map, wasm_type_info_map, WasmTypeInfoMap)                                  \
   V(Map, weak_fixed_array_map, WeakFixedArrayMap)                              \
   V(Map, weak_array_list_map, WeakArrayListMap)                                \
@@ -209,6 +205,7 @@ class Symbol;
   V(Map, wasm_rttcanon_externref_map, WasmRttExternrefMap)                     \
   V(Map, wasm_rttcanon_funcref_map, WasmRttFuncrefMap)                         \
   V(Map, wasm_rttcanon_i31ref_map, WasmRttI31refMap)                           \
+  V(Map, wasm_rttcanon_anyref_map, WasmRttAnyrefMap)                           \
   /* Canonical empty values */                                                 \
   V(Script, empty_script, EmptyScript)                                         \
   V(FeedbackCell, many_closures_cell, ManyClosuresCell)                        \
@@ -545,7 +542,7 @@ class ReadOnlyRoots {
 
   // For `v8_enable_map_packing=true`, this will return a packed (also untagged)
   // map-word instead of a tagged heap pointer.
-  inline MapWord one_pointer_filler_map_word();
+  MapWord one_pointer_filler_map_word();
 
 #define ROOT_ACCESSOR(Type, name, CamelName)     \
   V8_INLINE class Type name() const;             \

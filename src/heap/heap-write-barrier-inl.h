@@ -131,7 +131,7 @@ inline void GenerationalBarrier(HeapObject object, ObjectSlot slot,
   if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) return;
   DCHECK(!HasWeakHeapObjectTag(value));
   if (!value.IsHeapObject()) return;
-  DCHECK(!Internals::IsMapWord(value.ptr()));
+  DCHECK(!MapWord::IsPacked(value.ptr()));
   GenerationalBarrier(object, slot, HeapObject::cast(value));
 }
 
@@ -139,7 +139,7 @@ inline void GenerationalBarrier(HeapObject object, ObjectSlot slot,
                                 HeapObject value) {
   if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) return;
   DCHECK(!HasWeakHeapObjectTag(*slot));
-  DCHECK(!Internals::IsMapWord(value.ptr()));
+  DCHECK(!MapWord::IsPacked(value.ptr()));
   heap_internals::GenerationalBarrierInternal(object, slot.address(),
                                               HeapObject::cast(value));
 }
@@ -173,7 +173,7 @@ inline void GenerationalBarrierForCode(Code host, RelocInfo* rinfo,
 }
 
 inline WriteBarrierMode GetWriteBarrierModeForObject(
-    HeapObject object, const DisallowHeapAllocation* promise) {
+    HeapObject object, const DisallowGarbageCollection* promise) {
   if (FLAG_disable_write_barriers) return SKIP_WRITE_BARRIER;
   DCHECK(Heap_PageFlagsAreConsistent(object));
   heap_internals::MemoryChunk* chunk =
@@ -210,7 +210,7 @@ base::Optional<Heap*> WriteBarrier::GetHeapIfMarking(HeapObject object) {
 void WriteBarrier::Marking(HeapObject host, ObjectSlot slot, Object value) {
   DCHECK(!HasWeakHeapObjectTag(value));
   if (!value.IsHeapObject()) return;
-  DCHECK(!Internals::IsMapWord(value.ptr()));
+  DCHECK(!MapWord::IsPacked(value.ptr()));
   Marking(host, HeapObjectSlot(slot), HeapObject::cast(value));
 }
 
@@ -218,13 +218,13 @@ void WriteBarrier::Marking(HeapObject host, MaybeObjectSlot slot,
                            MaybeObject value) {
   HeapObject value_heap_object;
   if (!value->GetHeapObject(&value_heap_object)) return;
-  DCHECK(!Internals::IsMapWord(value.ptr()));
+  DCHECK(!MapWord::IsPacked(value.ptr()));
   Marking(host, HeapObjectSlot(slot), value_heap_object);
 }
 
 void WriteBarrier::Marking(HeapObject host, HeapObjectSlot slot,
                            HeapObject value) {
-  DCHECK(!Internals::IsMapWord(value.ptr()));
+  DCHECK(!MapWord::IsPacked(value.ptr()));
   auto heap = GetHeapIfMarking(host);
   if (!heap) return;
   MarkingSlow(*heap, host, slot, value);

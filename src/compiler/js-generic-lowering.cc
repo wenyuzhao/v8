@@ -234,8 +234,19 @@ void JSGenericLowering::LowerJSStrictEqual(Node* node) {
 }
 
 namespace {
+
+// The megamorphic load builtin can be used as a performance optimization in
+// some cases - unlike the full builtin, the megamorphic builtin does fewer
+// checks and does not collect feedback.
 bool ShouldUseMegamorphicLoadBuiltin(FeedbackSource const& source,
                                      JSHeapBroker* broker) {
+  if (broker->is_native_context_independent()) {
+    // The decision to use the megamorphic load builtin is made based on
+    // current feedback, and is thus context-dependent. It cannot be used when
+    // generating NCI code.
+    return false;
+  }
+
   ProcessedFeedback const& feedback = broker->GetFeedback(source);
 
   if (feedback.kind() == ProcessedFeedback::kElementAccess) {
@@ -1003,10 +1014,14 @@ void JSGenericLowering::LowerJSConstructWithSpread(Node* node) {
     node->InsertInput(zone(), 0, stub_code);
     node->InsertInput(zone(), 3, stub_arity);
     node->InsertInput(zone(), 4, slot);
-    node->InsertInput(zone(), 5, spread);
-    node->InsertInput(zone(), 6, feedback_vector);
+    // Arguments in the stack should be inserted in reversed order, ie, the last
+    // arguments defined in the interface descriptor should be inserted first.
+    DCHECK_EQ(callable.descriptor().GetStackArgumentOrder(),
+              StackArgumentOrder::kJS);
+    node->InsertInput(zone(), 5, feedback_vector);
+    node->InsertInput(zone(), 6, spread);
     node->InsertInput(zone(), 7, receiver);
-    // After: {code, target, new_target, arity, slot, spread, vector, receiver,
+    // After: {code, target, new_target, arity, slot, vector, spread, receiver,
     // ...args}.
 
     NodeProperties::ChangeOp(node, common()->Call(call_descriptor));

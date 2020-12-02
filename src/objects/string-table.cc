@@ -237,7 +237,7 @@ std::unique_ptr<StringTable::Data> StringTable::Data::Resize(
     Object element = data->Get(isolate, i);
     if (element == empty_element() || element == deleted_element()) continue;
     String string = String::cast(element);
-    uint32_t hash = string.Hash();
+    uint32_t hash = string.hash();
     InternalIndex insertion_index = new_data->FindInsertionEntry(isolate, hash);
     new_data->Set(insertion_index, string);
   }
@@ -354,11 +354,14 @@ class InternalizedStringKey final : public StringTableKey {
     DCHECK(!string->IsInternalizedString());
     DCHECK(string->IsFlat());
     // Make sure hash_field is computed.
-    string->Hash();
+    string->EnsureHash();
     set_raw_hash_field(string->raw_hash_field());
   }
 
-  bool IsMatch(String string) override { return string_->SlowEquals(string); }
+  bool IsMatch(String string) override {
+    DCHECK(!SharedStringAccessGuardIfNeeded::IsNeeded(string));
+    return string_->SlowEquals(string);
+  }
 
   Handle<String> AsHandle(Isolate* isolate) {
     // Internalize the string if possible.
@@ -410,7 +413,7 @@ Handle<String> StringTable::LookupString(Isolate* isolate,
     } else if (string->IsSlicedString()) {
       STATIC_ASSERT(static_cast<int>(ConsString::kSize) ==
                     static_cast<int>(SlicedString::kSize));
-      DisallowHeapAllocation no_gc;
+      DisallowGarbageCollection no_gc;
       bool one_byte = result->IsOneByteRepresentation();
       Handle<Map> map = one_byte
                             ? isolate->factory()->cons_one_byte_string_map()
@@ -590,7 +593,7 @@ Address StringTable::Data::TryStringToIndexOrLookupExisting(Isolate* isolate,
   // Ideally it would be a free function in an anonymous namespace, but that
   // causes issues around method and class visibility.
 
-  DisallowHeapAllocation no_gc;
+  DisallowGarbageCollection no_gc;
   uint64_t seed = HashSeed(isolate);
 
   int length = string.length();

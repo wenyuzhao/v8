@@ -21,6 +21,7 @@
 #include "src/extensions/ignition-statistics-extension.h"
 #include "src/extensions/statistics-extension.h"
 #include "src/extensions/trigger-failure-extension.h"
+#include "src/objects/objects.h"
 #ifdef ENABLE_VTUNE_TRACEMARK
 #include "src/extensions/vtunedomain-support-extension.h"
 #endif  // ENABLE_VTUNE_TRACEMARK
@@ -80,7 +81,7 @@ bool SourceCodeCache::Lookup(Isolate* isolate, Vector<const char> name,
                              Handle<SharedFunctionInfo>* handle) {
   for (int i = 0; i < cache_.length(); i += 2) {
     SeqOneByteString str = SeqOneByteString::cast(cache_.get(i));
-    if (str.IsOneByteEqualTo(Vector<const uint8_t>::cast(name))) {
+    if (str.IsOneByteEqualTo(name)) {
       *handle = Handle<SharedFunctionInfo>(
           SharedFunctionInfo::cast(cache_.get(i + 1)), isolate);
       return true;
@@ -1400,6 +1401,11 @@ void Genesis::HookUpGlobalObject(Handle<JSGlobalObject> global_object) {
   native_context()->set_security_token(*global_object);
 
   TransferNamedProperties(global_object_from_snapshot, global_object);
+  if (global_object_from_snapshot->HasDictionaryElements()) {
+    JSObject::NormalizeElements(global_object);
+  }
+  DCHECK_EQ(global_object_from_snapshot->GetElementsKind(),
+            global_object->GetElementsKind());
   TransferIndexedProperties(global_object_from_snapshot, global_object);
 }
 
@@ -4196,6 +4202,10 @@ void Genesis::InitializeCallSiteBuiltins() {
 
   FunctionInfo infos[] = {
       {"getColumnNumber", Builtins::kCallSitePrototypeGetColumnNumber},
+      {"getEnclosingColumnNumber",
+        Builtins::kCallSitePrototypeGetEnclosingColumnNumber},
+      {"getEnclosingLineNumber",
+        Builtins::kCallSitePrototypeGetEnclosingLineNumber},
       {"getEvalOrigin", Builtins::kCallSitePrototypeGetEvalOrigin},
       {"getFileName", Builtins::kCallSitePrototypeGetFileName},
       {"getFunction", Builtins::kCallSitePrototypeGetFunction},
@@ -4383,6 +4393,46 @@ void Genesis::InitializeGlobal_regexp_linear_flag() {
 
   // Store regexp prototype map again after change.
   native_context()->set_regexp_prototype_map(regexp_prototype->map());
+}
+
+void Genesis::InitializeGlobal_harmony_relative_indexing_methods() {
+  if (!FLAG_harmony_relative_indexing_methods) return;
+
+  {
+    Handle<JSFunction> array_function(native_context()->array_function(),
+                                      isolate());
+    Handle<JSObject> array_prototype(
+        JSObject::cast(array_function->instance_prototype()), isolate());
+
+    SimpleInstallFunction(isolate(), array_prototype, "at",
+                          Builtins::kArrayPrototypeAt, 1, true);
+
+    Handle<JSObject> unscopables = Handle<JSObject>::cast(
+        JSReceiver::GetProperty(isolate(), array_prototype,
+                                factory()->unscopables_symbol())
+            .ToHandleChecked());
+    InstallTrueValuedProperty(isolate(), unscopables, "at");
+  }
+
+  {
+    Handle<JSFunction> string_function(native_context()->string_function(),
+                                       isolate());
+    Handle<JSObject> string_prototype(
+        JSObject::cast(string_function->instance_prototype()), isolate());
+
+    SimpleInstallFunction(isolate(), string_prototype, "at",
+                          Builtins::kStringPrototypeAt, 1, true);
+  }
+
+  {
+    Handle<JSFunction> typed_array_function(
+        native_context()->typed_array_function(), isolate());
+    Handle<JSObject> typed_array_prototype(
+        JSObject::cast(typed_array_function->instance_prototype()), isolate());
+
+    SimpleInstallFunction(isolate(), typed_array_prototype, "at",
+                          Builtins::kTypedArrayPrototypeAt, 1, true);
+  }
 }
 
 #ifdef V8_INTL_SUPPORT
@@ -5163,6 +5213,29 @@ void Genesis::TransferNamedProperties(Handle<JSObject> from,
       if (value->IsTheHole(isolate())) continue;
       PropertyDetails details = cell->property_details();
       if (details.kind() != kData) continue;
+      JSObject::AddProperty(isolate(), to, key, value, details.attributes());
+    }
+
+  } else if (V8_DICT_MODE_PROTOTYPES_BOOL) {
+    // Copy all keys and values in enumeration order.
+    Handle<OrderedNameDictionary> properties = Handle<OrderedNameDictionary>(
+        from->property_dictionary_ordered(), isolate());
+    ReadOnlyRoots roots(isolate());
+    for (InternalIndex entry : properties->IterateEntries()) {
+      Object raw_key;
+      if (!properties->ToKey(roots, entry, &raw_key)) continue;
+
+      DCHECK(raw_key.IsName());
+      Handle<Name> key(Name::cast(raw_key), isolate());
+      // If the property is already there we skip it.
+      if (PropertyAlreadyExists(isolate(), to, key)) continue;
+      // Set the property.
+      Handle<Object> value =
+          Handle<Object>(properties->ValueAt(entry), isolate());
+      DCHECK(!value->IsCell());
+      DCHECK(!value->IsTheHole(isolate()));
+      PropertyDetails details = properties->DetailsAt(entry);
+      DCHECK_EQ(kData, details.kind());
       JSObject::AddProperty(isolate(), to, key, value, details.attributes());
     }
   } else {

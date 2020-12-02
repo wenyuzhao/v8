@@ -8,6 +8,7 @@
 #include <unordered_map>
 
 #include "src/base/optional.h"
+#include "src/base/platform/wrappers.h"
 #include "src/codegen/assembler-inl.h"
 #include "src/common/assert-scope.h"
 #include "src/compiler/wasm-compiler.h"
@@ -57,31 +58,31 @@ Handle<Object> WasmValueToValueObject(Isolate* isolate, WasmValue value) {
     case ValueType::kI32: {
       int32_t val = value.to_i32();
       bytes = isolate->factory()->NewByteArray(sizeof(val));
-      memcpy(bytes->GetDataStartAddress(), &val, sizeof(val));
+      base::Memcpy(bytes->GetDataStartAddress(), &val, sizeof(val));
       break;
     }
     case ValueType::kI64: {
       int64_t val = value.to_i64();
       bytes = isolate->factory()->NewByteArray(sizeof(val));
-      memcpy(bytes->GetDataStartAddress(), &val, sizeof(val));
+      base::Memcpy(bytes->GetDataStartAddress(), &val, sizeof(val));
       break;
     }
     case ValueType::kF32: {
       float val = value.to_f32();
       bytes = isolate->factory()->NewByteArray(sizeof(val));
-      memcpy(bytes->GetDataStartAddress(), &val, sizeof(val));
+      base::Memcpy(bytes->GetDataStartAddress(), &val, sizeof(val));
       break;
     }
     case ValueType::kF64: {
       double val = value.to_f64();
       bytes = isolate->factory()->NewByteArray(sizeof(val));
-      memcpy(bytes->GetDataStartAddress(), &val, sizeof(val));
+      base::Memcpy(bytes->GetDataStartAddress(), &val, sizeof(val));
       break;
     }
     case ValueType::kS128: {
       Simd128 s128 = value.to_s128();
       bytes = isolate->factory()->NewByteArray(kSimd128Size);
-      memcpy(bytes->GetDataStartAddress(), s128.bytes(), kSimd128Size);
+      base::Memcpy(bytes->GetDataStartAddress(), s128.bytes(), kSimd128Size);
       break;
     }
     case ValueType::kOptRef: {
@@ -793,7 +794,7 @@ class DebugInfoImpl {
   }
 
   bool IsAtReturn(WasmFrame* frame) {
-    DisallowHeapAllocation no_gc;
+    DisallowGarbageCollection no_gc;
     int position = frame->position();
     NativeModule* native_module =
         frame->wasm_instance().module_object().native_module();
@@ -1161,7 +1162,7 @@ bool WasmScript::GetPossibleBreakpoints(
     wasm::NativeModule* native_module, const v8::debug::Location& start,
     const v8::debug::Location& end,
     std::vector<v8::debug::BreakLocation>* locations) {
-  DisallowHeapAllocation no_gc;
+  DisallowGarbageCollection no_gc;
 
   const wasm::WasmModule* module = native_module->module();
   const std::vector<wasm::WasmFunction>& functions = module->functions;

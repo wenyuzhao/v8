@@ -10,6 +10,7 @@
 #include "src/heap/heap.h"
 #include "src/heap/local-heap-inl.h"
 #include "src/heap/local-heap.h"
+#include "src/heap/parked-scope.h"
 #include "test/cctest/cctest.h"
 #include "test/cctest/heap/heap-utils.h"
 
@@ -61,12 +62,12 @@ class TestTwoByteResource : public v8::String::ExternalStringResource {
 
 class ConcurrentStringThread final : public v8::base::Thread {
  public:
-  ConcurrentStringThread(Heap* heap, Handle<String> str,
+  ConcurrentStringThread(Isolate* isolate, Handle<String> str,
                          std::unique_ptr<PersistentHandles> ph,
                          base::Semaphore* sema_started,
                          std::vector<uint16_t> chars)
       : v8::base::Thread(base::Thread::Options("ThreadWithLocalHeap")),
-        heap_(heap),
+        isolate_(isolate),
         str_(str),
         ph_(std::move(ph)),
         sema_started_(sema_started),
@@ -74,21 +75,22 @@ class ConcurrentStringThread final : public v8::base::Thread {
         chars_(chars) {}
 
   void Run() override {
-    LocalHeap local_heap(heap_, ThreadKind::kBackground, std::move(ph_));
-    UnparkedScope unparked_scope(&local_heap);
+    LocalIsolate local_isolate(isolate_, ThreadKind::kBackground);
+    local_isolate.heap()->AttachPersistentHandles(std::move(ph_));
+    UnparkedScope unparked_scope(local_isolate.heap());
 
     sema_started_->Signal();
     // Check the three operations we do from the StringRef concurrently: get the
     // string, the nth character, and convert into a double.
     CHECK_EQ(str_->synchronized_length(), length_);
     for (unsigned int i = 0; i < length_; ++i) {
-      CHECK_EQ(str_->Get(i), chars_[i]);
+      CHECK_EQ(str_->Get(i, &local_isolate), chars_[i]);
     }
     CHECK_EQ(TryStringToDouble(str_).value(), DOUBLE_VALUE);
   }
 
  private:
-  Heap* heap_;
+  Isolate* isolate_;
   Handle<String> str_;
   std::unique_ptr<PersistentHandles> ph_;
   base::Semaphore* sema_started_;
@@ -125,7 +127,7 @@ TEST(InspectOneByteExternalizing) {
   base::Semaphore sema_started(0);
 
   std::unique_ptr<ConcurrentStringThread> thread(new ConcurrentStringThread(
-      isolate->heap(), persistent_string, std::move(ph), &sema_started, chars));
+      isolate, persistent_string, std::move(ph), &sema_started, chars));
   CHECK(thread->Start());
 
   sema_started.Wait();
@@ -170,7 +172,7 @@ TEST(InspectOneIntoTwoByteExternalizing) {
   base::Semaphore sema_started(0);
 
   std::unique_ptr<ConcurrentStringThread> thread(new ConcurrentStringThread(
-      isolate->heap(), persistent_string, std::move(ph), &sema_started, chars));
+      isolate, persistent_string, std::move(ph), &sema_started, chars));
   CHECK(thread->Start());
 
   sema_started.Wait();
@@ -206,7 +208,7 @@ TEST(InspectTwoByteExternalizing) {
   {
     Handle<SeqTwoByteString> raw =
         factory->NewRawTwoByteString(kLength).ToHandleChecked();
-    DisallowHeapAllocation no_gc;
+    DisallowGarbageCollection no_gc;
     CopyChars(raw->GetChars(no_gc), two_byte_array, kLength);
     two_bytes_string = raw;
   }
@@ -223,7 +225,7 @@ TEST(InspectTwoByteExternalizing) {
   base::Semaphore sema_started(0);
 
   std::unique_ptr<ConcurrentStringThread> thread(new ConcurrentStringThread(
-      isolate->heap(), persistent_string, std::move(ph), &sema_started, chars));
+      isolate, persistent_string, std::move(ph), &sema_started, chars));
   CHECK(thread->Start());
 
   sema_started.Wait();

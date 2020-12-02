@@ -184,6 +184,13 @@ V8_EXPORT bool ShouldThrowOnError(v8::internal::Isolate* isolate);
  * depend on functions and constants defined here.
  */
 class Internals {
+#ifdef V8_MAP_PACKING
+  V8_INLINE static constexpr internal::Address UnpackMapWord(
+      internal::Address mapword) {
+    return (mapword & ~kMapWordMetadataMask) ^ kMapWordXorMask;
+  }
+#endif
+
  public:
   // These values match non-compiler-dependent values defined within
   // the implementation of v8.
@@ -214,8 +221,10 @@ class Internals {
       kNumIsolateDataSlots * kApiSystemPointerSize;
   static const int kIsolateFastCCallCallerPcOffset =
       kIsolateFastCCallCallerFpOffset + kApiSystemPointerSize;
-  static const int kIsolateStackGuardOffset =
+  static const int kIsolateFastApiCallTargetOffset =
       kIsolateFastCCallCallerPcOffset + kApiSystemPointerSize;
+  static const int kIsolateStackGuardOffset =
+      kIsolateFastApiCallTargetOffset + kApiSystemPointerSize;
   static const int kIsolateRootsOffset =
       kIsolateStackGuardOffset + 7 * kApiSystemPointerSize;
 
@@ -258,16 +267,15 @@ class Internals {
   // incremental GC once the external memory reaches this limit.
   static constexpr int kExternalAllocationSoftLimit = 64 * 1024 * 1024;
 
-  static const int kMapWordXorMask = 0b11;  // ensure two low-order bits are
-                                            // 0b10 (looks like a smi)
-
 #ifdef V8_MAP_PACKING
-  static const intptr_t kMapWordMetadataMask = ((intptr_t)0b11) << 48;
-  static const intptr_t kMapWordSignature =
-      0x2;  // these bits will be set only on a map word
-#else
-  static const intptr_t kMapWordMetadataMask = 0;
-  static const intptr_t kMapWordSignature = 0;
+  static const uintptr_t kMapWordMetadataMask = 0xffffULL << 48;
+  // The lowest two bits of mapwords are always `0b10`
+  static const uintptr_t kMapWordSignature = 0b10;
+  // XORing a (non-compressed) map with this mask ensures that the two
+  // low-order bits are 0b10. The 0 at the end makes this look like a Smi,
+  // although real Smis have all lower 32 bits unset. We only rely on these
+  // values passing as Smis in very few places.
+  static const int kMapWordXorMask = 0b11;
 #endif
 
   V8_EXPORT static void CheckInitializedImpl(v8::Isolate* isolate);
@@ -372,27 +380,6 @@ class Internals {
     }
 #endif
     return *reinterpret_cast<const T*>(addr);
-  }
-
-#ifdef V8_MAP_PACKING
-  V8_INLINE static constexpr internal::Address PackMapWord(
-      internal::Address map) {
-    return map ^ kMapWordXorMask;
-  }
-
-  V8_INLINE static constexpr internal::Address UnpackMapWord(
-      internal::Address mapword) {
-    return (mapword & ~kMapWordMetadataMask) ^ kMapWordXorMask;
-  }
-#endif
-
-  V8_INLINE static bool IsMapWord(internal::Address mw) {
-#ifdef V8_MAP_PACKING
-    return (static_cast<intptr_t>(mw) & kMapWordXorMask) == kMapWordSignature &&
-           (0xffffffff00000000 & static_cast<intptr_t>(mw)) != 0;
-#else
-    return false;
-#endif
   }
 
   V8_INLINE static internal::Address ReadTaggedPointerField(

@@ -21,6 +21,8 @@
 namespace v8 {
 namespace internal {
 
+class SharedStringAccessGuardIfNeeded;
+
 enum InstanceType : uint16_t;
 
 enum AllowNullsFlag { ALLOW_NULLS, DISALLOW_NULLS };
@@ -142,18 +144,18 @@ class String : public TorqueGeneratedString<String, Name> {
 
     // Constructors only used by String::GetFlatContent().
     FlatContent(const uint8_t* start, int length,
-                const DisallowHeapAllocation& no_gc)
+                const DisallowGarbageCollection& no_gc)
         : onebyte_start(start),
           length_(length),
           state_(ONE_BYTE),
           no_gc_(no_gc) {}
     FlatContent(const uc16* start, int length,
-                const DisallowHeapAllocation& no_gc)
+                const DisallowGarbageCollection& no_gc)
         : twobyte_start(start),
           length_(length),
           state_(TWO_BYTE),
           no_gc_(no_gc) {}
-    explicit FlatContent(const DisallowHeapAllocation& no_gc)
+    explicit FlatContent(const DisallowGarbageCollection& no_gc)
         : onebyte_start(nullptr), length_(0), state_(NON_FLAT), no_gc_(no_gc) {}
 
     union {
@@ -162,7 +164,7 @@ class String : public TorqueGeneratedString<String, Name> {
     };
     int length_;
     State state_;
-    const DisallowHeapAllocation& no_gc_;
+    const DisallowGarbageCollection& no_gc_;
 
     friend class String;
     friend class IterableSubString;
@@ -172,16 +174,24 @@ class String : public TorqueGeneratedString<String, Name> {
 
   template <typename Char>
   V8_INLINE Vector<const Char> GetCharVector(
-      const DisallowHeapAllocation& no_gc);
+      const DisallowGarbageCollection& no_gc);
+
+  // Get chars from sequential or external strings. May only be called when a
+  // SharedStringAccessGuard is not needed (i.e. on the main thread or on
+  // read-only strings).
+  template <typename Char>
+  inline const Char* GetChars(const DisallowGarbageCollection& no_gc);
 
   // Get chars from sequential or external strings.
   template <typename Char>
-  inline const Char* GetChars(const DisallowHeapAllocation& no_gc);
+  inline const Char* GetChars(
+      const DisallowGarbageCollection& no_gc,
+      const SharedStringAccessGuardIfNeeded& access_guard);
 
   // Returns the address of the character at an offset into this string.
   // Requires: this->IsFlat()
   const byte* AddressOfCharacterAt(int start_index,
-                                   const DisallowHeapAllocation& no_gc);
+                                   const DisallowGarbageCollection& no_gc);
 
   // Get and set the length of the string using acquire loads and release
   // stores.
@@ -204,7 +214,10 @@ class String : public TorqueGeneratedString<String, Name> {
   inline void Set(int index, uint16_t value);
   // Get individual two byte char in the string.  Repeated calls
   // to this method are not efficient unless the string is flat.
-  V8_INLINE uint16_t Get(int index);
+  // If it is called from a background thread, the LocalIsolate version should
+  // be used.
+  V8_INLINE uint16_t Get(int index, Isolate* isolate = nullptr);
+  V8_INLINE uint16_t Get(int index, LocalIsolate* local_isolate);
 
   // ES6 section 7.1.3.1 ToNumber Applied to the String Type
   static Handle<Object> ToNumber(Isolate* isolate, Handle<String> subject);
@@ -235,7 +248,7 @@ class String : public TorqueGeneratedString<String, Name> {
   // returned structure will report so, and can't provide a vector of either
   // kind.
   V8_EXPORT_PRIVATE FlatContent
-  GetFlatContent(const DisallowHeapAllocation& no_gc);
+  GetFlatContent(const DisallowGarbageCollection& no_gc);
 
   // Returns the parent of a sliced string or first part of a flat cons string.
   // Requires: StringShape(this).IsIndirect() && this->IsFlat()
@@ -304,16 +317,14 @@ class String : public TorqueGeneratedString<String, Name> {
   inline static bool Equals(Isolate* isolate, Handle<String> one,
                             Handle<String> two);
 
-  // Dispatches to Is{One,Two}ByteEqualTo.
+  enum class EqualityType { kWholeString, kPrefix };
   template <typename Char>
-  bool IsEqualTo(Vector<const Char> str);
+  inline bool IsEqualTo(
+      Vector<const Char> str,
+      EqualityType eq_type = EqualityType::kWholeString) const;
 
   V8_EXPORT_PRIVATE bool HasOneBytePrefix(Vector<const char> str);
-  V8_EXPORT_PRIVATE bool IsOneByteEqualTo(Vector<const uint8_t> str);
-  V8_EXPORT_PRIVATE bool IsOneByteEqualTo(Vector<const char> str) {
-    return IsOneByteEqualTo(Vector<const uint8_t>::cast(str));
-  }
-  bool IsTwoByteEqualTo(Vector<const uc16> str);
+  V8_EXPORT_PRIVATE inline bool IsOneByteEqualTo(Vector<const char> str);
 
   // Return a UTF8 representation of the string.  The string is null
   // terminated but may optionally contain nulls.  Length is returned
@@ -500,6 +511,9 @@ class String : public TorqueGeneratedString<String, Name> {
   friend class StringTableInsertionKey;
   friend class InternalizedStringKey;
 
+  // Implementation of the Get() public methods. Do not use directly.
+  V8_INLINE uint16_t GetImpl(int index);
+
   V8_EXPORT_PRIVATE static Handle<String> SlowFlatten(
       Isolate* isolate, Handle<ConsString> cons, AllocationType allocation);
 
@@ -527,7 +541,7 @@ void String::WriteToFlat(String source, uint16_t* sink, int from, int to);
 
 class SubStringRange {
  public:
-  inline SubStringRange(String string, const DisallowHeapAllocation& no_gc,
+  inline SubStringRange(String string, const DisallowGarbageCollection& no_gc,
                         int first = 0, int length = -1);
   class iterator;
   inline iterator begin();
@@ -537,7 +551,7 @@ class SubStringRange {
   String string_;
   int first_;
   int length_;
-  const DisallowHeapAllocation& no_gc_;
+  const DisallowGarbageCollection& no_gc_;
 };
 
 // The SeqString abstract class captures sequential string values.
@@ -575,7 +589,14 @@ class SeqOneByteString
   // Get the address of the characters in this string.
   inline Address GetCharsAddress();
 
-  inline uint8_t* GetChars(const DisallowHeapAllocation& no_gc);
+  // Get a pointer to the characters of the string. May only be called when a
+  // SharedStringAccessGuard is not needed (i.e. on the main thread or on
+  // read-only strings).
+  inline uint8_t* GetChars(const DisallowGarbageCollection& no_gc);
+
+  // Get a pointer to the characters of the string.
+  inline uint8_t* GetChars(const DisallowGarbageCollection& no_gc,
+                           const SharedStringAccessGuardIfNeeded& access_guard);
 
   // Clear uninitialized padding space. This ensures that the snapshot content
   // is deterministic.
@@ -613,7 +634,14 @@ class SeqTwoByteString
   // Get the address of the characters in this string.
   inline Address GetCharsAddress();
 
-  inline uc16* GetChars(const DisallowHeapAllocation& no_gc);
+  // Get a pointer to the characters of the string. May only be called when a
+  // SharedStringAccessGuard is not needed (i.e. on the main thread or on
+  // read-only strings).
+  inline uc16* GetChars(const DisallowGarbageCollection& no_gc);
+
+  // Get a pointer to the characters of the string.
+  inline uc16* GetChars(const DisallowGarbageCollection& no_gc,
+                        const SharedStringAccessGuardIfNeeded& access_guard);
 
   // Clear uninitialized padding space. This ensures that the snapshot content
   // is deterministic.

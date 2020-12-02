@@ -754,9 +754,6 @@ V8_INLINE static bool HasWeakHeapObjectTag(const Object value) {
 // encoded in the first word.  The class MapWord is an abstraction of the
 // value in a heap object's first word.
 class MapWord {
-  // ReadOnlyRoots needs to construct MapWord from a packed map pointer.
-  friend class ReadOnlyRoots;
-
  public:
   // Normal state: the map word contains a map pointer.
 
@@ -781,6 +778,23 @@ class MapWord {
   inline HeapObject ToForwardingAddress();
 
   inline Address ptr() { return value_; }
+
+#ifdef V8_MAP_PACKING
+  static constexpr Address Pack(Address map) {
+    return map ^ Internals::kMapWordXorMask;
+  }
+  static constexpr Address Unpack(Address mapword) {
+    return (mapword & ~Internals::kMapWordMetadataMask) ^
+           Internals::kMapWordXorMask;
+  }
+  static constexpr bool IsPacked(Address mapword) {
+    return (static_cast<intptr_t>(mapword) & Internals::kMapWordXorMask) ==
+               Internals::kMapWordSignature &&
+           (0xffffffff00000000 & static_cast<intptr_t>(mapword)) != 0;
+  }
+#else
+  static constexpr bool IsPacked(Address) { return false; }
+#endif
 
   explicit MapWord(Address value) : value_(value) {}
 

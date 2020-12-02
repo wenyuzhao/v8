@@ -65,6 +65,8 @@ ResultType HeapVisitor<ResultType, ConcreteVisitor>::Visit(Map map,
     case kVisitorIdCount:
       UNREACHABLE();
   }
+  map.Print();
+  object.Print();
   UNREACHABLE();
   // Make the compiler happy.
   return ResultType();

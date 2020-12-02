@@ -153,8 +153,10 @@ class V8_EXPORT_PRIVATE RawMachineAssembler {
     if (m.Is(HeapObject::kMapOffset)) return true;
     // Test if `node` is a `Phi(Int64Constant(0))`
     if (node->opcode() == IrOpcode::kPhi) {
-      Int64Matcher m(node->InputAt(0));
-      if (m.Is(HeapObject::kMapOffset)) return true;
+      for (Node* input : node->inputs()) {
+        if (!Int64Matcher(input).Is(HeapObject::kMapOffset)) return false;
+      }
+      return true;
     }
     return false;
   }
@@ -163,7 +165,7 @@ class V8_EXPORT_PRIVATE RawMachineAssembler {
     return m.Is(HeapObject::kMapOffset - kHeapObjectTag);
   }
   bool IsMapOffsetConstantMinusTag(int offset) {
-    return offset != HeapObject::kMapOffset - kHeapObjectTag;
+    return offset == HeapObject::kMapOffset - kHeapObjectTag;
   }
   Node* LoadFromObject(
       MachineType type, Node* base, Node* offset,
@@ -194,7 +196,7 @@ class V8_EXPORT_PRIVATE RawMachineAssembler {
   }
   void OptimizedStoreField(MachineRepresentation rep, Node* object, int offset,
                            Node* value, WriteBarrierKind write_barrier) {
-    DCHECK(IsMapOffsetConstantMinusTag(offset));
+    DCHECK(!IsMapOffsetConstantMinusTag(offset));
     AddNode(simplified()->StoreField(FieldAccess(
                 BaseTaggedness::kTaggedBase, offset, MaybeHandle<Name>(),
                 MaybeHandle<Map>(), Type::Any(),

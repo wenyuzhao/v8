@@ -764,7 +764,7 @@ class V8_EXPORT_PRIVATE CodeAssembler {
       Node* base, Node* offset,
       LoadSensitivity needs_poisoning = LoadSensitivity::kSafe);
 
-  Node* LoadFromObject(MachineType type, TNode<HeapObject> object,
+  Node* LoadFromObject(MachineType type, TNode<Object> object,
                        TNode<IntPtrT> offset);
 
 #ifdef V8_MAP_PACKING
@@ -772,8 +772,8 @@ class V8_EXPORT_PRIVATE CodeAssembler {
 #endif
 
   // Load a value from the root array.
-  Node* LoadFiller(RootIndex root_index);
   TNode<Object> LoadRoot(RootIndex root_index);
+  Node* LoadRootMapWord(RootIndex root_index);
 
   // Store value to raw memory location.
   void Store(Node* base, Node* value);
@@ -798,7 +798,7 @@ class V8_EXPORT_PRIVATE CodeAssembler {
   TNode<HeapObject> OptimizedAllocate(TNode<IntPtrT> size,
                                       AllocationType allocation,
                                       AllowLargeObjects allow_large_objects);
-  void StoreToObject(MachineRepresentation rep, TNode<HeapObject> object,
+  void StoreToObject(MachineRepresentation rep, TNode<Object> object,
                      TNode<IntPtrT> offset, Node* value,
                      StoreToObjectWriteBarrier write_barrier);
   void OptimizedStoreField(MachineRepresentation rep, TNode<HeapObject> object,

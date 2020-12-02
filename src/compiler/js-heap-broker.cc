@@ -137,7 +137,7 @@ class AllowHeapAllocationIfNeeded {
 
 namespace {
 bool IsReadOnlyHeapObject(Object object) {
-  DisallowHeapAllocation no_gc;
+  DisallowGarbageCollection no_gc;
   return (object.IsCode() && Code::cast(object).is_builtin()) ||
          (object.IsHeapObject() &&
           ReadOnlyHeap::Contains(HeapObject::cast(object)));
@@ -2345,6 +2345,12 @@ void JSRegExpData::SerializeAsRegExpBoilerplate(JSHeapBroker* broker) {
   last_index_ = broker->GetOrCreateData(boilerplate->last_index());
 }
 
+#ifdef DEBUG
+bool ObjectRef::IsNeverSerializedHeapObject() const {
+  return data_->kind() == ObjectDataKind::kNeverSerializedHeapObject;
+}
+#endif  // DEBUG
+
 bool ObjectRef::equals(const ObjectRef& other) const {
 #ifdef DEBUG
   if (broker()->mode() == JSHeapBroker::kSerialized &&
@@ -2601,7 +2607,7 @@ void JSHeapBroker::SetTargetNativeContextRef(
 }
 
 void JSHeapBroker::CollectArrayAndObjectPrototypes() {
-  DisallowHeapAllocation no_gc;
+  DisallowGarbageCollection no_gc;
   CHECK_EQ(mode(), kSerializing);
   CHECK(array_and_object_prototypes_.empty());
 
@@ -3200,7 +3206,13 @@ uint16_t StringRef::GetFirstChar() {
   if (data_->should_access_heap()) {
     AllowHandleDereferenceIfNeeded allow_handle_dereference(data()->kind(),
                                                             broker()->mode());
-    return object()->Get(0);
+    if (broker()->local_isolate()) {
+      return object()->Get(0, broker()->local_isolate());
+    } else {
+      // TODO(solanes, v8:7790): Remove this case once we always have a local
+      // isolate, i.e. the inlining phase is done concurrently all the time.
+      return object()->Get(0);
+    }
   }
   return data()->AsString()->first_char();
 }
@@ -3381,6 +3393,11 @@ int BytecodeArrayRef::handler_table_size() const {
     IF_ACCESS_FROM_HEAP_WITH_FLAG_C(name);                 \
     return ObjectRef::data()->As##holder()->name();        \
   }
+#define BIMODAL_ACCESSOR_WITH_FLAG_B(holder, field, name, BitField)    \
+  typename BitField::FieldType holder##Ref::name() const {             \
+    IF_ACCESS_FROM_HEAP_WITH_FLAG_C(name);                             \
+    return BitField::decode(ObjectRef::data()->As##holder()->field()); \
+  }
 
 BIMODAL_ACCESSOR(AllocationSite, Object, nested_site)
 BIMODAL_ACCESSOR_C(AllocationSite, bool, CanInlineCall)
@@ -3429,25 +3446,28 @@ BIMODAL_ACCESSOR_C(JSTypedArray, bool, is_on_heap)
 BIMODAL_ACCESSOR_C(JSTypedArray, size_t, length)
 BIMODAL_ACCESSOR(JSTypedArray, HeapObject, buffer)
 
-BIMODAL_ACCESSOR_B(Map, bit_field2, elements_kind, Map::Bits2::ElementsKindBits)
-BIMODAL_ACCESSOR_B(Map, bit_field3, is_dictionary_map,
-                   Map::Bits3::IsDictionaryMapBit)
-BIMODAL_ACCESSOR_B(Map, bit_field3, is_deprecated, Map::Bits3::IsDeprecatedBit)
-BIMODAL_ACCESSOR_B(Map, bit_field3, NumberOfOwnDescriptors,
-                   Map::Bits3::NumberOfOwnDescriptorsBits)
-BIMODAL_ACCESSOR_B(Map, bit_field3, is_migration_target,
-                   Map::Bits3::IsMigrationTargetBit)
-BIMODAL_ACCESSOR_B(Map, bit_field3, is_extensible, Map::Bits3::IsExtensibleBit)
-BIMODAL_ACCESSOR_B(Map, bit_field, has_prototype_slot,
-                   Map::Bits1::HasPrototypeSlotBit)
-BIMODAL_ACCESSOR_B(Map, bit_field, is_access_check_needed,
-                   Map::Bits1::IsAccessCheckNeededBit)
-BIMODAL_ACCESSOR_B(Map, bit_field, is_callable, Map::Bits1::IsCallableBit)
-BIMODAL_ACCESSOR_B(Map, bit_field, has_indexed_interceptor,
-                   Map::Bits1::HasIndexedInterceptorBit)
-BIMODAL_ACCESSOR_B(Map, bit_field, is_constructor, Map::Bits1::IsConstructorBit)
-BIMODAL_ACCESSOR_B(Map, bit_field, is_undetectable,
-                   Map::Bits1::IsUndetectableBit)
+BIMODAL_ACCESSOR_WITH_FLAG_B(Map, bit_field2, elements_kind,
+                             Map::Bits2::ElementsKindBits)
+BIMODAL_ACCESSOR_WITH_FLAG_B(Map, bit_field3, is_dictionary_map,
+                             Map::Bits3::IsDictionaryMapBit)
+BIMODAL_ACCESSOR_WITH_FLAG_B(Map, bit_field3, is_deprecated,
+                             Map::Bits3::IsDeprecatedBit)
+BIMODAL_ACCESSOR_WITH_FLAG_B(Map, bit_field3, NumberOfOwnDescriptors,
+                             Map::Bits3::NumberOfOwnDescriptorsBits)
+BIMODAL_ACCESSOR_WITH_FLAG_B(Map, bit_field3, is_migration_target,
+                             Map::Bits3::IsMigrationTargetBit)
+BIMODAL_ACCESSOR_WITH_FLAG_B(Map, bit_field, has_prototype_slot,
+                             Map::Bits1::HasPrototypeSlotBit)
+BIMODAL_ACCESSOR_WITH_FLAG_B(Map, bit_field, is_access_check_needed,
+                             Map::Bits1::IsAccessCheckNeededBit)
+BIMODAL_ACCESSOR_WITH_FLAG_B(Map, bit_field, is_callable,
+                             Map::Bits1::IsCallableBit)
+BIMODAL_ACCESSOR_WITH_FLAG_B(Map, bit_field, has_indexed_interceptor,
+                             Map::Bits1::HasIndexedInterceptorBit)
+BIMODAL_ACCESSOR_WITH_FLAG_B(Map, bit_field, is_constructor,
+                             Map::Bits1::IsConstructorBit)
+BIMODAL_ACCESSOR_WITH_FLAG_B(Map, bit_field, is_undetectable,
+                             Map::Bits1::IsUndetectableBit)
 BIMODAL_ACCESSOR_C(Map, int, instance_size)
 BIMODAL_ACCESSOR_C(Map, int, NextFreePropertyIndex)
 BIMODAL_ACCESSOR_C(Map, int, UnusedPropertyFields)
@@ -3644,7 +3664,7 @@ void* JSTypedArrayRef::data_ptr() const {
 }
 
 bool MapRef::IsInobjectSlackTrackingInProgress() const {
-  IF_ACCESS_FROM_HEAP_C(IsInobjectSlackTrackingInProgress);
+  IF_ACCESS_FROM_HEAP_WITH_FLAG_C(IsInobjectSlackTrackingInProgress);
   return Map::Bits3::ConstructionCounterBits::decode(
              data()->AsMap()->bit_field3()) != Map::kNoSlackTracking;
 }
@@ -4657,8 +4677,7 @@ void FilterRelevantReceiverMaps(Isolate* isolate, MapHandles* maps) {
 MaybeObjectHandle TryGetMinimorphicHandler(
     std::vector<MapAndHandler> const& maps_and_handlers, FeedbackSlotKind kind,
     Handle<NativeContext> native_context, bool is_turboprop) {
-  if (!is_turboprop || !FLAG_turboprop_dynamic_map_checks ||
-      !IsLoadICKind(kind)) {
+  if (!is_turboprop || !FLAG_turbo_dynamic_map_checks || !IsLoadICKind(kind)) {
     return MaybeObjectHandle();
   }
 
@@ -4704,8 +4723,8 @@ bool HasMigrationTargets(const MapHandles& maps) {
 }  // namespace
 
 bool JSHeapBroker::CanUseFeedback(const FeedbackNexus& nexus) const {
-  // TODO(jgruber,v8:8888): Currently, nci code does not use any
-  // feedback. This restriction will be relaxed in the future.
+  // TODO(jgruber,v8:8888): Currently, nci code does not use all feedback
+  // kinds. This restriction will be relaxed in the future.
   return !is_native_context_independent() && !nexus.IsUninitialized();
 }
 
@@ -4818,7 +4837,7 @@ ProcessedFeedback const& JSHeapBroker::ReadFeedbackForGlobalAccess(
 ProcessedFeedback const& JSHeapBroker::ReadFeedbackForBinaryOperation(
     FeedbackSource const& source) const {
   FeedbackNexus nexus(source.vector, source.slot, feedback_nexus_config());
-  if (!CanUseFeedback(nexus)) return NewInsufficientFeedback(nexus.kind());
+  if (nexus.IsUninitialized()) return NewInsufficientFeedback(nexus.kind());
   BinaryOperationHint hint = nexus.GetBinaryOperationFeedback();
   DCHECK_NE(hint, BinaryOperationHint::kNone);  // Not uninitialized.
   return *zone()->New<BinaryOperationFeedback>(hint, nexus.kind());
@@ -4827,7 +4846,7 @@ ProcessedFeedback const& JSHeapBroker::ReadFeedbackForBinaryOperation(
 ProcessedFeedback const& JSHeapBroker::ReadFeedbackForCompareOperation(
     FeedbackSource const& source) const {
   FeedbackNexus nexus(source.vector, source.slot, feedback_nexus_config());
-  if (!CanUseFeedback(nexus)) return NewInsufficientFeedback(nexus.kind());
+  if (nexus.IsUninitialized()) return NewInsufficientFeedback(nexus.kind());
   CompareOperationHint hint = nexus.GetCompareOperationFeedback();
   DCHECK_NE(hint, CompareOperationHint::kNone);  // Not uninitialized.
   return *zone()->New<CompareOperationFeedback>(hint, nexus.kind());
@@ -4836,7 +4855,7 @@ ProcessedFeedback const& JSHeapBroker::ReadFeedbackForCompareOperation(
 ProcessedFeedback const& JSHeapBroker::ReadFeedbackForForIn(
     FeedbackSource const& source) const {
   FeedbackNexus nexus(source.vector, source.slot, feedback_nexus_config());
-  if (!CanUseFeedback(nexus)) return NewInsufficientFeedback(nexus.kind());
+  if (nexus.IsUninitialized()) return NewInsufficientFeedback(nexus.kind());
   ForInHint hint = nexus.GetForInFeedback();
   DCHECK_NE(hint, ForInHint::kNone);  // Not uninitialized.
   return *zone()->New<ForInFeedback>(hint, nexus.kind());

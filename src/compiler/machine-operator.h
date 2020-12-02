@@ -110,23 +110,14 @@ class StoreRepresentation final {
   StoreRepresentation(MachineRepresentation representation,
                       WriteBarrierKind write_barrier_kind)
       : representation_(representation),
-        write_barrier_kind_(write_barrier_kind) {
-    store_to_header_ = false;
-  }
-  StoreRepresentation(MachineRepresentation representation,
-                      WriteBarrierKind write_barrier_kind, bool store_to_header)
-      : representation_(representation),
-        write_barrier_kind_(write_barrier_kind),
-        store_to_header_(store_to_header) {}
+        write_barrier_kind_(write_barrier_kind) {}
 
   MachineRepresentation representation() const { return representation_; }
   WriteBarrierKind write_barrier_kind() const { return write_barrier_kind_; }
-  bool store_to_header() const { return store_to_header_; }
 
  private:
   MachineRepresentation representation_;
   WriteBarrierKind write_barrier_kind_;
-  bool store_to_header_;
 };
 
 V8_EXPORT_PRIVATE bool operator==(StoreRepresentation, StoreRepresentation);
@@ -837,6 +828,9 @@ class V8_EXPORT_PRIVATE MachineOperatorBuilder final
 
   const Operator* LoadTransform(MemoryAccessKind kind,
                                 LoadTransformation transform);
+
+  const Operator* PrefetchTemporal();
+  const Operator* PrefetchNonTemporal();
 
   // SIMD load: replace a specified lane with [base + index].
   const Operator* LoadLane(MemoryAccessKind kind, LoadRepresentation rep,

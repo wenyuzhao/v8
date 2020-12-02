@@ -132,6 +132,8 @@ enum class PrimitiveType { kBoolean, kNumber, kString, kSymbol };
   V(EmptyScopeInfo, empty_scope_info, EmptyScopeInfo)                        \
   V(EmptyPropertyDictionary, empty_property_dictionary,                      \
     EmptyPropertyDictionary)                                                 \
+  V(EmptyOrderedPropertyDictionary, empty_ordered_property_dictionary,       \
+    EmptyOrderedPropertyDictionary)                                          \
   V(EmptySlowElementDictionary, empty_slow_element_dictionary,               \
     EmptySlowElementDictionary)                                              \
   V(empty_string, empty_string, EmptyString)                                 \
@@ -1135,12 +1137,13 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
 
   // Reference is the CSA-equivalent of a Torque reference value,
   // representing an inner pointer into a HeapObject.
+  // The object can be a HeapObject or an all-zero bitpattern.
   // TODO(gsps): Remove in favor of flattened {Load,Store}Reference interface
   struct Reference {
-    TNode<HeapObject> object;
+    TNode<Object> object;
     TNode<IntPtrT> offset;
 
-    std::tuple<TNode<HeapObject>, TNode<IntPtrT>> Flatten() const {
+    std::tuple<TNode<Object>, TNode<IntPtrT>> Flatten() const {
       return std::make_tuple(object, offset);
     }
   };
@@ -1150,14 +1153,16 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
                          int>::type = 0>
   TNode<T> LoadReference(Reference reference) {
     if (IsMapOffsetConstant(reference.offset)) {
-      return CAST((Node*)LoadMap(reference.object));
+      TNode<Map> map = LoadMap(CAST(reference.object));
+      DCHECK((std::is_base_of<T, Map>::value));
+      return ReinterpretCast<T>(map);
     }
 
     TNode<IntPtrT> offset =
         IntPtrSub(reference.offset, IntPtrConstant(kHeapObjectTag));
-    Node* result =
-        LoadFromObject(MachineTypeOf<T>::value, reference.object, offset);
-    return CAST(result);
+    CSA_ASSERT(this, TaggedIsNotSmi(reference.object));
+    return CAST(
+        LoadFromObject(MachineTypeOf<T>::value, reference.object, offset));
   }
   template <class T,
             typename std::enable_if<
@@ -1184,10 +1189,12 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
       write_barrier = StoreToObjectWriteBarrier::kMap;
     }
     if (IsMapOffsetConstant(reference.offset)) {
-      return StoreMap(reference.object, CAST((Node*)value));
+      DCHECK((std::is_base_of<T, Map>::value));
+      return StoreMap(CAST(reference.object), ReinterpretCast<Map>(value));
     }
     TNode<IntPtrT> offset =
         IntPtrSub(reference.offset, IntPtrConstant(kHeapObjectTag));
+    CSA_ASSERT(this, TaggedIsNotSmi(reference.object));
     StoreToObject(rep, reference.object, offset, value, write_barrier);
   }
   template <class T, typename std::enable_if<
@@ -2345,6 +2352,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   TNode<BoolT> IsConstructor(TNode<HeapObject> object);
   TNode<BoolT> IsDeprecatedMap(TNode<Map> map);
   TNode<BoolT> IsNameDictionary(TNode<HeapObject> object);
+  TNode<BoolT> IsOrderedNameDictionary(TNode<HeapObject> object);
   TNode<BoolT> IsGlobalDictionary(TNode<HeapObject> object);
   TNode<BoolT> IsExtensibleMap(TNode<Map> map);
   TNode<BoolT> IsExtensibleNonPrototypeMap(TNode<Map> map);
@@ -2856,10 +2864,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   TNode<IntPtrT> HashTableComputeCapacity(TNode<IntPtrT> at_least_space_for);
 
   template <class Dictionary>
-  TNode<Smi> GetNumberOfElements(TNode<Dictionary> dictionary) {
-    return CAST(
-        LoadFixedArrayElement(dictionary, Dictionary::kNumberOfElementsIndex));
-  }
+  TNode<Smi> GetNumberOfElements(TNode<Dictionary> dictionary);
 
   TNode<Smi> GetNumberDictionaryNumberOfElements(
       TNode<NumberDictionary> dictionary) {
@@ -3059,13 +3064,15 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
 
   // This is a building block for TryLookupProperty() above. Supports only
   // non-special fast and dictionary objects.
+  // TODO(v8:11167, v8:11177) |bailout| only needed for SetDataProperties
+  // workaround.
   void TryLookupPropertyInSimpleObject(TNode<JSObject> object, TNode<Map> map,
                                        TNode<Name> unique_name,
                                        Label* if_found_fast,
                                        Label* if_found_dict,
                                        TVariable<HeapObject>* var_meta_storage,
                                        TVariable<IntPtrT>* var_name_index,
-                                       Label* if_not_found);
+                                       Label* if_not_found, Label* bailout);
 
   // This method jumps to if_found if the element is known to exist. To
   // if_absent if it's known to not exist. To if_not_found if the prototype
@@ -3618,20 +3625,12 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   using ForEachKeyValueFunction =
       std::function<void(TNode<Name> key, TNode<Object> value)>;
 
-  enum ForEachEnumerationMode {
-    // String and then Symbol properties according to the spec
-    // ES#sec-object.assign
-    kEnumerationOrder,
-    // Order of property addition
-    kPropertyAdditionOrder,
-  };
-
   // For each JSObject property (in DescriptorArray order), check if the key is
   // enumerable, and if so, load the value from the receiver and evaluate the
   // closure.
   void ForEachEnumerableOwnProperty(TNode<Context> context, TNode<Map> map,
                                     TNode<JSObject> object,
-                                    ForEachEnumerationMode mode,
+                                    PropertiesEnumerationMode mode,
                                     const ForEachKeyValueFunction& body,
                                     Label* bailout);
 
@@ -3753,11 +3752,12 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   // complaining about this method, don't make it public, add your root to
   // HEAP_(IM)MUTABLE_IMMOVABLE_OBJECT_LIST instead. If you *really* need
   // LoadRoot, use CodeAssembler::LoadRoot.
-  Node* LoadFiller(RootIndex root_index) {
-    return CodeAssembler::LoadFiller(root_index);
-  }
   TNode<Object> LoadRoot(RootIndex root_index) {
     return CodeAssembler::LoadRoot(root_index);
+  }
+
+  Node* LoadRootMapWord(RootIndex root_index) {
+    return CodeAssembler::LoadRootMapWord(root_index);
   }
 
   template <typename TIndex>

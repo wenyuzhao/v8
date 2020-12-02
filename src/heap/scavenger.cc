@@ -74,7 +74,7 @@ class IterateAndScavengePromotedObjectsVisitor final : public ObjectVisitor {
       typename TSlot::TObject object = *slot;
       HeapObject heap_object;
       if (object.GetHeapObject(&heap_object)) {
-        DCHECK(!Internals::IsMapWord(object.ptr()));
+        DCHECK(!MapWord::IsPacked(object.ptr()));
         HandleSlot(host, THeapObjectSlot(slot), heap_object);
       }
     }
@@ -503,8 +503,8 @@ int ScavengerCollector::NumberOfScavengeTasks() {
   const int num_scavenge_tasks =
       static_cast<int>(heap_->new_space()->TotalCapacity()) / MB + 1;
   static int num_cores = V8::GetCurrentPlatform()->NumberOfWorkerThreads() + 1;
-  int tasks =
-      Max(1, Min(Min(num_scavenge_tasks, kMaxScavengerTasks), num_cores));
+  int tasks = std::max(
+      1, std::min({num_scavenge_tasks, kMaxScavengerTasks, num_cores}));
   if (!heap_->CanPromoteYoungAndExpandOldGeneration(
           static_cast<size_t>(tasks * Page::kPageSize))) {
     // Optimize for memory usage near the heap limit.
@@ -570,7 +570,7 @@ void Scavenger::AddPageToSweeperIfNecessary(MemoryChunk* page) {
 void Scavenger::ScavengePage(MemoryChunk* page) {
   CodePageMemoryModificationScope memory_modification_scope(page);
 
-  if (page->slot_set<OLD_TO_NEW, AccessMode::NON_ATOMIC>() != nullptr) {
+  if (page->slot_set<OLD_TO_NEW, AccessMode::ATOMIC>() != nullptr) {
     InvalidatedSlotsFilter filter = InvalidatedSlotsFilter::OldToNew(page);
     RememberedSet<OLD_TO_NEW>::IterateAndTrackEmptyBuckets(
         page,
@@ -735,7 +735,7 @@ void Scavenger::AddEphemeronHashTable(EphemeronHashTable table) {
 void RootScavengeVisitor::VisitRootPointer(Root root, const char* description,
                                            FullObjectSlot p) {
   DCHECK(!HasWeakHeapObjectTag(*p));
-  DCHECK(!Internals::IsMapWord((*p).ptr()));
+  DCHECK(!MapWord::IsPacked((*p).ptr()));
   ScavengePointer(p);
 }
 
@@ -751,7 +751,7 @@ void RootScavengeVisitor::VisitRootPointers(Root root, const char* description,
 void RootScavengeVisitor::ScavengePointer(FullObjectSlot p) {
   Object object = *p;
   DCHECK(!HasWeakHeapObjectTag(object));
-  DCHECK(!Internals::IsMapWord(object.ptr()));
+  DCHECK(!MapWord::IsPacked(object.ptr()));
   if (Heap::InYoungGeneration(object)) {
     scavenger_->ScavengeObject(FullHeapObjectSlot(p), HeapObject::cast(object));
   }

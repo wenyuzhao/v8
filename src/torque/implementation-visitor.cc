@@ -362,7 +362,7 @@ void ImplementationVisitor::VisitMacroCommon(Macro* macro) {
   if (output_type_ == OutputType::kCC) {
     // For now, generated C++ is only for field offset computations. If we ever
     // generate C++ code that can allocate, then it should be handlified.
-    csa_ccfile() << "  DisallowHeapAllocation no_gc;\n";
+    csa_ccfile() << "  DisallowGarbageCollection no_gc;\n";
   } else {
     csa_ccfile() << "  compiler::CodeAssembler ca_(state_);\n";
     csa_ccfile()
@@ -3735,7 +3735,8 @@ void CppClassGenerator::GenerateClass() {
        << "    \"Pass in " << super_->name()
        << " as second template parameter for " << gen_name_ << ".\");\n";
   hdr_ << " public: \n";
-  hdr_ << "  using Super = P;\n\n";
+  hdr_ << "  using Super = P;\n";
+  hdr_ << "  using TorqueGeneratedClass = " << gen_name_ << "<D,P>;\n\n";
   if (!type_->ShouldExport() && !type_->IsExtern()) {
     hdr_ << " protected: // not extern or @export\n";
   }
@@ -3806,9 +3807,9 @@ void CppClassGenerator::GenerateClass() {
         hdr_ << "    size += " << index_name_and_type.name << " * "
              << field_size << ";\n";
       }
-      if (type_->size().Alignment() < TargetArchitecture::TaggedSize()) {
-        hdr_ << "    size = OBJECT_POINTER_ALIGN(size);\n";
-      }
+    }
+    if (type_->size().Alignment() < TargetArchitecture::TaggedSize()) {
+      hdr_ << "    size = OBJECT_POINTER_ALIGN(size);\n";
     }
     hdr_ << "    return size;\n";
     hdr_ << "  }\n\n";
@@ -4273,7 +4274,7 @@ void ImplementationVisitor::GenerateClassDefinitions(
         for (const Field& f : type->ComputeAllFields()) {
           if (f.name_and_type.name == "map") continue;
           if (!f.index) {
-            factory_impl << "  result_handle->set_"
+            factory_impl << "  result_handle->TorqueGeneratedClass::set_"
                          << SnakeifyString(f.name_and_type.name) << "(";
             if (f.name_and_type.type->IsSubtypeOf(
                     TypeOracle::GetTaggedType()) &&
@@ -4425,8 +4426,8 @@ base::Optional<std::string> MatchSimpleBodyDescriptor(const ClassType* type) {
                     "BodyDescriptor<", start_offset, ">");
   }
   if (!has_weak_pointers) {
-    return ToString("FixedRangeDescriptor<", start_offset, ", ", end_offset,
-                    ", ", *type->size().SingleValue(), ">");
+    return ToString("FixedRangeBodyDescriptor<", start_offset, ", ", end_offset,
+                    ">");
   }
   return base::nullopt;
 }

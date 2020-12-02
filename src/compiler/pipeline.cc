@@ -802,15 +802,15 @@ void PrintFunctionSource(OptimizedCompilationInfo* info, Isolate* isolate,
       if (source_name.IsString()) {
         os << String::cast(source_name).ToCString().get() << ":";
       }
-      os << shared->DebugName().ToCString().get() << ") id{";
+      os << shared->DebugNameCStr().get() << ") id{";
       os << info->optimization_id() << "," << source_id << "} start{";
       os << shared->StartPosition() << "} ---\n";
       {
-        DisallowHeapAllocation no_allocation;
+        DisallowGarbageCollection no_gc;
         int start = shared->StartPosition();
         int len = shared->EndPosition() - start;
-        SubStringRange source(String::cast(script->source()), no_allocation,
-                              start, len);
+        SubStringRange source(String::cast(script->source()), no_gc, start,
+                              len);
         for (const auto& c : source) {
           os << AsReversiblyEscapedUC16(c);
         }
@@ -828,7 +828,7 @@ void PrintInlinedFunctionInfo(
     int inlining_id, const OptimizedCompilationInfo::InlinedFunctionHolder& h) {
   CodeTracer::StreamScope tracing_scope(isolate->GetCodeTracer());
   auto& os = tracing_scope.stream();
-  os << "INLINE (" << h.shared_info->DebugName().ToCString().get() << ") id{"
+  os << "INLINE (" << h.shared_info->DebugNameCStr().get() << ") id{"
      << info->optimization_id() << "," << source_id << "} AS " << inlining_id
      << " AT ";
   const SourcePosition position = h.position.position;
@@ -1236,7 +1236,7 @@ void PipelineCompilationJob::RegisterWeakObjectsInOptimizedCode(
   std::vector<Handle<Map>> maps;
   DCHECK(code->is_optimized_code());
   {
-    DisallowHeapAllocation no_gc;
+    DisallowGarbageCollection no_gc;
     int const mode_mask = RelocInfo::EmbeddedObjectModeMask();
     for (RelocIterator it(*code, mode_mask); !it.done(); it.next()) {
       DCHECK(RelocInfo::IsEmbeddedObjectMode(it.rinfo()->rmode()));
@@ -3034,8 +3034,8 @@ MaybeHandle<Code> Pipeline::GenerateCodeForTesting(
   }
 
   {
-    LocalIsolate local_isolate(isolate, ThreadKind::kMain);
-    LocalIsolateScope local_isolate_scope(data.broker(), info, &local_isolate);
+    LocalIsolateScope local_isolate_scope(data.broker(), info,
+                                          isolate->main_thread_local_isolate());
     if (data.broker()->is_concurrent_inlining()) {
       if (!pipeline.CreateGraph()) return MaybeHandle<Code>();
     }

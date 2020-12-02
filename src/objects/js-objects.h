@@ -112,10 +112,10 @@ class JSReceiver : public HeapObject {
   // maybe_excluded_properties list.
   V8_WARN_UNUSED_RESULT static Maybe<bool> SetOrCopyDataProperties(
       Isolate* isolate, Handle<JSReceiver> target, Handle<Object> source,
+      PropertiesEnumerationMode mode,
       const ScopedVector<Handle<Object>>* excluded_properties = nullptr,
       bool use_set = true);
 
-  inline bool MapOK();
   // Implementation of [[HasProperty]], ECMA-262 5th edition, section 8.12.6.
   V8_EXPORT_PRIVATE V8_WARN_UNUSED_RESULT static Maybe<bool> HasProperty(
       LookupIterator* it);
@@ -646,9 +646,6 @@ class JSObject : public TorqueGeneratedJSObject<JSObject, JSReceiver> {
   inline void RawFastPropertyAtPut(
       FieldIndex index, Object value,
       WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-  inline void WriteFillerMapNoWritebarrier(FieldIndex index, MapWord value);
-  inline void RawFastPropertyAtPutNoWriteBarrier(FieldIndex index,
-                                                 Object value);
   inline void RawFastInobjectPropertyAtPut(
       FieldIndex index, Object value,
       WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
@@ -676,7 +673,8 @@ class JSObject : public TorqueGeneratedJSObject<JSObject, JSReceiver> {
   // pre_allocated_value and the rest with filler_value.
   // Note: this call does not update write barrier, the caller is responsible
   // to ensure that |filler_value| can be collected without WB here.
-  inline void InitializeBody(Map map, int start_offset, bool use_object_filler,
+  inline void InitializeBody(Map map, int start_offset,
+                             bool is_slack_tracking_in_progress,
                              MapWord filler_map, Object undefined_value);
 
   // Check whether this object references another object

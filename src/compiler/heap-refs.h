@@ -178,6 +178,10 @@ class V8_EXPORT_PRIVATE ObjectRef {
     }
   };
 
+#ifdef DEBUG
+  bool IsNeverSerializedHeapObject() const;
+#endif  // DEBUG
+
  protected:
   JSHeapBroker* broker() const;
   ObjectData* data() const;
@@ -593,7 +597,6 @@ class V8_EXPORT_PRIVATE MapRef : public HeapObjectRef {
   int UnusedPropertyFields() const;
   ElementsKind elements_kind() const;
   bool is_stable() const;
-  bool is_extensible() const;
   bool is_constructor() const;
   bool has_prototype_slot() const;
   bool is_access_check_needed() const;
