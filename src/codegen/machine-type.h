@@ -21,7 +21,19 @@ enum class MachineRepresentation : uint8_t {
   kWord16,
   kWord32,
   kWord64,
-  kMapWord,            // (uncompressed) MapWord
+  // (uncompressed) MapWord
+  // kMapWord is the representation of a map word, i.e. a map in the header
+  // of a HeapObject.
+  // If V8_MAP_PACKING is disabled, a map word is just the map itself. Hence
+  //     kMapWord is equivalent to kTaggedPointer -- in fact it will be
+  //     translated to kTaggedPointer during memory lowering.
+  // If V8_MAP_PACKING is enabled, a map word is a Smi-like encoding of a map
+  //     and some meta data. Memory lowering of kMapWord loads/stores
+  //     produces low-level kTagged loads/stores plus the necessary
+  //     decode/encode operations.
+  // In either case, the kMapWord representation is not used after memory
+  // lowering.
+  kMapWord,
   kTaggedSigned,       // (uncompressed) Smi
   kTaggedPointer,      // (uncompressed) HeapObject
   kTagged,             // (uncompressed) Object (Smi or HeapObject)
