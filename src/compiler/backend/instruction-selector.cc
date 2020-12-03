@@ -1382,8 +1382,8 @@ void InstructionSelector::VisitNode(Node* node) {
       return VisitDeoptimizeIf(node);
     case IrOpcode::kDeoptimizeUnless:
       return VisitDeoptimizeUnless(node);
-    case IrOpcode::kDynamicMapCheckUnless:
-      return VisitDynamicMapCheckUnless(node);
+    case IrOpcode::kDynamicCheckMapsWithDeoptUnless:
+      return VisitDynamicCheckMapsWithDeoptUnless(node);
     case IrOpcode::kTrapIf:
       return VisitTrapIf(node, TrapIdOf(node->op()));
     case IrOpcode::kTrapUnless:
@@ -2724,13 +2724,18 @@ void InstructionSelector::VisitI64x2Splat(Node* node) { UNIMPLEMENTED(); }
 void InstructionSelector::VisitI64x2ExtractLane(Node* node) { UNIMPLEMENTED(); }
 void InstructionSelector::VisitI64x2ReplaceLane(Node* node) { UNIMPLEMENTED(); }
 #endif  // !V8_TARGET_ARCH_MIPS64
-void InstructionSelector::VisitI64x2Eq(Node* node) { UNIMPLEMENTED(); }
 void InstructionSelector::VisitF64x2Qfma(Node* node) { UNIMPLEMENTED(); }
 void InstructionSelector::VisitF64x2Qfms(Node* node) { UNIMPLEMENTED(); }
 void InstructionSelector::VisitF32x4Qfma(Node* node) { UNIMPLEMENTED(); }
 void InstructionSelector::VisitF32x4Qfms(Node* node) { UNIMPLEMENTED(); }
 #endif  // !V8_TARGET_ARCH_ARM64
 #endif  // !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_S390X
+
+#if !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_S390X && !V8_TARGET_ARCH_ARM64 && \
+    !V8_TARGET_ARCH_IA32
+void InstructionSelector::VisitI64x2Eq(Node* node) { UNIMPLEMENTED(); }
+#endif  // !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_S390X && !V8_TARGET_ARCH_ARM64
+        // && !V8_TARGET_ARCH_IA32
 
 #if !V8_TARGET_ARCH_ARM64
 // TODO(v8:10971) Prototype i16x8.q15mulr_sat_s
@@ -2815,11 +2820,11 @@ void InstructionSelector::VisitPrefetchNonTemporal(Node* node) {
 }
 #endif  // !V8_TARGET_ARCH_ARM64
 
-#if !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_IA32
+#if !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_IA32 && !V8_TARGET_ARCH_ARM64
 // TODO(v8:10975): Prototyping load lane and store lane.
 void InstructionSelector::VisitLoadLane(Node* node) { UNIMPLEMENTED(); }
 void InstructionSelector::VisitStoreLane(Node* node) { UNIMPLEMENTED(); }
-#endif  // !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_IA32
+#endif  // !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_IA32 && !V8_TARGET_ARCH_ARM64
 
 #if !V8_TARGET_ARCH_X64
 // TODO(v8:10983) Prototyping sign select.
@@ -3172,12 +3177,12 @@ void InstructionSelector::VisitDeoptimizeUnless(Node* node) {
   }
 }
 
-void InstructionSelector::VisitDynamicMapCheckUnless(Node* node) {
+void InstructionSelector::VisitDynamicCheckMapsWithDeoptUnless(Node* node) {
   OperandGenerator g(this);
-  DynamicMapChecksUnlessNode n(node);
+  DynamicCheckMapsWithDeoptUnlessNode n(node);
   DeoptimizeParameters p = DeoptimizeParametersOf(node->op());
 
-  DynamicMapChecksDescriptor descriptor;
+  DynamicCheckMapsDescriptor descriptor;
   // Note: We use Operator::kNoDeopt here because this builtin does not lazy
   // deoptimize (which is the meaning of Operator::kNoDeopt), even though it can
   // eagerly deoptimize.

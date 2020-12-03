@@ -1096,7 +1096,6 @@ TEST_F(FunctionBodyDecoderTest, UnreachableRefTypes) {
   FunctionSig sig_v_s(0, 1, &struct_type);
   byte struct_consumer = builder.AddFunction(&sig_v_s);
 
-  ExpectValidates(sigs.v_v(), {WASM_BLOCK(WASM_UNREACHABLE, kExprBrOnNull, 0)});
   ExpectValidates(sigs.i_v(), {WASM_UNREACHABLE, kExprRefIsNull});
   ExpectValidates(sigs.v_v(), {WASM_UNREACHABLE, kExprRefAsNonNull, kExprDrop});
 
@@ -1153,6 +1152,22 @@ TEST_F(FunctionBodyDecoderTest, UnreachableRefTypes) {
   ExpectValidates(sigs.v_v(),
                   {WASM_UNREACHABLE, WASM_GC_OP(kExprRttSub), array_index,
                    WASM_GC_OP(kExprRttSub), array_index, kExprDrop});
+
+  ExpectValidates(sigs.v_v(), {WASM_UNREACHABLE, kExprBrOnNull, 0, WASM_DROP});
+
+  ExpectValidates(&sig_v_s, {WASM_UNREACHABLE, WASM_GET_LOCAL(0), kExprBrOnNull,
+                             0, kExprCallFunction, struct_consumer});
+
+  ValueType opt_struct_type = ValueType::Ref(struct_index, kNullable);
+  FunctionSig sig_v_os(0, 1, &opt_struct_type);
+  ExpectValidates(&sig_v_os,
+                  {WASM_UNREACHABLE, WASM_GET_LOCAL(0), kExprBrOnNull, 0,
+                   kExprCallFunction, struct_consumer});
+
+  ExpectFailure(
+      sigs.v_v(), {WASM_UNREACHABLE, WASM_I32V(42), kExprBrOnNull, 0},
+      kAppendEnd,
+      "br_on_null[0]: Expected object reference, found i32.const of type i32");
 }
 
 TEST_F(FunctionBodyDecoderTest, If1) {
@@ -4381,6 +4396,16 @@ TEST_F(FunctionBodyDecoderTest, RefTestCast) {
   }
 }
 
+// This tests that num_locals_ in decoder remains consistent, even if we fail
+// mid-DecodeLocals().
+TEST_F(FunctionBodyDecoderTest, Regress_1154439) {
+  WASM_FEATURE_SCOPE(reftypes);
+  WASM_FEATURE_SCOPE(typed_funcref);
+  AddLocals(kWasmI32, 1);
+  AddLocals(kWasmI64, 1000000);
+  ExpectFailure(sigs.v_v(), {}, kAppendEnd, "local count too large");
+}
+
 class BranchTableIteratorTest : public TestWithZone {
  public:
   BranchTableIteratorTest() : TestWithZone() {}
@@ -4653,18 +4678,20 @@ TEST_F(WasmOpcodeLengthTest, PrefixedOpcodesLEB) {
 
 class TypeReaderTest : public TestWithZone {
  public:
-  ValueType DecodeValueType(const byte* start, const byte* end) {
+  ValueType DecodeValueType(const byte* start, const byte* end,
+                            const WasmModule* module) {
     Decoder decoder(start, end);
     uint32_t length;
     return value_type_reader::read_value_type<Decoder::kFullValidation>(
-        &decoder, start, &length, enabled_features_);
+        &decoder, start, &length, module, enabled_features_);
   }
 
-  HeapType DecodeHeapType(const byte* start, const byte* end) {
+  HeapType DecodeHeapType(const byte* start, const byte* end,
+                          const WasmModule* module) {
     Decoder decoder(start, end);
     uint32_t length;
     return value_type_reader::read_heap_type<Decoder::kFullValidation>(
-        &decoder, start, &length, enabled_features_);
+        &decoder, start, &length, module, enabled_features_);
   }
 
   // This variable is modified by WASM_FEATURE_SCOPE.
@@ -4682,34 +4709,34 @@ TEST_F(TypeReaderTest, HeapTypeDecodingTest) {
   // 1- to 5-byte representation of kFuncRefCode.
   {
     const byte data[] = {kFuncRefCode};
-    HeapType result = DecodeHeapType(data, data + sizeof(data));
+    HeapType result = DecodeHeapType(data, data + sizeof(data), nullptr);
     EXPECT_TRUE(result == heap_func);
   }
   {
     const byte data[] = {kFuncRefCode | 0x80, 0x7F};
-    HeapType result = DecodeHeapType(data, data + sizeof(data));
+    HeapType result = DecodeHeapType(data, data + sizeof(data), nullptr);
     EXPECT_EQ(result, heap_func);
   }
   {
     const byte data[] = {kFuncRefCode | 0x80, 0xFF, 0x7F};
-    HeapType result = DecodeHeapType(data, data + sizeof(data));
+    HeapType result = DecodeHeapType(data, data + sizeof(data), nullptr);
     EXPECT_EQ(result, heap_func);
   }
   {
     const byte data[] = {kFuncRefCode | 0x80, 0xFF, 0xFF, 0x7F};
-    HeapType result = DecodeHeapType(data, data + sizeof(data));
+    HeapType result = DecodeHeapType(data, data + sizeof(data), nullptr);
     EXPECT_EQ(result, heap_func);
   }
   {
     const byte data[] = {kFuncRefCode | 0x80, 0xFF, 0xFF, 0xFF, 0x7F};
-    HeapType result = DecodeHeapType(data, data + sizeof(data));
+    HeapType result = DecodeHeapType(data, data + sizeof(data), nullptr);
     EXPECT_EQ(result, heap_func);
   }
 
   {
     // Some negative number.
     const byte data[] = {0xB4, 0x7F};
-    HeapType result = DecodeHeapType(data, data + sizeof(data));
+    HeapType result = DecodeHeapType(data, data + sizeof(data), nullptr);
     EXPECT_EQ(result, heap_bottom);
   }
 
@@ -4718,7 +4745,7 @@ TEST_F(TypeReaderTest, HeapTypeDecodingTest) {
     // range. This should therefore NOT be decoded as HeapType::kFunc and
     // instead fail.
     const byte data[] = {kFuncRefCode | 0x80, 0x6F};
-    HeapType result = DecodeHeapType(data, data + sizeof(data));
+    HeapType result = DecodeHeapType(data, data + sizeof(data), nullptr);
     EXPECT_EQ(result, heap_bottom);
   }
 }
@@ -4740,7 +4767,9 @@ class LocalDeclDecoderTest : public TestWithZone {
 
   bool DecodeLocalDecls(BodyLocalDecls* decls, const byte* start,
                         const byte* end) {
-    return i::wasm::DecodeLocalDecls(enabled_features_, decls, start, end);
+    WasmModule module;
+    return i::wasm::DecodeLocalDecls(enabled_features_, decls, &module, start,
+                                     end);
   }
 };
 
@@ -4865,6 +4894,20 @@ TEST_F(LocalDeclDecoderTest, ExnRef) {
 
   TypesOfLocals map = decls.type_list;
   EXPECT_EQ(type, map[0]);
+}
+
+TEST_F(LocalDeclDecoderTest, InvalidTypeIndex) {
+  WASM_FEATURE_SCOPE(reftypes);
+  WASM_FEATURE_SCOPE(typed_funcref);
+
+  const byte* data = nullptr;
+  const byte* end = nullptr;
+  LocalDeclEncoder local_decls(zone());
+
+  local_decls.AddLocals(1, ValueType::Ref(0, kNullable));
+  BodyLocalDecls decls(zone());
+  bool result = DecodeLocalDecls(&decls, data, end);
+  EXPECT_FALSE(result);
 }
 
 class BytecodeIteratorTest : public TestWithZone {};

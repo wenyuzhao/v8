@@ -2666,6 +2666,19 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ ld1r(i.OutputSimd128Register().Format(f), i.MemoryOperand(0));
       break;
     }
+    case kArm64LoadLane: {
+      DCHECK_EQ(i.OutputSimd128Register(), i.InputSimd128Register(0));
+      VectorFormat f = VectorFormatFillQ(MiscField::decode(opcode));
+      int laneidx = i.InputInt8(1);
+      __ ld1(i.OutputSimd128Register().Format(f), laneidx, i.MemoryOperand(2));
+      break;
+    }
+    case kArm64StoreLane: {
+      VectorFormat f = VectorFormatFillQ(MiscField::decode(opcode));
+      int laneidx = i.InputInt8(1);
+      __ st1(i.InputSimd128Register(0).Format(f), laneidx, i.MemoryOperand(2));
+      break;
+    }
     case kArm64S128Load8x8S: {
       __ Ldr(i.OutputSimd128Register().V8B(), i.MemoryOperand(0));
       __ Sxtl(i.OutputSimd128Register().V8H(), i.OutputSimd128Register().V8B());
@@ -3234,7 +3247,7 @@ void CodeGenerator::PrepareForDeoptimizationExits(
   // Check which deopt kinds exist in this Code object, to avoid emitting jumps
   // to unused entries.
   bool saw_deopt_kind[kDeoptimizeKindCount] = {false};
-  constexpr auto eager_with_resume_reason = DeoptimizeReason::kDynamicMapCheck;
+  constexpr auto eager_with_resume_reason = DeoptimizeReason::kDynamicCheckMaps;
   for (auto exit : *exits) {
     // TODO(rmcilroy): If we add any other kinds of kEagerWithResume deoptimize
     // we will need to create a seperate array for each kEagerWithResume builtin
