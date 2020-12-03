@@ -10494,9 +10494,7 @@ void CodeStubAssembler::TrapAllocationMemento(TNode<JSObject> object,
         BitcastTaggedToWord(object), IntPtrConstant(kMementoMapOffset));
     TNode<HeapObject> memento_object = TNode<HeapObject>::UncheckedCast(
         BitcastWordToTaggedSigned(memento_object_start));
-    TNode<Map> memento_map = LoadMap(memento_object);
-    Branch(TaggedEqual(memento_map, AllocationMementoMapConstant()),
-           memento_found, &no_memento_found);
+    Branch(IsMemento(memento_object), memento_found, &no_memento_found);
   }
   BIND(&no_memento_found);
   Comment("] TrapAllocationMemento");

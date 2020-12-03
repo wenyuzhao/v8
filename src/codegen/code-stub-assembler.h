@@ -1076,21 +1076,25 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   // Load a field from an object on the heap.
   template <class T, typename std::enable_if<
                          std::is_convertible<TNode<T>, TNode<Object>>::value &&
-                             !std::is_same<TNode<T>, TNode<Map>>::value,
+                             std::is_base_of<T, Map>::value,
                          int>::type = 0>
-  TNode<T> LoadObjectField(TNode<HeapObject> object, int offset) {
-    return CAST(LoadFromObject(MachineTypeOf<T>::value, object,
-                               IntPtrConstant(offset - kHeapObjectTag)));
-  }
-  template <class T,
-            typename std::enable_if<std::is_same<TNode<T>, TNode<Map>>::value,
-                                    int>::type = 0>
   TNode<T> LoadObjectField(TNode<HeapObject> object, int offset) {
     const MachineType machine_type = offset == HeapObject::kMapOffset
                                          ? MachineType::MapInHeader()
                                          : MachineTypeOf<T>::value;
-    return UncheckedCast<T>(LoadFromObject(
-        machine_type, object, IntPtrConstant(offset - kHeapObjectTag)));
+    return CAST(LoadFromObject(machine_type, object,
+                               IntPtrConstant(offset - kHeapObjectTag)));
+  }
+  template <class T, typename std::enable_if<
+                         std::is_convertible<TNode<T>, TNode<Object>>::value &&
+                             !std::is_base_of<T, Map>::value,
+                         int>::type = 0>
+  TNode<T> LoadObjectField(TNode<HeapObject> object, int offset) {
+    const MachineType machine_type = offset == HeapObject::kMapOffset
+                                         ? MachineType::MapInHeader()
+                                         : MachineTypeOf<T>::value;
+    return CAST(LoadFromObject(machine_type, object,
+                               IntPtrConstant(offset - kHeapObjectTag)));
   }
   template <class T, typename std::enable_if<
                          std::is_convertible<TNode<T>, TNode<UntaggedT>>::value,
@@ -2754,6 +2758,14 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   // Returns true if all of the mask's bits in given |word| are clear.
   TNode<BoolT> IsClearWord(SloppyTNode<WordT> word, uint32_t mask) {
     return IntPtrEqual(WordAnd(word, IntPtrConstant(mask)), IntPtrConstant(0));
+  }
+
+  // Returns true if the given |object| is an memento object
+  TNode<BoolT> IsMemento(TNode<HeapObject> object) {
+    TNode<HeapObject> map =
+        LoadObjectField<HeapObject>(object, HeapObject::kMapOffset);
+    CSA_ASSERT(this, IsMap(map));
+    return TaggedEqual(map, AllocationMementoMapConstant());
   }
 
   void SetCounter(StatsCounter* counter, int value);
