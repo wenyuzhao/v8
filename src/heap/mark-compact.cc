@@ -601,6 +601,8 @@ void MarkCompactCollector::StartMarking() {
 
 void MarkCompactCollector::CollectGarbage() {
 
+  printf("Clear mark bits\n");
+
   FullMarkingVerifier verifier(heap());
   verifier.ClearMarking(heap_->new_space());
   verifier.ClearMarking(heap_->new_lo_space());
@@ -625,20 +627,33 @@ void MarkCompactCollector::CollectGarbage() {
   RecordObjectStats();
 
   printf("Mark Finished\n");
-  // heap()->map_space()->Remark();
 
   StartSweepSpaces();
   Evacuate();
 
   sweeper()->StartSweeperTasks();
   sweeper()->StartIterabilityTasks();
+  sweeper()->EnsureCompleted();
 
   {
     GCTracer::Scope sweep_scope(heap()->tracer(), GCTracer::Scope::MC_SWEEP_MAP);
     StartSweepSpace(heap()->map_space());
   }
-  Evacuate();
+  sweeper()->StartSweeping();
+  // sweeper()->StartSweeperTasks();
+  // sweeper()->StartIterabilityTasks();
+  // Evacuate();
+  // EnsureSweepingCompleted();
+
   Finish();
+
+  EnsureSweepingCompleted();
+
+  CHECK(!sweeper()->AreSweeperTasksRunning());
+  for (Page* page : *heap()->map_space()) {
+    if (!page->SweepingDone()) printf("%p is not sweeped\n", page);
+    CHECK(page->SweepingDone());
+  }
 
   printf("MarkCompact Finished\n");
 }
@@ -4197,6 +4212,7 @@ void MarkCompactCollector::StartSweepSpace(PagedSpace* space) {
   for (auto it = space->begin(); it != space->end();) {
     Page* p = *(it++);
     DCHECK(p->SweepingDone());
+    // printf("StartSweepSpace page %p\n", p);
 
     if (p->IsEvacuationCandidate()) {
       // Will be processed in Evacuate.

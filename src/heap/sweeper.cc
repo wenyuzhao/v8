@@ -298,6 +298,17 @@ void Sweeper::CleanupInvalidTypedSlotsOfFreeRanges(
 void Sweeper::ClearMarkBitsAndHandleLivenessStatistics(
     Page* page, size_t live_bytes, FreeListRebuildingMode free_list_mode) {
   marking_state_->bitmap(page)->Clear();
+  {
+    for (auto object_and_size : LiveObjectRange<kAllLiveObjects>(page, marking_state_->bitmap(page))) {
+      HeapObject object = object_and_size.first;
+      DCHECK(!MapWord::IsPacked(object.ptr()));
+      // size_t size = object_and_size.second;
+      Address current = object.address();
+      if (current < page->area_start()) continue;
+      if (current >= page->area_end()) break;
+      Marking::MarkWhite(marking_state_->MarkBitFrom(object));
+    }
+  }
   if (free_list_mode == IGNORE_FREE_LIST) {
     marking_state_->SetLiveBytes(page, 0);
     // We did not free memory, so have to adjust allocated bytes here.
