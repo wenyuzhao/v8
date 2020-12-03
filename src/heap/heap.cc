@@ -826,6 +826,7 @@ bool Heap::UncommitFromSpace() { return new_space_->UncommitFromSpace(); }
 
 void Heap::GarbageCollectionPrologue() {
   Marking::UpdateMarkState();
+  // printf("Marking State: %zu\n", Marking::GetMarkState());
   TRACE_GC(tracer(), GCTracer::Scope::HEAP_PROLOGUE);
 
   // Reset GC statistics.

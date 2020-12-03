@@ -237,7 +237,7 @@ declare_args() {
 
   # Disable write barriers when GCs are non-incremental and
   # heap has single generation.
-  v8_disable_write_barriers = false
+  v8_disable_write_barriers = true
 
   # Ensure that write barriers are always used.
   # Useful for debugging purposes.
@@ -245,7 +245,7 @@ declare_args() {
 
   # Redirect allocation in young generation so that there will be
   # only one single generation.
-  v8_enable_single_generation = ""
+  v8_enable_single_generation = true
 
   # Use token threaded dispatch for the regular expression interpreter.
   # Use switch-based dispatch if this is false

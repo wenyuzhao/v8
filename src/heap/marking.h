@@ -452,7 +452,7 @@ class Marking : public AllStatic {
 
   template <AccessMode mode = AccessMode::NON_ATOMIC>
   V8_INLINE static bool WhiteToGrey(MarkBit markbit) {
-    DCHECK_EQ(mode, AccessMode::NON_ATOMIC);
+    // DCHECK_EQ(mode, AccessMode::NON_ATOMIC);
     if (markbit.InReadOnlySpace()) return false;
     // DCHECK(!IsBlack(markbit));
     if (!IsWhite(markbit)) return false;
@@ -465,7 +465,7 @@ class Marking : public AllStatic {
   V8_INLINE static bool WhiteToBlack(MarkBit markbit) {
     if (markbit.InReadOnlySpace()) return false;
     // DCHECK(!markbit.InReadOnlySpace());
-    DCHECK_EQ(mode, AccessMode::NON_ATOMIC);
+    // DCHECK_EQ(mode, AccessMode::NON_ATOMIC);
     DCHECK(!IsGrey(markbit));
     if (IsBlack(markbit)) return false;
     MarkBlack(markbit);
@@ -478,7 +478,7 @@ class Marking : public AllStatic {
   V8_INLINE static bool GreyToBlack(MarkBit markbit) {
     if (markbit.InReadOnlySpace()) return false;
     // DCHECK(!markbit.InReadOnlySpace());
-    DCHECK_EQ(mode, AccessMode::NON_ATOMIC);
+    // DCHECK_EQ(mode, AccessMode::NON_ATOMIC);
     DCHECK(!IsWhite(markbit));
     if (IsBlack(markbit)) return false;
     MarkBlack(markbit);
