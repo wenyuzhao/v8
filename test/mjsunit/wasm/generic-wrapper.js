@@ -773,7 +773,7 @@ let kSig_f_iiliiiffddlifffdi = makeSig([kWasmI32, kWasmI32, kWasmI64, kWasmI32,
       .exportAs('main');
 
   function deopt() {
-    %DeoptimizeFunction(caller);
+    % DeoptimizeFunction(caller);
   }
 
   let main = builder.instantiate({q: {func: deopt}}).exports.main;

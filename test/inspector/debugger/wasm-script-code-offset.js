@@ -72,10 +72,10 @@ function createModuleWithFiveByteSectionLength() {
   binary.emit_u8(kCodeSectionCode);
   // Section length (4 as 5-byte LEB).
   binary.emit_bytes([0x84, 0x80, 0x80, 0x80, 0x00]);
-  binary.emit_u32v(1);                // functions count
-  binary.emit_u32v(2);                // body size
-  binary.emit_u32v(0);                // num locals
-  binary.emit_bytes([kExprEnd]);      // body
+  binary.emit_u32v(1);            // functions count
+  binary.emit_u32v(2);            // body size
+  binary.emit_u32v(0);            // num locals
+  binary.emit_bytes([kExprEnd]);  // body
 
   return binary.trunc_buffer();
 }
@@ -90,9 +90,9 @@ function createModuleWithFiveBytePayload() {
   binary.emit_bytes([0x88, 0x80, 0x80, 0x80, 0x00]);
   // Functions count (1 as 5-byte LEB).
   binary.emit_bytes([0x81, 0x80, 0x80, 0x80, 0x00]);
-  binary.emit_u32v(2);                // body size
-  binary.emit_u32v(0);                // num locals
-  binary.emit_bytes([kExprEnd]);      // body
+  binary.emit_u32v(2);            // body size
+  binary.emit_u32v(0);            // num locals
+  binary.emit_bytes([kExprEnd]);  // body
 
   return binary.trunc_buffer();
 }

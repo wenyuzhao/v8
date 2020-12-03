@@ -12,7 +12,8 @@ WasmInspectorTest.evalWithUrl = (code, url) =>
         .evaluate({'expression': code + '\n//# sourceURL=v8://test/' + url})
         .then(printIfFailure);
 
-WasmInspectorTest.instantiateFromBuffer = function(bytes, imports) {
+WasmInspectorTest.instantiateFromBuffer =
+    function(bytes, imports) {
   var buffer = new ArrayBuffer(bytes.length);
   var view = new Uint8Array(buffer);
   for (var i = 0; i < bytes.length; ++i) {
@@ -22,12 +23,14 @@ WasmInspectorTest.instantiateFromBuffer = function(bytes, imports) {
   return new WebAssembly.Instance(module, imports);
 }
 
-WasmInspectorTest.instantiate = async function(bytes, instance_name = 'instance') {
+    WasmInspectorTest.instantiate =
+        async function(bytes, instance_name = 'instance') {
   const instantiate_code = `var ${instance_name} = (${WasmInspectorTest.instantiateFromBuffer})(${JSON.stringify(bytes)});`;
   await WasmInspectorTest.evalWithUrl(instantiate_code, 'instantiate');
 }
 
-WasmInspectorTest.dumpScopeProperties = async function(message) {
+        WasmInspectorTest.dumpScopeProperties =
+            async function(message) {
   printIfFailure(message);
   for (var value of message.result.result) {
     var value_str = await getScopeValues(value.name, value.value);
@@ -35,7 +38,8 @@ WasmInspectorTest.dumpScopeProperties = async function(message) {
   }
 }
 
-WasmInspectorTest.getWasmValue = function(wasmValue) {
+            WasmInspectorTest.getWasmValue =
+                function(wasmValue) {
   return typeof (wasmValue.value) === 'undefined' ?
       wasmValue.unserializableValue :
       wasmValue.value;

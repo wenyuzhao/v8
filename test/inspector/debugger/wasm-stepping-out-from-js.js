@@ -47,12 +47,14 @@ function pauseAlternating() {
   await Protocol.Runtime.evaluate({expression: 'instance.exports.main()'});
   InspectorTest.log('exports.main returned.');
 
-  InspectorTest.log('After stepping out of the last script, we should stop right at the beginning of the next script.');
+  InspectorTest.log(
+      'After stepping out of the last script, we should stop right at the beginning of the next script.');
   InspectorTest.log('>>> Second round');
   await Protocol.Runtime.evaluate({expression: 'instance.exports.main()'});
   InspectorTest.log('exports.main returned.');
 
-  InspectorTest.log('The next cycle should work as before (stopping at the "debugger" statement), after stopping at script entry.');
+  InspectorTest.log(
+      'The next cycle should work as before (stopping at the "debugger" statement), after stopping at script entry.');
   InspectorTest.log('>>> Third round');
   await Protocol.Runtime.evaluate({expression: 'instance.exports.main()'});
   InspectorTest.log('exports.main returned.');
