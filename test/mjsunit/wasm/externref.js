@@ -263,7 +263,7 @@ load("test/mjsunit/wasm/wasm-module-builder.js");
 
   const instance = builder.instantiate({
     q: {
-      triggerGC: () => % ScheduleGCInStackCheck(),
+      triggerGC: () => %ScheduleGCInStackCheck(),
       func: (ref) => assertEquals(ref.hello, 4)
     }
   });
