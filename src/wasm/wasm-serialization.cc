@@ -608,16 +608,19 @@ bool NativeModuleDeserializer::Read(Reader* reader) {
 
   auto batch = std::make_unique<std::vector<DeserializationUnit>>();
   int num_batches = 0;
+  const byte* batch_start = reader->current_location();
   for (uint32_t i = first_wasm_fn; i < total_fns; ++i) {
     DeserializationUnit unit = ReadCodeAndAlloc(i, reader);
     if (unit.code) {
       batch->push_back(std::move(unit));
     }
-    constexpr int kBatchSize = 100;
-    if (batch->size() == kBatchSize) {
+    uint64_t batch_size_in_bytes = reader->current_location() - batch_start;
+    constexpr int kMinBatchSizeInBytes = 100000;
+    if (batch_size_in_bytes >= kMinBatchSizeInBytes) {
       reloc_queue.Add(std::move(batch));
       num_batches++;
       batch = std::make_unique<std::vector<DeserializationUnit>>();
+      batch_start = reader->current_location();
     }
   }
 
@@ -762,11 +765,14 @@ void NativeModuleDeserializer::CopyAndRelocate(
 void NativeModuleDeserializer::Publish(
     std::unique_ptr<std::vector<DeserializationUnit>> batch) {
   DCHECK_NOT_NULL(batch);
+  std::vector<std::unique_ptr<WasmCode>> codes;
   for (auto& unit : *batch) {
-    WasmCode* published_code =
-        native_module_->PublishCode(std::move(unit).code);
-    published_code->MaybePrint();
-    published_code->Validate();
+    codes.push_back(std::move(unit).code);
+  }
+  auto published_codes = native_module_->PublishCode(VectorOf(codes));
+  for (auto* wasm_code : published_codes) {
+    wasm_code->MaybePrint();
+    wasm_code->Validate();
   }
 #ifdef DEBUG
   total_published_.fetch_add(1);

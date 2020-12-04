@@ -364,6 +364,54 @@ void InstructionSelector::VisitAbortCSAAssert(Node* node) {
   Emit(kArchAbortCSAAssert, g.NoOutput(), g.UseFixed(node->InputAt(0), edx));
 }
 
+void InstructionSelector::VisitLoadLane(Node* node) {
+  LoadLaneParameters params = LoadLaneParametersOf(node->op());
+  InstructionCode opcode = kArchNop;
+  if (params.rep == MachineType::Int8()) {
+    opcode = kIA32Pinsrb;
+  } else if (params.rep == MachineType::Int16()) {
+    opcode = kIA32Pinsrw;
+  } else if (params.rep == MachineType::Int32()) {
+    opcode = kIA32Pinsrd;
+  } else if (params.rep == MachineType::Int64()) {
+    // pinsrq not available on IA32.
+    if (params.laneidx == 0) {
+      opcode = kIA32Movlps;
+    } else {
+      DCHECK_EQ(1, params.laneidx);
+      opcode = kIA32Movhps;
+    }
+  } else {
+    UNREACHABLE();
+  }
+
+  IA32OperandGenerator g(this);
+  InstructionOperand outputs[] = {g.DefineAsRegister(node)};
+  // Input 0 is value node, 1 is lane idx, and GetEffectiveAddressMemoryOperand
+  // uses up to 3 inputs. This ordering is consistent with other operations that
+  // use the same opcode.
+  InstructionOperand inputs[5];
+  size_t input_count = 0;
+
+  inputs[input_count++] = g.UseRegister(node->InputAt(2));
+  inputs[input_count++] = g.UseImmediate(params.laneidx);
+
+  AddressingMode mode =
+      g.GetEffectiveAddressMemoryOperand(node, inputs, &input_count);
+  opcode |= AddressingModeField::encode(mode);
+
+  DCHECK_GE(5, input_count);
+
+  // IA32 supports unaligned loads.
+  DCHECK_NE(params.kind, MemoryAccessKind::kUnaligned);
+  // Trap handler is not supported on IA32.
+  DCHECK_NE(params.kind, MemoryAccessKind::kProtected);
+
+  Emit(opcode, 1, outputs, input_count, inputs);
+}
+
+void InstructionSelector::VisitStoreLane(Node* node) {}
+
 void InstructionSelector::VisitLoadTransform(Node* node) {
   LoadTransformParameters params = LoadTransformParametersOf(node->op());
   InstructionCode opcode;
@@ -538,6 +586,7 @@ void InstructionSelector::VisitStore(Node* node) {
       case MachineRepresentation::kCompressedPointer:  // Fall through.
       case MachineRepresentation::kCompressed:         // Fall through.
       case MachineRepresentation::kWord64:             // Fall through.
+      case MachineRepresentation::kMapWord:            // Fall through.
       case MachineRepresentation::kNone:
         UNREACHABLE();
     }
@@ -1276,7 +1325,6 @@ void InstructionSelector::EmitPrepareResults(
     Node* node) {
   IA32OperandGenerator g(this);
 
-  int reverse_slot = 1;
   for (PushParameter output : *results) {
     if (!output.location.IsCallerFrameSlot()) continue;
     // Skip any alignment holes in nodes.
@@ -1289,10 +1337,11 @@ void InstructionSelector::EmitPrepareResults(
       } else if (output.location.GetType() == MachineType::Simd128()) {
         MarkAsSimd128(output.node);
       }
+      int offset = call_descriptor->GetOffsetToReturns();
+      int reverse_slot = -output.location.GetLocation() - offset;
       Emit(kIA32Peek, g.DefineAsRegister(output.node),
            g.UseImmediate(reverse_slot));
     }
-    reverse_slot += output.location.GetSizeInPointers();
   }
 }
 
@@ -2133,6 +2182,7 @@ void InstructionSelector::VisitWord32AtomicPairCompareExchange(Node* node) {
   V(F32x4SConvertI32x4)     \
   V(F32x4RecipApprox)       \
   V(F32x4RecipSqrtApprox)   \
+  V(I64x2BitMask)           \
   V(I32x4SConvertI16x8Low)  \
   V(I32x4SConvertI16x8High) \
   V(I32x4Neg)               \

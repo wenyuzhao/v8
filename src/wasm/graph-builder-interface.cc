@@ -362,14 +362,14 @@ class WasmGraphBuildingInterface {
       if (ret_count > 0) {
         GetNodes(values.begin(), decoder->stack_value(ret_count), ret_count);
       }
+      if (FLAG_trace_wasm) {
+        BUILD(TraceFunctionExit, VectorOf(values), decoder->position());
+      }
       BUILD(Return, VectorOf(values));
     } else {
-      Br(decoder, decoder->control_at(depth));
+      Control* target = decoder->control_at(depth);
+      MergeValuesInto(decoder, target, target->br_merge());
     }
-  }
-
-  void Br(FullDecoder* decoder, Control* target) {
-    MergeValuesInto(decoder, target, target->br_merge());
   }
 
   void BrIf(FullDecoder* decoder, const Value& cond, uint32_t depth) {
@@ -775,7 +775,11 @@ class WasmGraphBuildingInterface {
   }
 
   void ArrayLen(FullDecoder* decoder, const Value& array_obj, Value* result) {
-    result->node = BUILD(ArrayLen, array_obj.node, decoder->position());
+    CheckForNull null_check = array_obj.type.is_nullable()
+                                  ? CheckForNull::kWithNullCheck
+                                  : CheckForNull::kWithoutNullCheck;
+    result->node =
+        BUILD(ArrayLen, array_obj.node, null_check, decoder->position());
   }
 
   void I31New(FullDecoder* decoder, const Value& input, Value* result) {

@@ -483,6 +483,9 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   class EntryStackItem;
 
  public:
+  Isolate(const Isolate&) = delete;
+  Isolate& operator=(const Isolate&) = delete;
+
   using HandleScopeType = HandleScope;
   void* operator new(size_t) = delete;
   void operator delete(void*) = delete;
@@ -504,6 +507,8 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
     {
     }
     ~PerIsolateThreadData();
+    PerIsolateThreadData(const PerIsolateThreadData&) = delete;
+    PerIsolateThreadData& operator=(const PerIsolateThreadData&) = delete;
     Isolate* isolate() const { return isolate_; }
     ThreadId thread_id() const { return thread_id_; }
 
@@ -531,8 +536,6 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
     friend class Isolate;
     friend class ThreadDataTable;
     friend class EntryStackItem;
-
-    DISALLOW_COPY_AND_ASSIGN(PerIsolateThreadData);
   };
 
   static void InitializeOncePerProcess();
@@ -637,6 +640,11 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   // Shared mutex for allowing concurrent read/writes to TransitionArrays.
   base::SharedMutex* transition_array_access() {
     return &transition_array_access_;
+  }
+
+  // Shared mutex for allowing concurrent read/writes to SharedFunctionInfos.
+  base::SharedMutex* shared_function_info_access() {
+    return &shared_function_info_access_;
   }
 
   // The isolate's string table.
@@ -779,7 +787,7 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   // Heuristically guess whether a Promise is handled by user catch handler
   bool PromiseHasUserDefinedRejectHandler(Handle<JSPromise> promise);
 
-  class ExceptionScope {
+  class V8_NODISCARD ExceptionScope {
    public:
     // Scope currently can only be used for regular exceptions,
     // not termination exception.
@@ -1692,14 +1700,13 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
           previous_thread_data(previous_thread_data),
           previous_isolate(previous_isolate),
           previous_item(previous_item) {}
+    EntryStackItem(const EntryStackItem&) = delete;
+    EntryStackItem& operator=(const EntryStackItem&) = delete;
 
     int entry_count;
     PerIsolateThreadData* previous_thread_data;
     Isolate* previous_isolate;
     EntryStackItem* previous_item;
-
-   private:
-    DISALLOW_COPY_AND_ASSIGN(EntryStackItem);
   };
 
   static base::Thread::LocalStorageKey per_isolate_thread_data_key_;
@@ -1772,6 +1779,7 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   base::SharedMutex feedback_vector_access_;
   base::SharedMutex string_access_;
   base::SharedMutex transition_array_access_;
+  base::SharedMutex shared_function_info_access_;
   Logger* logger_ = nullptr;
   StubCache* load_stub_cache_ = nullptr;
   StubCache* store_stub_cache_ = nullptr;
@@ -2016,8 +2024,6 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
 
   friend class heap::HeapTester;
   friend class TestSerializer;
-
-  DISALLOW_COPY_AND_ASSIGN(Isolate);
 };
 
 #undef FIELD_ACCESSOR
@@ -2063,7 +2069,7 @@ class V8_EXPORT_PRIVATE SaveAndSwitchContext : public SaveContext {
 
 // A scope which sets the given isolate's context to null for its lifetime to
 // ensure that code does not make assumptions on a context being available.
-class NullContextScope : public SaveAndSwitchContext {
+class V8_NODISCARD NullContextScope : public SaveAndSwitchContext {
  public:
   explicit NullContextScope(Isolate* isolate)
       : SaveAndSwitchContext(isolate, Context()) {}

@@ -135,7 +135,7 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   void DebugBreak() override;
 
   void CallForDeoptimization(Builtins::Name target, int deopt_id, Label* exit,
-                             DeoptimizeKind kind,
+                             DeoptimizeKind kind, Label* ret,
                              Label* jump_deoptimization_entry_label);
 
   // Jump the register contains a smi.
@@ -311,6 +311,7 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   AVX_OP2_WITH_TYPE(Movapd, movapd, XMMRegister, const Operand&)
   AVX_OP2_WITH_TYPE(Movupd, movupd, XMMRegister, const Operand&)
   AVX_OP2_WITH_TYPE(Pmovmskb, pmovmskb, Register, XMMRegister)
+  AVX_OP2_WITH_TYPE(Movmskpd, movmskpd, Register, XMMRegister)
   AVX_OP2_WITH_TYPE(Movmskps, movmskps, Register, XMMRegister)
 
 #undef AVX_OP2_WITH_TYPE
@@ -418,6 +419,9 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   AVX_PACKED_OP3_WITH_TYPE(Psrlq, psrlq, XMMRegister, uint8_t)
   AVX_PACKED_OP3_WITH_TYPE(Psraw, psraw, XMMRegister, uint8_t)
   AVX_PACKED_OP3_WITH_TYPE(Psrad, psrad, XMMRegister, uint8_t)
+
+  AVX_PACKED_OP3_WITH_TYPE(Movlps, movlps, XMMRegister, Operand)
+  AVX_PACKED_OP3_WITH_TYPE(Movhps, movhps, XMMRegister, Operand)
 #undef AVX_PACKED_OP3_WITH_TYPE
 
 // Non-SSE2 instructions.

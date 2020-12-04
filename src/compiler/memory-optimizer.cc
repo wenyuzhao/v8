@@ -252,6 +252,15 @@ bool MemoryOptimizer::AllocationTypeNeedsUpdateToOld(Node* const node,
   return false;
 }
 
+void MemoryOptimizer::ReplaceUsesAndKillNode(Node* node, Node* replacement) {
+  // Replace all uses of node and kill the node to make sure we don't leave
+  // dangling dead uses.
+  DCHECK_NE(replacement, node);
+  NodeProperties::ReplaceUses(node, replacement, graph_assembler_.effect(),
+                              graph_assembler_.control());
+  node->Kill();
+}
+
 void MemoryOptimizer::VisitAllocateRaw(Node* node,
                                        AllocationState const* state) {
   DCHECK_EQ(IrOpcode::kAllocateRaw, node->opcode());
@@ -289,12 +298,7 @@ void MemoryOptimizer::VisitAllocateRaw(Node* node,
       node, allocation_type, allocation.allow_large_objects(), &state);
   CHECK(reduction.Changed() && reduction.replacement() != node);
 
-  // Replace all uses of node and kill the node to make sure we don't leave
-  // dangling dead uses.
-  NodeProperties::ReplaceUses(node, reduction.replacement(),
-                              graph_assembler_.effect(),
-                              graph_assembler_.control());
-  node->Kill();
+  ReplaceUsesAndKillNode(node, reduction.replacement());
 
   EnqueueUses(state->effect(), state);
 }
@@ -306,10 +310,7 @@ void MemoryOptimizer::VisitLoadFromObject(Node* node,
   EnqueueUses(node, state);
 #ifdef V8_MAP_PACKING
   if (reduction.replacement() != node) {
-    NodeProperties::ReplaceUses(node, reduction.replacement(),
-                                graph_assembler_.effect(),
-                                graph_assembler_.control());
-    node->Kill();
+    ReplaceUsesAndKillNode(node, reduction.replacement());
   }
 #else
   USE(reduction);
@@ -338,20 +339,14 @@ void MemoryOptimizer::VisitLoadField(Node* node, AllocationState const* state) {
   // lowering, so we can proceed iterating the graph from the node uses.
   EnqueueUses(node, state);
 
-  // Node can be replaced only when V8_HEAP_SANDBOX_BOOL is enabled and
-  // when loading an external pointer value.
-#ifndef V8_MAP_PACKING
-  DCHECK_IMPLIES(!V8_HEAP_SANDBOX_BOOL, reduction.replacement() == node);
-  if (V8_HEAP_SANDBOX_BOOL && reduction.replacement() != node) {
-#else
-  if (reduction.replacement() != node) {
-#endif
-    // Replace all uses of node and kill the node to make sure we don't leave
-    // dangling dead uses.
-    NodeProperties::ReplaceUses(node, reduction.replacement(),
-                                graph_assembler_.effect(),
-                                graph_assembler_.control());
-    node->Kill();
+  // Node can be replaced under two cases:
+  //   1. V8_HEAP_SANDBOX_BOOL is enabled and loading an external pointer value.
+  //   2. V8_MAP_PACKING_BOOL is enabled.
+  DCHECK_IMPLIES(!V8_HEAP_SANDBOX_BOOL && !V8_MAP_PACKING_BOOL,
+                 reduction.replacement() == node);
+  if ((V8_HEAP_SANDBOX_BOOL || V8_MAP_PACKING_BOOL) &&
+      reduction.replacement() != node) {
+    ReplaceUsesAndKillNode(node, reduction.replacement());
   }
 }
 

@@ -291,8 +291,8 @@ class SharedFunctionInfo
   inline bool HasInterpreterData() const;
   inline InterpreterData interpreter_data() const;
   inline void set_interpreter_data(InterpreterData interpreter_data);
-  inline BytecodeArray GetDebugBytecodeArray() const;
-  inline void SetDebugBytecodeArray(BytecodeArray bytecode);
+  inline BytecodeArray GetActiveBytecodeArray() const;
+  inline void SetActiveBytecodeArray(BytecodeArray bytecode);
   inline bool HasAsmWasmData() const;
   inline AsmWasmData asm_wasm_data() const;
   inline void set_asm_wasm_data(AsmWasmData data);
@@ -610,7 +610,7 @@ class SharedFunctionInfo
   static const uint16_t kFunctionTokenOutOfRange = static_cast<uint16_t>(-1);
   STATIC_ASSERT(kMaximumFunctionTokenOffset + 1 == kFunctionTokenOutOfRange);
 
-  static const int kAlignedSize = SizeFor();
+  static const int kAlignedSize = OBJECT_POINTER_ALIGN(kSize);
 
   class BodyDescriptor;
 
@@ -626,6 +626,16 @@ class SharedFunctionInfo
   // use a super property).
   // This is needed to set up the [[HomeObject]] on the function instance.
   inline bool needs_home_object() const;
+
+  // Sets the bytecode in {shared}'s DebugInfo as the bytecode to
+  // be returned by following calls to GetActiveBytecodeArray. Stores a
+  // reference to the original bytecode in the DebugInfo.
+  static void InstallDebugBytecode(Handle<SharedFunctionInfo> shared,
+                                   Isolate* isolate);
+  // Removes the debug bytecode and restores the original bytecode to be
+  // returned by following calls to GetActiveBytecodeArray.
+  static void UninstallDebugBytecode(SharedFunctionInfo shared,
+                                     Isolate* isolate);
 
  private:
 #ifdef VERIFY_HEAP
@@ -673,7 +683,7 @@ struct SourceCodeOf {
 // IsCompiledScope enables a caller to check if a function is compiled, and
 // ensure it remains compiled (i.e., doesn't have it's bytecode flushed) while
 // the scope is retained.
-class IsCompiledScope {
+class V8_NODISCARD IsCompiledScope {
  public:
   inline IsCompiledScope(const SharedFunctionInfo shared, Isolate* isolate);
   inline IsCompiledScope(const SharedFunctionInfo shared,

@@ -264,7 +264,7 @@ namespace v8 {
 
 namespace {
 
-class InternalEscapableScope : public v8::EscapableHandleScope {
+class V8_NODISCARD InternalEscapableScope : public v8::EscapableHandleScope {
  public:
   explicit inline InternalEscapableScope(i::Isolate* isolate)
       : v8::EscapableHandleScope(reinterpret_cast<v8::Isolate*>(isolate)) {}
@@ -282,7 +282,7 @@ void CheckMicrotasksScopesConsistency(i::MicrotaskQueue* microtask_queue) {
 #endif
 
 template <bool do_callback>
-class CallDepthScope {
+class V8_NODISCARD CallDepthScope {
  public:
   CallDepthScope(i::Isolate* isolate, Local<Context> context)
       : isolate_(isolate),
@@ -329,6 +329,9 @@ class CallDepthScope {
     isolate_->set_next_v8_call_is_safe_for_termination(safe_for_termination_);
   }
 
+  CallDepthScope(const CallDepthScope&) = delete;
+  CallDepthScope& operator=(const CallDepthScope&) = delete;
+
   void Escape() {
     DCHECK(!escaped_);
     escaped_ = true;
@@ -361,7 +364,6 @@ class CallDepthScope {
   friend class i::ThreadLocalTop;
 
   DISALLOW_NEW_AND_DELETE()
-  DISALLOW_COPY_AND_ASSIGN(CallDepthScope);
 };
 
 }  // namespace
@@ -378,7 +380,7 @@ static ScriptOrigin GetScriptOriginForScript(i::Isolate* isolate,
       script->column_offset(), options.IsSharedCrossOrigin(), script->id(),
       Utils::ToLocal(source_map_url), options.IsOpaque(),
       script->type() == i::Script::TYPE_WASM, options.IsModule(),
-      Utils::ToLocal(host_defined_options));
+      Utils::PrimitiveArrayToLocal(host_defined_options));
   return origin;
 }
 
@@ -2396,8 +2398,21 @@ Maybe<bool> Module::InstantiateModule(Local<Context> context,
   auto isolate = reinterpret_cast<i::Isolate*>(context->GetIsolate());
   ENTER_V8(isolate, context, Module, InstantiateModule, Nothing<bool>(),
            i::HandleScope);
+  ResolveModuleCallback callback_with_import_assertions = nullptr;
+  has_pending_exception =
+      !i::Module::Instantiate(isolate, Utils::OpenHandle(this), context,
+                              callback_with_import_assertions, callback);
+  RETURN_ON_FAILED_EXECUTION_PRIMITIVE(bool);
+  return Just(true);
+}
+
+Maybe<bool> Module::InstantiateModule(Local<Context> context,
+                                      Module::ResolveModuleCallback callback) {
+  auto isolate = reinterpret_cast<i::Isolate*>(context->GetIsolate());
+  ENTER_V8(isolate, context, Module, InstantiateModule, Nothing<bool>(),
+           i::HandleScope);
   has_pending_exception = !i::Module::Instantiate(
-      isolate, Utils::OpenHandle(this), context, callback);
+      isolate, Utils::OpenHandle(this), context, callback, nullptr);
   RETURN_ON_FAILED_EXECUTION_PRIMITIVE(bool);
   return Just(true);
 }
@@ -2699,26 +2714,13 @@ ScriptCompiler::ScriptStreamingTask* ScriptCompiler::StartStreamingScript(
 }
 
 ScriptCompiler::ScriptStreamingTask* ScriptCompiler::StartStreaming(
-    Isolate* v8_isolate, StreamedSource* source) {
+    Isolate* v8_isolate, StreamedSource* source, v8::ScriptType type) {
   if (!i::FLAG_script_streaming) return nullptr;
   i::Isolate* isolate = reinterpret_cast<i::Isolate*>(v8_isolate);
   ASSERT_NO_SCRIPT_NO_EXCEPTION(isolate);
   i::ScriptStreamingData* data = source->impl();
   std::unique_ptr<i::BackgroundCompileTask> task =
-      std::make_unique<i::BackgroundCompileTask>(data, isolate,
-                                                 i::ScriptType::kClassic);
-  data->task = std::move(task);
-  return new ScriptCompiler::ScriptStreamingTask(data);
-}
-
-ScriptCompiler::ScriptStreamingTask* ScriptCompiler::StartStreamingModule(
-    Isolate* v8_isolate, StreamedSource* source) {
-  if (!i::FLAG_script_streaming) return nullptr;
-  i::Isolate* isolate = reinterpret_cast<i::Isolate*>(v8_isolate);
-  i::ScriptStreamingData* data = source->impl();
-  std::unique_ptr<i::BackgroundCompileTask> task =
-      std::make_unique<i::BackgroundCompileTask>(data, isolate,
-                                                 i::ScriptType::kModule);
+      std::make_unique<i::BackgroundCompileTask>(data, isolate, type);
   data->task = std::move(task);
   return new ScriptCompiler::ScriptStreamingTask(data);
 }
@@ -5294,6 +5296,9 @@ static inline const uint16_t* Align(const uint16_t* chars) {
 class ContainsOnlyOneByteHelper {
  public:
   ContainsOnlyOneByteHelper() : is_one_byte_(true) {}
+  ContainsOnlyOneByteHelper(const ContainsOnlyOneByteHelper&) = delete;
+  ContainsOnlyOneByteHelper& operator=(const ContainsOnlyOneByteHelper&) =
+      delete;
   bool Check(i::String string) {
     i::ConsString cons_string = i::String::VisitFlat(this, string, 0);
     if (cons_string.is_null()) return is_one_byte_;
@@ -5374,7 +5379,6 @@ class ContainsOnlyOneByteHelper {
     return is_one_byte_;
   }
   bool is_one_byte_;
-  DISALLOW_COPY_AND_ASSIGN(ContainsOnlyOneByteHelper);
 };
 
 bool String::ContainsOnlyOneByte() const {

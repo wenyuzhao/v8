@@ -1466,6 +1466,9 @@ void Assembler::mcrfs(CRegister cr, FPSCRBit bit) {
 
 void Assembler::mfcr(Register dst) { emit(EXT2 | MFCR | dst.code() * B21); }
 
+void Assembler::mtcrf(unsigned char FXM, Register src) {
+  emit(MTCRF | src.code() * B21 | FXM * B12);
+}
 #if V8_TARGET_ARCH_PPC64
 void Assembler::mffprd(Register dst, DoubleRegister src) {
   emit(EXT2 | MFVSRD | src.code() * B21 | dst.code() * B16);
@@ -1796,6 +1799,30 @@ void Assembler::lxvd(const Simd128Register rt, const MemOperand& src) {
   int TX = 1;
   emit(LXVD | rt.code() * B21 | src.ra().code() * B16 | src.rb().code() * B11 |
        TX);
+}
+
+void Assembler::lxsdx(const Simd128Register rt, const MemOperand& src) {
+  int TX = 1;
+  emit(LXSDX | rt.code() * B21 | src.ra().code() * B16 | src.rb().code() * B11 |
+       TX);
+}
+
+void Assembler::lxsibzx(const Simd128Register rt, const MemOperand& src) {
+  int TX = 1;
+  emit(LXSIBZX | rt.code() * B21 | src.ra().code() * B16 |
+       src.rb().code() * B11 | TX);
+}
+
+void Assembler::lxsihzx(const Simd128Register rt, const MemOperand& src) {
+  int TX = 1;
+  emit(LXSIHZX | rt.code() * B21 | src.ra().code() * B16 |
+       src.rb().code() * B11 | TX);
+}
+
+void Assembler::lxsiwzx(const Simd128Register rt, const MemOperand& src) {
+  int TX = 1;
+  emit(LXSIWZX | rt.code() * B21 | src.ra().code() * B16 |
+       src.rb().code() * B11 | TX);
 }
 
 void Assembler::stxvd(const Simd128Register rt, const MemOperand& dst) {

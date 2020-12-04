@@ -744,7 +744,7 @@ class NodeOriginsWrapper final : public Reducer {
   NodeOriginTable* const table_;
 };
 
-class PipelineRunScope {
+class V8_NODISCARD PipelineRunScope {
  public:
   PipelineRunScope(
       PipelineData* data, const char* phase_name,
@@ -769,7 +769,7 @@ class PipelineRunScope {
 
 // LocalIsolateScope encapsulates the phase where persistent handles are
 // attached to the LocalHeap inside {local_isolate}.
-class LocalIsolateScope {
+class V8_NODISCARD LocalIsolateScope {
  public:
   explicit LocalIsolateScope(JSHeapBroker* broker,
                              OptimizedCompilationInfo* info,
@@ -1056,6 +1056,15 @@ class PipelineCompilationJob final : public OptimizedCompilationJob {
   Linkage* linkage_;
 };
 
+namespace {
+
+bool ShouldUseConcurrentInlining(CodeKind code_kind, bool is_osr) {
+  if (is_osr) return false;
+  return code_kind == CodeKind::TURBOPROP || FLAG_concurrent_inlining;
+}
+
+}  // namespace
+
 PipelineCompilationJob::PipelineCompilationJob(
     Isolate* isolate, Handle<SharedFunctionInfo> shared_info,
     Handle<JSFunction> function, BailoutId osr_offset,
@@ -1074,7 +1083,7 @@ PipelineCompilationJob::PipelineCompilationJob(
           compilation_info(), function->GetIsolate(), &zone_stats_)),
       data_(&zone_stats_, function->GetIsolate(), compilation_info(),
             pipeline_statistics_.get(),
-            FLAG_concurrent_inlining && osr_offset.IsNone()),
+            ShouldUseConcurrentInlining(code_kind, !osr_offset.IsNone())),
       pipeline_(&data_),
       linkage_(nullptr) {
   compilation_info_.SetOptimizingForOsr(osr_offset, osr_frame);
@@ -1087,7 +1096,7 @@ namespace {
 // duration of the job phase and unset immediately afterwards. Each job
 // needs to set the correct RuntimeCallStats table depending on whether it
 // is running on a background or foreground thread.
-class PipelineJobScope {
+class V8_NODISCARD PipelineJobScope {
  public:
   PipelineJobScope(PipelineData* data, RuntimeCallStats* stats) : data_(data) {
     data_->set_runtime_call_stats(stats);

@@ -540,6 +540,7 @@ namespace internal {
   F(SetWasmInstantiateControls, 0, 1)         \
   F(SetWasmThreadsEnabled, 1, 1)              \
   F(SimulateNewspaceFull, 0, 1)               \
+  F(ScheduleGCInStackCheck, 0, 1)             \
   F(StringIteratorProtector, 0, 1)            \
   F(SystemBreak, 0, 1)                        \
   F(TraceEnter, 0, 1)                         \
@@ -779,6 +780,8 @@ class Runtime : public AllStatic {
 
 class RuntimeState {
  public:
+  RuntimeState(const RuntimeState&) = delete;
+  RuntimeState& operator=(const RuntimeState&) = delete;
 #ifndef V8_INTL_SUPPORT
   unibrow::Mapping<unibrow::ToUppercase, 128>* to_upper_mapping() {
     return &to_upper_mapping_;
@@ -808,8 +811,6 @@ class RuntimeState {
 
   friend class Isolate;
   friend class Runtime;
-
-  DISALLOW_COPY_AND_ASSIGN(RuntimeState);
 };
 
 V8_EXPORT_PRIVATE std::ostream& operator<<(std::ostream&, Runtime::FunctionId);

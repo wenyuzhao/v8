@@ -1076,15 +1076,19 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   // Load a field from an object on the heap.
   template <class T, typename std::enable_if<
                          std::is_convertible<TNode<T>, TNode<Object>>::value &&
-                             !std::is_same<TNode<T>, TNode<Map>>::value,
+                             std::is_base_of<T, Map>::value,
                          int>::type = 0>
   TNode<T> LoadObjectField(TNode<HeapObject> object, int offset) {
-    return CAST(LoadFromObject(MachineTypeOf<T>::value, object,
+    const MachineType machine_type = offset == HeapObject::kMapOffset
+                                         ? MachineType::MapInHeader()
+                                         : MachineTypeOf<T>::value;
+    return CAST(LoadFromObject(machine_type, object,
                                IntPtrConstant(offset - kHeapObjectTag)));
   }
-  template <class T,
-            typename std::enable_if<std::is_same<TNode<T>, TNode<Map>>::value,
-                                    int>::type = 0>
+  template <class T, typename std::enable_if<
+                         std::is_convertible<TNode<T>, TNode<Object>>::value &&
+                             !std::is_base_of<T, Map>::value,
+                         int>::type = 0>
   TNode<T> LoadObjectField(TNode<HeapObject> object, int offset) {
     const MachineType machine_type = offset == HeapObject::kMapOffset
                                          ? MachineType::MapInHeader()
@@ -2756,6 +2760,14 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
     return IntPtrEqual(WordAnd(word, IntPtrConstant(mask)), IntPtrConstant(0));
   }
 
+  // Returns true if the given |object| is an memento object
+  TNode<BoolT> IsMemento(TNode<HeapObject> object) {
+    TNode<HeapObject> map =
+        LoadObjectField<HeapObject>(object, HeapObject::kMapOffset);
+    CSA_ASSERT(this, IsMap(map));
+    return TaggedEqual(map, AllocationMementoMapConstant());
+  }
+
   void SetCounter(StatsCounter* counter, int value);
   void IncrementCounter(StatsCounter* counter, int delta);
   void DecrementCounter(StatsCounter* counter, int delta);
@@ -3133,6 +3145,9 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
 
   // Load type feedback vector from the stub caller's frame.
   TNode<FeedbackVector> LoadFeedbackVectorForStub();
+  // Load type feedback vector from the stub caller's frame, skipping an
+  // intermediate trampoline frame.
+  TNode<FeedbackVector> LoadFeedbackVectorForStubWithTrampoline();
 
   // Load the value from closure's feedback cell.
   TNode<HeapObject> LoadFeedbackCellValue(TNode<JSFunction> closure);
@@ -3825,7 +3840,10 @@ class V8_EXPORT_PRIVATE CodeStubArguments {
   TNode<Object> AtIndex(TNode<IntPtrT> index) const;
   TNode<Object> AtIndex(int index) const;
 
+  // Return the number of arguments (excluding the receiver).
   TNode<IntPtrT> GetLength() const { return argc_; }
+  // Return the number of arguments (including the receiver).
+  TNode<IntPtrT> GetLengthWithReceiver() const;
 
   TorqueStructArguments GetTorqueArguments() const {
     return TorqueStructArguments{fp_, base_, argc_};

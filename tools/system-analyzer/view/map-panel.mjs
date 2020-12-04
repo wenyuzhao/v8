@@ -5,9 +5,9 @@ import './stats-panel.mjs';
 import './map-panel/map-details.mjs';
 import './map-panel/map-transitions.mjs';
 
-import {FocusEvent} from '../events.mjs';
 import {MapLogEntry} from '../log/map.mjs';
 
+import {FocusEvent} from './events.mjs';
 import {DOM, V8CustomElement} from './helper.mjs';
 
 DOM.defineCustomElement('view/map-panel',
@@ -44,28 +44,31 @@ DOM.defineCustomElement('view/map-panel',
 
   set timeline(timeline) {
     this._timeline = timeline;
+    this.mapTransitionsPanel.timeline = timeline;
   }
 
-  set map(value) {
-    this._map = value;
-    this.mapTransitionsPanel.map = this._map;
+  set map(map) {
+    this._map = map;
+    this.mapTransitionsPanel.map = map;
+    this.mapDetailsPanel.map = map;
   }
 
   handleSearchBar(e) {
     let searchBar = this.$('#searchBarInput');
     let searchBarInput = searchBar.value;
     // access the map from model cache
-    let selectedMap = MapLogEntry.get(parseInt(searchBarInput));
+    let selectedMap = MapLogEntry.get(searchBarInput);
     if (selectedMap) {
       searchBar.className = 'success';
+      this.dispatchEvent(new FocusEvent(selectedMap));
     } else {
       searchBar.className = 'failure';
     }
-    this.dispatchEvent(new FocusEvent(selectedMap));
   }
 
   set selectedMapLogEntries(list) {
     this.mapTransitionsPanel.selectedMapLogEntries = list;
+    if (list.length === 1) this.mapDetailsPanel.map = list[0];
   }
   get selectedMapLogEntries() {
     return this.mapTransitionsPanel.selectedMapLogEntries;

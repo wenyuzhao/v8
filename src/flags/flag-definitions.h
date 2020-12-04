@@ -151,6 +151,12 @@ struct MaybeBoolFlag {
 #define COMPRESS_POINTERS_BOOL false
 #endif
 
+#ifdef V8_MAP_PACKING
+#define V8_MAP_PACKING_BOOL true
+#else
+#define V8_MAP_PACKING_BOOL false
+#endif
+
 #ifdef V8_HEAP_SANDBOX
 #define V8_HEAP_SANDBOX_BOOL true
 #else
@@ -253,8 +259,7 @@ DEFINE_IMPLICATION(harmony_weak_refs_with_cleanup_some, harmony_weak_refs)
   V(harmony_weak_refs_with_cleanup_some,                                       \
     "harmony weak references with FinalizationRegistry.prototype.cleanupSome") \
   V(harmony_regexp_match_indices, "harmony regexp match indices")              \
-  V(harmony_import_assertions, "harmony import assertions")                    \
-  V(harmony_relative_indexing_methods, "harmony relative indexing methods")
+  V(harmony_import_assertions, "harmony import assertions")
 
 #ifdef V8_INTL_SUPPORT
 #define HARMONY_INPROGRESS(V)                       \
@@ -265,8 +270,9 @@ DEFINE_IMPLICATION(harmony_weak_refs_with_cleanup_some, harmony_weak_refs)
 #endif
 
 // Features that are complete (but still behind --harmony/es-staging flag).
-#define HARMONY_STAGED_BASE(V) \
-  V(harmony_top_level_await, "harmony top level await")
+#define HARMONY_STAGED_BASE(V)                          \
+  V(harmony_top_level_await, "harmony top level await") \
+  V(harmony_relative_indexing_methods, "harmony relative indexing methods")
 
 #ifdef V8_INTL_SUPPORT
 #define HARMONY_STAGED(V)               \
@@ -555,7 +561,6 @@ DEFINE_BOOL(turboprop_mid_tier_reg_alloc, true,
 DEFINE_BOOL(turboprop_as_midtier, false,
             "enable experimental turboprop mid-tier compiler")
 DEFINE_IMPLICATION(turboprop_as_midtier, turboprop)
-DEFINE_IMPLICATION(turboprop, concurrent_inlining)
 DEFINE_VALUE_IMPLICATION(turboprop, interrupt_budget, 15 * KB)
 DEFINE_VALUE_IMPLICATION(turboprop, reuse_opt_code_count, 2)
 DEFINE_UINT_READONLY(max_minimorphic_map_checks, 4,
@@ -776,8 +781,9 @@ DEFINE_BOOL(untrusted_code_mitigations, V8_DEFAULT_UNTRUSTED_CODE_MITIGATIONS,
 #undef V8_DEFAULT_UNTRUSTED_CODE_MITIGATIONS
 
 // Flags for native WebAssembly.
-DEFINE_BOOL(wasm_generic_wrapper, false,
-            "use generic js-to-wasm wrapper instead of per-signature wrappers")
+DEFINE_BOOL(wasm_generic_wrapper, true,
+            "allow use of the generic js-to-wasm wrapper instead of "
+            "per-signature wrappers")
 DEFINE_BOOL(expose_wasm, true, "expose wasm interface to JavaScript")
 DEFINE_INT(wasm_num_compilation_tasks, 128,
            "maximum number of parallel compilation tasks for wasm")
@@ -1100,6 +1106,7 @@ DEFINE_BOOL(memory_reducer_for_small_heaps, true,
 DEFINE_INT(heap_growing_percent, 0,
            "specifies heap growing factor as (1 + heap_growing_percent/100)")
 DEFINE_INT(v8_os_page_size, 0, "override OS page size (in KBytes)")
+DEFINE_BOOL(allocation_buffer_parking, true, "allocation buffer parking")
 DEFINE_BOOL(always_compact, false, "Perform compaction on every full GC")
 DEFINE_BOOL(never_compact, false,
             "Never perform compaction on full GC - testing only")

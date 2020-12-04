@@ -1,19 +1,21 @@
 // Copyright 2020 the V8 project authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-import {FocusEvent, SelectionEvent} from '../../events.mjs';
+import {FocusEvent, ToolTipEvent} from '../events.mjs';
 import {CSSColor} from '../helper.mjs';
 import {DOM, V8CustomElement} from '../helper.mjs';
 
 DOM.defineCustomElement(
     './view/map-panel/map-transitions',
     (templateText) => class MapTransitions extends V8CustomElement {
+      _timeline;
       _map;
+      _edgeToColor = new Map();
       _selectedMapLogEntries;
       _displayedMapsInTree;
-      currentMap = undefined;
       _toggleSubtreeHandler = this._handleToggleSubtree.bind(this);
       _selectMapHandler = this._handleSelectMap.bind(this);
+      _mouseoverMapHandler = this._handleMouseoverMap.bind(this);
 
       constructor() {
         super(templateText);
@@ -34,9 +36,17 @@ DOM.defineCustomElement(
         return this.$('#tooltipContents');
       }
 
-      set map(value) {
-        this._map = value;
+      set map(map) {
+        this._map = map;
         this._showMap();
+      }
+
+      set timeline(timeline) {
+        this._timeline = timeline;
+        this._edgeToColor.clear();
+        timeline.getBreakdown().forEach(breakdown => {
+          this._edgeToColor.set(breakdown.type, CSSColor.at(breakdown.id));
+        });
       }
 
       set selectedMapLogEntries(list) {
@@ -46,26 +56,6 @@ DOM.defineCustomElement(
 
       get selectedMapLogEntries() {
         return this._selectedMapLogEntries;
-      }
-
-      _typeToColor(type) {
-        switch (type) {
-          case 'new':
-            return CSSColor.green;
-          case 'Normalize':
-            return CSSColor.violet;
-          case 'SlowToFast':
-            return CSSColor.orange;
-          case 'InitialMap':
-            return CSSColor.yellow;
-          case 'Transition':
-            return CSSColor.primaryColor;
-          case 'ReplaceDescriptors':
-            return CSSColor.red;
-          case 'LoadGlobalIC':
-            return CSSColor.green;
-        }
-        return CSSColor.secondaryColor;
       }
 
       _handleTransitionViewChange(e) {
@@ -78,14 +68,11 @@ DOM.defineCustomElement(
       }
 
       _selectMap(map) {
-        this.dispatchEvent(new SelectionEvent([map]));
+        this.dispatchEvent(new FocusEvent(map));
       }
 
       _showMap() {
-        if (this.currentMap === this._map) return;
-        this.currentMap = this._map;
-        this.selectedMapLogEntries = [this._map];
-        this.update();
+        // TODO: highlight current map
       }
 
       _update() {
@@ -100,7 +87,7 @@ DOM.defineCustomElement(
       }
 
       _addMapAndParentTransitions(map) {
-        if (map === void 0) return;
+        if (map === undefined) return;
         if (this._displayedMapsInTree.has(map)) return;
         this._displayedMapsInTree.add(map);
         this.currentNode = this.transitionView;
@@ -137,7 +124,7 @@ DOM.defineCustomElement(
       _addTransitionEdge(map) {
         let classes = ['transitionEdge'];
         let edge = DOM.div(classes);
-        edge.style.backgroundColor = this._typeToColor(map.edge);
+        edge.style.backgroundColor = this._edgeToColor.get(map.edge.type);
         let labelNode = DOM.div('transitionLabel');
         labelNode.innerText = map.edge.toString();
         edge.appendChild(labelNode);
@@ -166,9 +153,11 @@ DOM.defineCustomElement(
 
       _addMapNode(map) {
         let node = DOM.div('map');
-        if (map.edge) node.style.backgroundColor = this._typeToColor(map.edge);
+        if (map.edge)
+          node.style.backgroundColor = this._edgeToColor.get(map.edge.type);
         node.map = map;
         node.onclick = this._selectMapHandler
+        node.onmouseover = this._mouseoverMapHandler
         if (map.children.length > 1) {
           node.innerText = map.children.length;
           const showSubtree = DOM.div('showSubtransitions');
@@ -186,7 +175,13 @@ DOM.defineCustomElement(
         this._selectMap(event.currentTarget.map)
       }
 
+      _handleMouseoverMap(event) {
+        this.dispatchEvent(new ToolTipEvent(
+            event.currentTarget.map.toString(), event.currentTarget));
+      }
+
       _handleToggleSubtree(event) {
+        event.preventDefault();
         const node = event.currentTarget.parentElement;
         let map = node.map;
         event.target.classList.toggle('opened');
@@ -196,7 +191,7 @@ DOM.defineCustomElement(
           // Add subtransitions except the one that's already shown.
           let visibleTransitionMap = subtransitionNodes.length == 1 ?
               transitionsNode.querySelector('.map').map :
-              void 0;
+              undefined;
           map.children.forEach((edge) => {
             if (edge.to != visibleTransitionMap) {
               this.currentNode = transitionsNode;
@@ -209,5 +204,6 @@ DOM.defineCustomElement(
             transitionsNode.removeChild(subtransitionNodes[i]);
           }
         }
+        return false;
       }
     });

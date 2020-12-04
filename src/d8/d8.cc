@@ -397,7 +397,7 @@ class TraceConfigParser {
     Local<String> source =
         String::NewFromUtf8(isolate, json_str).ToLocalChecked();
     Local<Value> result = JSON::Parse(context, source).ToLocalChecked();
-    Local<v8::Object> trace_config_object = Local<v8::Object>::Cast(result);
+    Local<v8::Object> trace_config_object = result.As<v8::Object>();
 
     UpdateIncludedCategoriesList(isolate, context, trace_config_object,
                                  trace_config);
@@ -410,7 +410,7 @@ class TraceConfigParser {
     Local<Value> value =
         GetValue(isolate, context, object, kIncludedCategoriesParam);
     if (value->IsArray()) {
-      Local<Array> v8_array = Local<Array>::Cast(value);
+      Local<Array> v8_array = value.As<Array>();
       for (int i = 0, length = v8_array->Length(); i < length; ++i) {
         Local<Value> v = v8_array->Get(context, i)
                              .ToLocalChecked()
@@ -465,6 +465,7 @@ base::LazyMutex Shell::workers_mutex_;
 bool Shell::allow_new_workers_ = true;
 std::unordered_set<std::shared_ptr<Worker>> Shell::running_workers_;
 std::atomic<bool> Shell::script_executed_{false};
+std::atomic<bool> Shell::valid_fuzz_script_{false};
 base::LazyMutex Shell::isolate_status_lock_;
 std::map<v8::Isolate*, bool> Shell::isolate_status_;
 std::map<v8::Isolate*, int> Shell::isolate_running_streaming_tasks_;
@@ -541,13 +542,10 @@ class StreamingCompileTask final : public v8::Task {
  public:
   StreamingCompileTask(Isolate* isolate,
                        v8::ScriptCompiler::StreamedSource* streamed_source,
-                       i::ScriptType type)
+                       v8::ScriptType type)
       : isolate_(isolate),
-        script_streaming_task_(
-            type == i::ScriptType::kClassic
-                ? v8::ScriptCompiler::StartStreaming(isolate, streamed_source)
-                : v8::ScriptCompiler::StartStreamingModule(isolate,
-                                                           streamed_source)) {
+        script_streaming_task_(v8::ScriptCompiler::StartStreaming(
+            isolate, streamed_source, type)) {
     Shell::NotifyStartStreamingTask(isolate_);
   }
 
@@ -625,8 +623,8 @@ MaybeLocal<T> Shell::CompileString(Isolate* isolate, Local<Context> context,
         v8::ScriptCompiler::StreamedSource::UTF8);
     PostBlockingBackgroundTask(std::make_unique<StreamingCompileTask>(
         isolate, &streamed_source,
-        std::is_same<T, Module>::value ? i::ScriptType::kModule
-                                       : i::ScriptType::kClassic));
+        std::is_same<T, Module>::value ? v8::ScriptType::kModule
+                                       : v8::ScriptType::kClassic));
     // Pump the loop until the streaming task completes.
     Shell::CompleteMessageLoop(isolate);
     return CompileStreamed<T>(context, &streamed_source, source, origin);
@@ -869,7 +867,9 @@ void DisposeModuleEmbedderData(Local<Context> context) {
 
 MaybeLocal<Module> ResolveModuleCallback(Local<Context> context,
                                          Local<String> specifier,
+                                         Local<FixedArray> import_assertions,
                                          Local<Module> referrer) {
+  // TODO(v8:11189) Consider JSON modules support in d8.
   Isolate* isolate = context->GetIsolate();
   ModuleEmbedderData* d = GetModuleDataFromContext(context);
   auto specifier_it =
@@ -1029,8 +1029,7 @@ MaybeLocal<Promise> Shell::HostImportModuleDynamically(
   Local<Promise::Resolver> resolver;
   if (maybe_resolver.ToLocal(&resolver)) {
     DynamicImportData* data = new DynamicImportData(
-        isolate, Local<String>::Cast(referrer->GetResourceName()), specifier,
-        resolver);
+        isolate, referrer->GetResourceName().As<String>(), specifier, resolver);
     isolate->EnqueueMicrotask(Shell::DoHostImportModuleDynamically, data);
     return resolver->GetPromise();
   }
@@ -1108,7 +1107,7 @@ void Shell::DoHostImportModuleDynamically(void* import_data) {
 
   Local<Value> module_namespace = root_module->GetModuleNamespace();
   if (i::FLAG_harmony_top_level_await) {
-    Local<Promise> result_promise(Local<Promise>::Cast(result));
+    Local<Promise> result_promise(result.As<Promise>());
     if (result_promise->State() == Promise::kRejected) {
       resolver->Reject(realm, result_promise->Result()).ToChecked();
       return;
@@ -1176,7 +1175,7 @@ bool Shell::ExecuteModule(Isolate* isolate, const char* file_name) {
     // Loop until module execution finishes
     // TODO(cbruni): This is a bit wonky. "Real" engines would not be
     // able to just busy loop waiting for execution to finish.
-    Local<Promise> result_promise(Local<Promise>::Cast(result));
+    Local<Promise> result_promise(result.As<Promise>());
     while (result_promise->State() == Promise::kPending) {
       isolate->PerformMicrotaskCheckpoint();
     }
@@ -1653,7 +1652,7 @@ void WriteToFile(FILE* file, const v8::FunctionCallbackInfo<v8::Value>& args) {
     Local<String> str_obj;
 
     if (arg->IsSymbol()) {
-      arg = Local<Symbol>::Cast(arg)->Description();
+      arg = arg.As<Symbol>()->Description();
     }
     if (!arg->ToString(args.GetIsolate()->GetCurrentContext())
              .ToLocal(&str_obj)) {
@@ -1776,7 +1775,7 @@ void Shell::SetTimeout(const v8::FunctionCallbackInfo<v8::Value>& args) {
   Isolate* isolate = args.GetIsolate();
   args.GetReturnValue().Set(v8::Number::New(isolate, 0));
   if (args.Length() == 0 || !args[0]->IsFunction()) return;
-  Local<Function> callback = Local<Function>::Cast(args[0]);
+  Local<Function> callback = args[0].As<Function>();
   Local<Context> context = isolate->GetCurrentContext();
   PerIsolateData::Get(isolate)->SetTimeout(callback, context);
 }
@@ -1879,7 +1878,7 @@ void Shell::WorkerPostMessage(const v8::FunctionCallbackInfo<v8::Value>& args) {
 
   Local<Value> message = args[0];
   Local<Value> transfer =
-      args.Length() >= 2 ? args[1] : Local<Value>::Cast(Undefined(isolate));
+      args.Length() >= 2 ? args[1] : Undefined(isolate).As<Value>();
   std::unique_ptr<SerializationData> data =
       Shell::SerializeValue(isolate, message, transfer);
   if (data) {
@@ -2065,8 +2064,7 @@ void Shell::ReportException(Isolate* isolate, Local<v8::Message> message,
   if (v8::TryCatch::StackTrace(context, exception_obj)
           .ToLocal(&stack_trace_string) &&
       stack_trace_string->IsString()) {
-    v8::String::Utf8Value stack_trace(isolate,
-                                      Local<String>::Cast(stack_trace_string));
+    v8::String::Utf8Value stack_trace(isolate, stack_trace_string.As<String>());
     printf("%s\n", ToCString(stack_trace));
   }
   printf("\n");
@@ -2645,6 +2643,84 @@ void Shell::OnExit(v8::Isolate* isolate) {
 
   delete counters_file_;
   delete counter_map_;
+
+  if (options.simulate_errors && is_valid_fuzz_script()) {
+    // Simulate several errors detectable by fuzzers behind a flag if the
+    // minimum file size for fuzzing was executed.
+    FuzzerMonitor::SimulateErrors();
+  }
+}
+
+void Dummy(char* arg) {}
+
+V8_NOINLINE void FuzzerMonitor::SimulateErrors() {
+  // Initialize a fresh RNG to not interfere with JS execution.
+  std::unique_ptr<base::RandomNumberGenerator> rng;
+  int64_t seed = internal::FLAG_random_seed;
+  if (seed != 0) {
+    rng = std::make_unique<base::RandomNumberGenerator>(seed);
+  } else {
+    rng = std::make_unique<base::RandomNumberGenerator>();
+  }
+
+  double p = rng->NextDouble();
+  if (p < 0.1) {
+    ControlFlowViolation();
+  } else if (p < 0.2) {
+    DCheck();
+  } else if (p < 0.3) {
+    Fatal();
+  } else if (p < 0.4) {
+    ObservableDifference();
+  } else if (p < 0.5) {
+    UndefinedBehavior();
+  } else if (p < 0.6) {
+    UseAfterFree();
+  } else if (p < 0.7) {
+    UseOfUninitializedValue();
+  }
+}
+
+V8_NOINLINE void FuzzerMonitor::ControlFlowViolation() {
+  // Control flow violation caught by CFI.
+  void (*func)() = (void (*)()) & Dummy;
+  func();
+}
+
+V8_NOINLINE void FuzzerMonitor::DCheck() {
+  // Caught in debug builds.
+  DCHECK(false);
+}
+
+V8_NOINLINE void FuzzerMonitor::Fatal() {
+  // Caught in all build types.
+  FATAL("Fake error.");
+}
+
+V8_NOINLINE void FuzzerMonitor::ObservableDifference() {
+  // Observable difference caught by differential fuzzing.
+  printf("___fake_difference___\n");
+}
+
+V8_NOINLINE void FuzzerMonitor::UndefinedBehavior() {
+  // Caught by UBSAN.
+  int32_t val = -1;
+  USE(val << 8);
+}
+
+V8_NOINLINE void FuzzerMonitor::UseAfterFree() {
+  // Use-after-free caught by ASAN.
+  std::vector<bool>* storage = new std::vector<bool>(3);
+  delete storage;
+  USE(storage->at(1));
+}
+
+V8_NOINLINE void FuzzerMonitor::UseOfUninitializedValue() {
+// Use-of-uninitialized-value caught by MSAN.
+#if defined(__clang__)
+  int uninitialized[1];
+  if (uninitialized[0]) USE(uninitialized);
+#endif
 }
 
 static FILE* FOpen(const char* path, const char* mode) {
@@ -2810,11 +2886,10 @@ class InspectorFrontend final : public v8_inspector::V8Inspector::Channel {
     if (callback->IsFunction()) {
       v8::TryCatch try_catch(isolate_);
       Local<Value> args[] = {message};
-      USE(Local<Function>::Cast(callback)->Call(context, Undefined(isolate_), 1,
-                                                args));
+      USE(callback.As<Function>()->Call(context, Undefined(isolate_), 1, args));
 #ifdef DEBUG
       if (try_catch.HasCaught()) {
-        Local<Object> exception = Local<Object>::Cast(try_catch.Exception());
+        Local<Object> exception = try_catch.Exception().As<Object>();
         Local<String> key = v8::String::NewFromUtf8Literal(
             isolate_, "message", NewStringType::kInternalized);
         Local<String> expected = v8::String::NewFromUtf8Literal(
@@ -2869,8 +2944,7 @@ class InspectorClient : public v8_inspector::V8InspectorClient {
     is_paused = true;
 
     while (is_paused) {
-      USE(Local<Function>::Cast(callback)->Call(context, Undefined(isolate_), 0,
-                                                {}));
+      USE(callback.As<Function>()->Call(context, Undefined(isolate_), 0, {}));
       if (try_catch.HasCaught()) {
         is_paused = false;
       }
@@ -3018,6 +3092,7 @@ bool SourceGroup::Execute(Isolate* isolate) {
       base::OS::ExitProcess(1);
     }
     Shell::set_script_executed();
+    Shell::update_script_size(source->Length());
     if (!Shell::ExecuteString(isolate, source, file_name, Shell::kNoPrintResult,
                               Shell::kReportExceptions,
                               Shell::kProcessMessageQueue)) {
@@ -3245,7 +3320,7 @@ void Worker::ProcessMessage(std::unique_ptr<SerializationData> data) {
   if (!onmessage->IsFunction()) {
     return;
   }
-  Local<Function> onmessage_fun = Local<Function>::Cast(onmessage);
+  Local<Function> onmessage_fun = onmessage.As<Function>();
 
   v8::TryCatch try_catch(isolate_);
   try_catch.SetVerbose(true);
@@ -3371,7 +3446,7 @@ void Worker::PostMessageOut(const v8::FunctionCallbackInfo<v8::Value>& args) {
       Shell::SerializeValue(isolate, message, transfer);
   if (data) {
     DCHECK(args.Data()->IsExternal());
-    Local<External> this_value = Local<External>::Cast(args.Data());
+    Local<External> this_value = args.Data().As<External>();
     Worker* worker = static_cast<Worker*>(this_value->Value());
     worker->out_queue_.Enqueue(std::move(data));
     worker->out_semaphore_.Signal();
@@ -3391,6 +3466,9 @@ bool Shell::SetOptions(int argc, char* argv[]) {
       break;
     } else if (strcmp(argv[i], "--no-arguments") == 0) {
       options.include_arguments = false;
+      argv[i] = nullptr;
+    } else if (strcmp(argv[i], "--simulate-errors") == 0) {
+      options.simulate_errors = true;
       argv[i] = nullptr;
     } else if (strcmp(argv[i], "--stress-opt") == 0) {
       options.stress_opt = true;
@@ -3602,7 +3680,9 @@ bool Shell::SetOptions(int argc, char* argv[]) {
     } else if (strcmp(str, "--module") == 0) {
       // Pass on to SourceGroup, which understands this option.
     } else if (strncmp(str, "--", 2) == 0) {
-      printf("Warning: unknown flag %s.\nTry --help for options\n", str);
+      if (!i::FLAG_correctness_fuzzer_suppressions) {
+        printf("Warning: unknown flag %s.\nTry --help for options\n", str);
+      }
     } else if (strcmp(str, "-e") == 0 && i + 1 < argc) {
       set_script_executed();
     } else if (strncmp(str, "-", 1) != 0) {
@@ -3903,7 +3983,7 @@ class Serializer : public ValueSerializer::Delegate {
  private:
   Maybe<bool> PrepareTransfer(Local<Context> context, Local<Value> transfer) {
     if (transfer->IsArray()) {
-      Local<Array> transfer_array = Local<Array>::Cast(transfer);
+      Local<Array> transfer_array = transfer.As<Array>();
       uint32_t length = transfer_array->Length();
       for (uint32_t i = 0; i < length; ++i) {
         Local<Value> element;
@@ -3913,7 +3993,7 @@ class Serializer : public ValueSerializer::Delegate {
             return Nothing<bool>();
           }
 
-          Local<ArrayBuffer> array_buffer = Local<ArrayBuffer>::Cast(element);
+          Local<ArrayBuffer> array_buffer = element.As<ArrayBuffer>();
 
           if (std::find(array_buffers_.begin(), array_buffers_.end(),
                         array_buffer) != array_buffers_.end()) {

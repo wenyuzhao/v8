@@ -34,7 +34,7 @@ define(Array.prototype, 'last', function() {
 // Map Log Events
 
 class MapLogEntry extends LogEntry {
-  edge = void 0;
+  edge = undefined;
   children = [];
   depth = 0;
   _isDeprecated = false;
@@ -44,11 +44,16 @@ class MapLogEntry extends LogEntry {
   filePosition = '';
   script = '';
   id = -1;
+  description = '';
   constructor(id, time) {
     if (!time) throw new Error('Invalid time');
     super(id, time);
     MapLogEntry.set(id, this);
     this.id = id;
+  }
+
+  toString() {
+    return `Map(${this.id}):\n${this.description}`;
   }
 
   finalizeRootMap(id) {
@@ -75,8 +80,7 @@ class MapLogEntry extends LogEntry {
   }
 
   parent() {
-    if (this.edge === void 0) return void 0;
-    return this.edge.from;
+    return this.edge?.from;
   }
 
   isDeprecated() {
@@ -88,7 +92,7 @@ class MapLogEntry extends LogEntry {
   }
 
   isRoot() {
-    return this.edge === void 0 || this.edge.from === void 0;
+    return this.edge === undefined || this.edge.from === undefined;
   }
 
   contains(map) {
@@ -131,11 +135,11 @@ class MapLogEntry extends LogEntry {
   }
 
   get type() {
-    return this.edge === void 0 ? 'new' : this.edge.type;
+    return this.edge === undefined ? 'new' : this.edge.type;
   }
 
   isBootstrapped() {
-    return this.edge === void 0;
+    return this.edge === undefined;
   }
 
   getParents() {

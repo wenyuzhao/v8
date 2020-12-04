@@ -865,6 +865,7 @@ void Heap::GarbageCollectionPrologueInSafepoint() {
 
   UpdateNewSpaceAllocationCounter();
   CheckNewSpaceExpansionCriteria();
+  new_space_->ResetParkedAllocationBuffers();
 }
 
 size_t Heap::SizeOfObjects() {
@@ -1213,7 +1214,7 @@ void Heap::GarbageCollectionEpilogue() {
   last_gc_time_ = MonotonicallyIncreasingTimeInMs();
 }
 
-class GCCallbacksScope {
+class V8_NODISCARD GCCallbacksScope {
  public:
   explicit GCCallbacksScope(Heap* heap) : heap_(heap) {
     heap_->gc_callbacks_depth_++;
@@ -1407,10 +1408,6 @@ void Heap::CollectAllAvailableGarbage(GarbageCollectionReason gc_reason) {
   }
 
   set_current_gc_flags(kNoGCFlags);
-  new_space_->Shrink();
-  new_lo_space_->SetCapacity(new_space_->Capacity() *
-                             kNewLargeObjectSpaceToSemiSpaceRatio);
-  UncommitFromSpace();
   EagerlyFreeExternalMemory();
 
   if (FLAG_trace_duplicate_threshold_kb) {

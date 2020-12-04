@@ -64,7 +64,9 @@ class LocationReference {
   static LocationReference HeapSlice(VisitResult heap_slice) {
     LocationReference result;
     DCHECK(Type::MatchUnaryGeneric(heap_slice.type(),
-                                   TypeOracle::GetSliceGeneric()));
+                                   TypeOracle::GetConstSliceGeneric()) ||
+           Type::MatchUnaryGeneric(heap_slice.type(),
+                                   TypeOracle::GetMutableSliceGeneric()));
     result.heap_slice_ = std::move(heap_slice);
     return result;
   }
@@ -142,8 +144,12 @@ class LocationReference {
       return *TypeOracle::MatchReferenceGeneric(heap_reference().type());
     }
     if (IsHeapSlice()) {
-      return *Type::MatchUnaryGeneric(heap_slice().type(),
-                                      TypeOracle::GetSliceGeneric());
+      if (auto type = Type::MatchUnaryGeneric(
+              heap_slice().type(), TypeOracle::GetMutableSliceGeneric())) {
+        return *type;
+      }
+      return Type::MatchUnaryGeneric(heap_slice().type(),
+                                     TypeOracle::GetConstSliceGeneric());
     }
     if (IsBitFieldAccess()) {
       return bit_field_->name_and_type.type;
@@ -599,7 +605,7 @@ class ImplementationVisitor {
   //   // ... create temporary slots ...
   //   result = stack_scope.Yield(surviving_slots);
   // }
-  class StackScope {
+  class V8_NODISCARD StackScope {
    public:
     explicit StackScope(ImplementationVisitor* visitor) : visitor_(visitor) {
       base_ = visitor_->assembler().CurrentStack().AboveTop();

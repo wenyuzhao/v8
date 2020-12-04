@@ -69,11 +69,11 @@ int ComputeStringTableCapacityWithShrink(int current_capacity,
   return new_capacity;
 }
 
-template <typename StringTableKey>
-bool KeyIsMatch(StringTableKey* key, String string) {
+template <typename LocalIsolate, typename StringTableKey>
+bool KeyIsMatch(LocalIsolate* isolate, StringTableKey* key, String string) {
   if (string.hash() != key->hash()) return false;
   if (string.length() != key->length()) return false;
-  return key->IsMatch(string);
+  return key->IsMatch(isolate, string);
 }
 
 }  // namespace
@@ -135,14 +135,14 @@ class StringTable::Data {
   int number_of_elements() const { return number_of_elements_; }
   int number_of_deleted_elements() const { return number_of_deleted_elements_; }
 
-  template <typename StringTableKey>
-  InternalIndex FindEntry(IsolateRoot isolate, StringTableKey* key,
+  template <typename LocalIsolate, typename StringTableKey>
+  InternalIndex FindEntry(LocalIsolate* isolate, StringTableKey* key,
                           uint32_t hash) const;
 
   InternalIndex FindInsertionEntry(IsolateRoot isolate, uint32_t hash) const;
 
-  template <typename StringTableKey>
-  InternalIndex FindEntryOrInsertionEntry(IsolateRoot isolate,
+  template <typename LocalIsolate, typename StringTableKey>
+  InternalIndex FindEntryOrInsertionEntry(LocalIsolate* isolate,
                                           StringTableKey* key,
                                           uint32_t hash) const;
 
@@ -247,13 +247,12 @@ std::unique_ptr<StringTable::Data> StringTable::Data::Resize(
   return new_data;
 }
 
-template <typename StringTableKey>
-InternalIndex StringTable::Data::FindEntry(IsolateRoot isolate,
+template <typename LocalIsolate, typename StringTableKey>
+InternalIndex StringTable::Data::FindEntry(LocalIsolate* isolate,
                                            StringTableKey* key,
                                            uint32_t hash) const {
   uint32_t count = 1;
   // EnsureCapacity will guarantee the hash table is never full.
-  DCHECK_LT(number_of_elements_, capacity_);
   for (InternalIndex entry = FirstProbe(hash, capacity_);;
        entry = NextProbe(entry, count++, capacity_)) {
     // TODO(leszeks): Consider delaying the decompression until after the
@@ -262,7 +261,7 @@ InternalIndex StringTable::Data::FindEntry(IsolateRoot isolate,
     if (element == empty_element()) return InternalIndex::NotFound();
     if (element == deleted_element()) continue;
     String string = String::cast(element);
-    if (KeyIsMatch(key, string)) return entry;
+    if (KeyIsMatch(isolate, key, string)) return entry;
   }
 }
 
@@ -270,7 +269,6 @@ InternalIndex StringTable::Data::FindInsertionEntry(IsolateRoot isolate,
                                                     uint32_t hash) const {
   uint32_t count = 1;
   // EnsureCapacity will guarantee the hash table is never full.
-  DCHECK_LT(number_of_elements_, capacity_);
   for (InternalIndex entry = FirstProbe(hash, capacity_);;
        entry = NextProbe(entry, count++, capacity_)) {
     // TODO(leszeks): Consider delaying the decompression until after the
@@ -281,13 +279,12 @@ InternalIndex StringTable::Data::FindInsertionEntry(IsolateRoot isolate,
   }
 }
 
-template <typename StringTableKey>
+template <typename LocalIsolate, typename StringTableKey>
 InternalIndex StringTable::Data::FindEntryOrInsertionEntry(
-    IsolateRoot isolate, StringTableKey* key, uint32_t hash) const {
+    LocalIsolate* isolate, StringTableKey* key, uint32_t hash) const {
   InternalIndex insertion_entry = InternalIndex::NotFound();
   uint32_t count = 1;
   // EnsureCapacity will guarantee the hash table is never full.
-  DCHECK_LT(number_of_elements_, capacity_);
   for (InternalIndex entry = FirstProbe(hash, capacity_);;
        entry = NextProbe(entry, count++, capacity_)) {
     // TODO(leszeks): Consider delaying the decompression until after the
@@ -307,7 +304,7 @@ InternalIndex StringTable::Data::FindEntryOrInsertionEntry(
     }
 
     String string = String::cast(element);
-    if (KeyIsMatch(key, string)) return entry;
+    if (KeyIsMatch(isolate, key, string)) return entry;
   }
 }
 
@@ -358,7 +355,7 @@ class InternalizedStringKey final : public StringTableKey {
     set_raw_hash_field(string->raw_hash_field());
   }
 
-  bool IsMatch(String string) override {
+  bool IsMatch(Isolate* isolate, String string) {
     DCHECK(!SharedStringAccessGuardIfNeeded::IsNeeded(string));
     return string_->SlowEquals(string);
   }
@@ -464,57 +461,53 @@ Handle<String> StringTable::LookupKey(LocalIsolate* isolate,
   // allocation if another write also did an allocation. This assumes that
   // writes are rarer than reads.
 
-  Handle<String> new_string;
-  while (true) {
-    // Load the current string table data, in case another thread updates the
-    // data while we're reading.
-    const Data* data = data_.load(std::memory_order_acquire);
+  // Load the current string table data, in case another thread updates the
+  // data while we're reading.
+  const Data* data = data_.load(std::memory_order_acquire);
 
-    // First try to find the string in the table. This is safe to do even if the
-    // table is now reallocated; we won't find a stale entry in the old table
-    // because the new table won't delete it's corresponding entry until the
-    // string is dead, in which case it will die in this table too and worst
-    // case we'll have a false miss.
-    InternalIndex entry = data->FindEntry(isolate, key, key->hash());
-    if (entry.is_found()) {
-      return handle(String::cast(data->Get(isolate, entry)), isolate);
-    }
+  // First try to find the string in the table. This is safe to do even if the
+  // table is now reallocated; we won't find a stale entry in the old table
+  // because the new table won't delete it's corresponding entry until the
+  // string is dead, in which case it will die in this table too and worst
+  // case we'll have a false miss.
+  InternalIndex entry = data->FindEntry(isolate, key, key->hash());
+  if (entry.is_found()) {
+    return handle(String::cast(data->Get(isolate, entry)), isolate);
+  }
 
-    // No entry found, so adding new string.
+  // No entry found, so adding new string.
 
-    // Allocate the string before the first insertion attempt, reuse this
-    // allocated value on insertion retries. If another thread concurrently
-    // allocates the same string, the insert will fail, the lookup above will
-    // succeed, and this string will be discarded.
-    if (new_string.is_null()) new_string = key->AsHandle(isolate);
+  // Allocate the string before the first insertion attempt, reuse this
+  // allocated value on insertion retries. If another thread concurrently
+  // allocates the same string, the insert will fail, the lookup above will
+  // succeed, and this string will be discarded.
+  Handle<String> new_string = key->AsHandle(isolate);
 
-    {
-      base::MutexGuard table_write_guard(&write_mutex_);
+  {
+    base::MutexGuard table_write_guard(&write_mutex_);
 
-      Data* data = EnsureCapacity(isolate, 1);
+    Data* data = EnsureCapacity(isolate, 1);
 
-      // Check one last time if the key is present in the table, in case it was
-      // added after the check.
-      InternalIndex entry =
-          data->FindEntryOrInsertionEntry(isolate, key, key->hash());
+    // Check one last time if the key is present in the table, in case it was
+    // added after the check.
+    entry = data->FindEntryOrInsertionEntry(isolate, key, key->hash());
 
-      Object element = data->Get(isolate, entry);
-      if (element == empty_element()) {
-        // This entry is empty, so write it and register that we added an
-        // element.
-        data->Set(entry, *new_string);
-        data->ElementAdded();
-        return new_string;
-      } else if (element == deleted_element()) {
-        // This entry was deleted, so overwrite it and register that we
-        // overwrote a deleted element.
-        data->Set(entry, *new_string);
-        data->DeletedElementOverwritten();
-        return new_string;
-      } else {
-        // Return the existing string as a handle.
-        return handle(String::cast(element), isolate);
-      }
+    Object element = data->Get(isolate, entry);
+    if (element == empty_element()) {
+      // This entry is empty, so write it and register that we added an
+      // element.
+      data->Set(entry, *new_string);
+      data->ElementAdded();
+      return new_string;
+    } else if (element == deleted_element()) {
+      // This entry was deleted, so overwrite it and register that we
+      // overwrote a deleted element.
+      data->Set(entry, *new_string);
+      data->DeletedElementOverwritten();
+      return new_string;
+    } else {
+      // Return the existing string as a handle.
+      return handle(String::cast(element), isolate);
     }
   }
 }
@@ -532,10 +525,6 @@ template Handle<String> StringTable::LookupKey(LocalIsolate* isolate,
                                                OneByteStringKey* key);
 template Handle<String> StringTable::LookupKey(LocalIsolate* isolate,
                                                TwoByteStringKey* key);
-template Handle<String> StringTable::LookupKey(LocalIsolate* isolate,
-                                               SeqOneByteSubStringKey* key);
-template Handle<String> StringTable::LookupKey(LocalIsolate* isolate,
-                                               SeqTwoByteSubStringKey* key);
 
 template Handle<String> StringTable::LookupKey(Isolate* isolate,
                                                StringTableInsertionKey* key);

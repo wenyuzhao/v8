@@ -9,13 +9,13 @@ class Timeline {
   _values;
   // Current selection, subset of #values:
   _selection;
-  _uniqueTypes;
+  _breakdown;
 
-  constructor(model) {
+  constructor(model, values = [], startTime = 0, endTime = 0) {
     this._model = model;
-    this._values = [];
-    this.startTime = 0;
-    this.endTime = 0;
+    this._values = values;
+    this.startTime = startTime;
+    this.endTime = endTime;
   }
 
   get model() {
@@ -34,17 +34,20 @@ class Timeline {
     this._selection = value;
   }
 
-  selectTimeRange(start, end) {
-    this._selection = this.filter(e => e.time >= start && e.time <= end);
+  selectTimeRange(startTime, endTime) {
+    const items = this.range(startTime, endTime);
+    this._selection = new Timeline(this._model, items, startTime, endTime);
+  }
+
+  clearSelection() {
+    this._selection = undefined;
   }
 
   getChunks(windowSizeMs) {
-    // TODO(zcankara) Fill this one
     return this.chunkSizes(windowSizeMs);
   }
 
   get values() {
-    // TODO(zcankara) Not to break something delete later
     return this._values;
   }
 
@@ -94,6 +97,10 @@ class Timeline {
     return this._values.length;
   }
 
+  slice(startIndex, endIndex) {
+    return this._values.slice(startIndex, endIndex);
+  }
+
   first() {
     return this._values[0];
   }
@@ -102,11 +109,17 @@ class Timeline {
     return this._values[this._values.length - 1];
   }
 
+  * [Symbol.iterator]() {
+    yield* this._values;
+  }
+
   duration() {
+    if (this.isEmpty()) return 0;
     return this.last().time - this.first().time;
   }
 
   forEachChunkSize(count, fn) {
+    if (this.isEmpty()) return;
     const increment = this.duration() / count;
     let currentTime = this.first().time + increment;
     let index = 0;
@@ -134,42 +147,40 @@ class Timeline {
     return chunks;
   }
 
-  range(start, end) {
-    const first = this.find(start);
-    if (first < 0) return [];
-    const last = this.find(end, first);
-    return this._values.slice(first, last);
+  // Return all entries in ({startTime}, {endTime}]
+  range(startTime, endTime) {
+    const firstIndex = this.find(startTime);
+    if (firstIndex < 0) return [];
+    const lastIndex = this.find(endTime, firstIndex + 1);
+    return this._values.slice(firstIndex, lastIndex);
   }
 
+  // Return the first index for the first element at {time}.
   find(time, offset = 0) {
     return this._find(this._values, each => each.time - time, offset);
   }
 
-  _find(array, cmp, offset = 0) {
-    let min = offset;
-    let max = array.length;
-    while (min < max) {
-      let mid = min + Math.floor((max - min) / 2);
-      let result = cmp(array[mid]);
-      if (result > 0) {
-        max = mid - 1;
+  // Return the first index for which compareFn(item) is >= 0;
+  _find(array, compareFn, offset = 0) {
+    let minIndex = offset;
+    let maxIndex = array.length - 1;
+    while (minIndex < maxIndex) {
+      const midIndex = minIndex + (((maxIndex - minIndex) / 2) | 0);
+      if (compareFn(array[midIndex]) < 0) {
+        minIndex = midIndex + 1;
       } else {
-        min = mid + 1;
+        maxIndex = midIndex;
       }
     }
-    return min;
+    return minIndex;
   }
 
-  initializeTypes() {
-    const types = new Map();
-    for (const entry of this.all) {
-      types.get(entry.type)?.push(entry) ?? types.set(entry.type, [entry])
+  getBreakdown(keyFunction) {
+    if (keyFunction) return breakdown(this._values, keyFunction);
+    if (this._breakdown === undefined) {
+      this._breakdown = breakdown(this._values, each => each.type);
     }
-    return this._uniqueTypes = types;
-  }
-
-  get uniqueTypes() {
-    return this._uniqueTypes ?? this.initializeTypes();
+    return this._breakdown;
   }
 
   depthHistogram() {
@@ -249,31 +260,34 @@ class Chunk {
   }
 
   getBreakdown(keyFunction) {
-    if (this.items.length === 0) return [];
-    if (keyFunction === void 0) {
-      keyFunction = each => each;
-    }
-    const typeToindex = new Map();
-    const breakdown = [];
-    // This is performance critical, resorting to for-loop
-    for (let i = 0; i < this.items.length; i++) {
-      const each = this.items[i];
-      const type = keyFunction(each);
-      const index = typeToindex.get(type);
-      if (index === void 0) {
-        typeToindex.set(type, breakdown.length);
-        breakdown.push([type, 0]);
-      } else {
-        breakdown[index][1]++;
-      }
-    }
-    // Sort by count
-    return breakdown.sort((a, b) => a[1] - b[1]);
+    return breakdown(this.items, keyFunction);
   }
 
   filter() {
     return this.items.filter(map => !map.parent() || !this.has(map.parent()));
   }
+}
+
+function breakdown(array, keyFunction) {
+  if (array.length === 0) return [];
+  if (keyFunction === undefined) keyFunction = each => each;
+  const typeToindex = new Map();
+  const breakdown = [];
+  let id = 0;
+  // This is performance critical, resorting to for-loop
+  for (let i = 0; i < array.length; i++) {
+    const each = array[i];
+    const type = keyFunction(each);
+    const index = typeToindex.get(type);
+    if (index === void 0) {
+      typeToindex.set(type, breakdown.length);
+      breakdown.push({type: type, count: 0, id: id++});
+    } else {
+      breakdown[index].count++;
+    }
+  }
+  // Sort by count
+  return breakdown.sort((a, b) => b.count - a.count);
 }
 
 export {Timeline, Chunk};
