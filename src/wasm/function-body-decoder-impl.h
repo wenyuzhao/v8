@@ -195,9 +195,12 @@ V8_INLINE WasmFeature feature_for_heap_type(HeapType heap_type) {
   }
 }
 
+// If {module} is not null, the read index will be checked against the module's
+// type capacity.
 template <Decoder::ValidateFlag validate>
 HeapType read_heap_type(Decoder* decoder, const byte* pc,
-                        uint32_t* const length, const WasmFeatures& enabled) {
+                        uint32_t* const length, const WasmModule* module,
+                        const WasmFeatures& enabled) {
   int64_t heap_index = decoder->read_i33v<validate>(pc, length, "heap type");
   if (heap_index < 0) {
     int64_t min_1_byte_leb128 = -64;
@@ -248,6 +251,12 @@ HeapType read_heap_type(Decoder* decoder, const byte* pc,
           type_index, kV8MaxWasmTypes);
       return HeapType(HeapType::kBottom);
     }
+    // We use capacity over size so this works mid-DecodeTypeSection.
+    if (!VALIDATE(module == nullptr || type_index < module->types.capacity())) {
+      DecodeError<validate>(decoder, pc, "Type index %u is out of bounds",
+                            type_index);
+      return HeapType(HeapType::kBottom);
+    }
     return HeapType(type_index);
   }
 }
@@ -259,7 +268,8 @@ HeapType read_heap_type(Decoder* decoder, const byte* pc,
 // kNoValidate.
 template <Decoder::ValidateFlag validate>
 ValueType read_value_type(Decoder* decoder, const byte* pc,
-                          uint32_t* const length, const WasmFeatures& enabled) {
+                          uint32_t* const length, const WasmModule* module,
+                          const WasmFeatures& enabled) {
   *length = 1;
   byte val = decoder->read_u8<validate>(pc, "value type opcode");
   if (decoder->failed()) {
@@ -306,7 +316,7 @@ ValueType read_value_type(Decoder* decoder, const byte* pc,
         return kWasmBottom;
       }
       HeapType heap_type =
-          read_heap_type<validate>(decoder, pc + 1, length, enabled);
+          read_heap_type<validate>(decoder, pc + 1, length, module, enabled);
       *length += 1;
       return heap_type.is_bottom() ? kWasmBottom
                                    : ValueType::Ref(heap_type, nullability);
@@ -329,8 +339,8 @@ ValueType read_value_type(Decoder* decoder, const byte* pc,
         return kWasmBottom;
       }
       uint32_t heap_type_length;
-      HeapType heap_type = read_heap_type<validate>(decoder, pc + *length,
-                                                    &heap_type_length, enabled);
+      HeapType heap_type = read_heap_type<validate>(
+          decoder, pc + *length, &heap_type_length, module, enabled);
       *length += heap_type_length;
       return heap_type.is_bottom() ? kWasmBottom
                                    : ValueType::Rtt(heap_type, depth);
@@ -445,7 +455,7 @@ struct SelectTypeImmediate {
   ValueType type;
 
   inline SelectTypeImmediate(const WasmFeatures& enabled, Decoder* decoder,
-                             const byte* pc) {
+                             const byte* pc, const WasmModule* module) {
     uint8_t num_types =
         decoder->read_u32v<validate>(pc, &length, "number of select types");
     if (!VALIDATE(num_types == 1)) {
@@ -455,8 +465,8 @@ struct SelectTypeImmediate {
       return;
     }
     uint32_t type_length;
-    type = value_type_reader::read_value_type<validate>(decoder, pc + length,
-                                                        &type_length, enabled);
+    type = value_type_reader::read_value_type<validate>(
+        decoder, pc + length, &type_length, module, enabled);
     length += type_length;
   }
 };
@@ -469,7 +479,7 @@ struct BlockTypeImmediate {
   const FunctionSig* sig = nullptr;
 
   inline BlockTypeImmediate(const WasmFeatures& enabled, Decoder* decoder,
-                            const byte* pc) {
+                            const byte* pc, const WasmModule* module) {
     int64_t block_type =
         decoder->read_i33v<validate>(pc, &length, "block type");
     if (block_type < 0) {
@@ -483,7 +493,7 @@ struct BlockTypeImmediate {
       }
       if (static_cast<ValueTypeCode>(block_type & 0x7F) == kVoidCode) return;
       type = value_type_reader::read_value_type<validate>(decoder, pc, &length,
-                                                          enabled);
+                                                          module, enabled);
     } else {
       if (!VALIDATE(enabled.has_mv())) {
         DecodeError<validate>(decoder, pc,
@@ -826,9 +836,9 @@ struct HeapTypeImmediate {
   uint32_t length = 1;
   HeapType type = HeapType(HeapType::kBottom);
   inline HeapTypeImmediate(const WasmFeatures& enabled, Decoder* decoder,
-                           const byte* pc) {
+                           const byte* pc, const WasmModule* module) {
     type = value_type_reader::read_heap_type<validate>(decoder, pc, &length,
-                                                       enabled);
+                                                       module, enabled);
   }
 };
 
@@ -1172,7 +1182,7 @@ class WasmDecoder : public Decoder {
       *total_length += length;
 
       ValueType type = value_type_reader::read_value_type<validate>(
-          this, pc + *total_length, &length, enabled_);
+          this, pc + *total_length, &length, this->module_, enabled_);
       if (!VALIDATE(type != kWasmBottom)) return -1;
       *total_length += length;
       total_count += count;
@@ -1181,10 +1191,11 @@ class WasmDecoder : public Decoder {
         // Move the insertion iterator to the end of the newly inserted locals.
         insert_iterator =
             local_types_.insert(insert_iterator, count, type) + count;
+        num_locals_ += count;
       }
     }
+
     DCHECK(ok());
-    if (insert_position.has_value()) num_locals_ += total_count;
     return total_count;
   }
 
@@ -1478,8 +1489,8 @@ class WasmDecoder : public Decoder {
 
   inline bool Validate(const byte* pc, BlockTypeImmediate<validate>& imm) {
     if (!Complete(imm)) {
-      DecodeError(pc, "block type index %u out of bounds (%zu types)",
-                  imm.sig_index, module_->types.size());
+      DecodeError(pc, "block type index %u is not a signature definition",
+                  imm.sig_index);
       return false;
     }
     return true;
@@ -1577,19 +1588,6 @@ class WasmDecoder : public Decoder {
     return true;
   }
 
-  inline bool Validate(const byte* pc, HeapTypeImmediate<validate>& imm) {
-    if (!VALIDATE(!imm.type.is_bottom())) {
-      DecodeError(pc, "invalid heap type");
-      return false;
-    }
-    if (!VALIDATE(imm.type.is_generic() ||
-                  module_->has_type(imm.type.ref_index()))) {
-      DecodeError(pc, "Type index %u is out of bounds", imm.type.ref_index());
-      return false;
-    }
-    return true;
-  }
-
   // Returns the length of the opcode under {pc}.
   static uint32_t OpcodeLength(WasmDecoder* decoder, const byte* pc) {
     WasmOpcode opcode = static_cast<WasmOpcode>(*pc);
@@ -1610,7 +1608,8 @@ class WasmDecoder : public Decoder {
       case kExprIf:
       case kExprLoop:
       case kExprBlock: {
-        BlockTypeImmediate<validate> imm(WasmFeatures::All(), decoder, pc + 1);
+        BlockTypeImmediate<validate> imm(WasmFeatures::All(), decoder, pc + 1,
+                                         nullptr);
         return 1 + imm.length;
       }
       case kExprBr:
@@ -1636,7 +1635,8 @@ class WasmDecoder : public Decoder {
         return 1 + imm.length;
       }
       case kExprLet: {
-        BlockTypeImmediate<validate> imm(WasmFeatures::All(), decoder, pc + 1);
+        BlockTypeImmediate<validate> imm(WasmFeatures::All(), decoder, pc + 1,
+                                         nullptr);
         uint32_t locals_length;
         int new_locals_count = decoder->DecodeLocals(
             pc + 1 + imm.length, &locals_length, base::Optional<uint32_t>());
@@ -1661,7 +1661,8 @@ class WasmDecoder : public Decoder {
       case kExprSelect:
         return 1;
       case kExprSelectWithType: {
-        SelectTypeImmediate<validate> imm(WasmFeatures::All(), decoder, pc + 1);
+        SelectTypeImmediate<validate> imm(WasmFeatures::All(), decoder, pc + 1,
+                                          nullptr);
         return 1 + imm.length;
       }
       case kExprLocalGet:
@@ -1693,7 +1694,8 @@ class WasmDecoder : public Decoder {
       case kExprF64Const:
         return 9;
       case kExprRefNull: {
-        HeapTypeImmediate<validate> imm(WasmFeatures::All(), decoder, pc + 1);
+        HeapTypeImmediate<validate> imm(WasmFeatures::All(), decoder, pc + 1,
+                                        nullptr);
         return 1 + imm.length;
       }
       case kExprRefIsNull: {
@@ -1880,7 +1882,7 @@ class WasmDecoder : public Decoder {
             // TODO(7748): Account for rtt.sub's additional immediates if
             // they stick.
             HeapTypeImmediate<validate> imm(WasmFeatures::All(), decoder,
-                                            pc + length);
+                                            pc + length, nullptr);
             return length + imm.length;
           }
           case kExprI31New:
@@ -1890,9 +1892,9 @@ class WasmDecoder : public Decoder {
           case kExprRefTest:
           case kExprRefCast: {
             HeapTypeImmediate<validate> ht1(WasmFeatures::All(), decoder,
-                                            pc + length);
+                                            pc + length, nullptr);
             HeapTypeImmediate<validate> ht2(WasmFeatures::All(), decoder,
-                                            pc + length + ht1.length);
+                                            pc + length + ht1.length, nullptr);
             return length + ht1.length + ht2.length;
           }
           default:
@@ -2370,7 +2372,8 @@ class WasmFullDecoder : public WasmDecoder<validate> {
 #undef BUILD_SIMPLE_OPCODE
 
   DECODE(Block) {
-    BlockTypeImmediate<validate> imm(this->enabled_, this, this->pc_ + 1);
+    BlockTypeImmediate<validate> imm(this->enabled_, this, this->pc_ + 1,
+                                     this->module_);
     if (!this->Validate(this->pc_ + 1, imm)) return 0;
     ArgVector args = PopArgs(imm.sig);
     Control* block = PushControl(kControlBlock);
@@ -2400,7 +2403,8 @@ class WasmFullDecoder : public WasmDecoder<validate> {
 
   DECODE(Try) {
     CHECK_PROTOTYPE_OPCODE(eh);
-    BlockTypeImmediate<validate> imm(this->enabled_, this, this->pc_ + 1);
+    BlockTypeImmediate<validate> imm(this->enabled_, this, this->pc_ + 1,
+                                     this->module_);
     if (!this->Validate(this->pc_ + 1, imm)) return 0;
     ArgVector args = PopArgs(imm.sig);
     Control* try_block = PushControl(kControlTry);
@@ -2470,37 +2474,47 @@ class WasmFullDecoder : public WasmDecoder<validate> {
     Value ref_object = Pop(0);
     Control* c = control_at(imm.depth);
     TypeCheckBranchResult check_result = TypeCheckBranch(c, true);
-    if (V8_LIKELY(check_result == kReachableBranch)) {
-      switch (ref_object.type.kind()) {
-        case ValueType::kBottom:
-          UNREACHABLE();  // This can only happen in unreachable code.
-        case ValueType::kRef: {
-          Value* result = Push(ref_object.type);
+    switch (ref_object.type.kind()) {
+      // For bottom and non-nullable reference, simply forward the popped
+      // argument to the result.
+      case ValueType::kBottom:
+        DCHECK(check_result != kReachableBranch);
+        V8_FALLTHROUGH;
+      case ValueType::kRef: {
+        Value* result = Push(ref_object.type);
+        if (V8_LIKELY(check_result == kReachableBranch)) {
           CALL_INTERFACE(PassThrough, ref_object, result);
-          break;
         }
-        case ValueType::kOptRef: {
-          // We need to Push the result value after calling BrOnNull on
-          // the interface. Therefore we must sync the ref_object and
-          // result nodes afterwards (in PassThrough).
+        break;
+      }
+      case ValueType::kOptRef: {
+        // We need to Push the result value after calling BrOnNull on
+        // the interface. Therefore we must sync the ref_object and
+        // result nodes afterwards (in PassThrough).
+        if (V8_LIKELY(check_result == kReachableBranch)) {
           CALL_INTERFACE_IF_REACHABLE(BrOnNull, ref_object, imm.depth);
-          Value* result =
-              Push(ValueType::Ref(ref_object.type.heap_type(), kNonNullable));
+        }
+        Value* result =
+            Push(ValueType::Ref(ref_object.type.heap_type(), kNonNullable));
+        if (V8_LIKELY(check_result == kReachableBranch)) {
           CALL_INTERFACE(PassThrough, ref_object, result);
           c->br_merge()->reached = true;
-          break;
         }
-        default:
-          this->DecodeError("invalid argument type to br_on_null");
-          return 0;
+        break;
       }
+      default:
+        this->DecodeError(
+            "br_on_null[0]: Expected object reference, found %s of type %s",
+            SafeOpcodeNameAt(ref_object.pc()), ref_object.type.name().c_str());
+        return 0;
     }
     return 1 + imm.length;
   }
 
   DECODE(Let) {
     CHECK_PROTOTYPE_OPCODE(typed_funcref);
-    BlockTypeImmediate<validate> imm(this->enabled_, this, this->pc_ + 1);
+    BlockTypeImmediate<validate> imm(this->enabled_, this, this->pc_ + 1,
+                                     this->module_);
     if (!this->Validate(this->pc_ + 1, imm)) return 0;
     // Temporarily add the let-defined values to the beginning of the function
     // locals.
@@ -2523,7 +2537,8 @@ class WasmFullDecoder : public WasmDecoder<validate> {
   }
 
   DECODE(Loop) {
-    BlockTypeImmediate<validate> imm(this->enabled_, this, this->pc_ + 1);
+    BlockTypeImmediate<validate> imm(this->enabled_, this, this->pc_ + 1,
+                                     this->module_);
     if (!this->Validate(this->pc_ + 1, imm)) return 0;
     ArgVector args = PopArgs(imm.sig);
     Control* block = PushControl(kControlLoop);
@@ -2534,7 +2549,8 @@ class WasmFullDecoder : public WasmDecoder<validate> {
   }
 
   DECODE(If) {
-    BlockTypeImmediate<validate> imm(this->enabled_, this, this->pc_ + 1);
+    BlockTypeImmediate<validate> imm(this->enabled_, this, this->pc_ + 1,
+                                     this->module_);
     if (!this->Validate(this->pc_ + 1, imm)) return 0;
     Value cond = Pop(0, kWasmI32);
     ArgVector args = PopArgs(imm.sig);
@@ -2630,7 +2646,8 @@ class WasmFullDecoder : public WasmDecoder<validate> {
 
   DECODE(SelectWithType) {
     CHECK_PROTOTYPE_OPCODE(reftypes);
-    SelectTypeImmediate<validate> imm(this->enabled_, this, this->pc_ + 1);
+    SelectTypeImmediate<validate> imm(this->enabled_, this, this->pc_ + 1,
+                                      this->module_);
     if (this->failed()) return 0;
     Value cond = Pop(2, kWasmI32);
     Value fval = Pop(1, imm.type);
@@ -2772,8 +2789,9 @@ class WasmFullDecoder : public WasmDecoder<validate> {
 
   DECODE(RefNull) {
     CHECK_PROTOTYPE_OPCODE(reftypes);
-    HeapTypeImmediate<validate> imm(this->enabled_, this, this->pc_ + 1);
-    if (!this->Validate(this->pc_ + 1, imm)) return 0;
+    HeapTypeImmediate<validate> imm(this->enabled_, this, this->pc_ + 1,
+                                    this->module_);
+    if (!VALIDATE(this->ok())) return 0;
     ValueType type = ValueType::Ref(imm.type, kNullable);
     Value* value = Push(type);
     CALL_INTERFACE_IF_REACHABLE(RefNull, type, value);
@@ -3936,9 +3954,9 @@ class WasmFullDecoder : public WasmDecoder<validate> {
         return opcode_length;
       }
       case kExprRttCanon: {
-        HeapTypeImmediate<validate> imm(this->enabled_, this,
-                                        this->pc_ + opcode_length);
-        if (!this->Validate(this->pc_ + opcode_length, imm)) return 0;
+        HeapTypeImmediate<validate> imm(
+            this->enabled_, this, this->pc_ + opcode_length, this->module_);
+        if (!VALIDATE(this->ok())) return 0;
         Value* value =
             Push(ValueType::Rtt(imm.type, imm.type == HeapType::kAny ? 0 : 1));
         CALL_INTERFACE_IF_REACHABLE(RttCanon, imm, value);
@@ -3951,9 +3969,9 @@ class WasmFullDecoder : public WasmDecoder<validate> {
         // If these immediates don't get dropped (in the spirit of
         // https://github.com/WebAssembly/function-references/pull/31 ),
         // implement them here.
-        HeapTypeImmediate<validate> imm(this->enabled_, this,
-                                        this->pc_ + opcode_length);
-        if (!this->Validate(this->pc_ + opcode_length, imm)) return 0;
+        HeapTypeImmediate<validate> imm(
+            this->enabled_, this, this->pc_ + opcode_length, this->module_);
+        if (!VALIDATE(this->ok())) return 0;
         Value parent = Pop(0);
         if (parent.type.is_bottom()) {
           Push(kWasmBottom);
@@ -3985,14 +4003,14 @@ class WasmFullDecoder : public WasmDecoder<validate> {
       }
       case kExprRefTest: {
         // "Tests whether {obj}'s runtime type is a runtime subtype of {rtt}."
-        HeapTypeImmediate<validate> obj_type(this->enabled_, this,
-                                             this->pc_ + opcode_length);
-        if (!this->Validate(this->pc_ + opcode_length, obj_type)) return 0;
+        HeapTypeImmediate<validate> obj_type(
+            this->enabled_, this, this->pc_ + opcode_length, this->module_);
         int len = opcode_length + obj_type.length;
         HeapTypeImmediate<validate> rtt_type(this->enabled_, this,
-                                             this->pc_ + len);
-        if (!this->Validate(this->pc_ + len, rtt_type)) return 0;
+                                             this->pc_ + len, this->module_);
         len += rtt_type.length;
+        if (!VALIDATE(this->ok())) return 0;
+
         // The static type of {obj} must be a supertype of the {rtt}'s type.
         if (!VALIDATE(IsSubtypeOf(ValueType::Ref(rtt_type.type, kNonNullable),
                                   ValueType::Ref(obj_type.type, kNonNullable),
@@ -4016,14 +4034,14 @@ class WasmFullDecoder : public WasmDecoder<validate> {
         return len;
       }
       case kExprRefCast: {
-        HeapTypeImmediate<validate> obj_type(this->enabled_, this,
-                                             this->pc_ + opcode_length);
-        if (!this->Validate(this->pc_ + opcode_length, obj_type)) return 0;
+        HeapTypeImmediate<validate> obj_type(
+            this->enabled_, this, this->pc_ + opcode_length, this->module_);
         int len = opcode_length + obj_type.length;
         HeapTypeImmediate<validate> rtt_type(this->enabled_, this,
-                                             this->pc_ + len);
-        if (!this->Validate(this->pc_ + len, rtt_type)) return 0;
+                                             this->pc_ + len, this->module_);
         len += rtt_type.length;
+        if (!VALIDATE(this->ok())) return 0;
+
         if (!VALIDATE(IsSubtypeOf(ValueType::Ref(rtt_type.type, kNonNullable),
                                   ValueType::Ref(obj_type.type, kNonNullable),
                                   this->module_))) {

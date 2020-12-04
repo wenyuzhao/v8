@@ -34,7 +34,6 @@ class CompilationSubCache {
 
   // Get the compilation cache tables for a specific generation.
   Handle<CompilationCacheTable> GetTable(int generation);
-  bool has_table(int generation) const;
 
   // Accessors for first generation.
   Handle<CompilationCacheTable> GetFirstTable() {
@@ -160,11 +159,8 @@ class CompilationCacheCode : public CompilationSubCache {
   explicit CompilationCacheCode(Isolate* isolate)
       : CompilationSubCache(isolate, kGenerations) {}
 
-  bool Lookup(Handle<SharedFunctionInfo> key, MaybeHandle<Code>* code_out,
-              MaybeHandle<SerializedFeedback>* feedback_out);
-  void Put(Handle<SharedFunctionInfo> key, Handle<Code> value_code,
-           Handle<SerializedFeedback> value_feedback);
-  void ClearDeoptimizedCode();
+  MaybeHandle<Code> Lookup(Handle<SharedFunctionInfo> key);
+  void Put(Handle<SharedFunctionInfo> key, Handle<Code> value);
 
   void Age() override;
 
@@ -174,7 +170,6 @@ class CompilationCacheCode : public CompilationSubCache {
   static constexpr int kGenerations = 2;
 
   static void TraceAgeing();
-  static void TraceRemovalForDeoptimization(SharedFunctionInfo key, Code value);
   static void TraceInsertion(Handle<SharedFunctionInfo> key,
                              Handle<Code> value);
   static void TraceHit(Handle<SharedFunctionInfo> key, Handle<Code> value);
@@ -189,6 +184,9 @@ class CompilationCacheCode : public CompilationSubCache {
 // compilation data is cached.
 class V8_EXPORT_PRIVATE CompilationCache {
  public:
+  CompilationCache(const CompilationCache&) = delete;
+  CompilationCache& operator=(const CompilationCache&) = delete;
+
   // Finds the script shared function info for a source
   // string. Returns an empty handle if the cache doesn't contain a
   // script for the given source string with the right origin.
@@ -210,8 +208,7 @@ class V8_EXPORT_PRIVATE CompilationCache {
   MaybeHandle<FixedArray> LookupRegExp(Handle<String> source,
                                        JSRegExp::Flags flags);
 
-  bool LookupCode(Handle<SharedFunctionInfo> sfi, MaybeHandle<Code>* code_out,
-                  MaybeHandle<SerializedFeedback>* feedback_out);
+  MaybeHandle<Code> LookupCode(Handle<SharedFunctionInfo> sfi);
 
   // Associate the (source, kind) pair to the shared function
   // info. This may overwrite an existing mapping.
@@ -231,9 +228,7 @@ class V8_EXPORT_PRIVATE CompilationCache {
   void PutRegExp(Handle<String> source, JSRegExp::Flags flags,
                  Handle<FixedArray> data);
 
-  void PutCode(Handle<SharedFunctionInfo> shared, Handle<Code> code,
-               Handle<SerializedFeedback> feedback);
-  void ClearDeoptimizedCode();
+  void PutCode(Handle<SharedFunctionInfo> shared, Handle<Code> code);
 
   // Clear the cache - also used to initialize the cache at startup.
   void Clear();
@@ -286,8 +281,6 @@ class V8_EXPORT_PRIVATE CompilationCache {
   bool enabled_script_and_eval_;
 
   friend class Isolate;
-
-  DISALLOW_COPY_AND_ASSIGN(CompilationCache);
 };
 
 }  // namespace internal

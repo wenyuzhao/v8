@@ -128,6 +128,7 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kIA32I64x2Mul:
     case kIA32I64x2ShrU:
     case kIA32I64x2BitMask:
+    case kIA32I64x2Eq:
     case kSSEF32x4Splat:
     case kAVXF32x4Splat:
     case kSSEF32x4ExtractLane:
@@ -281,6 +282,9 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kIA32Pinsrb:
     case kIA32Pinsrw:
     case kIA32Pinsrd:
+    case kIA32Pextrb:
+    case kIA32Pextrw:
+    case kIA32S128Store32Lane:
     case kSSEI8x16SConvertI16x8:
     case kAVXI8x16SConvertI16x8:
     case kIA32I8x16Neg:
@@ -376,11 +380,9 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kAVXS8x4Reverse:
     case kSSES8x2Reverse:
     case kAVXS8x2Reverse:
-    case kIA32V32x4AnyTrue:
+    case kIA32S128AnyTrue:
     case kIA32V32x4AllTrue:
-    case kIA32V16x8AnyTrue:
     case kIA32V16x8AllTrue:
-    case kIA32V8x16AnyTrue:
     case kIA32V8x16AllTrue:
       return (instr->addressing_mode() == kMode_None)
                  ? kNoOpcodeFlags

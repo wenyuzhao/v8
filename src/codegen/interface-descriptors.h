@@ -58,7 +58,7 @@ namespace internal {
   V(ConstructWithSpread_WithFeedback)    \
   V(ContextOnly)                         \
   V(CppBuiltinAdaptor)                   \
-  V(DynamicMapChecks)                    \
+  V(DynamicCheckMaps)                    \
   V(EphemeronKeyBarrier)                 \
   V(FastNewObject)                       \
   V(FrameDropperTrampoline)              \
@@ -132,6 +132,10 @@ class V8_EXPORT_PRIVATE CallInterfaceDescriptorData {
   using Flags = base::Flags<Flag>;
 
   CallInterfaceDescriptorData() = default;
+
+  CallInterfaceDescriptorData(const CallInterfaceDescriptorData&) = delete;
+  CallInterfaceDescriptorData& operator=(const CallInterfaceDescriptorData&) =
+      delete;
 
   // A copy of the passed in registers and param_representations is made
   // and owned by the CallInterfaceDescriptorData.
@@ -223,8 +227,6 @@ class V8_EXPORT_PRIVATE CallInterfaceDescriptorData {
   // runtime static initializers which we don't want.
   Register* register_params_ = nullptr;
   MachineType* machine_types_ = nullptr;
-
-  DISALLOW_COPY_AND_ASSIGN(CallInterfaceDescriptorData);
 };
 
 class V8_EXPORT_PRIVATE CallDescriptors : public AllStatic {
@@ -874,7 +876,7 @@ class LoadGlobalWithVectorDescriptor : public LoadGlobalDescriptor {
 #endif
 };
 
-class DynamicMapChecksDescriptor final : public CallInterfaceDescriptor {
+class DynamicCheckMapsDescriptor final : public CallInterfaceDescriptor {
  public:
   DEFINE_PARAMETERS(kSlot, kMap, kHandler)
   DEFINE_RESULT_AND_PARAMETER_TYPES(MachineType::Int32(),          // return val
@@ -882,7 +884,7 @@ class DynamicMapChecksDescriptor final : public CallInterfaceDescriptor {
                                     MachineType::TaggedPointer(),  // kMap
                                     MachineType::TaggedSigned())   // kHandler
 
-  DECLARE_DESCRIPTOR(DynamicMapChecksDescriptor, CallInterfaceDescriptor)
+  DECLARE_DESCRIPTOR(DynamicCheckMapsDescriptor, CallInterfaceDescriptor)
 };
 
 class FastNewObjectDescriptor : public CallInterfaceDescriptor {

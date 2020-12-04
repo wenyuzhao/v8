@@ -918,9 +918,6 @@ DEFINE_INT(wasm_max_initial_code_space_reservation, 0,
 DEFINE_BOOL(experimental_wasm_allow_huge_modules, false,
             "allow wasm modules bigger than 1GB, but below ~2GB")
 
-// Profiler flags.
-DEFINE_INT(frame_count, 1, "number of stack frames inspected by the profiler")
-
 DEFINE_INT(stress_sampling_allocation_profiler, 0,
            "Enables sampling allocation profiler with X as a sample interval")
 
@@ -1718,6 +1715,9 @@ DEFINE_BOOL(log_all, false, "Log all events to the log file.")
 DEFINE_BOOL(log_api, false, "Log API events to the log file.")
 DEFINE_BOOL(log_code, false,
             "Log code events to the log file without profiling.")
+DEFINE_BOOL(log_code_disassemble, false,
+            "Log all disassembled code to the log file.")
+DEFINE_IMPLICATION(log_code_disassemble, log_code)
 DEFINE_BOOL(log_handles, false, "Log global handle events.")
 DEFINE_BOOL(log_suspect, false, "Log suspect operations.")
 DEFINE_BOOL(log_source_code, false, "Log source code.")
@@ -1727,6 +1727,7 @@ DEFINE_BOOL(log_function_events, false,
 
 DEFINE_IMPLICATION(log_all, log_api)
 DEFINE_IMPLICATION(log_all, log_code)
+DEFINE_IMPLICATION(log_all, log_code_disassemble)
 DEFINE_IMPLICATION(log_all, log_suspect)
 DEFINE_IMPLICATION(log_all, log_handles)
 DEFINE_IMPLICATION(log_all, log_internal_timer_events)
