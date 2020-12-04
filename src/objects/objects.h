@@ -784,8 +784,7 @@ class MapWord {
     return map ^ Internals::kMapWordXorMask;
   }
   static constexpr Address Unpack(Address mapword) {
-    return (mapword & ~Internals::kMapWordMetadataMask) ^
-           Internals::kMapWordXorMask;
+    return (mapword & ~Internals::kMapWordMetadataMask) ^ Internals::kMapWordXorMask;
   }
   static constexpr bool IsPacked(Address mapword) {
     return (static_cast<intptr_t>(mapword) & Internals::kMapWordXorMask) ==
