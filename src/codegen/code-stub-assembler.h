@@ -1090,10 +1090,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
                              !std::is_base_of<T, Map>::value,
                          int>::type = 0>
   TNode<T> LoadObjectField(TNode<HeapObject> object, int offset) {
-    const MachineType machine_type = offset == HeapObject::kMapOffset
-                                         ? MachineType::MapInHeader()
-                                         : MachineTypeOf<T>::value;
-    return UncheckedCast<T>(LoadFromObject(machine_type, object,
+    return CAST(LoadFromObject(MachineTypeOf<T>::value, object,
                                IntPtrConstant(offset - kHeapObjectTag)));
   }
   template <class T, typename std::enable_if<
