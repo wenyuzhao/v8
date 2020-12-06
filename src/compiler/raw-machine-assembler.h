@@ -177,6 +177,14 @@ class V8_EXPORT_PRIVATE RawMachineAssembler {
     Node* load = AddNode(simplified()->LoadFromObject(access), base, offset);
     return load;
   }
+  Node* LoadFromObjectNoUnpack(
+      MachineType type, Node* base, Node* offset,
+      LoadSensitivity needs_poisoning = LoadSensitivity::kSafe) {
+    CHECK_EQ(needs_poisoning, LoadSensitivity::kSafe);
+    ObjectAccess access = {type, WriteBarrierKind::kNoWriteBarrier};
+    Node* load = AddNode(simplified()->LoadFromObject(access), base, offset);
+    return load;
+  }
 
   Node* Store(MachineRepresentation rep, Node* base, Node* value,
               WriteBarrierKind write_barrier) {

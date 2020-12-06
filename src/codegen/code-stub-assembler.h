@@ -1098,7 +1098,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
                          int>::type = 0>
   TNode<T> LoadObjectField(TNode<HeapObject> object, int offset) {
     return UncheckedCast<T>(
-        LoadFromObject(MachineTypeOf<T>::value, object,
+        LoadFromObjectNoUnpack(MachineTypeOf<T>::value, object,
                        IntPtrConstant(offset - kHeapObjectTag)));
   }
   TNode<Object> LoadObjectField(TNode<HeapObject> object, int offset) {
@@ -2764,11 +2764,10 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
 
   // Returns true if the given |object| is an memento object
   TNode<BoolT> IsMemento(TNode<HeapObject> object) {
-    TNode<HeapObject> map =
-        LoadObjectField<HeapObject>(object, HeapObject::kMapOffset);
-    CSA_ASSERT(this, IsMap(map));
-    return TaggedEqual(map, AllocationMementoMapConstant());
-  }
+  TNode<WordT> mapword = LoadObjectField<IntPtrT>(object, HeapObject::kMapOffset);
+  TNode<WordT> memento_mapword = ReinterpretCast<WordT>(LoadRootMapWord(RootIndex::kAllocationMementoMap));
+  return WordEqual(mapword, memento_mapword);
+}
 
   void SetCounter(StatsCounter* counter, int value);
   void IncrementCounter(StatsCounter* counter, int delta);
