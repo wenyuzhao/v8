@@ -708,8 +708,9 @@ Node* CodeAssembler::LoadFromObject(MachineType type, TNode<Object> object,
   return raw_assembler()->LoadFromObject(type, object, offset);
 }
 
-Node* CodeAssembler::LoadFromObjectNoUnpack(MachineType type, TNode<Object> object,
-                                    TNode<IntPtrT> offset) {
+Node* CodeAssembler::LoadFromObjectNoUnpack(MachineType type,
+                                            TNode<Object> object,
+                                            TNode<IntPtrT> offset) {
   return raw_assembler()->LoadFromObjectNoUnpack(type, object, offset);
 }
 
