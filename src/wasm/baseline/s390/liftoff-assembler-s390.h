@@ -5,8 +5,11 @@
 #ifndef V8_WASM_BASELINE_S390_LIFTOFF_ASSEMBLER_S390_H_
 #define V8_WASM_BASELINE_S390_LIFTOFF_ASSEMBLER_S390_H_
 
+#include "src/base/platform/wrappers.h"
+#include "src/codegen/assembler.h"
+#include "src/heap/memory-chunk.h"
 #include "src/wasm/baseline/liftoff-assembler.h"
-
+#include "src/wasm/simd-shuffle.h"
 
 namespace v8 {
 namespace internal {
@@ -79,11 +82,12 @@ inline constexpr bool UseSignedOp(LiftoffCondition liftoff_cond) {
 //
 constexpr int32_t kInstanceOffset = 2 * kSystemPointerSize;
 
-inline MemOperand GetHalfStackSlot(int offset, RegPairHalf half) {
-  int32_t half_offset =
-      half == kLowWord ? 0 : LiftoffAssembler::kStackSlotSize / 2;
-  return MemOperand(fp, -offset + half_offset);
+inline MemOperand GetStackSlot(uint32_t offset) {
+  return MemOperand(fp, -offset);
 }
+
+inline MemOperand GetInstanceOperand() { return GetStackSlot(kInstanceOffset); }
+
 
 }  // namespace liftoff
 
@@ -291,12 +295,11 @@ void LiftoffAssembler::FillStackSlotsWithZero(int start, int size) {
     // instructions per slot.
     uint32_t remainder = size;
     for (; remainder >= kStackSlotSize; remainder -= kStackSlotSize) {
-      StoreP(r0, liftoff::GetHalfStackSlot(start + remainder, kLowWord));
-      StoreP(r0, liftoff::GetHalfStackSlot(start + remainder, kHighWord));
+      StoreP(r0, liftoff::GetStackSlot(start + remainder));
     }
     DCHECK(remainder == 4 || remainder == 0);
     if (remainder) {
-      StoreP(r0, liftoff::GetHalfStackSlot(start + remainder, kLowWord));
+      StoreW(r0, liftoff::GetStackSlot(start + remainder));
     }
   } else {
     // General case for bigger counts (9 instructions).
@@ -405,8 +408,6 @@ UNIMPLEMENTED_FP_BINOP(f32_add)
 UNIMPLEMENTED_FP_BINOP(f32_sub)
 UNIMPLEMENTED_FP_BINOP(f32_mul)
 UNIMPLEMENTED_FP_BINOP(f32_div)
-UNIMPLEMENTED_FP_BINOP(f32_min)
-UNIMPLEMENTED_FP_BINOP(f32_max)
 UNIMPLEMENTED_FP_BINOP(f32_copysign)
 UNIMPLEMENTED_FP_UNOP(f32_abs)
 UNIMPLEMENTED_FP_UNOP(f32_neg)
@@ -419,8 +420,6 @@ UNIMPLEMENTED_FP_BINOP(f64_add)
 UNIMPLEMENTED_FP_BINOP(f64_sub)
 UNIMPLEMENTED_FP_BINOP(f64_mul)
 UNIMPLEMENTED_FP_BINOP(f64_div)
-UNIMPLEMENTED_FP_BINOP(f64_min)
-UNIMPLEMENTED_FP_BINOP(f64_max)
 UNIMPLEMENTED_FP_BINOP(f64_copysign)
 UNIMPLEMENTED_FP_UNOP(f64_abs)
 UNIMPLEMENTED_FP_UNOP(f64_neg)
@@ -455,6 +454,42 @@ bool LiftoffAssembler::emit_i64_popcnt(LiftoffRegister dst,
 void LiftoffAssembler::emit_i64_addi(LiftoffRegister dst, LiftoffRegister lhs,
                                      int64_t imm) {
   bailout(kUnsupportedArchitecture, "i64_addi");
+}
+
+void LiftoffAssembler::emit_f64_min(DoubleRegister dst, DoubleRegister lhs,
+                                    DoubleRegister rhs) {
+  if (CpuFeatures::IsSupported(VECTOR_ENHANCE_FACILITY_1)) {
+    vfmin(dst, lhs, rhs, Condition(1), Condition(8), Condition(3));
+    return;
+  }
+  DoubleMin(dst, lhs, rhs);
+}
+
+void LiftoffAssembler::emit_f32_min(DoubleRegister dst, DoubleRegister lhs,
+                                    DoubleRegister rhs) {
+  if (CpuFeatures::IsSupported(VECTOR_ENHANCE_FACILITY_1)) {
+    vfmin(dst, lhs, rhs, Condition(1), Condition(8), Condition(2));
+    return;
+  }
+  FloatMin(dst, lhs, rhs);
+}
+
+void LiftoffAssembler::emit_f64_max(DoubleRegister dst, DoubleRegister lhs,
+                                    DoubleRegister rhs) {
+  if (CpuFeatures::IsSupported(VECTOR_ENHANCE_FACILITY_1)) {
+    vfmax(dst, lhs, rhs, Condition(1), Condition(8), Condition(3));
+    return;
+  }
+  DoubleMax(dst, lhs, rhs);
+}
+
+void LiftoffAssembler::emit_f32_max(DoubleRegister dst, DoubleRegister lhs,
+                                    DoubleRegister rhs) {
+  if (CpuFeatures::IsSupported(VECTOR_ENHANCE_FACILITY_1)) {
+    vfmax(dst, lhs, rhs, Condition(1), Condition(8), Condition(2));
+    return;
+  }
+  FloatMax(dst, lhs, rhs);
 }
 
 void LiftoffAssembler::emit_i32_divs(Register dst, Register lhs, Register rhs,
