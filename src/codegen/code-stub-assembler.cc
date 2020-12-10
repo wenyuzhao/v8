@@ -10533,9 +10533,12 @@ void CodeStubAssembler::TrapAllocationMemento(TNode<JSObject> object,
   // Memento map check.
   BIND(&map_check);
   {
-    TNode<AnyTaggedT> maybe_mapword = LoadObjectField(object, kMementoMapOffset);
-    TNode<AnyTaggedT> memento_mapword = LoadRootMapWord(RootIndex::kAllocationMementoMap);
-    Branch(TaggedEqual(maybe_mapword, memento_mapword), memento_found, &no_memento_found);
+    TNode<AnyTaggedT> maybe_mapword =
+        LoadObjectField(object, kMementoMapOffset);
+    TNode<AnyTaggedT> memento_mapword =
+        LoadRootMapWord(RootIndex::kAllocationMementoMap);
+    Branch(TaggedEqual(maybe_mapword, memento_mapword), memento_found,
+           &no_memento_found);
   }
   BIND(&no_memento_found);
   Comment("] TrapAllocationMemento");

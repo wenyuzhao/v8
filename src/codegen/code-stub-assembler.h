@@ -1103,7 +1103,9 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
                          std::is_convertible<TNode<T>, TNode<UntaggedT>>::value,
                          int>::type = 0>
   TNode<T> LoadObjectField(TNode<HeapObject> object, int offset) {
-    return UncheckedCast<T>(LoadFromObject(MachineTypeOf<T>::value, object, IntPtrConstant(offset - kHeapObjectTag)));
+    return UncheckedCast<T>(
+        LoadFromObject(MachineTypeOf<T>::value, object,
+                       IntPtrConstant(offset - kHeapObjectTag)));
   }
   TNode<Object> LoadObjectField(TNode<HeapObject> object, int offset) {
     return UncheckedCast<Object>(
