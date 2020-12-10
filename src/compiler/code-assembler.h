@@ -766,8 +766,6 @@ class V8_EXPORT_PRIVATE CodeAssembler {
 
   Node* LoadFromObject(MachineType type, TNode<Object> object,
                        TNode<IntPtrT> offset);
-  Node* LoadFromObjectNoUnpack(MachineType type, TNode<Object> object,
-                               TNode<IntPtrT> offset);
 
 #ifdef V8_MAP_PACKING
   Node* PackMapWord(Node* value);
@@ -775,7 +773,7 @@ class V8_EXPORT_PRIVATE CodeAssembler {
 
   // Load a value from the root array.
   TNode<Object> LoadRoot(RootIndex root_index);
-  Node* LoadRootMapWord(RootIndex root_index);
+  TNode<AnyTaggedT> LoadRootMapWord(RootIndex root_index);
 
   // Store value to raw memory location.
   void Store(Node* base, Node* value);

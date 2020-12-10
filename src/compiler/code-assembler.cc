@@ -708,12 +708,6 @@ Node* CodeAssembler::LoadFromObject(MachineType type, TNode<Object> object,
   return raw_assembler()->LoadFromObject(type, object, offset);
 }
 
-Node* CodeAssembler::LoadFromObjectNoUnpack(MachineType type,
-                                            TNode<Object> object,
-                                            TNode<IntPtrT> offset) {
-  return raw_assembler()->LoadFromObjectNoUnpack(type, object, offset);
-}
-
 #ifdef V8_MAP_PACKING
 Node* CodeAssembler::PackMapWord(Node* value) {
   Node* map_word = BitcastTaggedToWordForTagAndSmiBits(value);
@@ -722,12 +716,12 @@ Node* CodeAssembler::PackMapWord(Node* value) {
 }
 #endif
 
-Node* CodeAssembler::LoadRootMapWord(RootIndex root_index) {
+TNode<AnyTaggedT> CodeAssembler::LoadRootMapWord(RootIndex root_index) {
 #ifdef V8_MAP_PACKING
   Handle<Object> root = isolate()->root_handle(root_index);
   Node* map = HeapConstant(Handle<HeapObject>::cast(root));
   map = PackMapWord(map);
-  return map;
+  return ReinterpretCast<AnyTaggedT>(map);
 #else
   return LoadRoot(root_index);
 #endif

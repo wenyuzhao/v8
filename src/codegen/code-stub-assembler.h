@@ -1103,9 +1103,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
                          std::is_convertible<TNode<T>, TNode<UntaggedT>>::value,
                          int>::type = 0>
   TNode<T> LoadObjectField(TNode<HeapObject> object, int offset) {
-    return UncheckedCast<T>(
-        LoadFromObjectNoUnpack(MachineTypeOf<T>::value, object,
-                               IntPtrConstant(offset - kHeapObjectTag)));
+    return UncheckedCast<T>(LoadFromObject(MachineTypeOf<T>::value, object, IntPtrConstant(offset - kHeapObjectTag)));
   }
   TNode<Object> LoadObjectField(TNode<HeapObject> object, int offset) {
     return UncheckedCast<Object>(
@@ -2783,15 +2781,6 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
     return IntPtrEqual(WordAnd(word, IntPtrConstant(mask)), IntPtrConstant(0));
   }
 
-  // Returns true if the given |object| is an memento object
-  TNode<BoolT> IsMemento(TNode<HeapObject> object) {
-    TNode<WordT> mapword =
-        LoadObjectField<IntPtrT>(object, HeapObject::kMapOffset);
-    TNode<WordT> memento_mapword = ReinterpretCast<WordT>(
-        LoadRootMapWord(RootIndex::kAllocationMementoMap));
-    return WordEqual(mapword, memento_mapword);
-  }
-
   void SetCounter(StatsCounter* counter, int value);
   void IncrementCounter(StatsCounter* counter, int delta);
   void DecrementCounter(StatsCounter* counter, int delta);
@@ -3807,7 +3796,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
     return CodeAssembler::LoadRoot(root_index);
   }
 
-  Node* LoadRootMapWord(RootIndex root_index) {
+  TNode<AnyTaggedT> LoadRootMapWord(RootIndex root_index) {
     return CodeAssembler::LoadRootMapWord(root_index);
   }
 
