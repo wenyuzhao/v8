@@ -287,7 +287,7 @@ void GenerateFieldValueAccessor(const Field& field,
               << ", reinterpret_cast<uint8_t*>(&value), sizeof(value));\n";
 #ifdef V8_MAP_PACKING
   if (field_getter == "GetMapValue") {
-    cc_contents << "value = i::MapWord::Unpack(value);\n";
+    cc_contents << "  value = i::MapWord::Unpack(value);\n";
   }
 #endif
   cc_contents << "  return {validity, "

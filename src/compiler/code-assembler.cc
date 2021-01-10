@@ -681,6 +681,7 @@ TNode<Object> CodeAssembler::LoadFullTagged(Node* base,
 
 TNode<Object> CodeAssembler::LoadFullTagged(Node* base, Node* offset,
                                             LoadSensitivity needs_poisoning) {
+  // Please use LoadFromObject(MachineType::MapInHeader(), object, IntPtrConstant(-kHeapObjectTag)) instead.
   DCHECK(!raw_assembler()->IsMapOffsetConstantMinusTag(offset));
   return BitcastWordToTagged(
       Load(MachineType::Pointer(), base, offset, needs_poisoning));
@@ -810,6 +811,7 @@ void CodeAssembler::OptimizedStoreMap(TNode<HeapObject> object,
 }
 
 void CodeAssembler::Store(Node* base, Node* offset, Node* value) {
+  // Please use OptimizedStoreMap(base, value) instead.
   DCHECK(!raw_assembler()->IsMapOffsetConstantMinusTag(offset));
   raw_assembler()->Store(MachineRepresentation::kTagged, base, offset, value,
                          kFullWriteBarrier);
@@ -830,6 +832,7 @@ void CodeAssembler::StoreNoWriteBarrier(MachineRepresentation rep, Node* base,
 
 void CodeAssembler::StoreNoWriteBarrier(MachineRepresentation rep, Node* base,
                                         Node* offset, Node* value) {
+  // Please use OptimizedStoreMap(base, value) instead.
   DCHECK(!raw_assembler()->IsMapOffsetConstantMinusTag(offset));
   raw_assembler()->Store(
       rep, base, offset, value,
@@ -844,6 +847,7 @@ void CodeAssembler::UnsafeStoreNoWriteBarrier(MachineRepresentation rep,
 void CodeAssembler::UnsafeStoreNoWriteBarrier(MachineRepresentation rep,
                                               Node* base, Node* offset,
                                               Node* value) {
+  // Please use OptimizedStoreMap(base, value) instead.
   DCHECK(!raw_assembler()->IsMapOffsetConstantMinusTag(offset));
   raw_assembler()->Store(rep, base, offset, value, kNoWriteBarrier);
 }
@@ -857,6 +861,7 @@ void CodeAssembler::StoreFullTaggedNoWriteBarrier(TNode<RawPtrT> base,
 void CodeAssembler::StoreFullTaggedNoWriteBarrier(TNode<RawPtrT> base,
                                                   TNode<IntPtrT> offset,
                                                   TNode<Object> tagged_value) {
+  // Please use OptimizedStoreMap(base, tagged_value) instead.
   DCHECK(!raw_assembler()->IsMapOffsetConstantMinusTag(offset));
   StoreNoWriteBarrier(MachineType::PointerRepresentation(), base, offset,
                       BitcastTaggedToWord(tagged_value));

@@ -149,7 +149,6 @@ TypedObject GetTypedHeapObject(uintptr_t address, d::MemoryAccessor accessor,
             std::move(heap_object)};
   }
 
-  DCHECK(!v8::internal::MapWord::IsPacked(map_ptr.value));
   Value<i::InstanceType> type =
       TqMap(map_ptr.value).GetInstanceTypeValue(accessor);
   if (type.validity == d::MemoryAccessResult::kOk) {

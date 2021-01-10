@@ -1487,6 +1487,7 @@ TNode<Object> CodeStubAssembler::LoadFromParentFrame(int offset) {
 
 TNode<IntPtrT> CodeStubAssembler::LoadAndUntagObjectField(
     TNode<HeapObject> object, int offset) {
+  // Please use LoadMap(object) instead.
   DCHECK_NE(offset, HeapObject::kMapOffset);
   if (SmiValuesAre32Bits()) {
 #if V8_TARGET_LITTLE_ENDIAN
@@ -1500,6 +1501,7 @@ TNode<IntPtrT> CodeStubAssembler::LoadAndUntagObjectField(
 
 TNode<Int32T> CodeStubAssembler::LoadAndUntagToWord32ObjectField(
     TNode<HeapObject> object, int offset) {
+  // Please use LoadMap(object) instead.
   DCHECK_NE(offset, HeapObject::kMapOffset);
   if (SmiValuesAre32Bits()) {
 #if V8_TARGET_LITTLE_ENDIAN
