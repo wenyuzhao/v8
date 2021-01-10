@@ -234,6 +234,7 @@ const kWasmOpcodes = {
   'ReturnCallIndirect': 0x13,
   'CallRef': 0x14,
   'ReturnCallRef': 0x15,
+  'Delegate': 0x16,
   'Let': 0x17,
   'Drop': 0x1a,
   'Select': 0x1b,
@@ -576,6 +577,7 @@ let kExprI32x4ExtractLane = 0x1b;
 let kExprI32x4ReplaceLane = 0x1c;
 let kExprI64x2ReplaceLane = 0x1e;
 let kExprF32x4ReplaceLane = 0x20;
+let kExprF64x2ExtractLane = 0x21;
 let kExprF64x2ReplaceLane = 0x22;
 let kExprI8x16Eq = 0x23;
 let kExprI8x16Ne = 0x24;
@@ -738,7 +740,7 @@ let kTrapFuncSigMismatch      = 7;
 let kTrapUnalignedAccess      = 8;
 let kTrapDataSegmentDropped   = 9;
 let kTrapElemSegmentDropped   = 10;
-let kTrapRethrowNull          = 12;
+let kTrapRethrowNull          = 11;
 
 let kTrapMsgs = [
   "unreachable",
@@ -752,7 +754,6 @@ let kTrapMsgs = [
   "operation does not support unaligned accesses",
   "data segment has been dropped",
   "element segment has been dropped",
-  "br_on_exn on null value",
   "rethrowing null value"
 ];
 

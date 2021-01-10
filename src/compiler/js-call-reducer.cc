@@ -2613,10 +2613,10 @@ Reduction JSCallReducer::ReduceFunctionPrototypeBind(Node* node) {
     }
 
     // Check for consistency among the {receiver_maps}.
-    STATIC_ASSERT(LAST_TYPE == LAST_FUNCTION_TYPE);
     if (!receiver_map.prototype().equals(prototype) ||
         receiver_map.is_constructor() != is_constructor ||
-        receiver_map.instance_type() < FIRST_FUNCTION_TYPE) {
+        !InstanceTypeChecker::IsJSFunctionOrBoundFunction(
+            receiver_map.instance_type())) {
       return inference.NoChange();
     }
 
@@ -6009,7 +6009,7 @@ Reduction JSCallReducer::ReduceStringPrototypeStartsWith(Node* node) {
     ObjectRef target_ref = m.Ref(broker());
     if (target_ref.IsString()) {
       StringRef str = target_ref.AsString();
-      if (str.length() == 1) {
+      if (str.length().has_value() && str.length().value() == 1) {
         receiver = effect = graph()->NewNode(
             simplified()->CheckString(p.feedback()), receiver, effect, control);
 
@@ -6040,7 +6040,7 @@ Reduction JSCallReducer::ReduceStringPrototypeStartsWith(Node* node) {
               graph()->NewNode(simplified()->StringCharCodeAt(), receiver,
                                masked_position, etrue, if_true);
 
-          Node* search_first = jsgraph()->Constant(str.GetFirstChar());
+          Node* search_first = jsgraph()->Constant(str.GetFirstChar().value());
           vtrue = graph()->NewNode(simplified()->NumberEqual(), string_first,
                                    search_first);
         }

@@ -61,12 +61,12 @@ function checkError(message) {
 
 let found_good_profile = false;
 let found_wasm_script_id;
+let wasm_position;
 let finished_profiles = 0;
 Protocol.Profiler.onConsoleProfileFinished(e => {
   ++finished_profiles;
-  let function_names =
-      e.params.profile.nodes.map(n => n.callFrame.functionName);
-  let script_ids = e.params.profile.nodes.map(n => n.callFrame.scriptId);
+  let nodes = e.params.profile.nodes;
+  let function_names = nodes.map(n => n.callFrame.functionName);
   // Enable this line for debugging:
   // InspectorTest.log(function_names.join(', '));
   // Check for at least one full cycle of
@@ -80,7 +80,10 @@ Protocol.Profiler.onConsoleProfileFinished(e => {
   for (let i = 0; i <= function_names.length - expected.length; ++i) {
     if (expected.every((val, idx) => val.includes(function_names[i + idx]))) {
       found_good_profile = true;
-      found_wasm_script_id = script_ids[i] != 0;
+      let wasm_frame = nodes[i].callFrame;
+      found_wasm_script_id = wasm_frame.scriptId != 0;
+      wasm_position = `${wasm_frame.url}@${wasm_frame.lineNumber}:${
+          wasm_frame.columnNumber}`;
     }
   }
 });
@@ -106,6 +109,7 @@ async function runFibUntilProfileFound() {
   InspectorTest.log('Found expected functions in profile.');
   InspectorTest.log(
       'Wasm script id is ' + (found_wasm_script_id ? 'set.' : 'NOT SET.'));
+  InspectorTest.log('Wasm position: ' + wasm_position);
 }
 
 async function compileWasm() {
@@ -118,26 +122,50 @@ async function compileWasm() {
 
 async function testEnableProfilerEarly() {
   InspectorTest.log(arguments.callee.name);
-  Protocol.Profiler.enable();
+  checkError(await Protocol.Profiler.enable());
   checkError(await Protocol.Profiler.start());
   await compileWasm();
   await runFibUntilProfileFound();
-  Protocol.Profiler.disable();
+  checkError(await Protocol.Profiler.disable());
 }
 
 async function testEnableProfilerLate() {
   InspectorTest.log(arguments.callee.name);
   await compileWasm();
-  Protocol.Profiler.enable();
+  checkError(await Protocol.Profiler.enable());
   checkError(await Protocol.Profiler.start());
   await runFibUntilProfileFound();
-  Protocol.Profiler.disable();
+  checkError(await Protocol.Profiler.disable());
+}
+
+async function testEnableProfilerAfterDebugger() {
+  InspectorTest.log(arguments.callee.name);
+  checkError(await Protocol.Debugger.enable());
+  await compileWasm();
+  checkError(await Protocol.Profiler.enable());
+  checkError(await Protocol.Profiler.start());
+  await runFibUntilProfileFound();
+  checkError(await Protocol.Profiler.disable());
+  checkError(await Protocol.Debugger.disable());
+}
+
+async function testEnableProfilerBeforeDebugger() {
+  InspectorTest.log(arguments.callee.name);
+  await compileWasm();
+  await Protocol.Profiler.enable();
+  await Protocol.Debugger.enable();
+  checkError(await Protocol.Profiler.start());
+  await runFibUntilProfileFound();
+  await Protocol.Debugger.disable();
+  await Protocol.Profiler.disable();
 }
 
 (async function test() {
   try {
     await testEnableProfilerEarly();
     await testEnableProfilerLate();
+    await testEnableProfilerAfterDebugger();
+    await testEnableProfilerBeforeDebugger();
   } catch (e) {
     InspectorTest.log('caught: ' + e);
   }

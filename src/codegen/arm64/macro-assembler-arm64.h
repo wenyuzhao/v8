@@ -931,6 +931,8 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   inline void JumpIfEqual(Register x, int32_t y, Label* dest);
   inline void JumpIfLessThan(Register x, int32_t y, Label* dest);
 
+  void LoadMap(Register dst, Register object);
+
   inline void Fmov(VRegister fd, VRegister fn);
   inline void Fmov(VRegister fd, Register rn);
   // Provide explicit double and float interfaces for FP immediate moves, rather
@@ -1300,6 +1302,10 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
     DCHECK(allow_macro_instructions());
     cmeq(vd, vn, imm);
   }
+  void Cmlt(const VRegister& vd, const VRegister& vn, int imm) {
+    DCHECK(allow_macro_instructions());
+    cmlt(vd, vn, imm);
+  }
 
   inline void Neg(const Register& rd, const Operand& operand);
   inline void Negs(const Register& rd, const Operand& operand);
@@ -1434,7 +1440,7 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
 
   void CallRecordWriteStub(Register object, Operand offset,
                            RememberedSetAction remembered_set_action,
-                           SaveFPRegsMode fp_mode, Handle<Code> code_target,
+                           SaveFPRegsMode fp_mode, int builtin_index,
                            Address wasm_target);
 };
 
@@ -1547,10 +1553,6 @@ class V8_EXPORT_PRIVATE MacroAssembler : public TurboAssembler {
   void Cmle(const VRegister& vd, const VRegister& vn, int imm) {
     DCHECK(allow_macro_instructions());
     cmle(vd, vn, imm);
-  }
-  void Cmlt(const VRegister& vd, const VRegister& vn, int imm) {
-    DCHECK(allow_macro_instructions());
-    cmlt(vd, vn, imm);
   }
 
   void Ld1(const VRegister& vt, const MemOperand& src) {
@@ -1965,8 +1967,6 @@ class V8_EXPORT_PRIVATE MacroAssembler : public TurboAssembler {
   //  * The exit frame is dropped.
   void LeaveExitFrame(bool save_doubles, const Register& scratch,
                       const Register& scratch2);
-
-  void LoadMap(Register dst, Register object);
 
   // Load the global proxy from the current context.
   void LoadGlobalProxy(Register dst);

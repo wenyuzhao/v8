@@ -765,7 +765,9 @@ void Simulator::EvalTableInit() {
   V(vs, VS, 0xE7F7)       /* type = VRR_C VECTOR SUBTRACT  */                  \
   V(vml, VML, 0xE7A2)     /* type = VRR_C VECTOR MULTIPLY LOW  */              \
   V(vme, VME, 0xE7A6)     /* type = VRR_C VECTOR MULTIPLY EVEN  */             \
+  V(vmle, VMLE, 0xE7A4)   /* type = VRR_C VECTOR MULTIPLY EVEN LOGICAL */      \
   V(vmo, VMO, 0xE7A7)     /* type = VRR_C VECTOR MULTIPLY ODD  */              \
+  V(vmlo, VMLO, 0xE7A75)  /* type = VRR_C VECTOR MULTIPLY LOGICAL ODD */       \
   V(vnc, VNC, 0xE769)     /* type = VRR_C VECTOR AND WITH COMPLEMENT */        \
   V(vsum, VSUM, 0xE764)   /* type = VRR_C VECTOR SUM ACROSS WORD  */           \
   V(vsumg, VSUMG, 0xE765) /* type = VRR_C VECTOR SUM ACROSS DOUBLEWORD  */     \
@@ -2913,7 +2915,7 @@ EVALUATE(VST) {
 }
 
 EVALUATE(VL) {
-  DCHECK(VL);
+  DCHECK_OPCODE(VL);
   DECODE_VRX_INSTRUCTION(r1, x2, b2, d2, m3);
   USE(m3);
   intptr_t addr = GET_ADDRESS(x2, b2, d2);
@@ -2930,7 +2932,7 @@ EVALUATE(VL) {
         r1, i, abs(get_simd_register_by_lane<type>(r2, i)));            \
   }
 EVALUATE(VLP) {
-  DCHECK(VL);
+  DCHECK_OPCODE(VLP);
   DECODE_VRR_A_INSTRUCTION(r1, r2, m5, m4, m3);
   USE(m5);
   USE(m4);
@@ -2967,7 +2969,7 @@ EVALUATE(VLP) {
         r1, i, (static_cast<type>(src0) + static_cast<type>(src1) + 1) >> 1); \
   }
 EVALUATE(VAVGL) {
-  DCHECK(VL);
+  DCHECK_OPCODE(VAVGL);
   DECODE_VRR_C_INSTRUCTION(r1, r2, r3, m6, m5, m4);
   USE(m6);
   USE(m5);
@@ -3181,7 +3183,7 @@ inline static void VectorBinaryOp(Simulator* sim, int dst, int src1, int src2,
   }
 
 EVALUATE(VA) {
-  DCHECK(VA);
+  DCHECK_OPCODE(VA);
   DECODE_VRR_C_INSTRUCTION(r1, r2, r3, m6, m5, m4);
   USE(m5);
   USE(m6);
@@ -3220,29 +3222,32 @@ EVALUATE(VML) {
     input_type src1 = get_simd_register_by_lane<input_type>(r3, i);        \
     set_simd_register_by_lane<result_type>(r1, k, src0 * src1);            \
   }
-#define VECTOR_MULTIPLY_EVEN_ODD(r1, r2, r3, is_odd)                      \
-  switch (m4) {                                                           \
-    case 0: {                                                             \
-      VECTOR_MULTIPLY_EVEN_ODD_TYPE(r1, r2, r3, int8_t, int16_t, is_odd)  \
-      break;                                                              \
-    }                                                                     \
-    case 1: {                                                             \
-      VECTOR_MULTIPLY_EVEN_ODD_TYPE(r1, r2, r3, int16_t, int32_t, is_odd) \
-      break;                                                              \
-    }                                                                     \
-    case 2: {                                                             \
-      VECTOR_MULTIPLY_EVEN_ODD_TYPE(r1, r2, r3, int32_t, int64_t, is_odd) \
-      break;                                                              \
-    }                                                                     \
-    default:                                                              \
-      UNREACHABLE();                                                      \
+#define VECTOR_MULTIPLY_EVEN_ODD(r1, r2, r3, is_odd, sign)                    \
+  switch (m4) {                                                               \
+    case 0: {                                                                 \
+      VECTOR_MULTIPLY_EVEN_ODD_TYPE(r1, r2, r3, sign##int8_t, sign##int16_t,  \
+                                    is_odd)                                   \
+      break;                                                                  \
+    }                                                                         \
+    case 1: {                                                                 \
+      VECTOR_MULTIPLY_EVEN_ODD_TYPE(r1, r2, r3, sign##int16_t, sign##int32_t, \
+                                    is_odd)                                   \
+      break;                                                                  \
+    }                                                                         \
+    case 2: {                                                                 \
+      VECTOR_MULTIPLY_EVEN_ODD_TYPE(r1, r2, r3, sign##int32_t, sign##int64_t, \
+                                    is_odd)                                   \
+      break;                                                                  \
+    }                                                                         \
+    default:                                                                  \
+      UNREACHABLE();                                                          \
   }
 EVALUATE(VME) {
   DCHECK_OPCODE(VME);
   DECODE_VRR_C_INSTRUCTION(r1, r2, r3, m6, m5, m4);
   USE(m5);
   USE(m6);
-  VECTOR_MULTIPLY_EVEN_ODD(r1, r2, r3, false)
+  VECTOR_MULTIPLY_EVEN_ODD(r1, r2, r3, false, )
   return length;
 }
 
@@ -3251,14 +3256,31 @@ EVALUATE(VMO) {
   DECODE_VRR_C_INSTRUCTION(r1, r2, r3, m6, m5, m4);
   USE(m5);
   USE(m6);
-  VECTOR_MULTIPLY_EVEN_ODD(r1, r2, r3, true)
+  VECTOR_MULTIPLY_EVEN_ODD(r1, r2, r3, true, )
+  return length;
+}
+EVALUATE(VMLE) {
+  DCHECK_OPCODE(VMLE);
+  DECODE_VRR_C_INSTRUCTION(r1, r2, r3, m6, m5, m4);
+  USE(m5);
+  USE(m6);
+  VECTOR_MULTIPLY_EVEN_ODD(r1, r2, r3, false, u)
+  return length;
+}
+
+EVALUATE(VMLO) {
+  DCHECK_OPCODE(VMLO);
+  DECODE_VRR_C_INSTRUCTION(r1, r2, r3, m6, m5, m4);
+  USE(m5);
+  USE(m6);
+  VECTOR_MULTIPLY_EVEN_ODD(r1, r2, r3, true, u)
   return length;
 }
 #undef VECTOR_MULTIPLY_EVEN_ODD
 #undef VECTOR_MULTIPLY_EVEN_ODD_TYPE
 
 EVALUATE(VNC) {
-  DCHECK(VNC);
+  DCHECK_OPCODE(VNC);
   DECODE_VRR_C_INSTRUCTION(r1, r2, r3, m6, m5, m4);
   USE(m6);
   USE(m5);
@@ -3295,8 +3317,8 @@ EVALUATE(VSUM) {
   USE(m6);
   USE(m5);
   switch (m4) {
-    CASE(1, int8_t, int32_t);
-    CASE(2, int16_t, int32_t);
+    CASE(0, uint8_t, uint32_t);
+    CASE(1, uint16_t, uint32_t);
     default:
       UNREACHABLE();
   }
@@ -3309,8 +3331,8 @@ EVALUATE(VSUMG) {
   USE(m6);
   USE(m5);
   switch (m4) {
-    CASE(1, int16_t, int64_t);
-    CASE(2, int32_t, int64_t);
+    CASE(1, uint16_t, uint64_t);
+    CASE(2, uint32_t, uint64_t);
     default:
       UNREACHABLE();
   }
@@ -3350,9 +3372,9 @@ EVALUATE(VPK) {
   USE(m6);
   USE(m5);
   switch (m4) {
-    CASE(1, int16_t, int8_t, false, 0, 0);
-    CASE(2, int32_t, int16_t, false, 0, 0);
-    CASE(3, int64_t, int32_t, false, 0, 0);
+    CASE(1, uint16_t, uint8_t, false, 0, 0);
+    CASE(2, uint32_t, uint16_t, false, 0, 0);
+    CASE(3, uint64_t, uint32_t, false, 0, 0);
     default:
       UNREACHABLE();
   }
@@ -3626,7 +3648,7 @@ EVALUATE(VX) {
     set_simd_register_by_lane<type>(r1, i, ~(src0 | src1));             \
   }
 EVALUATE(VNO) {
-  DCHECK(VL);
+  DCHECK_OPCODE(VNO);
   DECODE_VRR_C_INSTRUCTION(r1, r2, r3, m6, m5, m4);
   USE(m6);
   USE(m5);
@@ -3711,11 +3733,11 @@ EVALUATE(VBPERM) {
   USE(m5);
   USE(m6);
   uint16_t result_bits = 0;
+  unsigned __int128 src_bits =
+      *(reinterpret_cast<__int128*>(get_simd_register(r2).int8));
   for (int i = 0; i < kSimd128Size; i++) {
     result_bits <<= 1;
     uint8_t selected_bit_index = get_simd_register_by_lane<uint8_t>(r3, i);
-    unsigned __int128 src_bits =
-        *(reinterpret_cast<__int128*>(get_simd_register(r2).int8));
     if (selected_bit_index < (kSimd128Size * kBitsPerByte)) {
       unsigned __int128 bit_value =
           (src_bits << selected_bit_index) >> (kSimd128Size * kBitsPerByte - 1);
@@ -5892,29 +5914,35 @@ EVALUATE(OILL) {
 }
 
 EVALUATE(LLIHH) {
-  UNIMPLEMENTED();
-  USE(instr);
-  return 0;
+  DCHECK_OPCODE(LLIHL);
+  DECODE_RI_A_INSTRUCTION(instr, r1, i2);
+  uint64_t imm = static_cast<uint64_t>(i2) & 0xffff;
+  set_register(r1, imm << 48);
+  return length;
 }
 
 EVALUATE(LLIHL) {
-  UNIMPLEMENTED();
-  USE(instr);
-  return 0;
+  DCHECK_OPCODE(LLIHL);
+  DECODE_RI_A_INSTRUCTION(instr, r1, i2);
+  uint64_t imm = static_cast<uint64_t>(i2) & 0xffff;
+  set_register(r1, imm << 32);
+  return length;
 }
 
 EVALUATE(LLILH) {
   DCHECK_OPCODE(LLILH);
   DECODE_RI_A_INSTRUCTION(instr, r1, i2);
-  uint64_t imm = static_cast<uint64_t>(i2);
-  set_register(r1, (imm << 48) >> 32);
+  uint64_t imm = static_cast<uint64_t>(i2) & 0xffff;
+  set_register(r1, imm << 16);
   return length;
 }
 
 EVALUATE(LLILL) {
-  UNIMPLEMENTED();
-  USE(instr);
-  return 0;
+  DCHECK_OPCODE(LLILL);
+  DECODE_RI_A_INSTRUCTION(instr, r1, i2);
+  uint64_t imm = static_cast<uint64_t>(i2) & 0xffff;
+  set_register(r1, imm);
+  return length;
 }
 
 inline static int TestUnderMask(uint16_t val, uint16_t mask,

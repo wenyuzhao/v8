@@ -396,6 +396,7 @@ TEST(DisasmIa320) {
     __ cvtsd2ss(xmm0, Operand(ebx, ecx, times_4, 10000));
     __ movq(xmm0, Operand(edx, 4));
 
+    __ movhlps(xmm0, xmm1);
     __ movlps(xmm0, Operand(ebx, ecx, times_4, 10000));
     __ movlps(Operand(ebx, ecx, times_4, 10000), xmm0);
     __ movhps(xmm0, Operand(ebx, ecx, times_4, 10000));
@@ -475,6 +476,7 @@ TEST(DisasmIa320) {
     __ movdqa(Operand(ebx, ecx, times_4, 10000), xmm0);
     __ movdqu(xmm0, Operand(ebx, ecx, times_4, 10000));
     __ movdqu(Operand(ebx, ecx, times_4, 10000), xmm0);
+    __ movdqu(xmm1, xmm0);
 
     __ movapd(xmm0, xmm1);
     __ movapd(xmm0, Operand(edx, 4));
@@ -591,6 +593,7 @@ TEST(DisasmIa320) {
       __ haddps(xmm1, Operand(ebx, ecx, times_4, 10000));
       __ movddup(xmm1, Operand(eax, 5));
       __ movddup(xmm1, xmm2);
+      __ movshdup(xmm1, xmm2);
     }
   }
 
@@ -626,6 +629,10 @@ TEST(DisasmIa320) {
       __ pinsrd(xmm1, eax, 0);
       __ pinsrd(xmm1, Operand(edx, 4), 0);
       __ extractps(eax, xmm1, 0);
+
+      __ blendvps(xmm3, xmm1);
+      __ blendvpd(xmm3, xmm1);
+      __ pblendvb(xmm3, xmm1);
 
       SSE4_INSTRUCTION_LIST(EMIT_SSE34_INSTR)
       SSE4_RM_INSTRUCTION_LIST(EMIT_SSE34_INSTR)
@@ -704,6 +711,7 @@ TEST(DisasmIa320) {
       __ vhaddps(xmm0, xmm1, xmm2);
       __ vhaddps(xmm0, xmm1, Operand(ebx, ecx, times_4, 10000));
 
+      __ vmovhlps(xmm0, xmm1, xmm2);
       __ vmovlps(xmm0, xmm1, Operand(ebx, ecx, times_4, 10000));
       __ vmovlps(Operand(ebx, ecx, times_4, 10000), xmm0);
       __ vmovhps(xmm0, xmm1, Operand(ebx, ecx, times_4, 10000));
@@ -786,6 +794,10 @@ TEST(DisasmIa320) {
       __ vpinsrd(xmm0, xmm1, eax, 0);
       __ vpinsrd(xmm0, xmm1, Operand(edx, 4), 0);
 
+      __ vblendvps(xmm3, xmm1, xmm4, xmm6);
+      __ vblendvpd(xmm3, xmm1, xmm4, xmm6);
+      __ vpblendvb(xmm3, xmm1, xmm4, xmm6);
+
       __ vcvtdq2ps(xmm1, xmm0);
       __ vcvtdq2ps(xmm1, Operand(ebx, ecx, times_4, 10000));
       __ vcvttps2dq(xmm1, xmm0);
@@ -793,6 +805,7 @@ TEST(DisasmIa320) {
 
       __ vmovddup(xmm1, xmm2);
       __ vmovddup(xmm1, Operand(ebx, ecx, times_4, 10000));
+      __ vmovshdup(xmm1, xmm2);
       __ vbroadcastss(xmm1, Operand(ebx, ecx, times_4, 10000));
       __ vmovdqu(xmm0, Operand(ebx, ecx, times_4, 10000));
       __ vmovdqu(Operand(ebx, ecx, times_4, 10000), xmm0);

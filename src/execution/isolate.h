@@ -27,6 +27,7 @@
 #include "src/execution/futex-emulation.h"
 #include "src/execution/isolate-data.h"
 #include "src/execution/messages.h"
+#include "src/execution/shared-mutex-guard-if-off-thread.h"
 #include "src/execution/stack-guard.h"
 #include "src/handles/handles.h"
 #include "src/heap/factory.h"
@@ -1590,6 +1591,14 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   void set_allow_atomics_wait(bool set) { allow_atomics_wait_ = set; }
   bool allow_atomics_wait() { return allow_atomics_wait_; }
 
+  void set_supported_import_assertions(
+      const std::vector<std::string>& supported_import_assertions) {
+    supported_import_assertions_ = supported_import_assertions;
+  }
+  const std::vector<std::string>& supported_import_assertions() const {
+    return supported_import_assertions_;
+  }
+
   // Register a finalizer to be called at isolate teardown.
   void RegisterManagedPtrDestructor(ManagedPtrDestructor* finalizer);
 
@@ -1638,6 +1647,7 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   }
 
   LocalHeap* main_thread_local_heap();
+  LocalHeap* CurrentLocalHeap();
 
 #ifdef V8_HEAP_SANDBOX
   ExternalPointerTable& external_pointer_table() {
@@ -1822,6 +1832,7 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   PromiseHook promise_hook_ = nullptr;
   HostImportModuleDynamicallyCallback host_import_module_dynamically_callback_ =
       nullptr;
+  std::vector<std::string> supported_import_assertions_;
   HostInitializeImportMetaObjectCallback
       host_initialize_import_meta_object_callback_ = nullptr;
   base::Mutex rail_mutex_;
@@ -2163,6 +2174,20 @@ class StackTraceFailureMessage {
   void* code_objects_[4];
   char js_stack_trace_[kStacktraceBufferSize];
   uintptr_t end_marker_ = kEndMarker;
+};
+
+template <base::MutexSharedType kIsShared>
+class V8_NODISCARD SharedMutexGuardIfOffThread<Isolate, kIsShared> final {
+ public:
+  SharedMutexGuardIfOffThread(base::SharedMutex* mutex, Isolate* isolate) {
+    DCHECK_NOT_NULL(mutex);
+    DCHECK_NOT_NULL(isolate);
+    DCHECK_EQ(ThreadId::Current(), isolate->thread_id());
+  }
+
+  SharedMutexGuardIfOffThread(const SharedMutexGuardIfOffThread&) = delete;
+  SharedMutexGuardIfOffThread& operator=(const SharedMutexGuardIfOffThread&) =
+      delete;
 };
 
 }  // namespace internal

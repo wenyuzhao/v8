@@ -9,13 +9,35 @@
 #ifndef V8_CODEGEN_IA32_MACRO_ASSEMBLER_IA32_H_
 #define V8_CODEGEN_IA32_MACRO_ASSEMBLER_IA32_H_
 
+#include <stdint.h>
+
+#include "include/v8-internal.h"
+#include "src/base/logging.h"
+#include "src/base/macros.h"
+#include "src/builtins/builtins.h"
 #include "src/codegen/assembler.h"
 #include "src/codegen/bailout-reason.h"
+#include "src/codegen/cpu-features.h"
 #include "src/codegen/ia32/assembler-ia32.h"
+#include "src/codegen/ia32/register-ia32.h"
+#include "src/codegen/label.h"
+#include "src/codegen/reglist.h"
+#include "src/codegen/reloc-info.h"
+#include "src/codegen/turbo-assembler.h"
 #include "src/common/globals.h"
+#include "src/execution/frames.h"
+#include "src/handles/handles.h"
+#include "src/objects/heap-object.h"
+#include "src/objects/smi.h"
+#include "src/roots/roots.h"
+#include "src/runtime/runtime.h"
 
 namespace v8 {
 namespace internal {
+
+class Code;
+class ExternalReference;
+class StatsCounter;
 
 // Convenience for platform-independent signatures.  We do not normally
 // distinguish memory operands from other operands on ia32.
@@ -258,6 +280,9 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   // may be bigger than 2^16 - 1.  Requires a scratch register.
   void Ret(int bytes_dropped, Register scratch);
 
+  // Three-operand cmpeqps that moves src1 to dst if AVX is not supported.
+  void Cmpeqps(XMMRegister dst, XMMRegister src1, XMMRegister src2);
+
   void Pshufhw(XMMRegister dst, XMMRegister src, uint8_t shuffle) {
     Pshufhw(dst, Operand(src), shuffle);
   }
@@ -360,6 +385,8 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   AVX_OP3_XO(Orps, orps)
   AVX_OP3_XO(Orpd, orpd)
   AVX_OP3_XO(Andnpd, andnpd)
+  AVX_OP3_XO(Pmullw, pmullw)
+  AVX_OP3_WITH_TYPE(Movhlps, movhlps, XMMRegister, XMMRegister)
 
 #undef AVX_OP3_XO
 #undef AVX_OP3_WITH_TYPE
@@ -383,7 +410,9 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   AVX_PACKED_OP3(Addpd, addpd)
   AVX_PACKED_OP3(Subps, subps)
   AVX_PACKED_OP3(Subpd, subpd)
+  AVX_PACKED_OP3(Mulps, mulps)
   AVX_PACKED_OP3(Mulpd, mulpd)
+  AVX_PACKED_OP3(Divps, divps)
   AVX_PACKED_OP3(Divpd, divpd)
   AVX_PACKED_OP3(Cmpeqpd, cmpeqpd)
   AVX_PACKED_OP3(Cmpneqpd, cmpneqpd)
@@ -407,10 +436,12 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   AVX_PACKED_OP3(Pmaddwd, pmaddwd)
   AVX_PACKED_OP3(Paddd, paddd)
   AVX_PACKED_OP3(Paddq, paddq)
+  AVX_PACKED_OP3(Psubd, psubd)
   AVX_PACKED_OP3(Psubq, psubq)
   AVX_PACKED_OP3(Pmuludq, pmuludq)
   AVX_PACKED_OP3(Pavgb, pavgb)
   AVX_PACKED_OP3(Pavgw, pavgw)
+  AVX_PACKED_OP3(Pand, pand)
 #undef AVX_PACKED_OP3
 
   AVX_PACKED_OP3_WITH_TYPE(Psllw, psllw, XMMRegister, uint8_t)
@@ -446,6 +477,7 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   AVX_OP2_WITH_TYPE_SCOPE(macro_name, name, XMMRegister, XMMRegister, SSE3) \
   AVX_OP2_WITH_TYPE_SCOPE(macro_name, name, XMMRegister, Operand, SSE3)
   AVX_OP2_XO_SSE3(Movddup, movddup)
+  AVX_OP2_WITH_TYPE_SCOPE(Movshdup, movshdup, XMMRegister, XMMRegister, SSE3)
 
 #undef AVX_OP2_XO_SSE3
 
@@ -475,15 +507,16 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
 
 #define AVX_OP3_WITH_TYPE_SCOPE(macro_name, name, dst_type, src_type, \
                                 sse_scope)                            \
-  void macro_name(dst_type dst, src_type src) {                       \
+  void macro_name(dst_type dst, dst_type src1, src_type src2) {       \
     if (CpuFeatures::IsSupported(AVX)) {                              \
       CpuFeatureScope scope(this, AVX);                               \
-      v##name(dst, dst, src);                                         \
+      v##name(dst, src1, src2);                                       \
       return;                                                         \
     }                                                                 \
     if (CpuFeatures::IsSupported(sse_scope)) {                        \
       CpuFeatureScope scope(this, sse_scope);                         \
-      name(dst, src);                                                 \
+      DCHECK_EQ(dst, src1);                                           \
+      name(dst, src2);                                                \
       return;                                                         \
     }                                                                 \
     UNREACHABLE();                                                    \
@@ -493,10 +526,12 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   AVX_OP3_WITH_TYPE_SCOPE(macro_name, name, XMMRegister, Operand, SSE4_1)
 
   AVX_OP3_XO_SSE4(Pmaxsd, pmaxsd)
+  AVX_OP3_WITH_TYPE_SCOPE(Pmaddubsw, pmaddubsw, XMMRegister, XMMRegister, SSSE3)
 
 #undef AVX_OP3_XO_SSE4
 #undef AVX_OP3_WITH_TYPE_SCOPE
 
+  void Haddps(XMMRegister dst, XMMRegister src1, Operand src2);
   void Pcmpeqq(XMMRegister dst, XMMRegister src1, XMMRegister src2);
   void Pshufb(XMMRegister dst, XMMRegister src) { Pshufb(dst, dst, src); }
   void Pshufb(XMMRegister dst, Operand src) { Pshufb(dst, dst, src); }
@@ -505,6 +540,7 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
     Pshufb(dst, src, Operand(mask));
   }
   void Pshufb(XMMRegister dst, XMMRegister src, Operand mask);
+
   void Pblendw(XMMRegister dst, XMMRegister src, uint8_t imm8) {
     Pblendw(dst, Operand(src), imm8);
   }
@@ -542,6 +578,10 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   void Vbroadcastss(XMMRegister dst, Operand src);
   void Extractps(Operand dst, XMMRegister src, uint8_t imm8);
 
+  // Shufps that will mov src1 into dst if AVX is not supported.
+  void Shufps(XMMRegister dst, XMMRegister src1, XMMRegister src2,
+              uint8_t imm8);
+
   // Expression support
   // cvtsi2sd instruction only writes to the low 64-bit of dst register, which
   // hinders register renaming and makes dependence chains longer. So we use
@@ -570,6 +610,17 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
 
   void Roundps(XMMRegister dst, XMMRegister src, RoundingMode mode);
   void Roundpd(XMMRegister dst, XMMRegister src, RoundingMode mode);
+
+  // These Wasm SIMD ops do not have direct lowerings on IA32. These
+  // helpers are optimized to produce the fastest and smallest codegen.
+  // Defined here to allow usage on both TurboFan and Liftoff.
+  void I64x2ExtMul(XMMRegister dst, XMMRegister src1, XMMRegister src2,
+                   XMMRegister scratch, bool low, bool is_signed);
+  // Requires that dst == src1 if AVX is not supported.
+  void I32x4ExtMul(XMMRegister dst, XMMRegister src1, XMMRegister src2,
+                   XMMRegister scratch, bool low, bool is_signed);
+  void I16x8ExtMul(XMMRegister dst, XMMRegister src1, XMMRegister src2,
+                   XMMRegister scratch, bool low, bool is_signed);
 
   void Push(Register src) { push(src); }
   void Push(Operand src) { push(src); }
@@ -631,7 +682,7 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
 
   void CallRecordWriteStub(Register object, Register address,
                            RememberedSetAction remembered_set_action,
-                           SaveFPRegsMode fp_mode, Handle<Code> code_target,
+                           SaveFPRegsMode fp_mode, int builtin_index,
                            Address wasm_target);
 };
 

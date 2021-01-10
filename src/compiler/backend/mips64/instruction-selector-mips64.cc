@@ -4,6 +4,7 @@
 
 #include "src/base/bits.h"
 #include "src/base/platform/wrappers.h"
+#include "src/codegen/machine-type.h"
 #include "src/compiler/backend/instruction-selector-impl.h"
 #include "src/compiler/node-matchers.h"
 #include "src/compiler/node-properties.h"
@@ -374,12 +375,83 @@ void EmitLoad(InstructionSelector* selector, Node* node, InstructionCode opcode,
   } else {
     InstructionOperand addr_reg = g.TempRegister();
     selector->Emit(kMips64Dadd | AddressingModeField::encode(kMode_None),
-                   addr_reg, g.UseRegister(index), g.UseRegister(base));
+                   addr_reg, g.UseRegister(base), g.UseRegister(index));
     // Emit desired load opcode, using temp addr_reg.
     selector->Emit(opcode | AddressingModeField::encode(kMode_MRI),
                    g.DefineAsRegister(output == nullptr ? node : output),
                    addr_reg, g.TempImmediate(0));
   }
+}
+
+namespace {
+InstructionOperand EmitAddBeforeS128LoadStore(InstructionSelector* selector,
+                                              Node* node,
+                                              InstructionCode* opcode) {
+  Mips64OperandGenerator g(selector);
+  Node* base = node->InputAt(0);
+  Node* index = node->InputAt(1);
+  InstructionOperand addr_reg = g.TempRegister();
+  selector->Emit(kMips64Dadd | AddressingModeField::encode(kMode_None),
+                 addr_reg, g.UseRegister(base), g.UseRegister(index));
+  *opcode |= AddressingModeField::encode(kMode_MRI);
+  return addr_reg;
+}
+
+// Helper struct for load lane and store lane to indicate what memory size
+// to be encoded in the opcode, and the new lane index.
+struct LoadStoreLaneParams {
+  MSASize sz;
+  uint8_t laneidx;
+  LoadStoreLaneParams(uint8_t laneidx, MSASize sz, int lanes)
+      : sz(sz), laneidx(laneidx % lanes) {}
+};
+
+LoadStoreLaneParams GetLoadStoreLaneParams(MachineRepresentation rep,
+                                           uint8_t laneidx) {
+  switch (rep) {
+    case MachineRepresentation::kWord8:
+      return LoadStoreLaneParams(laneidx, MSA_B, 16);
+    case MachineRepresentation::kWord16:
+      return LoadStoreLaneParams(laneidx, MSA_H, 8);
+    case MachineRepresentation::kWord32:
+      return LoadStoreLaneParams(laneidx, MSA_W, 4);
+    case MachineRepresentation::kWord64:
+      return LoadStoreLaneParams(laneidx, MSA_D, 2);
+    default:
+      break;
+  }
+  UNREACHABLE();
+}
+}  // namespace
+
+void InstructionSelector::VisitStoreLane(Node* node) {
+  StoreLaneParameters params = StoreLaneParametersOf(node->op());
+  LoadStoreLaneParams f = GetLoadStoreLaneParams(params.rep, params.laneidx);
+  InstructionCode opcode = kMips64S128StoreLane;
+  opcode |= MiscField::encode(f.sz);
+
+  Mips64OperandGenerator g(this);
+  InstructionOperand addr = EmitAddBeforeS128LoadStore(this, node, &opcode);
+  InstructionOperand inputs[4] = {
+      g.UseRegister(node->InputAt(2)),
+      g.UseImmediate(f.laneidx),
+      addr,
+      g.TempImmediate(0),
+  };
+  Emit(opcode, 0, nullptr, 4, inputs);
+}
+
+void InstructionSelector::VisitLoadLane(Node* node) {
+  LoadLaneParameters params = LoadLaneParametersOf(node->op());
+  LoadStoreLaneParams f =
+      GetLoadStoreLaneParams(params.rep.representation(), params.laneidx);
+  InstructionCode opcode = kMips64S128LoadLane;
+  opcode |= MiscField::encode(f.sz);
+
+  Mips64OperandGenerator g(this);
+  InstructionOperand addr = EmitAddBeforeS128LoadStore(this, node, &opcode);
+  Emit(opcode, g.DefineSameAsFirst(node), g.UseRegister(node->InputAt(2)),
+       g.UseImmediate(f.laneidx), addr, g.TempImmediate(0));
 }
 
 void InstructionSelector::VisitLoadTransform(Node* node) {
@@ -2877,9 +2949,14 @@ void InstructionSelector::VisitInt64AbsWithOverflow(Node* node) {
   V(F64x2Ne, kMips64F64x2Ne)                             \
   V(F64x2Lt, kMips64F64x2Lt)                             \
   V(F64x2Le, kMips64F64x2Le)                             \
+  V(I64x2Eq, kMips64I64x2Eq)                             \
   V(I64x2Add, kMips64I64x2Add)                           \
   V(I64x2Sub, kMips64I64x2Sub)                           \
   V(I64x2Mul, kMips64I64x2Mul)                           \
+  V(I64x2ExtMulLowI32x4S, kMips64I64x2ExtMulLowI32x4S)   \
+  V(I64x2ExtMulHighI32x4S, kMips64I64x2ExtMulHighI32x4S) \
+  V(I64x2ExtMulLowI32x4U, kMips64I64x2ExtMulLowI32x4U)   \
+  V(I64x2ExtMulHighI32x4U, kMips64I64x2ExtMulHighI32x4U) \
   V(F32x4Add, kMips64F32x4Add)                           \
   V(F32x4AddHoriz, kMips64F32x4AddHoriz)                 \
   V(F32x4Sub, kMips64F32x4Sub)                           \
@@ -2906,6 +2983,10 @@ void InstructionSelector::VisitInt64AbsWithOverflow(Node* node) {
   V(I32x4GtU, kMips64I32x4GtU)                           \
   V(I32x4GeU, kMips64I32x4GeU)                           \
   V(I32x4DotI16x8S, kMips64I32x4DotI16x8S)               \
+  V(I32x4ExtMulLowI16x8S, kMips64I32x4ExtMulLowI16x8S)   \
+  V(I32x4ExtMulHighI16x8S, kMips64I32x4ExtMulHighI16x8S) \
+  V(I32x4ExtMulLowI16x8U, kMips64I32x4ExtMulLowI16x8U)   \
+  V(I32x4ExtMulHighI16x8U, kMips64I32x4ExtMulHighI16x8U) \
   V(I16x8Add, kMips64I16x8Add)                           \
   V(I16x8AddSatS, kMips64I16x8AddSatS)                   \
   V(I16x8AddSatU, kMips64I16x8AddSatU)                   \
@@ -2927,6 +3008,10 @@ void InstructionSelector::VisitInt64AbsWithOverflow(Node* node) {
   V(I16x8RoundingAverageU, kMips64I16x8RoundingAverageU) \
   V(I16x8SConvertI32x4, kMips64I16x8SConvertI32x4)       \
   V(I16x8UConvertI32x4, kMips64I16x8UConvertI32x4)       \
+  V(I16x8ExtMulLowI8x16S, kMips64I16x8ExtMulLowI8x16S)   \
+  V(I16x8ExtMulHighI8x16S, kMips64I16x8ExtMulHighI8x16S) \
+  V(I16x8ExtMulLowI8x16U, kMips64I16x8ExtMulLowI8x16U)   \
+  V(I16x8ExtMulHighI8x16U, kMips64I16x8ExtMulHighI8x16U) \
   V(I8x16Add, kMips64I8x16Add)                           \
   V(I8x16AddSatS, kMips64I8x16AddSatS)                   \
   V(I8x16AddSatU, kMips64I8x16AddSatU)                   \

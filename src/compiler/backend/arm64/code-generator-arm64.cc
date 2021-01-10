@@ -902,7 +902,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     case kArchDeoptimize: {
       DeoptimizationExit* exit =
-          BuildTranslation(instr, -1, 0, OutputFrameStateCombine::Ignore());
+          BuildTranslation(instr, -1, 0, 0, OutputFrameStateCombine::Ignore());
       __ B(exit->label());
       break;
     }
@@ -2532,6 +2532,14 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ Zip1(tmp.V16B(), tmp.V16B(), mask.V16B());
       __ Addv(tmp.H(), tmp.V8H());
       __ Mov(dst.W(), tmp.V8H(), 0);
+      break;
+    }
+    case kArm64SignSelect: {
+      VectorFormat f = VectorFormatFillQ(MiscField::decode(opcode));
+      __ Cmlt(i.OutputSimd128Register().Format(f),
+              i.InputSimd128Register(2).Format(f), 0);
+      __ Bsl(i.OutputSimd128Register().V16B(), i.InputSimd128Register(0).V16B(),
+             i.InputSimd128Register(1).V16B());
       break;
     }
     case kArm64S128Const: {

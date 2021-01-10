@@ -134,7 +134,7 @@ class TestSetup {
 
 }  // namespace
 
-i::AbstractCode CreateCode(LocalContext* env) {
+i::AbstractCode CreateCode(i::Isolate* isolate, LocalContext* env) {
   static int counter = 0;
   i::EmbeddedVector<char, 256> script;
   i::EmbeddedVector<char, 32> name;
@@ -153,7 +153,7 @@ i::AbstractCode CreateCode(LocalContext* env) {
 
   i::Handle<i::JSFunction> fun = i::Handle<i::JSFunction>::cast(
       v8::Utils::OpenHandle(*GetFunction(env->local(), name_start)));
-  return fun->abstract_code();
+  return fun->abstract_code(isolate);
 }
 
 TEST(CodeEvents) {
@@ -165,10 +165,10 @@ TEST(CodeEvents) {
 
   i::HandleScope scope(isolate);
 
-  i::Handle<i::AbstractCode> aaa_code(CreateCode(&env), isolate);
-  i::Handle<i::AbstractCode> comment_code(CreateCode(&env), isolate);
-  i::Handle<i::AbstractCode> comment2_code(CreateCode(&env), isolate);
-  i::Handle<i::AbstractCode> moved_code(CreateCode(&env), isolate);
+  i::Handle<i::AbstractCode> aaa_code(CreateCode(isolate, &env), isolate);
+  i::Handle<i::AbstractCode> comment_code(CreateCode(isolate, &env), isolate);
+  i::Handle<i::AbstractCode> comment2_code(CreateCode(isolate, &env), isolate);
+  i::Handle<i::AbstractCode> moved_code(CreateCode(isolate, &env), isolate);
 
   CpuProfilesCollection* profiles = new CpuProfilesCollection(isolate);
   ProfilerCodeObserver code_observer(isolate);
@@ -177,7 +177,8 @@ TEST(CodeEvents) {
       isolate, symbolizer, &code_observer, profiles,
       v8::base::TimeDelta::FromMicroseconds(100), true);
   CHECK(processor->Start());
-  ProfilerListener profiler_listener(isolate, processor);
+  ProfilerListener profiler_listener(isolate, processor,
+                                     *code_observer.strings());
   isolate->logger()->AddCodeEventListener(&profiler_listener);
 
   // Enqueue code creation events.
@@ -227,21 +228,22 @@ TEST(TickEvents) {
   i::Isolate* isolate = CcTest::i_isolate();
   i::HandleScope scope(isolate);
 
-  i::Handle<i::AbstractCode> frame1_code(CreateCode(&env), isolate);
-  i::Handle<i::AbstractCode> frame2_code(CreateCode(&env), isolate);
-  i::Handle<i::AbstractCode> frame3_code(CreateCode(&env), isolate);
+  i::Handle<i::AbstractCode> frame1_code(CreateCode(isolate, &env), isolate);
+  i::Handle<i::AbstractCode> frame2_code(CreateCode(isolate, &env), isolate);
+  i::Handle<i::AbstractCode> frame3_code(CreateCode(isolate, &env), isolate);
 
   CpuProfilesCollection* profiles = new CpuProfilesCollection(isolate);
-  ProfilerCodeObserver code_observer(isolate);
-  Symbolizer* symbolizer = new Symbolizer(code_observer.code_map());
+  ProfilerCodeObserver* code_observer = new ProfilerCodeObserver(isolate);
+  Symbolizer* symbolizer = new Symbolizer(code_observer->code_map());
   ProfilerEventsProcessor* processor = new SamplingEventsProcessor(
-      CcTest::i_isolate(), symbolizer, &code_observer, profiles,
+      CcTest::i_isolate(), symbolizer, code_observer, profiles,
       v8::base::TimeDelta::FromMicroseconds(100), true);
   CpuProfiler profiler(isolate, kDebugNaming, kLazyLogging, profiles,
-                       symbolizer, processor);
+                       symbolizer, processor, code_observer);
   profiles->StartProfiling("");
   CHECK(processor->Start());
-  ProfilerListener profiler_listener(isolate, processor);
+  ProfilerListener profiler_listener(isolate, processor,
+                                     *code_observer->strings());
   isolate->logger()->AddCodeEventListener(&profiler_listener);
 
   profiler_listener.CodeCreateEvent(i::Logger::BUILTIN_TAG, frame1_code, "bbb");
@@ -288,7 +290,7 @@ TEST(CodeMapClearedBetweenProfilesWithLazyLogging) {
   i::HandleScope scope(isolate);
 
   // This gets logged when the profiler starts up and scans the heap.
-  i::Handle<i::AbstractCode> code1(CreateCode(&env), isolate);
+  i::Handle<i::AbstractCode> code1(CreateCode(isolate, &env), isolate);
 
   CpuProfiler profiler(isolate, kDebugNaming, kLazyLogging);
   profiler.StartProfiling("");
@@ -308,7 +310,7 @@ TEST(CodeMapClearedBetweenProfilesWithLazyLogging) {
   CHECK(!code_map->FindEntry(code1->InstructionStart()));
 
   // Create code between profiles. This should not be logged yet.
-  i::Handle<i::AbstractCode> code2(CreateCode(&env), isolate);
+  i::Handle<i::AbstractCode> code2(CreateCode(isolate, &env), isolate);
 
   CHECK(!code_map->FindEntry(code2->InstructionStart()));
 }
@@ -320,7 +322,7 @@ TEST(CodeMapNotClearedBetweenProfilesWithEagerLogging) {
   i::HandleScope scope(isolate);
 
   // This gets logged when the profiler starts up and scans the heap.
-  i::Handle<i::AbstractCode> code1(CreateCode(&env), isolate);
+  i::Handle<i::AbstractCode> code1(CreateCode(isolate, &env), isolate);
 
   CpuProfiler profiler(isolate, kDebugNaming, kEagerLogging);
   profiler.StartProfiling("");
@@ -342,7 +344,7 @@ TEST(CodeMapNotClearedBetweenProfilesWithEagerLogging) {
   CHECK_EQ(0, strcmp("function_1", code1_entry->name()));
 
   // Create code between profiles. This should be logged too.
-  i::Handle<i::AbstractCode> code2(CreateCode(&env), isolate);
+  i::Handle<i::AbstractCode> code2(CreateCode(isolate, &env), isolate);
   CHECK(code_map->FindEntry(code2->InstructionStart()));
 
   profiler.StartProfiling("");
@@ -389,19 +391,20 @@ TEST(Issue1398) {
   i::Isolate* isolate = CcTest::i_isolate();
   i::HandleScope scope(isolate);
 
-  i::Handle<i::AbstractCode> code(CreateCode(&env), isolate);
+  i::Handle<i::AbstractCode> code(CreateCode(isolate, &env), isolate);
 
   CpuProfilesCollection* profiles = new CpuProfilesCollection(isolate);
-  ProfilerCodeObserver code_observer(isolate);
-  Symbolizer* symbolizer = new Symbolizer(code_observer.code_map());
+  ProfilerCodeObserver* code_observer = new ProfilerCodeObserver(isolate);
+  Symbolizer* symbolizer = new Symbolizer(code_observer->code_map());
   ProfilerEventsProcessor* processor = new SamplingEventsProcessor(
-      CcTest::i_isolate(), symbolizer, &code_observer, profiles,
+      CcTest::i_isolate(), symbolizer, code_observer, profiles,
       v8::base::TimeDelta::FromMicroseconds(100), true);
   CpuProfiler profiler(isolate, kDebugNaming, kLazyLogging, profiles,
-                       symbolizer, processor);
+                       symbolizer, processor, code_observer);
   profiles->StartProfiling("");
   CHECK(processor->Start());
-  ProfilerListener profiler_listener(isolate, processor);
+  ProfilerListener profiler_listener(isolate, processor,
+                                     *code_observer->strings());
 
   profiler_listener.CodeCreateEvent(i::Logger::BUILTIN_TAG, code, "bbb");
 
@@ -1236,22 +1239,22 @@ static void TickLines(bool optimize) {
   i::Handle<i::JSFunction> func = i::Handle<i::JSFunction>::cast(
       v8::Utils::OpenHandle(*GetFunction(env.local(), func_name)));
   CHECK(!func->shared().is_null());
-  CHECK(!func->shared().abstract_code().is_null());
+  CHECK(!func->shared().abstract_code(isolate).is_null());
   CHECK(!optimize || func->HasAttachedOptimizedCode() ||
         !CcTest::i_isolate()->use_optimizer());
-  i::Handle<i::AbstractCode> code(func->abstract_code(), isolate);
+  i::Handle<i::AbstractCode> code(func->abstract_code(isolate), isolate);
   CHECK(!code->is_null());
   i::Address code_address = code->raw_instruction_start();
   CHECK_NE(code_address, kNullAddress);
 
   CpuProfilesCollection* profiles = new CpuProfilesCollection(isolate);
-  ProfilerCodeObserver code_observer(isolate);
-  Symbolizer* symbolizer = new Symbolizer(code_observer.code_map());
+  ProfilerCodeObserver* code_observer = new ProfilerCodeObserver(isolate);
+  Symbolizer* symbolizer = new Symbolizer(code_observer->code_map());
   ProfilerEventsProcessor* processor = new SamplingEventsProcessor(
-      CcTest::i_isolate(), symbolizer, &code_observer, profiles,
+      CcTest::i_isolate(), symbolizer, code_observer, profiles,
       v8::base::TimeDelta::FromMicroseconds(100), true);
   CpuProfiler profiler(isolate, kDebugNaming, kLazyLogging, profiles,
-                       symbolizer, processor);
+                       symbolizer, processor, code_observer);
   profiles->StartProfiling("");
   // TODO(delphick): Stop using the CpuProfiler internals here: This forces
   // LogCompiledFunctions so that source positions are collected everywhere.
@@ -1259,7 +1262,8 @@ static void TickLines(bool optimize) {
   // but doesn't because it's constructed with a symbolizer and a processor.
   isolate->logger()->LogCompiledFunctions();
   CHECK(processor->Start());
-  ProfilerListener profiler_listener(isolate, processor);
+  ProfilerListener profiler_listener(isolate, processor,
+                                     *code_observer->strings());
 
   // Enqueue code creation events.
   i::Handle<i::String> str = factory->NewStringFromAsciiChecked(func_name);
@@ -2418,7 +2422,10 @@ const char* GetBranchDeoptReason(v8::Local<v8::Context> context,
   v8::CpuProfile* profile = reinterpret_cast<v8::CpuProfile*>(iprofile);
   const ProfileNode* iopt_function = nullptr;
   iopt_function = GetSimpleBranch(context, profile, branch, length);
-  CHECK_EQ(1U, iopt_function->deopt_infos().size());
+  if (iopt_function->deopt_infos().size() == 0) {
+    iopt_function = iopt_function->parent();
+  }
+  CHECK_LE(1U, iopt_function->deopt_infos().size());
   return iopt_function->deopt_infos()[0].deopt_reason;
 }
 
@@ -2492,7 +2499,8 @@ TEST(CollectDeoptEvents) {
       .ToLocalChecked();
   i::CpuProfile* iprofile = iprofiler->GetProfile(0);
   iprofile->Print();
-  /* The expected profile
+  /* The expected profile. Note that the deopt reasons can hang off either of
+     the two nodes for each function, depending on the exact timing at runtime.
   [Top down]:
       0  (root) 0 #1
      23     32 #2
@@ -3169,7 +3177,7 @@ TEST(CrashReusedProfiler) {
   profiler->StopProfiling("1");
 
   profiler->StartProfiling("2");
-  CreateCode(&env);
+  CreateCode(isolate, &env);
   profiler->StopProfiling("2");
 }
 
@@ -3545,14 +3553,14 @@ TEST(ProflilerSubsampling) {
   i::HandleScope scope(isolate);
 
   CpuProfilesCollection* profiles = new CpuProfilesCollection(isolate);
-  ProfilerCodeObserver code_observer(isolate);
-  Symbolizer* symbolizer = new Symbolizer(code_observer.code_map());
+  ProfilerCodeObserver* code_observer = new ProfilerCodeObserver(isolate);
+  Symbolizer* symbolizer = new Symbolizer(code_observer->code_map());
   ProfilerEventsProcessor* processor =
-      new SamplingEventsProcessor(isolate, symbolizer, &code_observer, profiles,
+      new SamplingEventsProcessor(isolate, symbolizer, code_observer, profiles,
                                   v8::base::TimeDelta::FromMicroseconds(1),
                                   /* use_precise_sampling */ true);
   CpuProfiler profiler(isolate, kDebugNaming, kLazyLogging, profiles,
-                       symbolizer, processor);
+                       symbolizer, processor, code_observer);
 
   // Create a new CpuProfile that wants samples at 8us.
   CpuProfile profile(&profiler, "",
@@ -3589,14 +3597,14 @@ TEST(DynamicResampling) {
   i::HandleScope scope(isolate);
 
   CpuProfilesCollection* profiles = new CpuProfilesCollection(isolate);
-  ProfilerCodeObserver code_observer(isolate);
-  Symbolizer* symbolizer = new Symbolizer(code_observer.code_map());
+  ProfilerCodeObserver* code_observer = new ProfilerCodeObserver(isolate);
+  Symbolizer* symbolizer = new Symbolizer(code_observer->code_map());
   ProfilerEventsProcessor* processor =
-      new SamplingEventsProcessor(isolate, symbolizer, &code_observer, profiles,
+      new SamplingEventsProcessor(isolate, symbolizer, code_observer, profiles,
                                   v8::base::TimeDelta::FromMicroseconds(1),
                                   /* use_precise_sampling */ true);
   CpuProfiler profiler(isolate, kDebugNaming, kLazyLogging, profiles,
-                       symbolizer, processor);
+                       symbolizer, processor, code_observer);
 
   // Set a 1us base sampling rate, dividing all possible intervals.
   profiler.set_sampling_interval(base::TimeDelta::FromMicroseconds(1));
@@ -3650,14 +3658,14 @@ TEST(DynamicResamplingWithBaseInterval) {
   i::HandleScope scope(isolate);
 
   CpuProfilesCollection* profiles = new CpuProfilesCollection(isolate);
-  ProfilerCodeObserver code_observer(isolate);
-  Symbolizer* symbolizer = new Symbolizer(code_observer.code_map());
+  ProfilerCodeObserver* code_observer = new ProfilerCodeObserver(isolate);
+  Symbolizer* symbolizer = new Symbolizer(code_observer->code_map());
   ProfilerEventsProcessor* processor =
-      new SamplingEventsProcessor(isolate, symbolizer, &code_observer, profiles,
+      new SamplingEventsProcessor(isolate, symbolizer, code_observer, profiles,
                                   v8::base::TimeDelta::FromMicroseconds(1),
                                   /* use_precise_sampling */ true);
   CpuProfiler profiler(isolate, kDebugNaming, kLazyLogging, profiles,
-                       symbolizer, processor);
+                       symbolizer, processor, code_observer);
 
   profiler.set_sampling_interval(base::TimeDelta::FromMicroseconds(7));
 

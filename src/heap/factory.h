@@ -725,8 +725,6 @@ class V8_EXPORT_PRIVATE Factory : public FactoryBase<Factory> {
 
   Handle<DebugInfo> NewDebugInfo(Handle<SharedFunctionInfo> shared);
 
-  Handle<WasmValue> NewWasmValue(int32_t value_type, Handle<Object> ref);
-
   // Return a map for given number of properties using the map cache in the
   // native context.
   Handle<Map> ObjectLiteralMapFromCache(Handle<NativeContext> native_context,
@@ -995,7 +993,6 @@ class V8_EXPORT_PRIVATE Factory : public FactoryBase<Factory> {
   void InitializeJSObjectBody(Handle<JSObject> obj, Handle<Map> map,
                               int start_offset);
 
- private:
   Handle<WeakArrayList> NewUninitializedWeakArrayList(
       int capacity, AllocationType allocation = AllocationType::kYoung);
 };

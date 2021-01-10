@@ -43,8 +43,7 @@ void Heap::ForceGarbageCollectionSlow(const char* source, const char* reason,
                                       Heap::StackState stack_state) {
   internal::Heap::From(this)->CollectGarbage(
       {internal::GarbageCollector::Config::CollectionType::kMajor, stack_state,
-       internal::GarbageCollector::Config::MarkingType::kAtomic,
-       internal::GarbageCollector::Config::SweepingType::kAtomic,
+       MarkingType::kAtomic, SweepingType::kAtomic,
        internal::GarbageCollector::Config::IsForcedGC::kForced});
 }
 
@@ -71,11 +70,16 @@ class Unmarker final : private HeapVisitor<Unmarker> {
   }
 };
 
-void CheckConfig(Heap::Config config) {
+void CheckConfig(Heap::Config config, Heap::MarkingType marking_support,
+                 Heap::SweepingType sweeping_support) {
   CHECK_WITH_MSG(
       (config.collection_type != Heap::Config::CollectionType::kMinor) ||
           (config.stack_state == Heap::Config::StackState::kNoHeapPointers),
       "Minor GCs with stack is currently not supported");
+  CHECK_LE(static_cast<int>(config.marking_type),
+           static_cast<int>(marking_support));
+  CHECK_LE(static_cast<int>(config.sweeping_type),
+           static_cast<int>(sweeping_support));
 }
 
 }  // namespace
@@ -85,7 +89,15 @@ Heap::Heap(std::shared_ptr<cppgc::Platform> platform,
     : HeapBase(platform, options.custom_spaces, options.stack_support),
       gc_invoker_(this, platform_.get(), options.stack_support),
       growing_(&gc_invoker_, stats_collector_.get(),
-               options.resource_constraints) {}
+               options.resource_constraints, options.marking_support,
+               options.sweeping_support),
+      marking_support_(options.marking_support),
+      sweeping_support_(options.sweeping_support) {
+  CHECK_IMPLIES(options.marking_support != MarkingType::kAtomic,
+                platform_->GetForegroundTaskRunner());
+  CHECK_IMPLIES(options.sweeping_support != SweepingType::kAtomic,
+                platform_->GetForegroundTaskRunner());
+}
 
 Heap::~Heap() {
   NoGCScope no_gc(*this);
@@ -93,26 +105,29 @@ Heap::~Heap() {
   sweeper_.FinishIfRunning();
 }
 
+bool Heap::IsMarking() const { return marker_.get(); }
+
 void Heap::CollectGarbage(Config config) {
   DCHECK_EQ(Config::MarkingType::kAtomic, config.marking_type);
-  CheckConfig(config);
+  CheckConfig(config, marking_support_, sweeping_support_);
 
   if (in_no_gc_scope()) return;
 
   config_ = config;
 
-  if (!gc_in_progress_) StartGarbageCollection(config);
+  if (!IsMarking()) StartGarbageCollection(config);
 
-  DCHECK(marker_);
+  DCHECK(IsMarking());
 
   FinalizeGarbageCollection(config.stack_state);
 }
 
 void Heap::StartIncrementalGarbageCollection(Config config) {
   DCHECK_NE(Config::MarkingType::kAtomic, config.marking_type);
-  CheckConfig(config);
+  DCHECK_NE(marking_support_, MarkingType::kAtomic);
+  CheckConfig(config, marking_support_, sweeping_support_);
 
-  if (gc_in_progress_ || in_no_gc_scope()) return;
+  if (IsMarking() || in_no_gc_scope()) return;
 
   config_ = config;
 
@@ -120,7 +135,10 @@ void Heap::StartIncrementalGarbageCollection(Config config) {
 }
 
 void Heap::FinalizeIncrementalGarbageCollectionIfRunning(Config config) {
-  if (!gc_in_progress_) return;
+  DCHECK_NE(marking_support_, MarkingType::kAtomic);
+  CheckConfig(config, marking_support_, sweeping_support_);
+
+  if (!IsMarking()) return;
 
   DCHECK(!in_no_gc_scope());
 
@@ -130,14 +148,13 @@ void Heap::FinalizeIncrementalGarbageCollectionIfRunning(Config config) {
 }
 
 void Heap::StartGarbageCollection(Config config) {
-  DCHECK(!gc_in_progress_);
+  DCHECK(!IsMarking());
 
   DCHECK(!in_no_gc_scope());
 
   // Finish sweeping in case it is still running.
   sweeper_.FinishIfRunning();
 
-  gc_in_progress_ = true;
   epoch_++;
 
 #if defined(CPPGC_YOUNG_GENERATION)
@@ -153,10 +170,9 @@ void Heap::StartGarbageCollection(Config config) {
 }
 
 void Heap::FinalizeGarbageCollection(Config::StackState stack_state) {
-  DCHECK(gc_in_progress_);
+  DCHECK(IsMarking());
   DCHECK(!in_no_gc_scope());
   config_.stack_state = stack_state;
-  DCHECK(marker_);
   {
     // This guards atomic pause marking, meaning that no internal method or
     // external callbacks are allowed to allocate new objects.
@@ -183,7 +199,7 @@ void Heap::FinalizeGarbageCollection(Config::StackState stack_state) {
   sweeper_.NotifyDoneIfNeeded();
 }
 
-void Heap::PostGarbageCollection() { gc_in_progress_ = false; }
+void Heap::PostGarbageCollection() {}
 
 void Heap::DisableHeapGrowingForTesting() { growing_.DisableForTesting(); }
 

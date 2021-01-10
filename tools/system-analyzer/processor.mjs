@@ -202,9 +202,6 @@ export class Processor extends LogReader {
 
   processCodeCreation(type, kind, timestamp, start, size, name, maybe_func) {
     this._lastTimestamp = timestamp;
-    if (timestamp == 5724567) {
-      console.log(start);
-    }
     let entry;
     let stateName = '';
     if (maybe_func.length) {
@@ -225,11 +222,25 @@ export class Processor extends LogReader {
       timestamp, codeSize, instructionStart, inliningId, scriptOffset,
       deoptKind, deoptLocation, deoptReason) {
     this._lastTimestamp = timestamp;
+    const codeEntry = this._profile.findEntry(instructionStart);
     const logEntry = new DeoptLogEntry(
-        deoptKind, timestamp, deoptReason, deoptLocation, scriptOffset,
-        instructionStart, codeSize, inliningId);
+        deoptKind, timestamp, codeEntry, deoptReason, deoptLocation,
+        scriptOffset, instructionStart, codeSize, inliningId);
     this._deoptTimeline.push(logEntry);
-    this.addSourcePosition(this._profile.findEntry(instructionStart), logEntry);
+    this.addSourcePosition(codeEntry, logEntry);
+    logEntry.functionSourcePosition = logEntry.sourcePosition;
+    // custom parse deopt location
+    if (deoptLocation !== '<unknown>') {
+      const colSeparator = deoptLocation.lastIndexOf(':');
+      const rowSeparator = deoptLocation.lastIndexOf(':', colSeparator - 1);
+      const script = this.getScript(deoptLocation.substring(1, rowSeparator));
+      const line =
+          parseInt(deoptLocation.substring(rowSeparator + 1, colSeparator));
+      const column = parseInt(
+          deoptLocation.substring(colSeparator + 1, deoptLocation.length - 1));
+      logEntry.sourcePosition =
+          script.addSourcePosition(line, column, logEntry);
+    }
   }
 
   processScriptSource(scriptId, url, source) {
@@ -274,16 +285,17 @@ export class Processor extends LogReader {
   }
 
   processPropertyIC(
-      type, pc, time, line, column, old_state, new_state, map, key, modifier,
+      type, pc, time, line, column, old_state, new_state, mapId, key, modifier,
       slow_reason) {
     this._lastTimestamp = time;
-    let profileEntry = this._profile.findEntry(pc);
-    let fnName = this.formatProfileEntry(profileEntry);
-    let script = this.getProfileEntryScript(profileEntry);
+    const profileEntry = this._profile.findEntry(pc);
+    const fnName = this.formatProfileEntry(profileEntry);
+    const script = this.getProfileEntryScript(profileEntry);
+    const map = this.getOrCreateMapEntry(mapId, time);
     // TODO: Use SourcePosition here directly
     let entry = new IcLogEntry(
         type, fnName, time, line, column, key, old_state, new_state, map,
-        slow_reason, script, modifier);
+        slow_reason, modifier);
     if (script) {
       entry.sourcePosition = script.addSourcePosition(line, column, entry);
     }
@@ -320,8 +332,8 @@ export class Processor extends LogReader {
     // Skip normalized maps that were cached so we don't introduce multiple
     // edges with the same source and target map.
     if (type === 'NormalizeCached') return;
-    const from_ = this.getMapEntry(from, time_);
-    const to_ = this.getMapEntry(to, time_);
+    const from_ = this.getOrCreateMapEntry(from, time_);
+    const to_ = this.getOrCreateMapEntry(to, time_);
     if (type === 'Normalize') {
       // Fix a bug where we log "Normalize" transitions for maps created from
       // the NormalizedMapCache.
@@ -333,11 +345,10 @@ export class Processor extends LogReader {
     // TODO: use SourcePosition directly.
     let edge = new Edge(type, name, reason, time, from_, to_);
     const profileEntry = this._profile.findEntry(pc)
-    to_.filePosition = this.formatProfileEntry(profileEntry, line, column);
+    to_.entry = profileEntry;
     let script = this.getProfileEntryScript(profileEntry);
     if (script) {
-      to_.script = script;
-      to_.sourcePosition = to_.script.addSourcePosition(line, column, to_)
+      to_.sourcePosition = script.addSourcePosition(line, column, to_)
     }
     if (to_.parent() !== undefined && to_.parent() === from_) {
       // Fix bug where we double log transitions.
@@ -350,7 +361,7 @@ export class Processor extends LogReader {
 
   deprecateMap(type, time, id) {
     this._lastTimestamp = time;
-    this.getMapEntry(id, time).deprecate();
+    this.getOrCreateMapEntry(id, time).deprecate();
   }
 
   processMapCreate(time, id) {
@@ -362,7 +373,7 @@ export class Processor extends LogReader {
 
   processMapDetails(time, id, string) {
     // TODO(cbruni): fix initial map logging.
-    const map = this.getMapEntry(id, time);
+    const map = this.getOrCreateMapEntry(id, time);
     map.description = string;
   }
 
@@ -373,7 +384,7 @@ export class Processor extends LogReader {
     return map;
   }
 
-  getMapEntry(id, time) {
+  getOrCreateMapEntry(id, time) {
     if (id === '0x000000000000') return undefined;
     const map = MapLogEntry.get(id, time);
     if (map !== undefined) return map;
@@ -391,14 +402,20 @@ export class Processor extends LogReader {
     return script;
   }
 
-  processApiEvent(name, varArgs) {
+  processApiEvent(type, varArgs) {
+    let name, arg1;
     if (varArgs.length == 0) {
-      varArgs = [name];
-      const index = name.indexOf(':');
-      if (index > 0) name = name.substr(0, index);
+      const index = type.indexOf(':');
+      if (index > 0) {
+        name = type;
+        type = type.substr(0, index);
+      }
+    } else {
+      name = varArgs[0];
+      arg1 = varArgs[1];
     }
     this._apiTimeline.push(
-        new ApiLogEntry(name, this._lastTimestamp, varArgs[0]));
+        new ApiLogEntry(type, this._lastTimestamp, name, arg1));
   }
 
   get icTimeline() {
@@ -423,5 +440,9 @@ export class Processor extends LogReader {
 
   get scripts() {
     return this._profile.scripts_.filter(script => script !== undefined);
+  }
+
+  get profile() {
+    return this._profile;
   }
 }

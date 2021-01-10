@@ -137,7 +137,6 @@ namespace internal {
   F(GetBreakLocations, 1, 1)                    \
   F(GetGeneratorScopeCount, 1, 1)               \
   F(GetGeneratorScopeDetails, 2, 1)             \
-  F(GetHeapUsage, 0, 1)                         \
   F(HandleDebuggerStatement, 0, 1)              \
   F(IsBreakOnException, 1, 1)                   \
   F(LiveEditPatchScript, 2, 1)                  \
@@ -440,8 +439,7 @@ namespace internal {
   F(StringMaxLength, 0, 1)                \
   F(StringReplaceOneCharWithString, 3, 1) \
   F(StringSubstring, 3, 1)                \
-  F(StringToArray, 2, 1)                  \
-  F(StringTrim, 2, 1)
+  F(StringToArray, 2, 1)
 
 #define FOR_EACH_INTRINSIC_SYMBOL(F, I)    \
   F(CreatePrivateNameSymbol, 1, 1)         \
@@ -521,6 +519,7 @@ namespace internal {
   F(RegexpTypeTag, 1, 1)                      \
   F(RegexpIsUnmodified, 1, 1)                 \
   F(MapIteratorProtector, 0, 1)               \
+  F(ArrayIteratorProtector, 0, 1)             \
   F(NeverOptimizeFunction, 1, 1)              \
   F(NotifyContextDisposed, 0, 1)              \
   F(OptimizeFunctionOnNextCall, -1, 1)        \
@@ -545,6 +544,7 @@ namespace internal {
   F(TraceEnter, 0, 1)                         \
   F(TraceExit, 1, 1)                          \
   F(TurbofanStaticAssert, 1, 1)               \
+  F(TypedArraySpeciesProtector, 0, 1)         \
   F(UnblockConcurrentRecompilation, 0, 1)     \
   F(WasmGetNumberOfInstances, 1, 1)           \
   F(WasmNumCodeSpaces, 1, 1)                  \
@@ -554,7 +554,10 @@ namespace internal {
   F(WasmTraceEnter, 0, 1)                     \
   F(WasmTraceExit, 1, 1)                      \
   F(WasmTraceMemory, 1, 1)                    \
-  I(DeoptimizeNow, 0, 1)
+  I(DeoptimizeNow, 0, 1)                      \
+  F(PromiseSpeciesProtector, 0, 1)            \
+  F(IsConcatSpreadableProtector, 0, 1)        \
+  F(RegExpSpeciesProtector, 0, 1)
 
 #define FOR_EACH_INTRINSIC_TYPEDARRAY(F, I) \
   F(ArrayBufferDetach, 1, 1)                \

@@ -3749,6 +3749,22 @@ void Assembler::vst1(NeonSize size, const NeonListOperand& src,
        src.type() * B8 | size * B6 | dst.align() * B4 | dst.rm().code());
 }
 
+void Assembler::vst1s(NeonSize size, const NeonListOperand& src, uint8_t index,
+                      const NeonMemOperand& dst) {
+  // Instruction details available in ARM DDI 0487F.b F6.1.236.
+  // 1111(31-28) | 01001(27-23) | D(22) | 00(21-20) | Rn(19-16) |
+  // Vd(15-12) | size(11-10) | 00(9-8) | index_align(7-4) | Rm(3-0)
+  DCHECK(IsEnabled(NEON));
+  DCHECK_NE(size, 0x3);
+  DCHECK_GT(1 << (3 - size), index);
+  // Specifying alignment not supported, use standard alignment.
+  uint8_t index_align = index << (size + 1);
+  int vd, d;
+  src.base().split_code(&vd, &d);
+  emit(0xFU * B28 | 9 * B23 | d * B22 | dst.rn().code() * B16 | vd * B12 |
+       size * B10 | index_align * B4 | dst.rm().code());
+}
+
 void Assembler::vmovl(NeonDataType dt, QwNeonRegister dst, DwVfpRegister src) {
   // Instruction details available in ARM DDI 0406C.b, A8.8.346.
   // 1111(31-28) | 001(27-25) | U(24) | 1(23) | D(22) | imm3(21-19) |
@@ -3975,7 +3991,11 @@ enum UnaryOp {
   VREV64,
   VTRN,
   VRECPE,
-  VRSQRTE
+  VRSQRTE,
+  VPADDL_S,
+  VPADDL_U,
+  VCLT0,
+  VCNT
 };
 
 // Encoding helper for "Advanced SIMD two registers misc" decode group. See ARM
@@ -4044,8 +4064,19 @@ static Instr EncodeNeonUnaryOp(UnaryOp op, NeonRegType reg_type, NeonSize size,
       // Only support floating point.
       op_encoding = 0x3 * B16 | 0xB * B7;
       break;
-    default:
-      UNREACHABLE();
+    case VPADDL_S:
+      op_encoding = 0x4 * B7;
+      break;
+    case VPADDL_U:
+      op_encoding = 0x5 * B7;
+      break;
+    case VCLT0:
+      // Only support signed integers.
+      op_encoding = 0x1 * B16 | 0x4 * B7;
+      break;
+    case VCNT:
+      op_encoding = 0xA * B7;
+      break;
   }
   int vd, d;
   NeonSplitCode(reg_type, dst_code, &vd, &d, &op_encoding);
@@ -4800,6 +4831,15 @@ void Assembler::vcgt(NeonDataType dt, QwNeonRegister dst, QwNeonRegister src1,
   emit(EncodeNeonBinOp(VCGT, dt, dst, src1, src2));
 }
 
+void Assembler::vclt(NeonSize size, QwNeonRegister dst, QwNeonRegister src,
+                     int value) {
+  DCHECK(IsEnabled(NEON));
+  DCHECK_EQ(0, value);
+  // vclt.<size>(Qn, Qm, #0) SIMD Vector Compare Less Than Zero.
+  // Instruction details available in ARM DDI 0487F.b, F6-5072.
+  emit(EncodeNeonUnaryOp(VCLT0, NEON_Q, size, dst.code(), src.code()));
+}
+
 void Assembler::vrhadd(NeonDataType dt, QwNeonRegister dst, QwNeonRegister src1,
                        QwNeonRegister src2) {
   DCHECK(IsEnabled(NEON));
@@ -4893,6 +4933,21 @@ void Assembler::vtrn(NeonSize size, QwNeonRegister src1, QwNeonRegister src2) {
   // vtrn.<size>(Qn, Qm) SIMD element transpose.
   // Instruction details available in ARM DDI 0406C.b, A8-1096.
   emit(EncodeNeonUnaryOp(VTRN, NEON_Q, size, src1.code(), src2.code()));
+}
+
+void Assembler::vpaddl(NeonDataType dt, QwNeonRegister dst,
+                       QwNeonRegister src) {
+  DCHECK(IsEnabled(NEON));
+  // vpaddl.<dt>(Qd, Qm) SIMD Vector Pairwise Add Long.
+  emit(EncodeNeonUnaryOp(NeonU(dt) ? VPADDL_U : VPADDL_S, NEON_Q,
+                         NeonDataTypeToSize(dt), dst.code(), src.code()));
+}
+
+void Assembler::vcnt(QwNeonRegister dst, QwNeonRegister src) {
+  // Qd = vcnt(Qm) SIMD Vector Count Set Bits.
+  // Instruction details available at ARM DDI 0487F.b, F6-5094.
+  DCHECK(IsEnabled(NEON));
+  emit(EncodeNeonUnaryOp(VCNT, NEON_Q, Neon8, dst.code(), src.code()));
 }
 
 // Encode NEON vtbl / vtbx instruction.
@@ -5062,20 +5117,28 @@ void Assembler::db(uint8_t data) {
   pc_ += sizeof(uint8_t);
 }
 
-void Assembler::dd(uint32_t data) {
+void Assembler::dd(uint32_t data, RelocInfo::Mode rmode) {
   // dd is used to write raw data. The constant pool should be emitted or
   // blocked before using dd.
   DCHECK(is_const_pool_blocked() || pending_32_bit_constants_.empty());
   CheckBuffer();
+  if (!RelocInfo::IsNone(rmode)) {
+    DCHECK(RelocInfo::IsDataEmbeddedObject(rmode));
+    RecordRelocInfo(rmode);
+  }
   base::WriteUnalignedValue(reinterpret_cast<Address>(pc_), data);
   pc_ += sizeof(uint32_t);
 }
 
-void Assembler::dq(uint64_t value) {
+void Assembler::dq(uint64_t value, RelocInfo::Mode rmode) {
   // dq is used to write raw data. The constant pool should be emitted or
   // blocked before using dq.
   DCHECK(is_const_pool_blocked() || pending_32_bit_constants_.empty());
   CheckBuffer();
+  if (!RelocInfo::IsNone(rmode)) {
+    DCHECK(RelocInfo::IsDataEmbeddedObject(rmode));
+    RecordRelocInfo(rmode);
+  }
   base::WriteUnalignedValue(reinterpret_cast<Address>(pc_), value);
   pc_ += sizeof(uint64_t);
 }

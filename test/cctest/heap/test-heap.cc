@@ -1182,16 +1182,16 @@ HEAP_TEST(Regress10560) {
     CHECK(function->shared().HasBytecodeArray());
     const int kAgingThreshold = 6;
     for (int i = 0; i < kAgingThreshold; i++) {
-      function->shared().GetBytecodeArray().MakeOlder();
-      if (function->shared().GetBytecodeArray().IsOld()) break;
+      function->shared().GetBytecodeArray(i_isolate).MakeOlder();
+      if (function->shared().GetBytecodeArray(i_isolate).IsOld()) break;
     }
 
-    CHECK(function->shared().GetBytecodeArray().IsOld());
+    CHECK(function->shared().GetBytecodeArray(i_isolate).IsOld());
 
     heap::SimulateFullSpace(heap->old_space());
 
     // Just check bytecode isn't flushed still
-    CHECK(function->shared().GetBytecodeArray().IsOld());
+    CHECK(function->shared().GetBytecodeArray(i_isolate).IsOld());
     CHECK(function->shared().is_compiled());
 
     heap->set_force_gc_on_next_allocation();
@@ -1253,6 +1253,7 @@ TEST(Regress10774) {
   i::FLAG_allow_natives_syntax = true;
   i::FLAG_turboprop = true;
   i::FLAG_turbo_dynamic_map_checks = true;
+  i::FLAG_turbo_direct_heap_access = true;
 #ifdef VERIFY_HEAP
   i::FLAG_verify_heap = true;
 #endif
@@ -1368,7 +1369,7 @@ TEST(TestOptimizeAfterBytecodeFlushingCandidate) {
   // the loop breaks once the function is enqueued as a candidate.
   for (int i = 0; i < kAgingThreshold; i++) {
     heap::SimulateIncrementalMarking(CcTest::heap());
-    if (function->shared().GetBytecodeArray().IsOld()) break;
+    if (function->shared().GetBytecodeArray(CcTest::i_isolate()).IsOld()) break;
     CcTest::CollectAllGarbage();
   }
 
@@ -1487,7 +1488,7 @@ TEST(CompilationCacheCachingBehavior) {
     CHECK(shared->HasBytecodeArray());
     const int kAgingThreshold = 6;
     for (int i = 0; i < kAgingThreshold; i++) {
-      shared->GetBytecodeArray().MakeOlder();
+      shared->GetBytecodeArray(CcTest::i_isolate()).MakeOlder();
     }
   }
 

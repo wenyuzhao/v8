@@ -182,7 +182,7 @@ class Logger : public CodeEventListener {
   void ApiNamedPropertyAccess(const char* tag, JSObject holder, Object name);
   void ApiIndexedPropertyAccess(const char* tag, JSObject holder,
                                 uint32_t index);
-  void ApiObjectAccess(const char* tag, JSObject obj);
+  void ApiObjectAccess(const char* tag, JSReceiver obj);
   void ApiEntryCall(const char* name);
 
   // ==== Events logged by --log-code. ====
@@ -201,7 +201,8 @@ class Logger : public CodeEventListener {
                        Handle<SharedFunctionInfo> shared,
                        Handle<Name> script_name, int line, int column) override;
   void CodeCreateEvent(LogEventsAndTags tag, const wasm::WasmCode* code,
-                       wasm::WasmName name) override;
+                       wasm::WasmName name, const char* source_url,
+                       int code_offset, int script_id) override;
 
   void CallbackEvent(Handle<Name> name, Address entry_point) override;
   void GetterCallbackEvent(Handle<Name> name, Address entry_point) override;
@@ -403,7 +404,8 @@ class V8_EXPORT_PRIVATE CodeEventLogger : public CodeEventListener {
                        Handle<SharedFunctionInfo> shared,
                        Handle<Name> script_name, int line, int column) override;
   void CodeCreateEvent(LogEventsAndTags tag, const wasm::WasmCode* code,
-                       wasm::WasmName name) override;
+                       wasm::WasmName name, const char* source_url,
+                       int code_offset, int script_id) override;
 
   void RegExpCodeCreateEvent(Handle<AbstractCode> code,
                              Handle<String> source) override;
@@ -462,7 +464,8 @@ class ExternalCodeEventListener : public CodeEventListener {
                        Handle<SharedFunctionInfo> shared, Handle<Name> source,
                        int line, int column) override;
   void CodeCreateEvent(LogEventsAndTags tag, const wasm::WasmCode* code,
-                       wasm::WasmName name) override;
+                       wasm::WasmName name, const char* source_url,
+                       int code_offset, int script_id) override;
 
   void RegExpCodeCreateEvent(Handle<AbstractCode> code,
                              Handle<String> source) override;

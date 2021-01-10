@@ -267,6 +267,7 @@ class ActivationsFinder : public ThreadVisitor {
           SafepointEntry safepoint = code.GetSafepointEntry(it.frame()->pc());
           int trampoline_pc = safepoint.trampoline_pc();
           DCHECK_IMPLIES(code == topmost_, safe_to_deopt_);
+          CHECK_GE(trampoline_pc, 0);
           // Replace the current pc on the stack with the trampoline.
           // TODO(v8:10026): avoid replacing a signed pointer.
           Address* pc_addr = it.frame()->pc_address();
@@ -708,12 +709,13 @@ int Deoptimizer::GetDeoptimizedCodeCount(Isolate* isolate) {
 
 namespace {
 
-int LookupCatchHandler(TranslatedFrame* translated_frame, int* data_out) {
+int LookupCatchHandler(Isolate* isolate, TranslatedFrame* translated_frame,
+                       int* data_out) {
   switch (translated_frame->kind()) {
     case TranslatedFrame::kInterpretedFunction: {
       int bytecode_offset = translated_frame->node_id().ToInt();
       HandlerTable table(
-          translated_frame->raw_shared_info().GetBytecodeArray());
+          translated_frame->raw_shared_info().GetBytecodeArray(isolate));
       return table.LookupRange(bytecode_offset, data_out, nullptr);
     }
     case TranslatedFrame::kJavaScriptBuiltinContinuationWithCatch: {
@@ -761,7 +763,7 @@ void Deoptimizer::TraceDeoptEnd(double deopt_duration) {
 
 // static
 void Deoptimizer::TraceMarkForDeoptimization(Code code, const char* reason) {
-  if (!FLAG_trace_deopt_verbose) return;
+  if (!FLAG_trace_deopt) return;
 
   DisallowGarbageCollection no_gc;
   Isolate* isolate = code.GetIsolate();
@@ -900,7 +902,7 @@ void Deoptimizer::DoComputeOutputFrames() {
     size_t catch_handler_frame_index = count;
     for (size_t i = count; i-- > 0;) {
       catch_handler_pc_offset_ = LookupCatchHandler(
-          &(translated_state_.frames()[i]), &catch_handler_data_);
+          isolate(), &(translated_state_.frames()[i]), &catch_handler_data_);
       if (catch_handler_pc_offset_ >= 0) {
         catch_handler_frame_index = i;
         break;
@@ -1138,7 +1140,7 @@ void Deoptimizer::DoComputeInterpretedFrame(TranslatedFrame* translated_frame,
   // Set the bytecode array pointer.
   Object bytecode_array = shared.HasBreakInfo()
                               ? shared.GetDebugInfo().DebugBytecodeArray()
-                              : shared.GetBytecodeArray();
+                              : shared.GetBytecodeArray(isolate());
   frame_writer.PushRawObject(bytecode_array, "bytecode array\n");
 
   // The bytecode offset was mentioned explicitly in the BEGIN_FRAME.
@@ -2460,7 +2462,7 @@ DeoptimizedFrameInfo::DeoptimizedFrameInfo(TranslatedState* state,
 
   DCHECK_EQ(TranslatedFrame::kInterpretedFunction, frame_it->kind());
   source_position_ = Deoptimizer::ComputeSourcePositionFromBytecodeArray(
-      *frame_it->shared_info(), frame_it->node_id());
+      isolate, *frame_it->shared_info(), frame_it->node_id());
 
   DCHECK_EQ(parameter_count,
             function_->shared().internal_formal_parameter_count());
@@ -2522,9 +2524,9 @@ Deoptimizer::DeoptInfo Deoptimizer::GetDeoptInfo(Code code, Address pc) {
 
 // static
 int Deoptimizer::ComputeSourcePositionFromBytecodeArray(
-    SharedFunctionInfo shared, BailoutId node_id) {
+    Isolate* isolate, SharedFunctionInfo shared, BailoutId node_id) {
   DCHECK(shared.HasBytecodeArray());
-  return AbstractCode::cast(shared.GetBytecodeArray())
+  return AbstractCode::cast(shared.GetBytecodeArray(isolate))
       .SourcePosition(node_id.ToInt());
 }
 

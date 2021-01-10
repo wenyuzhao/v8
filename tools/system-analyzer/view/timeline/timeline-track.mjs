@@ -5,7 +5,7 @@
 import {kChunkHeight, kChunkWidth} from '../../log/map.mjs';
 import {MapLogEntry} from '../../log/map.mjs';
 import {FocusEvent, SelectionEvent, SelectTimeEvent, SynchronizeSelectionEvent, ToolTipEvent,} from '../events.mjs';
-import {CSSColor, DOM, V8CustomElement} from '../helper.mjs';
+import {CSSColor, DOM, gradientStopsFromGroups, V8CustomElement} from '../helper.mjs';
 
 DOM.defineCustomElement('view/timeline/timeline-track',
                         (templateText) =>
@@ -34,6 +34,16 @@ DOM.defineCustomElement('view/timeline/timeline-track',
     this.isLocked = false;
   }
 
+  static get observedAttributes() {
+    return ['title'];
+  }
+
+  attributeChangedCallback(name, oldValue, newValue) {
+    if (name == 'title') {
+      this.$('#title').innerHTML = newValue;
+    }
+  }
+
   _handleFilterTimeline(type) {
     this._updateChunks();
   }
@@ -41,6 +51,7 @@ DOM.defineCustomElement('view/timeline/timeline-track',
   set data(timeline) {
     this._timeline = timeline;
     this._legend.timeline = timeline;
+    this.$('.content').style.display = timeline.isEmpty() ? 'none' : 'relative';
     this._updateChunks();
   }
 
@@ -99,8 +110,8 @@ DOM.defineCustomElement('view/timeline/timeline-track',
   }
 
   _updateChunks() {
-    this._chunks = this._timeline.chunks(
-        this.nofChunks, each => this._legend.filter(each));
+    this._chunks =
+        this._timeline.chunks(this.nofChunks, this._legend.filterPredicate);
     this.update();
   }
 
@@ -136,19 +147,9 @@ DOM.defineCustomElement('view/timeline/timeline-track',
   }
 
   _createBackgroundImage(chunk) {
-    // Render the types of transitions as bar charts
-    const kHeight = chunk.height;
-    const total = chunk.size();
-    let increment = 0;
-    let lastHeight = 0.0;
-    const stops = [];
-    for (let breakdown of chunk.getBreakdown(map => map.type)) {
-      const color = this._legend.colorForType(breakdown.type);
-      increment += breakdown.count;
-      let height = (increment / total * kHeight) | 0;
-      stops.push(`${color} ${lastHeight}px ${height}px`)
-      lastHeight = height;
-    }
+    const stops = gradientStopsFromGroups(
+        chunk.length, chunk.height, chunk.getBreakdown(event => event.type),
+        type => this._legend.colorForType(type));
     return `linear-gradient(0deg,${stops.join(',')})`;
   }
 
@@ -232,7 +233,7 @@ DOM.defineCustomElement('view/timeline/timeline-track',
         event.layerY / event.target.offsetHeight * (chunk.size() - 1));
     let logEntry = chunk.at(relativeIndex);
     this.dispatchEvent(new FocusEvent(logEntry));
-    this.dispatchEvent(new ToolTipEvent(logEntry.toString(), event.target));
+    this.dispatchEvent(new ToolTipEvent(logEntry.toStringLong(), event.target));
   }
 
   _handleChunkClick(event) {
@@ -520,6 +521,7 @@ class Legend {
   _timeline;
   _typesFilters = new Map();
   _typeClickHandler = this._handleTypeClick.bind(this);
+  _filterPredicate = this.filter.bind(this);
   onFilter = () => {};
 
   constructor(table) {
@@ -528,14 +530,21 @@ class Legend {
 
   set timeline(timeline) {
     this._timeline = timeline;
-    this._typesFilters =
-        new Map(timeline.getBreakdown().map(each => [each.type, true]));
-    this._colors = new Map(
-        timeline.getBreakdown().map(each => [each.type, CSSColor.at(each.id)]));
+    const groups = timeline.getBreakdown();
+    this._typesFilters = new Map(groups.map(each => [each.key, true]));
+    this._colors =
+        new Map(groups.map(each => [each.key, CSSColor.at(each.id)]));
   }
 
   get selection() {
-    return this._timeline.selection ?? this._timeline;
+    return this._timeline.selectionOrSelf;
+  }
+
+  get filterPredicate() {
+    for (let visible of this._typesFilters.values()) {
+      if (!visible) return this._filterPredicate;
+    }
+    return undefined;
   }
 
   colorForType(type) {
@@ -549,12 +558,11 @@ class Legend {
   update() {
     const tbody = DOM.tbody();
     const missingTypes = new Set(this._typesFilters.keys());
-    this.selection.getBreakdown().forEach(each => {
-      tbody.appendChild(this._breakdownRow(each));
-      missingTypes.delete(each.type);
+    this.selection.getBreakdown().forEach(group => {
+      tbody.appendChild(this._addTypeRow(group));
+      missingTypes.delete(group.key);
     });
-    missingTypes.forEach(
-        each => tbody.appendChild(this._row('', each, 0, '0%')));
+    missingTypes.forEach(key => tbody.appendChild(this._row('', key, 0, '0%')));
     if (this._timeline.selection) {
       tbody.appendChild(
           this._row('', 'Selection', this.selection.length, '100%'));
@@ -572,21 +580,20 @@ class Legend {
     return row
   }
 
-  _breakdownRow(breakdown) {
-    const color = this.colorForType(breakdown.type);
+  _addTypeRow(group) {
+    const color = this.colorForType(group.key);
     const colorDiv = DOM.div('colorbox');
-    if (this._typesFilters.get(breakdown.type)) {
+    if (this._typesFilters.get(group.key)) {
       colorDiv.style.backgroundColor = color;
     } else {
       colorDiv.style.borderColor = color;
       colorDiv.style.backgroundColor = CSSColor.backgroundImage;
     }
-    let percent =
-        `${(breakdown.count / this.selection.length * 100).toFixed(1)}%`;
-    const row = this._row(colorDiv, breakdown.type, breakdown.count, percent);
+    let percent = `${(group.count / this.selection.length * 100).toFixed(1)}%`;
+    const row = this._row(colorDiv, group.key, group.count, percent);
     row.className = 'clickable';
     row.onclick = this._typeClickHandler;
-    row.data = breakdown.type;
+    row.data = group.key;
     return row;
   }
 

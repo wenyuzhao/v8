@@ -104,6 +104,14 @@
 namespace v8 {
 namespace internal {
 
+namespace {
+std::atomic<CollectionEpoch> global_epoch{0};
+
+CollectionEpoch next_epoch() {
+  return global_epoch.fetch_add(1, std::memory_order_relaxed) + 1;
+}
+}  // namespace
+
 #ifdef V8_ENABLE_THIRD_PARTY_HEAP
 Isolate* Heap::GetIsolateFromWritableObject(HeapObject object) {
   return reinterpret_cast<Isolate*>(
@@ -1733,10 +1741,37 @@ void Heap::StartIncrementalMarking(int gc_flags,
                                    GarbageCollectionReason gc_reason,
                                    GCCallbackFlags gc_callback_flags) {
   DCHECK(incremental_marking()->IsStopped());
+
+  // Sweeping needs to be completed such that markbits are all cleared before
+  // starting marking again.
+  CompleteSweepingFull();
+
   SafepointScope safepoint(this);
+
+#ifdef DEBUG
+  VerifyCountersAfterSweeping();
+#endif
+
+  // Now that sweeping is completed, we can update the current epoch for the new
+  // full collection.
+  UpdateEpochFull();
+
   set_current_gc_flags(gc_flags);
   current_gc_callback_flags_ = gc_callback_flags;
   incremental_marking()->Start(gc_reason);
+}
+
+void Heap::CompleteSweepingFull() {
+  TRACE_GC_EPOCH(tracer(), GCTracer::Scope::MC_COMPLETE_SWEEPING,
+                 ThreadKind::kMain);
+
+  {
+    TRACE_GC(tracer(), GCTracer::Scope::MC_COMPLETE_SWEEP_ARRAY_BUFFERS);
+    array_buffer_sweeper()->EnsureFinished();
+  }
+
+  mark_compact_collector()->EnsureSweepingCompleted();
+  DCHECK(!mark_compact_collector()->sweeping_in_progress());
 }
 
 void Heap::StartIncrementalMarkingIfAllocationLimitIsReached(
@@ -1947,23 +1982,52 @@ void Heap::UpdateSurvivalStatistics(int start_new_space_size) {
   tracer()->AddSurvivalRatio(survival_rate);
 }
 
+namespace {
+GCTracer::Scope::ScopeId CollectorScopeId(GarbageCollector collector) {
+  switch (collector) {
+    case MARK_COMPACTOR:
+      return GCTracer::Scope::ScopeId::MARK_COMPACTOR;
+    case MINOR_MARK_COMPACTOR:
+      return GCTracer::Scope::ScopeId::MINOR_MARK_COMPACTOR;
+    case SCAVENGER:
+      return GCTracer::Scope::ScopeId::SCAVENGER;
+  }
+  UNREACHABLE();
+}
+}  // namespace
+
 size_t Heap::PerformGarbageCollection(
     GarbageCollector collector, const v8::GCCallbackFlags gc_callback_flags) {
   DisallowJavascriptExecution no_js(isolate());
   base::Optional<SafepointScope> optional_safepoint_scope;
 
+  if (IsYoungGenerationCollector(collector)) {
+    CompleteSweepingYoung(collector);
+  } else {
+    DCHECK_EQ(GarbageCollector::MARK_COMPACTOR, collector);
+    CompleteSweepingFull();
+  }
+
+  // The last GC cycle is done after completing sweeping. Start the next GC
+  // cycle.
+  UpdateCurrentEpoch(collector);
+
   // Stop time-to-collection timer before safepoint - we do not want to measure
   // time for safepointing.
   collection_barrier_->StopTimeToCollectionTimer();
 
+  TRACE_GC_EPOCH(tracer(), CollectorScopeId(collector), ThreadKind::kMain);
+
   if (FLAG_local_heaps) {
     optional_safepoint_scope.emplace(this);
   }
+
 #ifdef VERIFY_HEAP
   if (FLAG_verify_heap) {
     Verify();
   }
 #endif
+
   tracer()->StartInSafepoint();
 
   GarbageCollectionPrologueInSafepoint();
@@ -2042,6 +2106,34 @@ size_t Heap::PerformGarbageCollection(
 
   return freed_global_handles;
 }
+
+void Heap::CompleteSweepingYoung(GarbageCollector collector) {
+  GCTracer::Scope::ScopeId scope_id;
+
+  switch (collector) {
+    case GarbageCollector::MINOR_MARK_COMPACTOR:
+      scope_id = GCTracer::Scope::MINOR_MC_COMPLETE_SWEEP_ARRAY_BUFFERS;
+      break;
+    case GarbageCollector::SCAVENGER:
+      scope_id = GCTracer::Scope::SCAVENGER_COMPLETE_SWEEP_ARRAY_BUFFERS;
+      break;
+    default:
+      UNREACHABLE();
+  }
+
+  TRACE_GC_EPOCH(tracer(), scope_id, ThreadKind::kMain);
+  array_buffer_sweeper()->EnsureFinished();
+}
+
+void Heap::UpdateCurrentEpoch(GarbageCollector collector) {
+  if (IsYoungGenerationCollector(collector)) {
+    epoch_young_ = next_epoch();
+  } else if (incremental_marking()->IsStopped()) {
+    epoch_full_ = next_epoch();
+  }
+}
+
+void Heap::UpdateEpochFull() { epoch_full_ = next_epoch(); }
 
 void Heap::RecomputeLimits(GarbageCollector collector) {
   if (!((collector == MARK_COMPACTOR) ||
@@ -3423,8 +3515,9 @@ void Heap::FinalizeIncrementalMarkingIncrementally(
 
   HistogramTimerScope incremental_marking_scope(
       isolate()->counters()->gc_incremental_marking_finalize());
-  TRACE_EVENT0("v8", "V8.GCIncrementalMarkingFinalize");
-  TRACE_GC(tracer(), GCTracer::Scope::MC_INCREMENTAL_FINALIZE);
+  TRACE_EVENT1("v8", "V8.GCIncrementalMarkingFinalize", "epoch", epoch_full());
+  TRACE_GC_EPOCH(tracer(), GCTracer::Scope::MC_INCREMENTAL_FINALIZE,
+                 ThreadKind::kMain);
 
   SafepointScope safepoint(this);
   InvokeIncrementalMarkingPrologueCallbacks();
@@ -4094,6 +4187,7 @@ class SlotVerifyingVisitor : public ObjectVisitor {
       CHECK(
           InTypedSet(FULL_EMBEDDED_OBJECT_SLOT, rinfo->pc()) ||
           InTypedSet(COMPRESSED_EMBEDDED_OBJECT_SLOT, rinfo->pc()) ||
+          InTypedSet(DATA_EMBEDDED_OBJECT_SLOT, rinfo->pc()) ||
           (rinfo->IsInConstantPool() &&
            InTypedSet(COMPRESSED_OBJECT_SLOT,
                       rinfo->constant_pool_entry_address())) ||

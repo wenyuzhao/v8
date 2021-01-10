@@ -647,10 +647,8 @@ void TurboAssembler::CallEphemeronKeyBarrier(Register object, Register address,
 void TurboAssembler::CallRecordWriteStub(
     Register object, Register address,
     RememberedSetAction remembered_set_action, SaveFPRegsMode fp_mode) {
-  CallRecordWriteStub(
-      object, address, remembered_set_action, fp_mode,
-      isolate()->builtins()->builtin_handle(Builtins::kRecordWrite),
-      kNullAddress);
+  CallRecordWriteStub(object, address, remembered_set_action, fp_mode,
+                      Builtins::kRecordWrite, kNullAddress);
 }
 
 void TurboAssembler::CallRecordWriteStub(
@@ -658,14 +656,15 @@ void TurboAssembler::CallRecordWriteStub(
     RememberedSetAction remembered_set_action, SaveFPRegsMode fp_mode,
     Address wasm_target) {
   CallRecordWriteStub(object, address, remembered_set_action, fp_mode,
-                      Handle<Code>::null(), wasm_target);
+                      Builtins::kNoBuiltinId, wasm_target);
 }
 
 void TurboAssembler::CallRecordWriteStub(
     Register object, Register address,
     RememberedSetAction remembered_set_action, SaveFPRegsMode fp_mode,
-    Handle<Code> code_target, Address wasm_target) {
-  DCHECK_NE(code_target.is_null(), wasm_target == kNullAddress);
+    int builtin_index, Address wasm_target) {
+  DCHECK_NE(builtin_index == Builtins::kNoBuiltinId,
+            wasm_target == kNullAddress);
   // TODO(albertnetymk): For now we ignore remembered_set_action and fp_mode,
   // i.e. always emit remember set and save FP registers in RecordWriteStub. If
   // large performance regression is observed, we should use these values to
@@ -693,9 +692,19 @@ void TurboAssembler::CallRecordWriteStub(
 
   Move(remembered_set_parameter, Smi::FromEnum(remembered_set_action));
   Move(fp_mode_parameter, Smi::FromEnum(fp_mode));
-  if (code_target.is_null()) {
+  if (builtin_index == Builtins::kNoBuiltinId) {
     Call(wasm_target, RelocInfo::WASM_STUB_CALL);
+  } else if (options().inline_offheap_trampolines) {
+    RecordCommentForOffHeapTrampoline(builtin_index);
+    EmbeddedData d = EmbeddedData::FromBlob();
+    Address entry = d.InstructionStartOfBuiltin(builtin_index);
+    // Use ip directly instead of using UseScratchRegisterScope, as we do
+    // not preserve scratch registers across calls.
+    mov(ip, Operand(entry, RelocInfo::OFF_HEAP_TARGET));
+    Call(ip);
   } else {
+    Handle<Code> code_target =
+        isolate()->builtins()->builtin_handle(Builtins::kRecordWrite);
     Call(code_target, RelocInfo::CODE_TARGET);
   }
 
@@ -1925,7 +1934,7 @@ void TurboAssembler::Abort(AbortReason reason) {
   // will not return here
 }
 
-void MacroAssembler::LoadMap(Register destination, Register object) {
+void TurboAssembler::LoadMap(Register destination, Register object) {
   LoadTaggedPointerField(destination,
                          FieldMemOperand(object, HeapObject::kMapOffset));
 }
@@ -2957,7 +2966,7 @@ void TurboAssembler::LoadSimd128(Simd128Register dst, const MemOperand& mem,
       sp, sp,
       Operand(base::bits::WhichPowerOfTwo(16)));  // equivalent to &= -16
   addi(sp, sp, Operand(-16));
-  stxvd(kScratchDoubleReg, MemOperand(r0, sp));
+  stxvd(ScratchDoubleReg, MemOperand(r0, sp));
   // Load it with correct lane ordering.
   lvx(dst, MemOperand(r0, sp));
   mr(sp, ScratchReg);
@@ -3168,40 +3177,40 @@ void TurboAssembler::SwapSimd128(Simd128Register src, Simd128Register dst,
 
 void TurboAssembler::SwapSimd128(Simd128Register src, MemOperand dst,
                                  Simd128Register scratch) {
-  DCHECK(!AreAliased(src, scratch));
-  // push d0, to be used as scratch
+  DCHECK(src != scratch);
+  // push v0, to be used as scratch
   addi(sp, sp, Operand(-kSimd128Size));
-  StoreSimd128(d0, MemOperand(r0, sp), r0, scratch);
+  StoreSimd128(v0, MemOperand(r0, sp), r0, scratch);
   mov(ip, Operand(dst.offset()));
-  LoadSimd128(d0, MemOperand(dst.ra(), ip), r0, scratch);
+  LoadSimd128(v0, MemOperand(dst.ra(), ip), r0, scratch);
   StoreSimd128(src, MemOperand(dst.ra(), ip), r0, scratch);
-  vor(src, d0, d0);
-  // restore d0
-  LoadSimd128(d0, MemOperand(r0, sp), ip, scratch);
+  vor(src, v0, v0);
+  // restore v0
+  LoadSimd128(v0, MemOperand(r0, sp), ip, scratch);
   addi(sp, sp, Operand(kSimd128Size));
 }
 
 void TurboAssembler::SwapSimd128(MemOperand src, MemOperand dst,
                                  Simd128Register scratch) {
-  // push d0 and d1, to be used as scratch
+  // push v0 and v1, to be used as scratch
   addi(sp, sp, Operand(2 * -kSimd128Size));
-  StoreSimd128(d0, MemOperand(r0, sp), ip, scratch);
+  StoreSimd128(v0, MemOperand(r0, sp), ip, scratch);
   li(ip, Operand(kSimd128Size));
-  StoreSimd128(d1, MemOperand(ip, sp), r0, scratch);
+  StoreSimd128(v1, MemOperand(ip, sp), r0, scratch);
 
   mov(ip, Operand(src.offset()));
-  LoadSimd128(d0, MemOperand(src.ra(), ip), r0, scratch);
+  LoadSimd128(v0, MemOperand(src.ra(), ip), r0, scratch);
   mov(ip, Operand(dst.offset()));
-  LoadSimd128(d1, MemOperand(dst.ra(), ip), r0, scratch);
+  LoadSimd128(v1, MemOperand(dst.ra(), ip), r0, scratch);
 
-  StoreSimd128(d0, MemOperand(dst.ra(), ip), r0, scratch);
+  StoreSimd128(v0, MemOperand(dst.ra(), ip), r0, scratch);
   mov(ip, Operand(src.offset()));
-  StoreSimd128(d1, MemOperand(src.ra(), ip), r0, scratch);
+  StoreSimd128(v1, MemOperand(src.ra(), ip), r0, scratch);
 
-  // restore d0 and d1
-  LoadSimd128(d0, MemOperand(r0, sp), ip, scratch);
+  // restore v0 and v1
+  LoadSimd128(v0, MemOperand(r0, sp), ip, scratch);
   li(ip, Operand(kSimd128Size));
-  LoadSimd128(d1, MemOperand(ip, sp), r0, scratch);
+  LoadSimd128(v1, MemOperand(ip, sp), r0, scratch);
   addi(sp, sp, Operand(2 * kSimd128Size));
 }
 
@@ -3350,7 +3359,7 @@ void TurboAssembler::CallForDeoptimization(Builtins::Name target, int,
   if (kind == DeoptimizeKind::kEagerWithResume) {
     b(ret);
     DCHECK_EQ(SizeOfCodeGeneratedSince(exit),
-              Deoptimizer::kEagerWithResumeDeoptExitSize);
+              Deoptimizer::kEagerWithResumeBeforeArgsSize);
   }
 }
 

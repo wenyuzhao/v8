@@ -48,6 +48,14 @@ double GCTracer::MonotonicallyIncreasingTimeInMs() {
   }
 }
 
+CollectionEpoch GCTracer::CurrentEpoch(Scope::ScopeId scope_id) {
+  if (Scope::NeedsYoungEpoch(scope_id)) {
+    return heap_->epoch_young();
+  } else {
+    return heap_->epoch_full();
+  }
+}
+
 GCTracer::Scope::Scope(GCTracer* tracer, ScopeId scope, ThreadKind thread_kind)
     : tracer_(tracer), scope_(scope), thread_kind_(thread_kind) {
   start_time_ = tracer_->MonotonicallyIncreasingTimeInMs();
@@ -93,6 +101,19 @@ const char* GCTracer::Scope::Name(ScopeId id) {
 #undef CASE
   UNREACHABLE();
   return nullptr;
+}
+
+bool GCTracer::Scope::NeedsYoungEpoch(ScopeId id) {
+#define CASE(scope)  \
+  case Scope::scope: \
+    return true;
+  switch (id) {
+    TRACER_YOUNG_EPOCH_SCOPES(CASE)
+    default:
+      return false;
+  }
+#undef CASE
+  UNREACHABLE();
 }
 
 GCTracer::Event::Event(Type type, GarbageCollectionReason gc_reason,
@@ -747,7 +768,6 @@ void GCTracer::PrintNVP() const {
           "incremental.finalize.external.prologue=%.1f "
           "incremental.finalize.external.epilogue=%.1f "
           "incremental.layout_change=%.1f "
-          "incremental.start=%.1f "
           "incremental.sweep_array_buffers=%.1f "
           "incremental.sweeping=%.1f "
           "incremental.embedder_prologue=%.1f "
@@ -839,7 +859,6 @@ void GCTracer::PrintNVP() const {
           current_.scopes[Scope::MC_INCREMENTAL_EXTERNAL_EPILOGUE],
           current_.scopes[Scope::MC_INCREMENTAL_LAYOUT_CHANGE],
           current_.scopes[Scope::MC_INCREMENTAL_START],
-          current_.scopes[Scope::MC_INCREMENTAL_SWEEP_ARRAY_BUFFERS],
           current_.scopes[Scope::MC_INCREMENTAL_SWEEPING],
           current_.scopes[Scope::MC_INCREMENTAL_EMBEDDER_PROLOGUE],
           current_.scopes[Scope::MC_INCREMENTAL_EMBEDDER_TRACING],

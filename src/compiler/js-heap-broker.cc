@@ -17,7 +17,6 @@
 #include "src/codegen/code-factory.h"
 #include "src/codegen/optimized-compilation-info.h"
 #include "src/compiler/access-info.h"
-#include "src/compiler/bytecode-analysis.h"
 #include "src/compiler/graph-reducer.h"
 #include "src/compiler/per-isolate-compiler-cache.h"
 #include "src/execution/protectors-inl.h"
@@ -1748,15 +1747,15 @@ SharedFunctionInfoData::SharedFunctionInfoData(
       builtin_id_(object->HasBuiltinId() ? object->builtin_id()
                                          : Builtins::kNoBuiltinId),
       context_header_size_(object->scope_info().ContextHeaderLength()),
-      GetBytecodeArray_(
-          object->HasBytecodeArray()
-              ? broker->GetOrCreateData(object->GetBytecodeArray())
-              : nullptr)
+      GetBytecodeArray_(object->HasBytecodeArray()
+                            ? broker->GetOrCreateData(
+                                  object->GetBytecodeArray(broker->isolate()))
+                            : nullptr)
 #define INIT_MEMBER(type, name) , name##_(object->name())
           BROKER_SFI_FIELDS(INIT_MEMBER)
 #undef INIT_MEMBER
       ,
-      inlineability_(object->GetInlineability()),
+      inlineability_(object->GetInlineability(broker->isolate())),
       function_template_info_(nullptr),
       template_objects_(broker->zone()),
       scope_info_(nullptr) {
@@ -2373,7 +2372,6 @@ JSHeapBroker::JSHeapBroker(Isolate* isolate, Zone* broker_zone,
       is_concurrent_inlining_(is_concurrent_inlining),
       code_kind_(code_kind),
       feedback_(zone()),
-      bytecode_analyses_(zone()),
       property_access_infos_(zone()),
       minimorphic_property_access_infos_(zone()),
       typed_array_string_tags_(zone()),
@@ -2384,6 +2382,7 @@ JSHeapBroker::JSHeapBroker(Isolate* isolate, Zone* broker_zone,
   // immediately with a larger-capacity one.  It doesn't seem to affect the
   // performance in a noticeable way though.
   TRACE(this, "Constructing heap broker");
+  DCHECK_IMPLIES(is_concurrent_inlining_, FLAG_turbo_direct_heap_access);
 }
 
 JSHeapBroker::~JSHeapBroker() { DCHECK_NULL(local_isolate_); }
@@ -3065,15 +3064,31 @@ bool MapRef::IsUnboxedDoubleField(InternalIndex descriptor_index) const {
       .is_unboxed_double_field;
 }
 
-int StringRef::length() const {
+base::Optional<int> StringRef::length() const {
   if (data_->should_access_heap()) {
-    return object()->synchronized_length();
+    if (data_->kind() == kNeverSerializedHeapObject &&
+        !this->IsInternalizedString()) {
+      TRACE_BROKER_MISSING(
+          broker(),
+          "length for kNeverSerialized non-internalized string " << *this);
+      return base::nullopt;
+    } else {
+      return object()->synchronized_length();
+    }
   }
   return data()->AsString()->length();
 }
 
-uint16_t StringRef::GetFirstChar() {
+base::Optional<uint16_t> StringRef::GetFirstChar() {
   if (data_->should_access_heap()) {
+    if (data_->kind() == kNeverSerializedHeapObject &&
+        !this->IsInternalizedString()) {
+      TRACE_BROKER_MISSING(
+          broker(),
+          "first char for kNeverSerialized non-internalized string " << *this);
+      return base::nullopt;
+    }
+
     if (broker()->local_isolate()) {
       return object()->Get(0, broker()->local_isolate());
     } else {
@@ -3416,13 +3431,36 @@ BIMODAL_ACCESSOR_C(ScopeInfo, bool, HasOuterScopeInfo)
 BIMODAL_ACCESSOR(ScopeInfo, ScopeInfo, OuterScopeInfo)
 
 BIMODAL_ACCESSOR_C(SharedFunctionInfo, int, builtin_id)
-BIMODAL_ACCESSOR_WITH_FLAG(SharedFunctionInfo, BytecodeArray, GetBytecodeArray)
+BytecodeArrayRef SharedFunctionInfoRef::GetBytecodeArray() const {
+  if (data_->should_access_heap() || FLAG_turbo_direct_heap_access) {
+    BytecodeArray bytecode_array;
+    LocalIsolate* local_isolate = broker()->local_isolate();
+    if (local_isolate && !local_isolate->is_main_thread()) {
+      bytecode_array = object()->GetBytecodeArray(local_isolate);
+    } else {
+      bytecode_array = object()->GetBytecodeArray(broker()->isolate());
+    }
+    return BytecodeArrayRef(
+        broker(), broker()->CanonicalPersistentHandle(bytecode_array));
+  }
+  return BytecodeArrayRef(
+      broker(), ObjectRef ::data()->AsSharedFunctionInfo()->GetBytecodeArray());
+}
 #define DEF_SFI_ACCESSOR(type, name) \
   BIMODAL_ACCESSOR_WITH_FLAG_C(SharedFunctionInfo, type, name)
 BROKER_SFI_FIELDS(DEF_SFI_ACCESSOR)
 #undef DEF_SFI_ACCESSOR
-BIMODAL_ACCESSOR_C(SharedFunctionInfo, SharedFunctionInfo::Inlineability,
-                   GetInlineability)
+SharedFunctionInfo::Inlineability SharedFunctionInfoRef::GetInlineability()
+    const {
+  if (data_->should_access_heap()) {
+    if (LocalIsolate* local_isolate = broker()->local_isolate()) {
+      return object()->GetInlineability(local_isolate);
+    } else {
+      return object()->GetInlineability(broker()->isolate());
+    }
+  }
+  return ObjectRef ::data()->AsSharedFunctionInfo()->GetInlineability();
+}
 
 BIMODAL_ACCESSOR(FeedbackCell, HeapObject, value)
 
@@ -5070,36 +5108,6 @@ RegExpLiteralFeedback const& ProcessedFeedback::AsRegExpLiteral() const {
 TemplateObjectFeedback const& ProcessedFeedback::AsTemplateObject() const {
   CHECK_EQ(kTemplateObject, kind());
   return *static_cast<TemplateObjectFeedback const*>(this);
-}
-
-BytecodeAnalysis const& JSHeapBroker::GetBytecodeAnalysis(
-    Handle<BytecodeArray> bytecode_array, BailoutId osr_bailout_id,
-    bool analyze_liveness, SerializationPolicy policy) {
-  ObjectData* bytecode_array_data = GetOrCreateData(bytecode_array);
-  CHECK_NOT_NULL(bytecode_array_data);
-
-  auto it = bytecode_analyses_.find(bytecode_array_data);
-  if (it != bytecode_analyses_.end()) {
-    // Bytecode analysis can be run for OSR or for non-OSR. In the rare case
-    // where we optimize for OSR and consider the top-level function itself for
-    // inlining (because of recursion), we need both the OSR and the non-OSR
-    // analysis. Fortunately, the only difference between the two lies in
-    // whether the OSR entry offset gets computed (from the OSR bailout id).
-    // Hence it's okay to reuse the OSR-version when asked for the non-OSR
-    // version, such that we need to store at most one analysis result per
-    // bytecode array.
-    CHECK_IMPLIES(osr_bailout_id != it->second->osr_bailout_id(),
-                  osr_bailout_id.IsNone());
-    CHECK_EQ(analyze_liveness, it->second->liveness_analyzed());
-    return *it->second;
-  }
-
-  CHECK_EQ(policy, SerializationPolicy::kSerializeIfNeeded);
-  BytecodeAnalysis* analysis = zone()->New<BytecodeAnalysis>(
-      bytecode_array, zone(), osr_bailout_id, analyze_liveness);
-  DCHECK_EQ(analysis->osr_bailout_id(), osr_bailout_id);
-  bytecode_analyses_[bytecode_array_data] = analysis;
-  return *analysis;
 }
 
 bool JSHeapBroker::StackHasOverflowed() const {

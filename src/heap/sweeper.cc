@@ -89,8 +89,8 @@ class Sweeper::SweeperJob final : public JobTask {
       TRACE_GC(tracer_, GCTracer::Scope::MC_SWEEP);
       RunImpl(delegate);
     } else {
-      TRACE_GC1(tracer_, GCTracer::Scope::MC_BACKGROUND_SWEEPING,
-                ThreadKind::kBackground);
+      TRACE_GC_EPOCH(tracer_, GCTracer::Scope::MC_BACKGROUND_SWEEPING,
+                     ThreadKind::kBackground);
       RunImpl(delegate);
     }
   }
@@ -247,7 +247,7 @@ void Sweeper::SupportConcurrentSweeping() {
 }
 
 bool Sweeper::AreSweeperTasksRunning() {
-  return job_handle_ && job_handle_->IsValid() && !job_handle_->IsCompleted();
+  return job_handle_ && job_handle_->IsValid() && job_handle_->IsActive();
 }
 
 V8_INLINE size_t Sweeper::FreeAndProcessFreedMemory(
@@ -603,8 +603,8 @@ class Sweeper::IterabilityTask final : public CancelableTask {
 
  private:
   void RunInternal() final {
-    TRACE_GC1(tracer_, GCTracer::Scope::MC_BACKGROUND_SWEEPING,
-              ThreadKind::kBackground);
+    TRACE_GC_EPOCH(tracer_, GCTracer::Scope::MC_BACKGROUND_SWEEPING,
+                   ThreadKind::kBackground);
     for (Page* page : sweeper_->iterability_list_) {
       sweeper_->MakeIterable(page);
     }

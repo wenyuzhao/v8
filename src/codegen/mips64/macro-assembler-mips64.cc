@@ -256,10 +256,8 @@ void TurboAssembler::CallEphemeronKeyBarrier(Register object, Register address,
 void TurboAssembler::CallRecordWriteStub(
     Register object, Register address,
     RememberedSetAction remembered_set_action, SaveFPRegsMode fp_mode) {
-  CallRecordWriteStub(
-      object, address, remembered_set_action, fp_mode,
-      isolate()->builtins()->builtin_handle(Builtins::kRecordWrite),
-      kNullAddress);
+  CallRecordWriteStub(object, address, remembered_set_action, fp_mode,
+                      Builtins::kRecordWrite, kNullAddress);
 }
 
 void TurboAssembler::CallRecordWriteStub(
@@ -267,14 +265,15 @@ void TurboAssembler::CallRecordWriteStub(
     RememberedSetAction remembered_set_action, SaveFPRegsMode fp_mode,
     Address wasm_target) {
   CallRecordWriteStub(object, address, remembered_set_action, fp_mode,
-                      Handle<Code>::null(), wasm_target);
+                      Builtins::kNoBuiltinId, wasm_target);
 }
 
 void TurboAssembler::CallRecordWriteStub(
     Register object, Register address,
     RememberedSetAction remembered_set_action, SaveFPRegsMode fp_mode,
-    Handle<Code> code_target, Address wasm_target) {
-  DCHECK_NE(code_target.is_null(), wasm_target == kNullAddress);
+    int builtin_index, Address wasm_target) {
+  DCHECK_NE(builtin_index == Builtins::kNoBuiltinId,
+            wasm_target == kNullAddress);
   // TODO(albertnetymk): For now we ignore remembered_set_action and fp_mode,
   // i.e. always emit remember set and save FP registers in RecordWriteStub. If
   // large performance regression is observed, we should use these values to
@@ -301,9 +300,20 @@ void TurboAssembler::CallRecordWriteStub(
 
   Move(remembered_set_parameter, Smi::FromEnum(remembered_set_action));
   Move(fp_mode_parameter, Smi::FromEnum(fp_mode));
-  if (code_target.is_null()) {
+  if (builtin_index == Builtins::kNoBuiltinId) {
     Call(wasm_target, RelocInfo::WASM_STUB_CALL);
+  } else if (options().inline_offheap_trampolines) {
+    // Inline the trampoline.
+    DCHECK(Builtins::IsBuiltinId(builtin_index));
+    RecordCommentForOffHeapTrampoline(builtin_index);
+    CHECK_NE(builtin_index, Builtins::kNoBuiltinId);
+    EmbeddedData d = EmbeddedData::FromBlob();
+    Address entry = d.InstructionStartOfBuiltin(builtin_index);
+    li(t9, Operand(entry, RelocInfo::OFF_HEAP_TARGET));
+    Call(t9);
   } else {
+    Handle<Code> code_target =
+        isolate()->builtins()->builtin_handle(Builtins::kRecordWrite);
     Call(code_target, RelocInfo::CODE_TARGET);
   }
 
@@ -2621,6 +2631,64 @@ void TurboAssembler::Round_s_s(FPURegister dst, FPURegister src) {
              });
 }
 
+void TurboAssembler::LoadLane(MSASize sz, MSARegister dst, uint8_t laneidx,
+                              MemOperand src) {
+  switch (sz) {
+    case MSA_B:
+      Lbu(kScratchReg, src);
+      insert_b(dst, laneidx, kScratchReg);
+      break;
+    case MSA_H:
+      Lhu(kScratchReg, src);
+      insert_h(dst, laneidx, kScratchReg);
+      break;
+    case MSA_W:
+      Lwu(kScratchReg, src);
+      insert_w(dst, laneidx, kScratchReg);
+      break;
+    case MSA_D:
+      Ld(kScratchReg, src);
+      insert_d(dst, laneidx, kScratchReg);
+      break;
+    default:
+      UNREACHABLE();
+  }
+}
+
+void TurboAssembler::StoreLane(MSASize sz, MSARegister src, uint8_t laneidx,
+                               MemOperand dst) {
+  switch (sz) {
+    case MSA_B:
+      copy_u_b(kScratchReg, src, laneidx);
+      Sb(kScratchReg, dst);
+      break;
+    case MSA_H:
+      copy_u_h(kScratchReg, src, laneidx);
+      Sh(kScratchReg, dst);
+      break;
+    case MSA_W:
+      if (laneidx == 0) {
+        FPURegister src_reg = FPURegister::from_code(src.code());
+        Swc1(src_reg, dst);
+      } else {
+        copy_u_w(kScratchReg, src, laneidx);
+        Sw(kScratchReg, dst);
+      }
+      break;
+    case MSA_D:
+      if (laneidx == 0) {
+        FPURegister src_reg = FPURegister::from_code(src.code());
+        Sdc1(src_reg, dst);
+      } else {
+        copy_s_d(kScratchReg, src, laneidx);
+        Sd(kScratchReg, dst);
+      }
+      break;
+    default:
+      UNREACHABLE();
+  }
+}
+
 void TurboAssembler::MSARoundW(MSARegister dst, MSARegister src,
                                FPURoundingMode mode) {
   BlockTrampolinePoolScope block_trampoline_pool(this);
@@ -3171,23 +3239,18 @@ void TurboAssembler::TryInlineTruncateDoubleToI(Register result,
                                                 DoubleRegister double_input,
                                                 Label* done) {
   DoubleRegister single_scratch = kScratchDoubleReg.low();
-  UseScratchRegisterScope temps(this);
   BlockTrampolinePoolScope block_trampoline_pool(this);
-  Register scratch = temps.Acquire();
-  Register scratch2 = t9;
+  Register scratch = t9;
 
-  // Clear cumulative exception flags and save the FCSR.
-  cfc1(scratch2, FCSR);
-  ctc1(zero_reg, FCSR);
   // Try a conversion to a signed integer.
   trunc_w_d(single_scratch, double_input);
   mfc1(result, single_scratch);
-  // Retrieve and restore the FCSR.
+  // Retrieve the FCSR.
   cfc1(scratch, FCSR);
-  ctc1(scratch2, FCSR);
   // Check for overflow and NaNs.
   And(scratch, scratch,
-      kFCSROverflowFlagMask | kFCSRUnderflowFlagMask | kFCSRInvalidOpFlagMask);
+      kFCSROverflowCauseMask | kFCSRUnderflowCauseMask |
+          kFCSRInvalidOpCauseMask);
   // If we had no exceptions we are done.
   Branch(done, eq, scratch, Operand(zero_reg));
 }
@@ -5156,7 +5219,7 @@ void TurboAssembler::Abort(AbortReason reason) {
   }
 }
 
-void MacroAssembler::LoadMap(Register destination, Register object) {
+void TurboAssembler::LoadMap(Register destination, Register object) {
   Ld(destination, FieldMemOperand(object, HeapObject::kMapOffset));
 }
 
@@ -5921,7 +5984,7 @@ void TurboAssembler::CallForDeoptimization(Builtins::Name target, int,
   if (kind == DeoptimizeKind::kEagerWithResume) {
     Branch(ret);
     DCHECK_EQ(SizeOfCodeGeneratedSince(exit),
-              Deoptimizer::kEagerWithResumeDeoptExitSize);
+              Deoptimizer::kEagerWithResumeBeforeArgsSize);
   }
 }
 

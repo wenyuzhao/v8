@@ -75,6 +75,8 @@ namespace compiler {
   V(ArmVabsF64)                    \
   V(ArmVnegF64)                    \
   V(ArmVsqrtF64)                   \
+  V(ArmVmullLow)                   \
+  V(ArmVmullHigh)                  \
   V(ArmVrintmF32)                  \
   V(ArmVrintmF64)                  \
   V(ArmVrintpF32)                  \
@@ -110,6 +112,8 @@ namespace compiler {
   V(ArmVst1F64)                    \
   V(ArmVld1S128)                   \
   V(ArmVst1S128)                   \
+  V(ArmVcnt)                       \
+  V(ArmVpaddl)                     \
   V(ArmFloat32Max)                 \
   V(ArmFloat64Max)                 \
   V(ArmFloat32Min)                 \
@@ -279,6 +283,7 @@ namespace compiler {
   V(ArmI8x16RoundingAverageU)      \
   V(ArmI8x16Abs)                   \
   V(ArmI8x16BitMask)               \
+  V(ArmSignSelect)                 \
   V(ArmS128Const)                  \
   V(ArmS128Zero)                   \
   V(ArmS128AllOnes)                \
@@ -335,6 +340,10 @@ namespace compiler {
   V(ArmS128Load32x2U)              \
   V(ArmS128Load32Zero)             \
   V(ArmS128Load64Zero)             \
+  V(ArmS128LoadLaneLow)            \
+  V(ArmS128LoadLaneHigh)           \
+  V(ArmS128StoreLaneLow)           \
+  V(ArmS128StoreLaneHigh)          \
   V(ArmWord32AtomicPairLoad)       \
   V(ArmWord32AtomicPairStore)      \
   V(ArmWord32AtomicPairAdd)        \

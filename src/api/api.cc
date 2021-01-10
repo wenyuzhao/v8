@@ -101,6 +101,7 @@
 #include "src/profiler/heap-snapshot-generator-inl.h"
 #include "src/profiler/profile-generator-inl.h"
 #include "src/profiler/tick-sample.h"
+#include "src/regexp/regexp-stack.h"
 #include "src/regexp/regexp-utils.h"
 #include "src/runtime/runtime.h"
 #include "src/snapshot/code-serializer.h"
@@ -3583,6 +3584,7 @@ VALUE_IS_SPECIFIC_TYPE(SymbolObject, SymbolWrapper)
 VALUE_IS_SPECIFIC_TYPE(Date, JSDate)
 VALUE_IS_SPECIFIC_TYPE(Map, JSMap)
 VALUE_IS_SPECIFIC_TYPE(Set, JSSet)
+VALUE_IS_SPECIFIC_TYPE(WasmMemoryObject, WasmMemoryObject)
 VALUE_IS_SPECIFIC_TYPE(WasmModuleObject, WasmModuleObject)
 VALUE_IS_SPECIFIC_TYPE(WeakMap, JSWeakMap)
 VALUE_IS_SPECIFIC_TYPE(WeakSet, JSWeakSet)
@@ -3808,23 +3810,23 @@ void v8::Function::CheckCast(Value* that) {
                   "Value is not a Function");
 }
 
-void v8::Boolean::CheckCast(v8::Value* that) {
+void v8::Boolean::CheckCast(v8::Data* that) {
   i::Handle<i::Object> obj = Utils::OpenHandle(that);
   Utils::ApiCheck(obj->IsBoolean(), "v8::Boolean::Cast",
                   "Value is not a Boolean");
 }
 
-void v8::Name::CheckCast(v8::Value* that) {
+void v8::Name::CheckCast(v8::Data* that) {
   i::Handle<i::Object> obj = Utils::OpenHandle(that);
   Utils::ApiCheck(obj->IsName(), "v8::Name::Cast", "Value is not a Name");
 }
 
-void v8::String::CheckCast(v8::Value* that) {
+void v8::String::CheckCast(v8::Data* that) {
   i::Handle<i::Object> obj = Utils::OpenHandle(that);
   Utils::ApiCheck(obj->IsString(), "v8::String::Cast", "Value is not a String");
 }
 
-void v8::Symbol::CheckCast(v8::Value* that) {
+void v8::Symbol::CheckCast(v8::Data* that) {
   i::Handle<i::Object> obj = Utils::OpenHandle(that);
   Utils::ApiCheck(obj->IsSymbol(), "v8::Symbol::Cast", "Value is not a Symbol");
 }
@@ -3847,30 +3849,30 @@ void v8::Module::CheckCast(v8::Data* that) {
   Utils::ApiCheck(obj->IsModule(), "v8::Module::Cast", "Value is not a Module");
 }
 
-void v8::Number::CheckCast(v8::Value* that) {
+void v8::Number::CheckCast(v8::Data* that) {
   i::Handle<i::Object> obj = Utils::OpenHandle(that);
   Utils::ApiCheck(obj->IsNumber(), "v8::Number::Cast()",
                   "Value is not a Number");
 }
 
-void v8::Integer::CheckCast(v8::Value* that) {
+void v8::Integer::CheckCast(v8::Data* that) {
   i::Handle<i::Object> obj = Utils::OpenHandle(that);
   Utils::ApiCheck(obj->IsNumber(), "v8::Integer::Cast",
                   "Value is not an Integer");
 }
 
-void v8::Int32::CheckCast(v8::Value* that) {
-  Utils::ApiCheck(that->IsInt32(), "v8::Int32::Cast",
+void v8::Int32::CheckCast(v8::Data* that) {
+  Utils::ApiCheck(Value::Cast(that)->IsInt32(), "v8::Int32::Cast",
                   "Value is not a 32-bit signed integer");
 }
 
-void v8::Uint32::CheckCast(v8::Value* that) {
-  Utils::ApiCheck(that->IsUint32(), "v8::Uint32::Cast",
+void v8::Uint32::CheckCast(v8::Data* that) {
+  Utils::ApiCheck(Value::Cast(that)->IsUint32(), "v8::Uint32::Cast",
                   "Value is not a 32-bit unsigned integer");
 }
 
-void v8::BigInt::CheckCast(v8::Value* that) {
-  Utils::ApiCheck(that->IsBigInt(), "v8::BigInt::Cast",
+void v8::BigInt::CheckCast(v8::Data* that) {
+  Utils::ApiCheck(Value::Cast(that)->IsBigInt(), "v8::BigInt::Cast",
                   "Value is not a BigInt");
 }
 
@@ -3903,6 +3905,11 @@ void v8::Proxy::CheckCast(Value* that) {
   Utils::ApiCheck(that->IsProxy(), "v8::Proxy::Cast", "Value is not a Proxy");
 }
 
+void v8::WasmMemoryObject::CheckCast(Value* that) {
+  Utils::ApiCheck(that->IsWasmMemoryObject(), "v8::WasmMemoryObject::Cast",
+                  "Value is not a WasmMemoryObject");
+}
+
 void v8::WasmModuleObject::CheckCast(Value* that) {
   Utils::ApiCheck(that->IsWasmModuleObject(), "v8::WasmModuleObject::Cast",
                   "Value is not a WasmModuleObject");
@@ -3912,12 +3919,6 @@ void v8::debug::AccessorPair::CheckCast(Value* that) {
   i::Handle<i::Object> obj = Utils::OpenHandle(that);
   Utils::ApiCheck(obj->IsAccessorPair(), "v8::AccessorPair::Cast",
                   "Value is not a debug::AccessorPair");
-}
-
-void v8::debug::WasmValue::CheckCast(Value* that) {
-  i::Handle<i::Object> obj = Utils::OpenHandle(that);
-  Utils::ApiCheck(obj->IsWasmValue(), "v8::WasmValue::Cast",
-                  "Value is not a debug::WasmValue");
 }
 
 v8::BackingStore::~BackingStore() {
@@ -6255,6 +6256,12 @@ v8::Isolate* Context::GetIsolate() {
   return reinterpret_cast<Isolate*>(env->GetIsolate());
 }
 
+v8::MicrotaskQueue* Context::GetMicrotaskQueue() {
+  i::Handle<i::Context> env = Utils::OpenHandle(this);
+  CHECK(env->IsNativeContext());
+  return i::Handle<i::NativeContext>::cast(env)->microtask_queue();
+}
+
 v8::Local<v8::Object> Context::Global() {
   i::Handle<i::Context> context = Utils::OpenHandle(this);
   i::Isolate* isolate = context->GetIsolate();
@@ -7369,10 +7376,14 @@ MaybeLocal<Promise> Promise::Catch(Local<Context> context,
                                    Local<Function> handler) {
   PREPARE_FOR_EXECUTION(context, Promise, Catch, Promise);
   auto self = Utils::OpenHandle(this);
-  i::Handle<i::Object> argv[] = {Utils::OpenHandle(*handler)};
+  i::Handle<i::Object> argv[] = {isolate->factory()->undefined_value(),
+                                 Utils::OpenHandle(*handler)};
   i::Handle<i::Object> result;
+  // Do not call the built-in Promise.prototype.catch!
+  // v8::Promise should not call out to a monkeypatched Promise.prototype.then
+  // as the implementation of Promise.prototype.catch does.
   has_pending_exception =
-      !i::Execution::CallBuiltin(isolate, isolate->promise_catch(), self,
+      !i::Execution::CallBuiltin(isolate, isolate->promise_then(), self,
                                  arraysize(argv), argv)
            .ToHandle(&result);
   RETURN_ON_FAILED_EXECUTION(Promise);
@@ -7500,6 +7511,12 @@ OwnedBuffer CompiledWasmModule::Serialize() {
 MemorySpan<const uint8_t> CompiledWasmModule::GetWireBytesRef() {
   i::Vector<const uint8_t> bytes_vec = native_module_->wire_bytes();
   return {bytes_vec.begin(), bytes_vec.size()};
+}
+
+Local<ArrayBuffer> v8::WasmMemoryObject::Buffer() {
+  i::Handle<i::WasmMemoryObject> obj = Utils::OpenHandle(this);
+  i::Handle<i::JSArrayBuffer> buffer(obj->array_buffer(), obj->GetIsolate());
+  return Utils::ToLocal(buffer);
 }
 
 CompiledWasmModule WasmModuleObject::GetCompiledModule() {
@@ -8534,6 +8551,9 @@ void Isolate::Initialize(Isolate* isolate,
 
   i_isolate->set_api_external_references(params.external_references);
   i_isolate->set_allow_atomics_wait(params.allow_atomics_wait);
+
+  i_isolate->set_supported_import_assertions(
+      params.supported_import_assertions);
 
   i_isolate->heap()->ConfigureHeap(params.constraints);
   if (params.cpp_heap_params) {
@@ -9740,10 +9760,13 @@ void debug::SetTerminateOnResume(Isolate* v8_isolate) {
   isolate->debug()->SetTerminateOnResume();
 }
 
-bool debug::AllFramesOnStackAreBlackboxed(Isolate* v8_isolate) {
+bool debug::CanBreakProgram(Isolate* v8_isolate) {
   i::Isolate* isolate = reinterpret_cast<i::Isolate*>(v8_isolate);
   ENTER_V8_DO_NOT_USE(isolate);
-  return isolate->debug()->AllFramesOnStackAreBlackboxed();
+  // We cannot break a program if we are currently running a regexp.
+  // TODO(yangguo): fix this exception.
+  return !isolate->regexp_stack()->is_in_use() &&
+         isolate->debug()->AllFramesOnStackAreBlackboxed();
 }
 
 v8::Isolate* debug::Script::GetIsolate() const {
@@ -10658,52 +10681,6 @@ Local<Value> debug::AccessorPair::setter() {
 bool debug::AccessorPair::IsAccessorPair(Local<Value> that) {
   i::Handle<i::Object> obj = Utils::OpenHandle(*that);
   return obj->IsAccessorPair();
-}
-
-int debug::WasmValue::value_type() {
-  i::Handle<i::WasmValue> obj = Utils::OpenHandle(this);
-  return obj->value_type();
-}
-
-v8::Local<v8::Array> debug::WasmValue::bytes() {
-  i::Handle<i::WasmValue> obj = Utils::OpenHandle(this);
-  DCHECK(i::wasm::ValueType::Kind::kI32 == obj->value_type() ||
-         i::wasm::ValueType::Kind::kI64 == obj->value_type() ||
-         i::wasm::ValueType::Kind::kF32 == obj->value_type() ||
-         i::wasm::ValueType::Kind::kF64 == obj->value_type() ||
-         i::wasm::ValueType::Kind::kS128 == obj->value_type());
-
-  i::Isolate* isolate = obj->GetIsolate();
-  i::Handle<i::Object> bytes_or_ref(obj->bytes_or_ref(), isolate);
-  i::Handle<i::ByteArray> bytes(i::Handle<i::ByteArray>::cast(bytes_or_ref));
-
-  int length = bytes->length();
-
-  i::Handle<i::FixedArray> fa = isolate->factory()->NewFixedArray(length);
-  i::Handle<i::JSArray> arr = obj->GetIsolate()->factory()->NewJSArray(
-      i::PACKED_SMI_ELEMENTS, length, length);
-  i::JSArray::SetContent(arr, fa);
-
-  for (int i = 0; i < length; i++) {
-    fa->set(i, i::Smi::FromInt(bytes->get(i)));
-  }
-
-  return Utils::ToLocal(arr);
-}
-
-v8::Local<v8::Value> debug::WasmValue::ref() {
-  i::Handle<i::WasmValue> obj = Utils::OpenHandle(this);
-  DCHECK_EQ(i::wasm::HeapType::kExtern, obj->value_type());
-
-  i::Isolate* isolate = obj->GetIsolate();
-  i::Handle<i::Object> bytes_or_ref(obj->bytes_or_ref(), isolate);
-
-  return Utils::ToLocal(bytes_or_ref);
-}
-
-bool debug::WasmValue::IsWasmValue(Local<Value> that) {
-  i::Handle<i::Object> obj = Utils::OpenHandle(*that);
-  return obj->IsWasmValue();
 }
 
 MaybeLocal<Message> debug::GetMessageFromPromise(Local<Promise> p) {

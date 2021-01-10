@@ -41,7 +41,6 @@ class MapLogEntry extends LogEntry {
     super(undefined, time);
     this.id = id;
     MapLogEntry.set(id, this);
-    this.id = -1;
     this.edge = undefined;
     this.children = [];
     this.depth = 0;
@@ -49,12 +48,19 @@ class MapLogEntry extends LogEntry {
     this.deprecatedTargets = null;
     this.leftId = 0;
     this.rightId = 0;
-    this.filePosition = '';
-    this.script = '';
+    this.entry = undefined;
     this.description = '';
   }
 
+  get functionName() {
+    return this.entry?.functionName;
+  }
+
   toString() {
+    return `Map(${this.id})`;
+  }
+
+  toStringLong() {
     return `Map(${this.id}):\n${this.description}`;
   }
 
@@ -138,7 +144,15 @@ class MapLogEntry extends LogEntry {
   }
 
   get type() {
-    return this.edge === undefined ? 'new' : this.edge.type;
+    return this.edge?.type ?? 'new';
+  }
+
+  get reason() {
+    return this.edge?.reason;
+  }
+
+  get property() {
+    return this.edge?.name;
   }
 
   isBootstrapped() {
@@ -175,6 +189,13 @@ class MapLogEntry extends LogEntry {
     } else {
       this.cache.set(id, [map]);
     }
+  }
+
+  static get propertyNames() {
+    return [
+      'type', 'reason', 'property', 'functionName', 'sourcePosition', 'script',
+      'id'
+    ];
   }
 }
 

@@ -797,10 +797,6 @@ MaybeHandle<Map> GetInternalizedStringMap(Factory* f, Handle<String> string) {
       return f->external_internalized_string_map();
     case EXTERNAL_ONE_BYTE_STRING_TYPE:
       return f->external_one_byte_internalized_string_map();
-    case UNCACHED_EXTERNAL_STRING_TYPE:
-      return f->uncached_external_internalized_string_map();
-    case UNCACHED_EXTERNAL_ONE_BYTE_STRING_TYPE:
-      return f->uncached_external_one_byte_internalized_string_map();
     default:
       return MaybeHandle<Map>();  // No match found.
   }
@@ -2917,15 +2913,6 @@ Handle<DebugInfo> Factory::NewDebugInfo(Handle<SharedFunctionInfo> shared) {
   shared->SetDebugInfo(*debug_info);
 
   return debug_info;
-}
-
-Handle<WasmValue> Factory::NewWasmValue(int value_type, Handle<Object> ref) {
-  DCHECK(value_type == 6 || ref->IsByteArray());
-  Handle<WasmValue> wasm_value =
-      Handle<WasmValue>::cast(NewStruct(WASM_VALUE_TYPE, AllocationType::kOld));
-  wasm_value->set_value_type(value_type);
-  wasm_value->set_bytes_or_ref(*ref);
-  return wasm_value;
 }
 
 Handle<BreakPointInfo> Factory::NewBreakPointInfo(int source_position) {

@@ -2,11 +2,43 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stddef.h>
+#include <stdint.h>
+
+#include <limits>
+#include <type_traits>
+#include <vector>
+
+#include "src/base/flags.h"
 #include "src/base/iterator.h"
+#include "src/base/logging.h"
+#include "src/base/macros.h"
 #include "src/base/platform/wrappers.h"
+#include "src/codegen/cpu-features.h"
+#include "src/codegen/ia32/assembler-ia32.h"
+#include "src/codegen/ia32/register-ia32.h"
+#include "src/codegen/machine-type.h"
+#include "src/codegen/turbo-assembler.h"
+#include "src/common/globals.h"
+#include "src/compiler/backend/instruction-codes.h"
 #include "src/compiler/backend/instruction-selector-impl.h"
+#include "src/compiler/backend/instruction-selector.h"
+#include "src/compiler/backend/instruction.h"
+#include "src/compiler/common-operator.h"
+#include "src/compiler/frame.h"
+#include "src/compiler/globals.h"
+#include "src/compiler/linkage.h"
+#include "src/compiler/machine-operator.h"
 #include "src/compiler/node-matchers.h"
 #include "src/compiler/node-properties.h"
+#include "src/compiler/node.h"
+#include "src/compiler/opcodes.h"
+#include "src/compiler/operator.h"
+#include "src/compiler/write-barrier-kind.h"
+#include "src/flags/flags.h"
+#include "src/utils/utils.h"
+#include "src/wasm/simd-shuffle.h"
+#include "src/zone/zone-containers.h"
 
 namespace v8 {
 namespace internal {
@@ -277,6 +309,10 @@ void VisitRRSimd(InstructionSelector* selector, Node* node,
   } else {
     selector->Emit(sse_opcode, g.DefineSameAsFirst(node), operand0);
   }
+}
+
+void VisitRRSimd(InstructionSelector* selector, Node* node, ArchOpcode opcode) {
+  VisitRRSimd(selector, node, opcode, opcode);
 }
 
 // TODO(v8:9198): Like VisitRROFloat, but for SIMD. SSE requires operand1 to be
@@ -2139,11 +2175,6 @@ void InstructionSelector::VisitWord32AtomicPairCompareExchange(Node* node) {
   V(I8x16)
 
 #define SIMD_BINOP_LIST(V) \
-  V(F32x4Add)              \
-  V(F32x4AddHoriz)         \
-  V(F32x4Sub)              \
-  V(F32x4Mul)              \
-  V(F32x4Div)              \
   V(F32x4Min)              \
   V(F32x4Max)              \
   V(F32x4Eq)               \
@@ -2205,14 +2236,32 @@ void InstructionSelector::VisitWord32AtomicPairCompareExchange(Node* node) {
   V(S128Xor)
 
 #define SIMD_BINOP_UNIFIED_SSE_AVX_LIST(V) \
+  V(F32x4Add)                              \
+  V(F32x4AddHoriz)                         \
+  V(F32x4Sub)                              \
+  V(F32x4Mul)                              \
+  V(F32x4Div)                              \
   V(I64x2Add)                              \
   V(I64x2Sub)                              \
   V(I64x2Eq)                               \
+  V(I64x2ExtMulLowI32x4S)                  \
+  V(I64x2ExtMulHighI32x4S)                 \
+  V(I64x2ExtMulLowI32x4U)                  \
+  V(I64x2ExtMulHighI32x4U)                 \
   V(I32x4DotI16x8S)                        \
+  V(I32x4ExtMulLowI16x8S)                  \
+  V(I32x4ExtMulHighI16x8S)                 \
+  V(I32x4ExtMulLowI16x8U)                  \
+  V(I32x4ExtMulHighI16x8U)                 \
   V(I16x8RoundingAverageU)                 \
+  V(I16x8ExtMulLowI8x16S)                  \
+  V(I16x8ExtMulHighI8x16S)                 \
+  V(I16x8ExtMulLowI8x16U)                  \
+  V(I16x8ExtMulHighI8x16U)                 \
   V(I8x16RoundingAverageU)
 
 #define SIMD_UNOP_LIST(V)   \
+  V(F32x4Sqrt)              \
   V(F32x4SConvertI32x4)     \
   V(F32x4RecipApprox)       \
   V(F32x4RecipSqrtApprox)   \
@@ -2237,7 +2286,6 @@ void InstructionSelector::VisitWord32AtomicPairCompareExchange(Node* node) {
 #define SIMD_UNOP_PREFIX_LIST(V) \
   V(F32x4Abs)                    \
   V(F32x4Neg)                    \
-  V(F32x4Sqrt)                   \
   V(S128Not)
 
 #define SIMD_ANYTRUE_LIST(V) \
@@ -2314,7 +2362,7 @@ void InstructionSelector::VisitF64x2Max(Node* node) {
 }
 
 void InstructionSelector::VisitF64x2Splat(Node* node) {
-  VisitRRSimd(this, node, kAVXF64x2Splat, kSSEF64x2Splat);
+  VisitRRSimd(this, node, kIA32F64x2Splat);
 }
 
 void InstructionSelector::VisitF64x2ExtractLane(Node* node) {
@@ -2381,19 +2429,23 @@ void InstructionSelector::VisitI64x2Mul(Node* node) {
 }
 
 void InstructionSelector::VisitF32x4Splat(Node* node) {
-  VisitRRSimd(this, node, kAVXF32x4Splat, kSSEF32x4Splat);
+  VisitRRSimd(this, node, kIA32F32x4Splat);
 }
 
 void InstructionSelector::VisitF32x4ExtractLane(Node* node) {
-  VisitRRISimd(this, node, kAVXF32x4ExtractLane, kSSEF32x4ExtractLane);
+  IA32OperandGenerator g(this);
+  InstructionOperand operand0 = g.UseRegister(node->InputAt(0));
+  InstructionOperand operand1 =
+      g.UseImmediate(OpParameter<int32_t>(node->op()));
+  Emit(kIA32F32x4ExtractLane, g.DefineAsRegister(node), operand0, operand1);
 }
 
 void InstructionSelector::VisitF32x4UConvertI32x4(Node* node) {
-  VisitRRSimd(this, node, kAVXF32x4UConvertI32x4, kSSEF32x4UConvertI32x4);
+  VisitRRSimd(this, node, kIA32F32x4UConvertI32x4);
 }
 
 void InstructionSelector::VisitI32x4SConvertF32x4(Node* node) {
-  VisitRRSimd(this, node, kAVXI32x4SConvertF32x4, kSSEI32x4SConvertF32x4);
+  VisitRRSimd(this, node, kIA32I32x4SConvertF32x4);
 }
 
 void InstructionSelector::VisitI32x4UConvertF32x4(Node* node) {
@@ -2426,14 +2478,14 @@ void InstructionSelector::VisitS128Zero(Node* node) {
 
 void InstructionSelector::VisitS128Select(Node* node) {
   IA32OperandGenerator g(this);
+  InstructionOperand operand0 = g.UseRegister(node->InputAt(0));
+  InstructionOperand operand1 = g.UseRegister(node->InputAt(1));
   InstructionOperand operand2 = g.UseRegister(node->InputAt(2));
   if (IsSupported(AVX)) {
-    // AVX supports unaligned memory operands, so Use here is okay.
-    Emit(kAVXS128Select, g.DefineAsRegister(node), g.Use(node->InputAt(0)),
-         g.Use(node->InputAt(1)), operand2);
+    Emit(kAVXS128Select, g.DefineAsRegister(node), operand0, operand1,
+         operand2);
   } else {
-    Emit(kSSES128Select, g.DefineSameAsFirst(node),
-         g.UseRegister(node->InputAt(0)), g.UseRegister(node->InputAt(1)),
+    Emit(kSSES128Select, g.DefineSameAsFirst(node), operand0, operand1,
          operand2);
   }
 }
@@ -2844,13 +2896,20 @@ void InstructionSelector::VisitI8x16Shuffle(Node* node) {
   int index;
   const ShuffleEntry* arch_shuffle;
   if (wasm::SimdShuffle::TryMatchConcat(shuffle, &offset)) {
-    // Swap inputs from the normal order for (v)palignr.
-    SwapShuffleInputs(node);
-    is_swizzle = false;  // It's simpler to just handle the general case.
-    no_same_as_first = use_avx;  // SSE requires same-as-first.
-    opcode = kIA32S8x16Alignr;
-    // palignr takes a single imm8 offset.
-    imms[imm_count++] = offset;
+    if (wasm::SimdShuffle::TryMatch32x4Rotate(shuffle, shuffle32x4,
+                                              is_swizzle)) {
+      uint8_t shuffle_mask = wasm::SimdShuffle::PackShuffle4(shuffle32x4);
+      opcode = kIA32S32x4Rotate;
+      imms[imm_count++] = shuffle_mask;
+    } else {
+      // Swap inputs from the normal order for (v)palignr.
+      SwapShuffleInputs(node);
+      is_swizzle = false;  // It's simpler to just handle the general case.
+      no_same_as_first = use_avx;  // SSE requires same-as-first.
+      opcode = kIA32S8x16Alignr;
+      // palignr takes a single imm8 offset.
+      imms[imm_count++] = offset;
+    }
   } else if (TryMatchArchShuffle(shuffle, arch_shuffles,
                                  arraysize(arch_shuffles), is_swizzle,
                                  &arch_shuffle)) {
@@ -2993,6 +3052,62 @@ void InstructionSelector::VisitF64x2Pmin(Node* node) {
 
 void InstructionSelector::VisitF64x2Pmax(Node* node) {
   VisitPminOrPmax(this, node, kIA32F64x2Pmax);
+}
+
+namespace {
+void VisitSignSelect(InstructionSelector* selector, Node* node,
+                     ArchOpcode opcode) {
+  IA32OperandGenerator g(selector);
+  // signselect(x, y, -1) = x
+  // pblendvb(dst, x, y, -1) = dst <- y, so we need to swap x and y.
+  if (selector->IsSupported(AVX)) {
+    selector->Emit(
+        opcode, g.DefineAsRegister(node), g.UseRegister(node->InputAt(1)),
+        g.UseRegister(node->InputAt(0)), g.UseRegister(node->InputAt(2)));
+  } else {
+    // We would like to fix the mask to be xmm0, since that is what
+    // pblendvb/blendvps/blendvps uses as an implicit operand. However, xmm0 is
+    // also scratch register, so our mask values can be overwritten. Instead, we
+    // manually move the mask to xmm0 inside codegen.
+    selector->Emit(
+        opcode, g.DefineSameAsFirst(node), g.UseRegister(node->InputAt(1)),
+        g.UseRegister(node->InputAt(0)), g.UseRegister(node->InputAt(2)));
+  }
+}
+}  // namespace
+
+void InstructionSelector::VisitI8x16SignSelect(Node* node) {
+  VisitSignSelect(this, node, kIA32I8x16SignSelect);
+}
+
+void InstructionSelector::VisitI16x8SignSelect(Node* node) {
+  VisitSignSelect(this, node, kIA32I16x8SignSelect);
+}
+
+void InstructionSelector::VisitI32x4SignSelect(Node* node) {
+  VisitSignSelect(this, node, kIA32I32x4SignSelect);
+}
+
+void InstructionSelector::VisitI64x2SignSelect(Node* node) {
+  VisitSignSelect(this, node, kIA32I64x2SignSelect);
+}
+
+void InstructionSelector::VisitI32x4ExtAddPairwiseI16x8S(Node* node) {
+  VisitRRSimd(this, node, kIA32I32x4ExtAddPairwiseI16x8S);
+}
+
+void InstructionSelector::VisitI32x4ExtAddPairwiseI16x8U(Node* node) {
+  VisitRRSimd(this, node, kIA32I32x4ExtAddPairwiseI16x8U);
+}
+
+void InstructionSelector::VisitI16x8ExtAddPairwiseI8x16S(Node* node) {
+  IA32OperandGenerator g(this);
+  Emit(kIA32I16x8ExtAddPairwiseI8x16S, g.DefineAsRegister(node),
+       g.UseUniqueRegister(node->InputAt(0)));
+}
+
+void InstructionSelector::VisitI16x8ExtAddPairwiseI8x16U(Node* node) {
+  VisitRRSimd(this, node, kIA32I16x8ExtAddPairwiseI8x16U);
 }
 
 // static

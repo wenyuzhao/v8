@@ -367,7 +367,7 @@
   V(_, wasm_exception_values_symbol)                  \
   V(_, wasm_uncatchable_symbol)                       \
   V(_, wasm_wrapped_object_symbol)                    \
-  V(_, wasm_debug_proxy_name_tables)                  \
+  V(_, wasm_debug_proxy_cache_symbol)                 \
   V(_, uninitialized_symbol)
 
 #define PUBLIC_SYMBOL_LIST_GENERATOR(V, _)                \
@@ -403,7 +403,6 @@
   F(MC_INCREMENTAL_FINALIZE_BODY)                                  \
   F(MC_INCREMENTAL_LAYOUT_CHANGE)                                  \
   F(MC_INCREMENTAL_START)                                          \
-  F(MC_INCREMENTAL_SWEEP_ARRAY_BUFFERS)                            \
   F(MC_INCREMENTAL_SWEEPING)
 
 #define TOP_MC_SCOPES(F) \
@@ -426,6 +425,7 @@
   F(HEAP_EXTERNAL_WEAK_GLOBAL_HANDLES)               \
   F(HEAP_PROLOGUE)                                   \
   F(HEAP_PROLOGUE_SAFEPOINT)                         \
+  F(MARK_COMPACTOR)                                  \
   TOP_MC_SCOPES(F)                                   \
   F(MC_CLEAR_DEPENDENT_CODE)                         \
   F(MC_CLEAR_FLUSHABLE_BYTECODE)                     \
@@ -437,6 +437,7 @@
   F(MC_CLEAR_WEAK_LISTS)                             \
   F(MC_CLEAR_WEAK_REFERENCES)                        \
   F(MC_COMPLETE_SWEEP_ARRAY_BUFFERS)                 \
+  F(MC_COMPLETE_SWEEPING)                            \
   F(MC_EVACUATE_CANDIDATES)                          \
   F(MC_EVACUATE_CLEAN_UP)                            \
   F(MC_EVACUATE_COPY)                                \
@@ -467,10 +468,12 @@
   F(MC_SWEEP_CODE)                                   \
   F(MC_SWEEP_MAP)                                    \
   F(MC_SWEEP_OLD)                                    \
+  F(MINOR_MARK_COMPACTOR)                            \
   F(MINOR_MC)                                        \
   F(MINOR_MC_CLEAR)                                  \
   F(MINOR_MC_CLEAR_STRING_TABLE)                     \
   F(MINOR_MC_CLEAR_WEAK_LISTS)                       \
+  F(MINOR_MC_COMPLETE_SWEEP_ARRAY_BUFFERS)           \
   F(MINOR_MC_EVACUATE)                               \
   F(MINOR_MC_EVACUATE_CLEAN_UP)                      \
   F(MINOR_MC_EVACUATE_COPY)                          \
@@ -492,6 +495,7 @@
   F(MINOR_MC_MARKING_DEQUE)                          \
   F(MINOR_MC_RESET_LIVENESS)                         \
   F(MINOR_MC_SWEEPING)                               \
+  F(SCAVENGER)                                       \
   F(SCAVENGER_COMPLETE_SWEEP_ARRAY_BUFFERS)          \
   F(SCAVENGER_FAST_PROMOTE)                          \
   F(SCAVENGER_FREE_REMEMBERED_SET)                   \
@@ -520,5 +524,13 @@
   F(MINOR_MC_BACKGROUND_EVACUATE_UPDATE_POINTERS) \
   F(MINOR_MC_BACKGROUND_MARKING)                  \
   F(SCAVENGER_BACKGROUND_SCAVENGE_PARALLEL)
+
+#define TRACER_YOUNG_EPOCH_SCOPES(F)        \
+  F(BACKGROUND_YOUNG_ARRAY_BUFFER_SWEEP)    \
+  F(MINOR_MARK_COMPACTOR)                   \
+  F(MINOR_MC_COMPLETE_SWEEP_ARRAY_BUFFERS)  \
+  F(SCAVENGER)                              \
+  F(SCAVENGER_BACKGROUND_SCAVENGE_PARALLEL) \
+  F(SCAVENGER_COMPLETE_SWEEP_ARRAY_BUFFERS)
 
 #endif  // V8_INIT_HEAP_SYMBOLS_H_

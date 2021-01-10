@@ -188,6 +188,8 @@
 #define WASM_TRY_CATCH_ALL_T(t, trystmt, catchstmt)                           \
   kExprTry, static_cast<byte>((t).value_type_code()), trystmt, kExprCatchAll, \
       catchstmt, kExprEnd
+#define WASM_TRY_DELEGATE(trystmt, depth) \
+  kExprTry, kVoidCode, trystmt, kExprDelegate, depth
 
 #define WASM_SELECT(tval, fval, cond) tval, fval, cond, kExprSelect
 #define WASM_SELECT_I(tval, fval, cond) \
@@ -427,12 +429,12 @@ inline WasmOpcode LoadStoreOpcodeOf(MachineType type, bool store) {
       static_cast<byte>(bit_cast<uint64_t>(static_cast<double>(val)) >> 48), \
       static_cast<byte>(bit_cast<uint64_t>(static_cast<double>(val)) >> 56)
 
-#define WASM_GET_LOCAL(index) kExprLocalGet, static_cast<byte>(index)
-#define WASM_SET_LOCAL(index, val) val, kExprLocalSet, static_cast<byte>(index)
-#define WASM_TEE_LOCAL(index, val) val, kExprLocalTee, static_cast<byte>(index)
+#define WASM_LOCAL_GET(index) kExprLocalGet, static_cast<byte>(index)
+#define WASM_LOCAL_SET(index, val) val, kExprLocalSet, static_cast<byte>(index)
+#define WASM_LOCAL_TEE(index, val) val, kExprLocalTee, static_cast<byte>(index)
 #define WASM_DROP kExprDrop
-#define WASM_GET_GLOBAL(index) kExprGlobalGet, static_cast<byte>(index)
-#define WASM_SET_GLOBAL(index, val) \
+#define WASM_GLOBAL_GET(index) kExprGlobalGet, static_cast<byte>(index)
+#define WASM_GLOBAL_SET(index, val) \
   val, kExprGlobalSet, static_cast<byte>(index)
 #define WASM_TABLE_GET(table_index, index) \
   index, kExprTableGet, static_cast<byte>(table_index)

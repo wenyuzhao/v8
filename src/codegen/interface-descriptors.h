@@ -296,6 +296,7 @@ class V8_EXPORT_PRIVATE CallInterfaceDescriptor {
   }
 
   Register GetRegisterParameter(int index) const {
+    DCHECK_LT(index, data()->register_param_count());
     return data()->register_param(index);
   }
 
@@ -878,10 +879,10 @@ class LoadGlobalWithVectorDescriptor : public LoadGlobalDescriptor {
 
 class DynamicCheckMapsDescriptor final : public CallInterfaceDescriptor {
  public:
-  DEFINE_PARAMETERS(kSlot, kMap, kHandler)
+  DEFINE_PARAMETERS(kMap, kSlot, kHandler)
   DEFINE_RESULT_AND_PARAMETER_TYPES(MachineType::Int32(),          // return val
-                                    MachineType::IntPtr(),         // kSlot
                                     MachineType::TaggedPointer(),  // kMap
+                                    MachineType::IntPtr(),         // kSlot
                                     MachineType::TaggedSigned())   // kHandler
 
   DECLARE_DESCRIPTOR(DynamicCheckMapsDescriptor, CallInterfaceDescriptor)

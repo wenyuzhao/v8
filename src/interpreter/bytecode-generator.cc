@@ -3012,7 +3012,9 @@ void BytecodeGenerator::BuildCreateArrayLiteral(
     if (current != end) {
       // If there are remaining elements, prepare the index register
       // to store the next element, which comes from the first spread.
-      builder()->LoadLiteral(array_index).StoreAccumulatorInRegister(index);
+      builder()
+          ->LoadLiteral(Smi::FromInt(array_index))
+          .StoreAccumulatorInRegister(index);
     }
   } else {
     // In other cases, we prepare an empty array to be filled in below.
@@ -5619,7 +5621,7 @@ void BytecodeGenerator::VisitEmptyParentheses(EmptyParentheses* expr) {
 
 void BytecodeGenerator::VisitImportCallExpression(ImportCallExpression* expr) {
   RegisterList args = register_allocator()->NewRegisterList(2);
-  VisitForRegisterValue(expr->argument(), args[1]);
+  VisitForRegisterValue(expr->specifier(), args[1]);
   builder()
       ->MoveRegister(Register::function_closure(), args[0])
       .CallRuntime(Runtime::kDynamicImportCall, args);

@@ -2731,23 +2731,18 @@ void Builtins::Generate_DoubleToI(MacroAssembler* masm) {
   // Load double input.
   __ Ldc1(double_scratch, MemOperand(sp, kArgumentOffset));
 
-  // Clear cumulative exception flags and save the FCSR.
-  __ cfc1(scratch2, FCSR);
-  __ ctc1(zero_reg, FCSR);
-
   // Try a conversion to a signed integer.
   __ Trunc_w_d(double_scratch, double_scratch);
   // Move the converted value into the result register.
   __ mfc1(scratch3, double_scratch);
 
-  // Retrieve and restore the FCSR.
+  // Retrieve the FCSR.
   __ cfc1(scratch, FCSR);
-  __ ctc1(scratch2, FCSR);
 
   // Check for overflow and NaNs.
-  __ And(
-      scratch, scratch,
-      kFCSROverflowFlagMask | kFCSRUnderflowFlagMask | kFCSRInvalidOpFlagMask);
+  __ And(scratch, scratch,
+         kFCSROverflowCauseMask | kFCSRUnderflowCauseMask |
+             kFCSRInvalidOpCauseMask);
   // If we had no exceptions then set result_reg and we are done.
   Label error;
   __ Branch(&error, ne, scratch, Operand(zero_reg));
@@ -3420,6 +3415,18 @@ void Builtins::Generate_DynamicCheckMapsTrampoline(MacroAssembler* masm) {
   // to save all CallerSaved registers too.
   if (FLAG_debug_code) registers |= kJSCallerSaved;
   __ SaveRegisters(registers);
+
+  // Load the immediate arguments from the deopt exit to pass to the builtin.
+  Register slot_arg =
+      descriptor.GetRegisterParameter(DynamicCheckMapsDescriptor::kSlot);
+  Register handler_arg =
+      descriptor.GetRegisterParameter(DynamicCheckMapsDescriptor::kHandler);
+  __ Ld(handler_arg, MemOperand(fp, CommonFrameConstants::kCallerPCOffset));
+  __ Uld(slot_arg, MemOperand(handler_arg,
+                              Deoptimizer::kEagerWithResumeImmedArgs1PcOffset));
+  __ Uld(
+      handler_arg,
+      MemOperand(handler_arg, Deoptimizer::kEagerWithResumeImmedArgs2PcOffset));
   __ Call(BUILTIN_CODE(masm->isolate(), DynamicCheckMaps),
           RelocInfo::CODE_TARGET);
 

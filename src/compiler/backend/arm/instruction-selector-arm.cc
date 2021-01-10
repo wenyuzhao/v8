@@ -6,6 +6,7 @@
 #include "src/base/enum-set.h"
 #include "src/base/iterator.h"
 #include "src/base/platform/wrappers.h"
+#include "src/codegen/machine-type.h"
 #include "src/compiler/backend/instruction-selector-impl.h"
 #include "src/compiler/node-matchers.h"
 #include "src/compiler/node-properties.h"
@@ -79,13 +80,15 @@ class ArmOperandGenerator : public OperandGenerator {
 
 namespace {
 
-void VisitRR(InstructionSelector* selector, ArchOpcode opcode, Node* node) {
+void VisitRR(InstructionSelector* selector, InstructionCode opcode,
+             Node* node) {
   ArmOperandGenerator g(selector);
   selector->Emit(opcode, g.DefineAsRegister(node),
                  g.UseRegister(node->InputAt(0)));
 }
 
-void VisitRRR(InstructionSelector* selector, ArchOpcode opcode, Node* node) {
+void VisitRRR(InstructionSelector* selector, InstructionCode opcode,
+              Node* node) {
   ArmOperandGenerator g(selector);
   selector->Emit(opcode, g.DefineAsRegister(node),
                  g.UseRegister(node->InputAt(0)),
@@ -146,6 +149,14 @@ void VisitRRIR(InstructionSelector* selector, ArchOpcode opcode, Node* node) {
   selector->Emit(opcode, g.DefineAsRegister(node),
                  g.UseRegister(node->InputAt(0)), g.UseImmediate(imm),
                  g.UseUniqueRegister(node->InputAt(1)));
+}
+
+void VisitRRRR(InstructionSelector* selector, InstructionCode opcode,
+               Node* node) {
+  ArmOperandGenerator g(selector);
+  selector->Emit(
+      opcode, g.DefineAsRegister(node), g.UseRegister(node->InputAt(0)),
+      g.UseRegister(node->InputAt(1)), g.UseRegister(node->InputAt(2)));
 }
 
 template <IrOpcode::Value kOpcode, int kImmMin, int kImmMax,
@@ -498,6 +509,76 @@ void InstructionSelector::VisitStackSlot(Node* node) {
 void InstructionSelector::VisitAbortCSAAssert(Node* node) {
   ArmOperandGenerator g(this);
   Emit(kArchAbortCSAAssert, g.NoOutput(), g.UseFixed(node->InputAt(0), r1));
+}
+
+namespace {
+// Helper struct for load lane and store lane to indicate which opcode to use
+// and what memory size to be encoded in the opcode, and the new lane index.
+struct LoadStoreLaneParams {
+  bool low_op;
+  NeonSize sz;
+  uint8_t laneidx;
+  LoadStoreLaneParams(uint8_t laneidx, NeonSize sz, int lanes)
+      : low_op(laneidx < lanes), sz(sz), laneidx(laneidx % lanes) {}
+};
+
+// The register mapping on ARM (1 Q to 2 D), means that loading/storing high
+// lanes of a Q register is equivalent to loading/storing the high D reg, modulo
+// number of lanes in a D reg. This function decides, based on the laneidx and
+// load/store size, whether the low or high D reg is accessed, and what the new
+// lane index is.
+LoadStoreLaneParams GetLoadStoreLaneParams(MachineRepresentation rep,
+                                           uint8_t laneidx) {
+  if (rep == MachineRepresentation::kWord8) {
+    return LoadStoreLaneParams(laneidx, Neon8, 8);
+  } else if (rep == MachineRepresentation::kWord16) {
+    return LoadStoreLaneParams(laneidx, Neon16, 4);
+  } else if (rep == MachineRepresentation::kWord32) {
+    return LoadStoreLaneParams(laneidx, Neon32, 2);
+  } else if (rep == MachineRepresentation::kWord64) {
+    return LoadStoreLaneParams(laneidx, Neon64, 1);
+  } else {
+    UNREACHABLE();
+  }
+}
+}  // namespace
+
+void InstructionSelector::VisitStoreLane(Node* node) {
+  StoreLaneParameters params = StoreLaneParametersOf(node->op());
+  LoadStoreLaneParams f = GetLoadStoreLaneParams(params.rep, params.laneidx);
+  InstructionCode opcode =
+      f.low_op ? kArmS128StoreLaneLow : kArmS128StoreLaneHigh;
+  opcode |= MiscField::encode(f.sz);
+
+  ArmOperandGenerator g(this);
+  InstructionOperand inputs[4];
+  size_t input_count = 4;
+  inputs[0] = g.UseRegister(node->InputAt(2));
+  inputs[1] = g.UseImmediate(f.laneidx);
+  inputs[2] = g.UseRegister(node->InputAt(0));
+  inputs[3] = g.UseRegister(node->InputAt(1));
+  EmitAddBeforeS128LoadStore(this, &opcode, &input_count, &inputs[2]);
+  Emit(opcode, 0, nullptr, input_count, inputs);
+}
+
+void InstructionSelector::VisitLoadLane(Node* node) {
+  LoadLaneParameters params = LoadLaneParametersOf(node->op());
+  LoadStoreLaneParams f =
+      GetLoadStoreLaneParams(params.rep.representation(), params.laneidx);
+  InstructionCode opcode =
+      f.low_op ? kArmS128LoadLaneLow : kArmS128LoadLaneHigh;
+  opcode |= MiscField::encode(f.sz);
+
+  ArmOperandGenerator g(this);
+  InstructionOperand output = g.DefineSameAsFirst(node);
+  InstructionOperand inputs[4];
+  size_t input_count = 4;
+  inputs[0] = g.UseRegister(node->InputAt(2));
+  inputs[1] = g.UseImmediate(f.laneidx);
+  inputs[2] = g.UseRegister(node->InputAt(0));
+  inputs[3] = g.UseRegister(node->InputAt(1));
+  EmitAddBeforeS128LoadStore(this, &opcode, &input_count, &inputs[2]);
+  Emit(opcode, 1, &output, input_count, inputs);
 }
 
 void InstructionSelector::VisitLoadTransform(Node* node) {
@@ -2542,6 +2623,7 @@ void InstructionSelector::VisitWord32AtomicPairCompareExchange(Node* node) {
   V(I16x8Abs, kArmI16x8Abs)                             \
   V(I8x16Neg, kArmI8x16Neg)                             \
   V(I8x16Abs, kArmI8x16Abs)                             \
+  V(I8x16Popcnt, kArmVcnt)                              \
   V(S128Not, kArmS128Not)                               \
   V(V32x4AnyTrue, kArmV32x4AnyTrue)                     \
   V(V32x4AllTrue, kArmV32x4AllTrue)                     \
@@ -3026,6 +3108,52 @@ void InstructionSelector::VisitF64x2Pmin(Node* node) {
 void InstructionSelector::VisitF64x2Pmax(Node* node) {
   VisitF64x2PminOrPMax(this, kArmF64x2Pmax, node);
 }
+
+#define EXT_MUL_LIST(V)                            \
+  V(I16x8ExtMulLowI8x16S, kArmVmullLow, NeonS8)    \
+  V(I16x8ExtMulHighI8x16S, kArmVmullHigh, NeonS8)  \
+  V(I16x8ExtMulLowI8x16U, kArmVmullLow, NeonU8)    \
+  V(I16x8ExtMulHighI8x16U, kArmVmullHigh, NeonU8)  \
+  V(I32x4ExtMulLowI16x8S, kArmVmullLow, NeonS16)   \
+  V(I32x4ExtMulHighI16x8S, kArmVmullHigh, NeonS16) \
+  V(I32x4ExtMulLowI16x8U, kArmVmullLow, NeonU16)   \
+  V(I32x4ExtMulHighI16x8U, kArmVmullHigh, NeonU16) \
+  V(I64x2ExtMulLowI32x4S, kArmVmullLow, NeonS32)   \
+  V(I64x2ExtMulHighI32x4S, kArmVmullHigh, NeonS32) \
+  V(I64x2ExtMulLowI32x4U, kArmVmullLow, NeonU32)   \
+  V(I64x2ExtMulHighI32x4U, kArmVmullHigh, NeonU32)
+
+#define VISIT_EXT_MUL(OPCODE, VMULL, NEONSIZE)                 \
+  void InstructionSelector::Visit##OPCODE(Node* node) {        \
+    VisitRRR(this, VMULL | MiscField::encode(NEONSIZE), node); \
+  }
+
+EXT_MUL_LIST(VISIT_EXT_MUL)
+
+#undef VISIT_EXT_MUL
+#undef EXT_MUL_LIST
+
+#define VISIT_EXTADD_PAIRWISE(OPCODE, NEONSIZE)                    \
+  void InstructionSelector::Visit##OPCODE(Node* node) {            \
+    VisitRR(this, kArmVpaddl | MiscField::encode(NEONSIZE), node); \
+  }
+VISIT_EXTADD_PAIRWISE(I16x8ExtAddPairwiseI8x16S, NeonS8)
+VISIT_EXTADD_PAIRWISE(I16x8ExtAddPairwiseI8x16U, NeonU8)
+VISIT_EXTADD_PAIRWISE(I32x4ExtAddPairwiseI16x8S, NeonS16)
+VISIT_EXTADD_PAIRWISE(I32x4ExtAddPairwiseI16x8U, NeonU16)
+#undef VISIT_EXTADD_PAIRWISE
+
+#define VISIT_SIGN_SELECT(OPCODE, SIZE)                 \
+  void InstructionSelector::Visit##OPCODE(Node* node) { \
+    InstructionCode opcode = kArmSignSelect;            \
+    opcode |= MiscField::encode(SIZE);                  \
+    VisitRRRR(this, opcode, node);                      \
+  }
+
+VISIT_SIGN_SELECT(I8x16SignSelect, Neon8)
+VISIT_SIGN_SELECT(I16x8SignSelect, Neon16)
+VISIT_SIGN_SELECT(I32x4SignSelect, Neon32)
+VISIT_SIGN_SELECT(I64x2SignSelect, Neon64)
 
 void InstructionSelector::VisitTruncateFloat32ToInt32(Node* node) {
   ArmOperandGenerator g(this);

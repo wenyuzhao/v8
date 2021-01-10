@@ -183,9 +183,9 @@ void ScavengerCollector::JobTask::Run(JobDelegate* delegate) {
              GCTracer::Scope::SCAVENGER_SCAVENGE_PARALLEL);
     ProcessItems(delegate, scavenger);
   } else {
-    TRACE_GC1(outer_->heap_->tracer(),
-              GCTracer::Scope::SCAVENGER_BACKGROUND_SCAVENGE_PARALLEL,
-              ThreadKind::kBackground);
+    TRACE_GC_EPOCH(outer_->heap_->tracer(),
+                   GCTracer::Scope::SCAVENGER_BACKGROUND_SCAVENGE_PARALLEL,
+                   ThreadKind::kBackground);
     ProcessItems(delegate, scavenger);
   }
 }
@@ -253,12 +253,6 @@ class V8_NODISCARD ScopedFullHeapCrashKey {
 
 void ScavengerCollector::CollectGarbage() {
   ScopedFullHeapCrashKey collect_full_heap_dump_if_crash(isolate_);
-
-  {
-    TRACE_GC(heap_->tracer(),
-             GCTracer::Scope::SCAVENGER_COMPLETE_SWEEP_ARRAY_BUFFERS);
-    heap_->array_buffer_sweeper()->EnsureFinished();
-  }
 
   DCHECK(surviving_new_large_objects_.empty());
   std::vector<std::unique_ptr<Scavenger>> scavengers;

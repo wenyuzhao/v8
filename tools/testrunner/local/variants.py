@@ -55,7 +55,7 @@ INCOMPATIBLE_FLAGS_PER_VARIANT = {
   "assert_types": ["--no-assert-types"],
   "jitless": ["--opt", "--always-opt", "--liftoff", "--track-field-types", "--validate-asm"],
   "no_wasm_traps": ["--wasm-trap-handler"],
-  "nooptimization": ["--opt", "--always-opt", "--no-liftoff", "--predictable", "--wasm-tier-up"],
+  "nooptimization": ["--opt", "--always-opt", "--no-liftoff", "--wasm-tier-up"],
   "slow_path": ["--no-force-slow-path"],
   "stress_concurrent_allocation": ["--single-threaded-gc", "--predictable"],
   "stress_incremental_marking": ["--no-stress-incremental-marking"],
@@ -65,7 +65,7 @@ INCOMPATIBLE_FLAGS_PER_VARIANT = {
              "--max-inlined-bytecode-size-cumulative=*", "--stress-inline"],
   "turboprop": ["--interrupt-budget=*", "--no-turboprop"],
   "code_serializer": ["--cache=after-execute", "--cache=full-code-cache", "--cache=none"],
-  "no_local_heaps": ["--concurrent-inlining"],
+  "no_local_heaps": ["--concurrent-inlining", "--turboprop"],
   "experimental_regexp": ["--no-enable-experimental-regexp-engine", "--no-default-to-experimental-regexp-engine"],
 }
 
@@ -97,6 +97,7 @@ INCOMPATIBLE_FLAGS_PER_EXTRA_FLAG = {
   "--optimize-for-size": ["--max-semi-space-size=*"],
   "--stress_concurrent_allocation": ["--single-threaded-gc", "--predictable"],
   "--stress-flush-bytecode": ["--no-stress-flush-bytecode"],
+  "--future": ["--parallel-compile-tasks"],
   "--stress-incremental-marking": INCOMPATIBLE_FLAGS_PER_VARIANT["stress_incremental_marking"],
 }
 

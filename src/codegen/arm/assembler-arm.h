@@ -846,6 +846,9 @@ class V8_EXPORT_PRIVATE Assembler : public AssemblerBase {
              const NeonMemOperand& src);
   void vst1(NeonSize size, const NeonListOperand& src,
             const NeonMemOperand& dst);
+  // vst1s(single element from one lane).
+  void vst1s(NeonSize size, const NeonListOperand& src, uint8_t index,
+             const NeonMemOperand& dst);
   // dt represents the narrower type
   void vmovl(NeonDataType dt, QwNeonRegister dst, DwVfpRegister src);
   // dst_dt represents the narrower type, src_dt represents the src type.
@@ -913,6 +916,8 @@ class V8_EXPORT_PRIVATE Assembler : public AssemblerBase {
   void vpmax(NeonDataType dt, DwVfpRegister dst, DwVfpRegister src1,
              DwVfpRegister src2);
 
+  void vpaddl(NeonDataType dt, QwNeonRegister dst, QwNeonRegister src);
+
   // ARMv8 rounding instructions (NEON).
   void vrintm(NeonDataType dt, const QwNeonRegister dst,
               const QwNeonRegister src);
@@ -948,6 +953,7 @@ class V8_EXPORT_PRIVATE Assembler : public AssemblerBase {
   void vcgt(QwNeonRegister dst, QwNeonRegister src1, QwNeonRegister src2);
   void vcgt(NeonDataType dt, QwNeonRegister dst, QwNeonRegister src1,
             QwNeonRegister src2);
+  void vclt(NeonSize size, QwNeonRegister dst, QwNeonRegister src, int value);
   void vrhadd(NeonDataType dt, QwNeonRegister dst, QwNeonRegister src1,
               QwNeonRegister src2);
   void vext(QwNeonRegister dst, QwNeonRegister src1, QwNeonRegister src2,
@@ -965,6 +971,8 @@ class V8_EXPORT_PRIVATE Assembler : public AssemblerBase {
             DwVfpRegister index);
   void vtbx(DwVfpRegister dst, const NeonListOperand& list,
             DwVfpRegister index);
+
+  void vcnt(QwNeonRegister dst, QwNeonRegister src);
 
   // Pseudo instructions
 
@@ -1075,9 +1083,11 @@ class V8_EXPORT_PRIVATE Assembler : public AssemblerBase {
   // called before any use of db/dd/dq/dp to ensure that constant pools
   // are not emitted as part of the tables generated.
   void db(uint8_t data);
-  void dd(uint32_t data);
-  void dq(uint64_t data);
-  void dp(uintptr_t data) { dd(data); }
+  void dd(uint32_t data, RelocInfo::Mode rmode = RelocInfo::NONE);
+  void dq(uint64_t data, RelocInfo::Mode rmode = RelocInfo::NONE);
+  void dp(uintptr_t data, RelocInfo::Mode rmode = RelocInfo::NONE) {
+    dd(data, rmode);
+  }
 
   // Read/patch instructions
   Instr instr_at(int pos) {

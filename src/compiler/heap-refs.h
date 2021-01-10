@@ -834,8 +834,8 @@ class StringRef : public NameRef {
 
   Handle<String> object() const;
 
-  int length() const;
-  uint16_t GetFirstChar();
+  base::Optional<int> length() const;
+  base::Optional<uint16_t> GetFirstChar();
   base::Optional<double> ToNumber();
   bool IsSeqString() const;
   bool IsExternalString() const;

@@ -37,8 +37,17 @@ export class SourcePosition {
     this.column = column;
     this.entries = [];
   }
+
   addEntry(entry) {
     this.entries.push(entry);
+  }
+
+  toString() {
+   return `${this.script.name}:${this.line}:${this.column}`;
+  }
+
+  toStringLong() {
+    return this.toString();
   }
 }
 
@@ -90,7 +99,13 @@ export class Script {
     columnToSourcePosition.set(column, sourcePosition);
   }
 
+  toString() {
+    return `Script(${this.id}): ${this.name}`;
+  }
 
+  toStringLong() {
+    return this.source;
+  }
 }
 
 
@@ -188,6 +203,21 @@ export class Profile {
         return this.CodeState.TURBOFAN;
     }
     throw new Error(`unknown code state: ${s}`);
+  }
+
+  static getKindFromState(state) {
+    if (state === this.CodeState.COMPILED) {
+      return "Builtin";
+    } else if (state === this.CodeState.IGNITION) {
+      return "Unopt";
+    } else if (state === this.CodeState.NATIVE_CONTEXT_INDEPENDENT) {
+      return "NCI";
+    } else if (state === this.CodeState.TURBOPROP) {
+      return "Turboprop";
+    } else if (state === this.CodeState.TURBOFAN) {
+      return "Opt";
+    }
+    throw new Error(`unknown code state: ${state}`);
   }
 
   /**
@@ -655,6 +685,10 @@ class DynamicFuncCodeEntry extends CodeEntry {
     this.state = state;
   }
 
+  get functionName() {
+    return this.func.functionName;
+  }
+
   getSourceCode() {
     return this.source?.getSourceCode();
   }
@@ -698,6 +732,8 @@ class FunctionEntry extends CodeEntry {
 
   constructor(name) {
     super(0, name);
+    const index = name.lastIndexOf(' ');
+    this.functionName = 1 <= index ? name.substring(0, index) : '<anonymous>';
   }
 
   addDynamicCode(code) {
@@ -718,10 +754,10 @@ class FunctionEntry extends CodeEntry {
   getName() {
     let name = this.name;
     if (name.length == 0) {
-      name = '<anonymous>';
+       return '<anonymous>';
     } else if (name.charAt(0) == ' ') {
       // An anonymous function with location: " aaa.js:10".
-      name = `<anonymous>${name}`;
+      return `<anonymous>${name}`;
     }
     return name;
   }
@@ -1072,13 +1108,7 @@ JsonProfile.prototype.addFuncCode = function (
 
     this.functionEntries_[func.funcId].codes.push(entry.codeId);
 
-    if (state === 0) {
-      kind = "Builtin";
-    } else if (state === 1) {
-      kind = "Unopt";
-    } else if (state === 2) {
-      kind = "Opt";
-    }
+    kind = Profile.getKindFromState(state);
 
     this.codeEntries_.push({
       name: entry.name,

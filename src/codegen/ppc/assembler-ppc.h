@@ -444,14 +444,14 @@ class Assembler : public AssemblerBase {
   PPC_XX2_OPCODE_A_FORM_LIST(DECLARE_PPC_XX2_INSTRUCTIONS)
 #undef DECLARE_PPC_XX2_INSTRUCTIONS
 
-#define DECLARE_PPC_XX3_INSTRUCTIONS(name, instr_name, instr_value)  \
-  inline void name(const DoubleRegister rt, const DoubleRegister ra, \
-                   const DoubleRegister rb) {                        \
-    xx3_form(instr_name, rt, ra, rb);                                \
+#define DECLARE_PPC_XX3_INSTRUCTIONS(name, instr_name, instr_value)    \
+  inline void name(const Simd128Register rt, const Simd128Register ra, \
+                   const Simd128Register rb) {                         \
+    xx3_form(instr_name, rt, ra, rb);                                  \
   }
 
-  inline void xx3_form(Instr instr, DoubleRegister t, DoubleRegister a,
-                       DoubleRegister b) {
+  inline void xx3_form(Instr instr, Simd128Register t, Simd128Register a,
+                       Simd128Register b) {
     // Using VR (high VSR) registers.
     int AX = 1;
     int BX = 1;
@@ -1026,6 +1026,10 @@ class Assembler : public AssemblerBase {
   void lxsibzx(const Simd128Register rt, const MemOperand& src);
   void lxsihzx(const Simd128Register rt, const MemOperand& src);
   void lxsiwzx(const Simd128Register rt, const MemOperand& src);
+  void stxsdx(const Simd128Register rs, const MemOperand& src);
+  void stxsibx(const Simd128Register rs, const MemOperand& src);
+  void stxsihx(const Simd128Register rs, const MemOperand& src);
+  void stxsiwx(const Simd128Register rs, const MemOperand& src);
   void stxvd(const Simd128Register rt, const MemOperand& src);
   void xxspltib(const Simd128Register rt, const Operand& imm);
 
@@ -1119,9 +1123,9 @@ class Assembler : public AssemblerBase {
   // Writes a single byte or word of data in the code stream.  Used
   // for inline tables, e.g., jump-tables.
   void db(uint8_t data);
-  void dd(uint32_t data);
-  void dq(uint64_t data);
-  void dp(uintptr_t data);
+  void dd(uint32_t data, RelocInfo::Mode rmode = RelocInfo::NONE);
+  void dq(uint64_t data, RelocInfo::Mode rmode = RelocInfo::NONE);
+  void dp(uintptr_t data, RelocInfo::Mode rmode = RelocInfo::NONE);
 
   // Read/patch instructions
   Instr instr_at(int pos) {

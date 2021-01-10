@@ -50,6 +50,7 @@ class StringShape {
   inline bool IsSliced();
   inline bool IsThin();
   inline bool IsIndirect();
+  inline bool IsUncachedExternal();
   inline bool IsExternalOneByte();
   inline bool IsExternalTwoByte();
   inline bool IsSequentialOneByte();
@@ -385,8 +386,6 @@ class String : public TorqueGeneratedString<String, Name> {
 
   // Trimming.
   enum TrimMode { kTrim, kTrimStart, kTrimEnd };
-  static Handle<String> Trim(Isolate* isolate, Handle<String> string,
-                             TrimMode mode);
 
   V8_EXPORT_PRIVATE void PrintOn(FILE* out);
 
@@ -561,6 +560,12 @@ extern template EXPORT_TEMPLATE_DECLARE(V8_EXPORT_PRIVATE)
 void String::WriteToFlat(String source, uint8_t* sink, int from, int to);
 extern template EXPORT_TEMPLATE_DECLARE(V8_EXPORT_PRIVATE)
 void String::WriteToFlat(String source, uint16_t* sink, int from, int to);
+extern template EXPORT_TEMPLATE_DECLARE(V8_EXPORT_PRIVATE)
+void String::WriteToFlat(String source, uint8_t* sink, int from, int to ,
+                        const SharedStringAccessGuardIfNeeded&);
+extern template EXPORT_TEMPLATE_DECLARE(V8_EXPORT_PRIVATE)
+void String::WriteToFlat(String source, uint16_t* sink, int from, int to,
+                        const SharedStringAccessGuardIfNeeded&);
 // clang-format on
 
 class SubStringRange {

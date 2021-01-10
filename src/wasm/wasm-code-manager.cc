@@ -217,21 +217,20 @@ bool WasmCode::ShouldBeLogged(Isolate* isolate) {
          isolate->is_profiling();
 }
 
-void WasmCode::LogCode(Isolate* isolate) const {
+void WasmCode::LogCode(Isolate* isolate, const char* source_url,
+                       int script_id) const {
   DCHECK(ShouldBeLogged(isolate));
   if (IsAnonymous()) return;
 
-  ModuleWireBytes wire_bytes(native_module()->wire_bytes());
-  WireBytesRef name_ref =
-      native_module()->module()->lazily_generated_names.LookupFunctionName(
-          wire_bytes, index(),
-          VectorOf(native_module()->module()->export_table));
+  ModuleWireBytes wire_bytes(native_module_->wire_bytes());
+  const WasmModule* module = native_module_->module();
+  WireBytesRef name_ref = module->lazily_generated_names.LookupFunctionName(
+      wire_bytes, index(), VectorOf(module->export_table));
   WasmName name = wire_bytes.GetNameOrNull(name_ref);
 
-  const WasmDebugSymbols& debug_symbols =
-      native_module()->module()->debug_symbols;
+  const WasmDebugSymbols& debug_symbols = module->debug_symbols;
   auto load_wasm_source_map = isolate->wasm_load_source_map_callback();
-  auto source_map = native_module()->GetWasmSourceMap();
+  auto source_map = native_module_->GetWasmSourceMap();
   if (!source_map && debug_symbols.type == WasmDebugSymbols::Type::SourceMap &&
       !debug_symbols.external_url.is_empty() && load_wasm_source_map) {
     WasmName external_url =
@@ -241,7 +240,7 @@ void WasmCode::LogCode(Isolate* isolate) const {
     v8::Isolate* v8_isolate = reinterpret_cast<v8::Isolate*>(isolate);
     Local<v8::String> source_map_str =
         load_wasm_source_map(v8_isolate, external_url_string.c_str());
-    native_module()->SetWasmSourceMap(
+    native_module_->SetWasmSourceMap(
         std::make_unique<WasmModuleSourceMap>(v8_isolate, source_map_str));
   }
 
@@ -251,7 +250,7 @@ void WasmCode::LogCode(Isolate* isolate) const {
     size_t prefix_len = name_buffer.size();
     constexpr size_t kMaxSigLength = 128;
     name_buffer.resize(prefix_len + kMaxSigLength);
-    const FunctionSig* sig = native_module()->module()->functions[index_].sig;
+    const FunctionSig* sig = module->functions[index_].sig;
     size_t sig_length =
         PrintSignature(VectorOf(&name_buffer[prefix_len], kMaxSigLength), sig);
     name_buffer.resize(prefix_len + sig_length);
@@ -268,8 +267,9 @@ void WasmCode::LogCode(Isolate* isolate) const {
                  "wasm-function[%d]", index()));
     name = VectorOf(name_buffer);
   }
-  PROFILE(isolate,
-          CodeCreateEvent(CodeEventListener::FUNCTION_TAG, this, name));
+  int code_offset = module->functions[index_].code.offset();
+  PROFILE(isolate, CodeCreateEvent(CodeEventListener::FUNCTION_TAG, this, name,
+                                   source_url, code_offset, script_id));
 
   if (!source_positions().empty()) {
     LOG_CODE_EVENT(isolate, CodeLinePosInfoRecordEvent(instruction_start(),
@@ -801,15 +801,17 @@ NativeModule::NativeModule(WasmEngine* engine, const WasmFeatures& enabled,
                            std::shared_ptr<const WasmModule> module,
                            std::shared_ptr<Counters> async_counters,
                            std::shared_ptr<NativeModule>* shared_this)
-    : code_allocator_(engine->code_manager(), std::move(code_space),
+    : engine_(engine),
+      engine_scope_(engine->GetBarrierForBackgroundCompile()->TryLock()),
+      code_allocator_(engine->code_manager(), std::move(code_space),
                       async_counters),
       enabled_features_(enabled),
       module_(std::move(module)),
       import_wrapper_cache_(std::unique_ptr<WasmImportWrapperCache>(
           new WasmImportWrapperCache())),
-      engine_(engine),
       use_trap_handler_(trap_handler::IsTrapHandlerEnabled() ? kUseTrapHandler
                                                              : kNoTrapHandler) {
+  DCHECK(engine_scope_);
   // We receive a pointer to an empty {std::shared_ptr}, and install ourselve
   // there.
   DCHECK_NOT_NULL(shared_this);
@@ -817,6 +819,7 @@ NativeModule::NativeModule(WasmEngine* engine, const WasmFeatures& enabled,
   shared_this->reset(this);
   compilation_state_ =
       CompilationState::New(*shared_this, std::move(async_counters));
+  compilation_state_->InitCompileJob(engine);
   DCHECK_NOT_NULL(module_);
   if (module_->num_declared_functions > 0) {
     code_table_ =
@@ -856,19 +859,25 @@ void NativeModule::ReserveCodeTableForTesting(uint32_t max_functions) {
   code_space_data_[0].jump_table = main_jump_table_;
 }
 
-void NativeModule::LogWasmCodes(Isolate* isolate) {
+void NativeModule::LogWasmCodes(Isolate* isolate, Script script) {
+  DisallowGarbageCollection no_gc;
   if (!WasmCode::ShouldBeLogged(isolate)) return;
 
   TRACE_EVENT1("v8.wasm", "wasm.LogWasmCodes", "functions",
                module_->num_declared_functions);
 
-  // TODO(titzer): we skip the logging of the import wrappers
-  // here, but they should be included somehow.
-  int start = module_->num_imported_functions;
-  int end = start + module_->num_declared_functions;
+  Object source_url_obj = script.source_url();
+  DCHECK(source_url_obj.IsString() || source_url_obj.IsUndefined());
+  std::unique_ptr<char[]> source_url =
+      source_url_obj.IsString() ? String::cast(source_url_obj).ToCString()
+                                : nullptr;
+
+  // Log all owned code, not just the current entries in the code table. This
+  // will also include import wrappers.
   WasmCodeRefScope code_ref_scope;
-  for (int func_index = start; func_index < end; ++func_index) {
-    if (WasmCode* code = GetCode(func_index)) code->LogCode(isolate);
+  base::MutexGuard lock(&allocation_mutex_);
+  for (auto& owned_entry : owned_code_) {
+    owned_entry.second->LogCode(isolate, source_url.get(), script.id());
   }
 }
 

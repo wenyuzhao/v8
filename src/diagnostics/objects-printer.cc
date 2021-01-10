@@ -159,11 +159,21 @@ void HeapObject::HeapObjectPrint(std::ostream& os) {  // NOLINT
     case FILLER_TYPE:
       os << "filler";
       break;
-    case JS_OBJECT_TYPE:  // fall through
     case JS_API_OBJECT_TYPE:
-    case JS_SPECIAL_API_OBJECT_TYPE:
+    case JS_ARRAY_ITERATOR_PROTOTYPE_TYPE:
     case JS_CONTEXT_EXTENSION_OBJECT_TYPE:
     case JS_ERROR_TYPE:
+    case JS_ITERATOR_PROTOTYPE_TYPE:
+    case JS_MAP_ITERATOR_PROTOTYPE_TYPE:
+    case JS_OBJECT_PROTOTYPE_TYPE:
+    case JS_OBJECT_TYPE:
+    case JS_PROMISE_PROTOTYPE_TYPE:
+    case JS_REG_EXP_PROTOTYPE_TYPE:
+    case JS_SET_ITERATOR_PROTOTYPE_TYPE:
+    case JS_SET_PROTOTYPE_TYPE:
+    case JS_SPECIAL_API_OBJECT_TYPE:
+    case JS_STRING_ITERATOR_PROTOTYPE_TYPE:
+    case JS_TYPED_ARRAY_PROTOTYPE_TYPE:
       JSObject::cast(*this).JSObjectPrint(os);
       break;
     case WASM_INSTANCE_OBJECT_TYPE:
@@ -619,8 +629,9 @@ void JSGeneratorObject::JSGeneratorObjectPrint(std::ostream& os) {  // NOLINT
       os << "\n - source position: ";
       // Can't collect source positions here if not available as that would
       // allocate memory.
+      Isolate* isolate = GetIsolate();
       if (fun_info.HasBytecodeArray() &&
-          fun_info.GetBytecodeArray().HasSourcePositionTable()) {
+          fun_info.GetBytecodeArray(isolate).HasSourcePositionTable()) {
         os << source_position();
         os << " (";
         script_name.PrintUC16(os);
@@ -1398,7 +1409,7 @@ void JSFunction::JSFunctionPrint(std::ostream& os) {  // NOLINT
   } else if (ActiveTierIsIgnition()) {
     os << "\n - interpreted";
     if (shared().HasBytecodeArray()) {
-      os << "\n - bytecode: " << shared().GetBytecodeArray();
+      os << "\n - bytecode: " << shared().GetBytecodeArray(isolate);
     }
   }
   if (WasmExportedFunction::IsWasmExportedFunction(*this)) {
@@ -2043,6 +2054,7 @@ void Script::ScriptPrint(std::ostream& os) {  // NOLINT
   PrintHeader(os, "Script");
   os << "\n - source: " << Brief(source());
   os << "\n - name: " << Brief(name());
+  os << "\n - source_url: " << Brief(source_url());
   os << "\n - line_offset: " << line_offset();
   os << "\n - column_offset: " << column_offset();
   os << "\n - type: " << type();

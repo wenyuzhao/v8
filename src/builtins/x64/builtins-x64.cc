@@ -4269,8 +4269,20 @@ void Builtins::Generate_DynamicCheckMapsTrampoline(MacroAssembler* masm) {
   RegList registers = descriptor.allocatable_registers();
   // FLAG_debug_code is enabled CSA checks will call C function and so we need
   // to save all CallerSaved registers too.
-  if (FLAG_debug_code) registers |= kJSCallerSaved;
+  if (FLAG_debug_code) registers |= kCallerSaved;
   __ SaveRegisters(registers);
+
+  // Load the immediate arguments from the deopt exit to pass to the builtin.
+  Register slot_arg =
+      descriptor.GetRegisterParameter(DynamicCheckMapsDescriptor::kSlot);
+  Register handler_arg =
+      descriptor.GetRegisterParameter(DynamicCheckMapsDescriptor::kHandler);
+  __ movq(handler_arg, Operand(rbp, CommonFrameConstants::kCallerPCOffset));
+  __ movq(slot_arg, Operand(handler_arg,
+                            Deoptimizer::kEagerWithResumeImmedArgs1PcOffset));
+  __ movq(
+      handler_arg,
+      Operand(handler_arg, Deoptimizer::kEagerWithResumeImmedArgs2PcOffset));
 
   __ Call(BUILTIN_CODE(masm->isolate(), DynamicCheckMaps),
           RelocInfo::CODE_TARGET);

@@ -48,11 +48,15 @@ class V8_EXPORT_PRIVATE Heap final : public HeapBase,
 
   void PostGarbageCollection() final;
 
+  bool IsMarking() const;
+
   Config config_;
   GCInvoker gc_invoker_;
   HeapGrowing growing_;
 
-  bool gc_in_progress_ = false;
+  const MarkingType marking_support_;
+  const SweepingType sweeping_support_;
+
   size_t epoch_ = 0;
 };
 

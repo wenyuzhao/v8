@@ -39,9 +39,10 @@ struct SsaEnv : public ZoneObject {
 
   SsaEnv(Zone* zone, State state, TFNode* control, TFNode* effect,
          uint32_t locals_size)
-      : state(state), control(control), effect(effect), locals(zone) {
-    if (locals_size > 0) locals.resize(locals_size);
-  }
+      : state(state),
+        control(control),
+        effect(effect),
+        locals(locals_size, zone) {}
 
   SsaEnv(const SsaEnv& other) V8_NOEXCEPT = default;
   SsaEnv(SsaEnv&& other) V8_NOEXCEPT : state(other.state),
@@ -54,7 +55,9 @@ struct SsaEnv : public ZoneObject {
 
   void Kill(State new_state = kControlEnd) {
     state = new_state;
-    locals.clear();
+    for (TFNode*& local : locals) {
+      local = nullptr;
+    }
     control = nullptr;
     effect = nullptr;
     instance_cache = {};
@@ -121,10 +124,8 @@ class WasmGraphBuildingInterface {
     uint32_t num_locals = decoder->num_locals();
     SsaEnv* ssa_env = decoder->zone()->New<SsaEnv>(
         decoder->zone(), SsaEnv::kReached, start, start, num_locals);
+    SetEnv(ssa_env);
 
-    // Initialize effect and control before initializing the locals default
-    // values (which might require instance loads) or loading the context.
-    builder_->SetEffectControl(start);
     // Initialize the instance parameter (index 0).
     builder_->set_instance_node(builder_->Param(kWasmInstanceParameterIndex));
     // Initialize local variables. Parameters are shifted by 1 because of the
@@ -141,7 +142,6 @@ class WasmGraphBuildingInterface {
         ssa_env->locals[index++] = node;
       }
     }
-    SetEnv(ssa_env);
     LoadContextIntoSsa(ssa_env);
 
     if (FLAG_trace_wasm) BUILD(TraceFunctionEntry, decoder->position());
@@ -280,7 +280,7 @@ class WasmGraphBuildingInterface {
     result->node = BUILD(RefAsNonNull, arg.node, decoder->position());
   }
 
-  void Drop(FullDecoder* decoder, const Value& value) {}
+  void Drop(FullDecoder* decoder) {}
 
   void DoReturn(FullDecoder* decoder, Vector<Value> values) {
     base::SmallVector<TFNode*, 8> nodes(values.size());
@@ -445,8 +445,9 @@ class WasmGraphBuildingInterface {
   void LoadLane(FullDecoder* decoder, LoadType type, const Value& value,
                 const Value& index, const MemoryAccessImmediate<validate>& imm,
                 const uint8_t laneidx, Value* result) {
-    result->node = BUILD(LoadLane, type.mem_type(), value.node, index.node,
-                         imm.offset, laneidx, decoder->position());
+    result->node = BUILD(LoadLane, type.value_type(), type.mem_type(),
+                         value.node, index.node, imm.offset, imm.alignment,
+                         laneidx, decoder->position());
   }
 
   void StoreMem(FullDecoder* decoder, StoreType type,
@@ -622,6 +623,35 @@ class WasmGraphBuildingInterface {
     for (size_t i = 0, e = values.size(); i < e; ++i) {
       values[i].node = caught_values[i];
     }
+  }
+
+  void Delegate(FullDecoder* decoder, uint32_t depth, Control* block) {
+    DCHECK_EQ(decoder->control_at(0), block);
+    DCHECK(block->is_incomplete_try());
+
+    if (block->try_info->might_throw()) {
+      // Merge the current env into the target handler's env.
+      SetEnv(block->try_info->catch_env);
+      if (depth == decoder->control_depth()) {
+        builder_->Rethrow(block->try_info->exception);
+        builder_->TerminateThrow(effect(), control());
+        return;
+      }
+      DCHECK(decoder->control_at(depth)->is_try());
+      TryInfo* target_try = decoder->control_at(depth)->try_info;
+      Goto(decoder, target_try->catch_env);
+
+      // Create or merge the exception.
+      if (target_try->catch_env->state == SsaEnv::kReached) {
+        target_try->exception = block->try_info->exception;
+      } else {
+        DCHECK_EQ(target_try->catch_env->state, SsaEnv::kMerged);
+        TFNode* inputs[] = {target_try->exception, block->try_info->exception,
+                            target_try->catch_env->control};
+        target_try->exception = builder_->Phi(kWasmExnRef, 2, inputs);
+      }
+    }
+    current_catch_ = block->previous_catch;
   }
 
   void CatchAll(FullDecoder* decoder, Control* block) {
@@ -825,16 +855,8 @@ class WasmGraphBuildingInterface {
                                          const WasmModule* module) {
     StaticKnowledge result;
     result.object_can_be_null = object_type.is_nullable();
-    result.object_must_be_data_ref = false;
     DCHECK(object_type.is_object_reference_type());  // Checked by validation.
-    if (object_type.has_index()) {
-      uint32_t reftype = object_type.ref_index();
-      // TODO(7748): When we implement dataref (=any struct or array), add it
-      // to this list.
-      if (module->has_struct(reftype) || module->has_array(reftype)) {
-        result.object_must_be_data_ref = true;
-      }
-    }
+    result.object_must_be_data_ref = is_data_ref_type(object_type, module);
     result.object_can_be_i31 = IsSubtypeOf(kWasmI31Ref, object_type, module);
     result.rtt_is_i31 = rtt_type.heap_representation() == HeapType::kI31;
     result.rtt_depth = rtt_type.depth();
@@ -1035,7 +1057,14 @@ class WasmGraphBuildingInterface {
     switch (to->state) {
       case SsaEnv::kUnreachable: {  // Overwrite destination.
         to->state = SsaEnv::kReached;
+        // There might be an offset in the locals due to a 'let'.
+        DCHECK_EQ(ssa_env_->locals.size(), decoder->num_locals());
+        DCHECK_GE(ssa_env_->locals.size(), to->locals.size());
+        uint32_t local_count_diff =
+            static_cast<uint32_t>(ssa_env_->locals.size() - to->locals.size());
         to->locals = ssa_env_->locals;
+        to->locals.erase(to->locals.begin(),
+                         to->locals.begin() + local_count_diff);
         to->control = control();
         to->effect = effect();
         to->instance_cache = ssa_env_->instance_cache;
@@ -1053,13 +1082,19 @@ class WasmGraphBuildingInterface {
           TFNode* inputs[] = {to->effect, old_effect, merge};
           to->effect = builder_->EffectPhi(2, inputs);
         }
-        // Merge SSA values.
-        for (int i = decoder->num_locals() - 1; i >= 0; i--) {
+        // Merge locals.
+        // There might be an offset in the locals due to a 'let'.
+        DCHECK_EQ(ssa_env_->locals.size(), decoder->num_locals());
+        DCHECK_GE(ssa_env_->locals.size(), to->locals.size());
+        uint32_t local_count_diff =
+            static_cast<uint32_t>(ssa_env_->locals.size() - to->locals.size());
+        for (uint32_t i = 0; i < to->locals.size(); i++) {
           TFNode* a = to->locals[i];
-          TFNode* b = ssa_env_->locals[i];
+          TFNode* b = ssa_env_->locals[i + local_count_diff];
           if (a != b) {
             TFNode* inputs[] = {a, b, merge};
-            to->locals[i] = builder_->Phi(decoder->local_type(i), 2, inputs);
+            to->locals[i] = builder_->Phi(
+                decoder->local_type(i + local_count_diff), 2, inputs);
           }
         }
         // Start a new merge from the instance cache.
@@ -1075,10 +1110,16 @@ class WasmGraphBuildingInterface {
         to->effect =
             builder_->CreateOrMergeIntoEffectPhi(merge, to->effect, effect());
         // Merge locals.
-        for (int i = decoder->num_locals() - 1; i >= 0; i--) {
+        // There might be an offset in the locals due to a 'let'.
+        DCHECK_EQ(ssa_env_->locals.size(), decoder->num_locals());
+        DCHECK_GE(ssa_env_->locals.size(), to->locals.size());
+        uint32_t local_count_diff =
+            static_cast<uint32_t>(ssa_env_->locals.size() - to->locals.size());
+        for (uint32_t i = 0; i < to->locals.size(); i++) {
           to->locals[i] = builder_->CreateOrMergeIntoPhi(
-              decoder->local_type(i).machine_representation(), merge,
-              to->locals[i], ssa_env_->locals[i]);
+              decoder->local_type(i + local_count_diff)
+                  .machine_representation(),
+              merge, to->locals[i], ssa_env_->locals[i + local_count_diff]);
         }
         // Merge the instance caches.
         builder_->MergeInstanceCacheInto(&to->instance_cache,
@@ -1141,6 +1182,8 @@ class WasmGraphBuildingInterface {
       ssa_env_->effect = effect();
     }
     SsaEnv* result = zone->New<SsaEnv>(std::move(*from));
+    // Restore the length of {from->locals} after applying move-constructor.
+    from->locals = ZoneVector<TFNode*>(result->locals.size(), zone);
     result->state = SsaEnv::kReached;
     return result;
   }

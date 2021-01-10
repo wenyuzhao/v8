@@ -293,9 +293,7 @@ DEFINE_IMPLICATION(harmony_weak_refs_with_cleanup_some, harmony_weak_refs)
   V(harmony_relative_indexing_methods, "harmony relative indexing methods")
 
 #ifdef V8_INTL_SUPPORT
-#define HARMONY_SHIPPING(V) \
-  HARMONY_SHIPPING_BASE(V)  \
-  V(harmony_intl_segmenter, "Intl.Segmenter")
+#define HARMONY_SHIPPING(V) HARMONY_SHIPPING_BASE(V)
 #else
 #define HARMONY_SHIPPING(V) HARMONY_SHIPPING_BASE(V)
 #endif
@@ -559,6 +557,7 @@ DEFINE_BOOL(trace_generalization, false, "trace map generalization")
 
 // Flags for TurboProp.
 DEFINE_BOOL(turboprop, false, "enable experimental turboprop mid-tier compiler")
+DEFINE_IMPLICATION(turboprop, turbo_direct_heap_access)
 DEFINE_BOOL(turboprop_mid_tier_reg_alloc, true,
             "enable mid-tier register allocator for turboprop")
 DEFINE_BOOL(turboprop_as_midtier, false,
@@ -822,13 +821,16 @@ DEFINE_INT(trace_wasm_ast_start, 0,
 DEFINE_INT(trace_wasm_ast_end, 0, "end function for wasm AST trace (exclusive)")
 DEFINE_BOOL(liftoff, true,
             "enable Liftoff, the baseline compiler for WebAssembly")
+DEFINE_BOOL(liftoff_only, false,
+            "disallow Turbofan compilation for WebAssembly (for testing)")
+DEFINE_IMPLICATION(liftoff_only, liftoff)
+DEFINE_NEG_IMPLICATION(liftoff_only, wasm_tier_up)
+DEFINE_NEG_IMPLICATION(fuzzing, liftoff_only)
 DEFINE_BOOL(experimental_liftoff_extern_ref, false,
             "enable support for externref in Liftoff")
 // We can't tier up (from Liftoff to TurboFan) in single-threaded mode, hence
-// disable Liftoff in that configuration for now. The alternative is disabling
-// TurboFan, which would reduce peak performance considerably.
-// Note that for debugging, Liftoff will still be used.
-DEFINE_NEG_IMPLICATION(single_threaded, liftoff)
+// disable tier up in that configuration for now.
+DEFINE_NEG_IMPLICATION(single_threaded, wasm_tier_up)
 DEFINE_DEBUG_BOOL(trace_liftoff, false,
                   "trace Liftoff, the baseline compiler for WebAssembly")
 DEFINE_BOOL(trace_wasm_memory, false,
@@ -837,9 +839,6 @@ DEFINE_BOOL(trace_wasm_memory, false,
 // {no_wasm_tier_up} to force some functions to be compiled with Turbofan.
 DEFINE_INT(wasm_tier_mask_for_testing, 0,
            "bitmask of functions to compile with TurboFan instead of Liftoff")
-
-DEFINE_BOOL(wasm_expose_debug_eval, true,
-            "Expose wasm evaluator support on the CDP")
 
 DEFINE_BOOL(validate_asm, true, "validate asm.js modules before compiling")
 DEFINE_BOOL(suppress_asm_messages, false,
@@ -909,6 +908,7 @@ DEFINE_BOOL(wasm_grow_shared_memory, true,
 DEFINE_BOOL(wasm_simd_post_mvp, false,
             "allow experimental SIMD operations for prototyping that are not "
             "included in the current proposal")
+DEFINE_BOOL(wasm_simd_ssse3_codegen, false, "allow wasm SIMD SSSE3 codegen")
 DEFINE_IMPLICATION(wasm_simd_post_mvp, experimental_wasm_simd)
 
 DEFINE_BOOL(wasm_code_gc, true, "enable garbage collection of wasm code")
@@ -1190,6 +1190,7 @@ DEFINE_BOOL(enable_sse4_2, true,
 DEFINE_BOOL(enable_sahf, true,
             "enable use of SAHF instruction if available (X64 only)")
 DEFINE_BOOL(enable_avx, true, "enable use of AVX instructions if available")
+DEFINE_BOOL(enable_avx2, true, "enable use of AVX2 instructions if available")
 DEFINE_BOOL(enable_fma3, true, "enable use of FMA3 instructions if available")
 DEFINE_BOOL(enable_bmi1, true, "enable use of BMI1 instructions if available")
 DEFINE_BOOL(enable_bmi2, true, "enable use of BMI2 instructions if available")

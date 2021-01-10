@@ -13865,9 +13865,9 @@ UNINITIALIZED_TEST(SetJitCodeEventHandler) {
                                      .ToLocalChecked())));
 
       i::PagedSpace* foo_owning_space = reinterpret_cast<i::PagedSpace*>(
-          i::Page::FromHeapObject(foo->abstract_code())->owner());
+          i::Page::FromHeapObject(foo->abstract_code(i_isolate))->owner());
       i::PagedSpace* bar_owning_space = reinterpret_cast<i::PagedSpace*>(
-          i::Page::FromHeapObject(bar->abstract_code())->owner());
+          i::Page::FromHeapObject(bar->abstract_code(i_isolate))->owner());
       CHECK_EQ(foo_owning_space, bar_owning_space);
       i::heap::SimulateFullSpace(foo_owning_space);
 
@@ -22950,6 +22950,34 @@ TEST(PromiseThen2) {
                     .FromJust());
 }
 
+TEST(PromiseCatchCallsBuiltin) {
+  LocalContext context;
+  v8::Isolate* isolate = context->GetIsolate();
+  v8::HandleScope scope(isolate);
+  Local<Object> global = context->Global();
+
+  v8::Local<v8::Promise::Resolver> resolver =
+      v8::Promise::Resolver::New(context.local()).ToLocalChecked();
+  v8::Local<v8::Promise> promise = resolver->GetPromise();
+
+  resolver->Reject(context.local(), v8::Integer::New(isolate, 1)).FromJust();
+
+  CompileRun(
+      "var x1 = 0;\n"
+      "function f(x) { x1 = x; }\n"
+      "Promise.prototype.then = function () { throw 'unreachable'; };\n");
+  Local<Function> f = Local<Function>::Cast(
+      global->Get(context.local(), v8_str("f")).ToLocalChecked());
+
+  // Catch should not call monkey-patched Promise.prototype.then.
+  promise->Catch(context.local(), f).ToLocalChecked();
+  isolate->PerformMicrotaskCheckpoint();
+  CHECK_EQ(1, global->Get(context.local(), v8_str("x1"))
+                  .ToLocalChecked()
+                  ->Int32Value(context.local())
+                  .FromJust());
+}
+
 TEST(PromiseStateAndValue) {
   LocalContext context;
   v8::Isolate* isolate = context->GetIsolate();
@@ -23350,16 +23378,6 @@ TEST(ScriptSourceURLAndSourceMappingURL) {
                   "//# sourceURL=bar15\t.js   \n"
                   "//# sourceMappingURL=bar16\t.js \n",
                   nullptr, nullptr);
-  SourceURLHelper(isolate,
-                  "function foo() {}\n"
-                  "//# sourceURL=bar17'.js   \n"
-                  "//# sourceMappingURL=bar18'.js \n",
-                  nullptr, nullptr);
-  SourceURLHelper(isolate,
-                  "function foo() {}\n"
-                  "//# sourceURL=bar19\".js   \n"
-                  "//# sourceMappingURL=bar20\".js \n",
-                  nullptr, nullptr);
 
   // Not too much whitespace.
   SourceURLHelper(isolate,
@@ -23367,6 +23385,25 @@ TEST(ScriptSourceURLAndSourceMappingURL) {
                   "//# sourceURL=  bar21.js   \n"
                   "//# sourceMappingURL=  bar22.js \n",
                   "bar21.js", "bar22.js");
+
+  // Comments in eval'd script should be ignored.
+  SourceURLHelper(isolate,
+                  "function foo() {}\n"
+                  "eval(\"\\\n//# sourceURL=bar23.js\");\n"
+                  "eval(\"\\\n//# sourceMappingURL=bar24.js\");\n",
+                  nullptr, nullptr);
+  SourceURLHelper(isolate,
+                  "function foo() {}\n"
+                  "eval('\\\n//# sourceURL=bar23.js');\n"
+                  "eval('\\\n//# sourceMappingURL=bar24.js');\n",
+                  nullptr, nullptr);
+
+  // Inline data: URLs are allowed.
+  SourceURLHelper(
+      isolate,
+      "function foo() {}\n"
+      "//# sourceMappingURL=  data:application/json,{\"version\":3}  \n",
+      nullptr, "data:application/json,{\"version\":3}");
 }
 
 
@@ -26643,9 +26680,9 @@ TEST(WasmI32AtomicWaitCallback) {
   WasmRunner<int32_t, int32_t, int32_t, double> r(TestExecutionTier::kTurbofan);
   r.builder().AddMemory(kWasmPageSize, SharedFlag::kShared);
   r.builder().SetHasSharedMemory();
-  BUILD(r, WASM_ATOMICS_WAIT(kExprI32AtomicWait, WASM_GET_LOCAL(0),
-                             WASM_GET_LOCAL(1),
-                             WASM_I64_SCONVERT_F64(WASM_GET_LOCAL(2)), 4));
+  BUILD(r, WASM_ATOMICS_WAIT(kExprI32AtomicWait, WASM_LOCAL_GET(0),
+                             WASM_LOCAL_GET(1),
+                             WASM_I64_SCONVERT_F64(WASM_LOCAL_GET(2)), 4));
   LocalContext env;
   v8::Isolate* isolate = env->GetIsolate();
   v8::HandleScope scope(isolate);
@@ -26679,9 +26716,9 @@ TEST(WasmI64AtomicWaitCallback) {
   WasmRunner<int32_t, int32_t, double, double> r(TestExecutionTier::kTurbofan);
   r.builder().AddMemory(kWasmPageSize, SharedFlag::kShared);
   r.builder().SetHasSharedMemory();
-  BUILD(r, WASM_ATOMICS_WAIT(kExprI64AtomicWait, WASM_GET_LOCAL(0),
-                             WASM_I64_SCONVERT_F64(WASM_GET_LOCAL(1)),
-                             WASM_I64_SCONVERT_F64(WASM_GET_LOCAL(2)), 8));
+  BUILD(r, WASM_ATOMICS_WAIT(kExprI64AtomicWait, WASM_LOCAL_GET(0),
+                             WASM_I64_SCONVERT_F64(WASM_LOCAL_GET(1)),
+                             WASM_I64_SCONVERT_F64(WASM_LOCAL_GET(2)), 8));
   LocalContext env;
   v8::Isolate* isolate = env->GetIsolate();
   v8::HandleScope scope(isolate);
@@ -28800,4 +28837,14 @@ UNINITIALIZED_TEST(SingleThreadedDefaultPlatform) {
   isolate->Exit();
   isolate->Dispose();
   i::V8::SetPlatformForTesting(old_platform);
+}
+
+THREADED_TEST(MicrotaskQueueOfContext) {
+  auto microtask_queue = v8::MicrotaskQueue::New(CcTest::isolate());
+  v8::HandleScope scope(CcTest::isolate());
+  v8::Local<Context> context = Context::New(
+      CcTest::isolate(), nullptr, v8::MaybeLocal<ObjectTemplate>(),
+      v8::MaybeLocal<Value>(), v8::DeserializeInternalFieldsCallback(),
+      microtask_queue.get());
+  CHECK_EQ(context->GetMicrotaskQueue(), microtask_queue.get());
 }

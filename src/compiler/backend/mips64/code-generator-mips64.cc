@@ -496,6 +496,15 @@ void EmitWordLoadPoisoningIfNeeded(CodeGenerator* codegen,
           i.InputSimd128Register(1));                           \
   } while (0)
 
+#define ASSEMBLE_SIMD_EXTENDED_MULTIPLY(op0, op1)                           \
+  do {                                                                      \
+    CpuFeatureScope msa_scope(tasm(), MIPS_SIMD);                           \
+    __ xor_v(kSimd128RegZero, kSimd128RegZero, kSimd128RegZero);            \
+    __ op0(kSimd128ScratchReg, kSimd128RegZero, i.InputSimd128Register(0)); \
+    __ op0(kSimd128RegZero, kSimd128RegZero, i.InputSimd128Register(1));    \
+    __ op1(i.OutputSimd128Register(), kSimd128ScratchReg, kSimd128RegZero); \
+  } while (0)
+
 void CodeGenerator::AssembleDeconstructFrame() {
   __ mov(sp, fp);
   __ Pop(ra, fp);
@@ -846,7 +855,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     case kArchDeoptimize: {
       DeoptimizationExit* exit =
-          BuildTranslation(instr, -1, 0, OutputFrameStateCombine::Ignore());
+          BuildTranslation(instr, -1, 0, 0, OutputFrameStateCombine::Ignore());
       __ Branch(exit->label());
       break;
     }
@@ -1569,59 +1578,41 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     }
     case kMips64TruncLS: {
       FPURegister scratch = kScratchDoubleReg;
-      Register tmp_fcsr = kScratchReg;
-      Register result = kScratchReg2;
+      Register result = kScratchReg;
 
       bool load_status = instr->OutputCount() > 1;
-      if (load_status) {
-        // Save FCSR.
-        __ cfc1(tmp_fcsr, FCSR);
-        // Clear FPU flags.
-        __ ctc1(zero_reg, FCSR);
-      }
       // Other arches use round to zero here, so we follow.
       __ trunc_l_s(scratch, i.InputDoubleRegister(0));
       __ dmfc1(i.OutputRegister(), scratch);
       if (load_status) {
         __ cfc1(result, FCSR);
         // Check for overflow and NaNs.
-        __ andi(result, result,
-                (kFCSROverflowFlagMask | kFCSRInvalidOpFlagMask));
+        __ And(result, result,
+               (kFCSROverflowCauseMask | kFCSRInvalidOpCauseMask));
         __ Slt(result, zero_reg, result);
         __ xori(result, result, 1);
         __ mov(i.OutputRegister(1), result);
-        // Restore FCSR
-        __ ctc1(tmp_fcsr, FCSR);
       }
       break;
     }
     case kMips64TruncLD: {
       FPURegister scratch = kScratchDoubleReg;
-      Register tmp_fcsr = kScratchReg;
-      Register result = kScratchReg2;
+      Register result = kScratchReg;
 
       bool set_overflow_to_min_i64 = MiscField::decode(instr->opcode());
       bool load_status = instr->OutputCount() > 1;
-      DCHECK_IMPLIES(set_overflow_to_min_i64, i.OutputCount() == 1);
-      if (load_status) {
-        // Save FCSR.
-        __ cfc1(tmp_fcsr, FCSR);
-        // Clear FPU flags.
-        __ ctc1(zero_reg, FCSR);
-      }
+      DCHECK_IMPLIES(set_overflow_to_min_i64, instr->OutputCount() == 1);
       // Other arches use round to zero here, so we follow.
       __ trunc_l_d(scratch, i.InputDoubleRegister(0));
       __ dmfc1(i.OutputRegister(0), scratch);
       if (load_status) {
         __ cfc1(result, FCSR);
         // Check for overflow and NaNs.
-        __ andi(result, result,
-                (kFCSROverflowFlagMask | kFCSRInvalidOpFlagMask));
+        __ And(result, result,
+               (kFCSROverflowCauseMask | kFCSRInvalidOpCauseMask));
         __ Slt(result, zero_reg, result);
         __ xori(result, result, 1);
         __ mov(i.OutputRegister(1), result);
-        // Restore FCSR
-        __ ctc1(tmp_fcsr, FCSR);
       }
       if (set_overflow_to_min_i64) {
         // Avoid INT64_MAX as an overflow indicator and use INT64_MIN instead,
@@ -1965,6 +1956,21 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ xor_v(dst, dst, dst);
       __ Ld(kScratchReg, i.MemoryOperand());
       __ insert_d(dst, 0, kScratchReg);
+      break;
+    }
+    case kMips64S128LoadLane: {
+      CpuFeatureScope msa_scope(tasm(), MIPS_SIMD);
+      Simd128Register dst = i.OutputSimd128Register();
+      DCHECK_EQ(dst, i.InputSimd128Register(0));
+      auto sz = static_cast<MSASize>(MiscField::decode(instr->opcode()));
+      __ LoadLane(sz, dst, i.InputUint8(1), i.MemoryOperand(2));
+      break;
+    }
+    case kMips64S128StoreLane: {
+      CpuFeatureScope msa_scope(tasm(), MIPS_SIMD);
+      Simd128Register src = i.InputSimd128Register(0);
+      auto sz = static_cast<MSASize>(MiscField::decode(instr->opcode()));
+      __ StoreLane(sz, src, i.InputUint8(1), i.MemoryOperand(2));
       break;
     }
     case kWord32AtomicLoadInt8:
@@ -2438,6 +2444,48 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ copy_u_b(dst, scratch0, 0);
       break;
     }
+    case kMips64I64x2Eq: {
+      CpuFeatureScope msa_scope(tasm(), MIPS_SIMD);
+      __ ceq_d(i.OutputSimd128Register(), i.InputSimd128Register(0),
+               i.InputSimd128Register(1));
+      break;
+    }
+    case kMips64I64x2ExtMulLowI32x4S:
+      ASSEMBLE_SIMD_EXTENDED_MULTIPLY(ilvr_w, dotp_s_d);
+      break;
+    case kMips64I64x2ExtMulHighI32x4S:
+      ASSEMBLE_SIMD_EXTENDED_MULTIPLY(ilvl_w, dotp_s_d);
+      break;
+    case kMips64I64x2ExtMulLowI32x4U:
+      ASSEMBLE_SIMD_EXTENDED_MULTIPLY(ilvr_w, dotp_u_d);
+      break;
+    case kMips64I64x2ExtMulHighI32x4U:
+      ASSEMBLE_SIMD_EXTENDED_MULTIPLY(ilvl_w, dotp_u_d);
+      break;
+    case kMips64I32x4ExtMulLowI16x8S:
+      ASSEMBLE_SIMD_EXTENDED_MULTIPLY(ilvr_h, dotp_s_w);
+      break;
+    case kMips64I32x4ExtMulHighI16x8S:
+      ASSEMBLE_SIMD_EXTENDED_MULTIPLY(ilvl_h, dotp_s_w);
+      break;
+    case kMips64I32x4ExtMulLowI16x8U:
+      ASSEMBLE_SIMD_EXTENDED_MULTIPLY(ilvr_h, dotp_u_w);
+      break;
+    case kMips64I32x4ExtMulHighI16x8U:
+      ASSEMBLE_SIMD_EXTENDED_MULTIPLY(ilvl_h, dotp_u_w);
+      break;
+    case kMips64I16x8ExtMulLowI8x16S:
+      ASSEMBLE_SIMD_EXTENDED_MULTIPLY(ilvr_b, dotp_s_h);
+      break;
+    case kMips64I16x8ExtMulHighI8x16S:
+      ASSEMBLE_SIMD_EXTENDED_MULTIPLY(ilvl_b, dotp_s_h);
+      break;
+    case kMips64I16x8ExtMulLowI8x16U:
+      ASSEMBLE_SIMD_EXTENDED_MULTIPLY(ilvr_b, dotp_u_h);
+      break;
+    case kMips64I16x8ExtMulHighI8x16U:
+      ASSEMBLE_SIMD_EXTENDED_MULTIPLY(ilvl_b, dotp_u_h);
+      break;
     case kMips64F32x4Splat: {
       CpuFeatureScope msa_scope(tasm(), MIPS_SIMD);
       __ FmoveLow(kScratchReg, i.InputSingleRegister(0));
@@ -4689,6 +4737,8 @@ void CodeGenerator::AssembleJumpTable(Label** targets, size_t target_count) {
 #undef ASSEMBLE_ATOMIC_COMPARE_EXCHANGE_INTEGER_EXT
 #undef ASSEMBLE_IEEE754_BINOP
 #undef ASSEMBLE_IEEE754_UNOP
+#undef ASSEMBLE_F64X2_ARITHMETIC_BINOP
+#undef ASSEMBLE_SIMD_EXTENDED_MULTIPLY
 
 #undef TRACE_MSG
 #undef TRACE_UNIMPL

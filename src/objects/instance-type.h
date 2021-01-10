@@ -125,10 +125,6 @@ enum InstanceType : uint16_t {
 // - JSSpecialObject and JSCustomElementsObject are aligned with the beginning
 //   of the JSObject range, so that we can use a larger range check from
 //   FIRST_JS_RECEIVER_TYPE to the end of those ranges and include JSProxy too.
-// - JSFunction is last, meaning we can use a single inequality check to
-//   determine whether an instance type is within the range for any class in the
-//   inheritance hierarchy of JSFunction. This includes commonly-checked classes
-//   JSObject and JSReceiver.
 #define MAKE_TORQUE_INSTANCE_TYPE(TYPE, value) TYPE = value,
   TORQUE_ASSIGNED_INSTANCE_TYPES(MAKE_TORQUE_INSTANCE_TYPE)
 #undef MAKE_TORQUE_INSTANCE_TYPE
@@ -147,8 +143,6 @@ enum InstanceType : uint16_t {
   // Convenient names for things where the generated name is awkward:
   FIRST_TYPE = FIRST_HEAP_OBJECT_TYPE,
   LAST_TYPE = LAST_HEAP_OBJECT_TYPE,
-  FIRST_FUNCTION_TYPE = FIRST_JS_FUNCTION_OR_BOUND_FUNCTION_TYPE,
-  LAST_FUNCTION_TYPE = LAST_JS_FUNCTION_OR_BOUND_FUNCTION_TYPE,
   BIGINT_TYPE = BIG_INT_BASE_TYPE,
 };
 

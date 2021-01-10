@@ -6,10 +6,20 @@ found in the LICENSE file. -->
   <link href="./index.css" rel="stylesheet">
 </head>
 <style>
+  #sourceCode {
+    white-space: pre-line;
+  }
 </style>
 <div class="panel">
   <h2>Code Panel</h2>
+  <div class="selection">
+    <select id="codeSelect"></select>
+    <button id="selectedRelatedButton">Select Related Events</button>
+  </div>
   <div class="panelBody">
-    <pre id="code"></pre>
+    <h3>Disassembly</h3>
+    <pre id="disassembly"></pre>
+    <h3>Source Code</h3>
+    <pre id="sourceCode"></pre>
   </div>
 </div>

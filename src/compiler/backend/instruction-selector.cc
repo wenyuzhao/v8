@@ -785,13 +785,22 @@ Instruction* InstructionSelector::EmitWithContinuation(
     continuation_inputs_.push_back(g.Label(cont->true_block()));
     continuation_inputs_.push_back(g.Label(cont->false_block()));
   } else if (cont->IsDeoptimize()) {
+    int immediate_args_count = 0;
     if (cont->has_extra_args()) {
       for (int i = 0; i < cont->extra_args_count(); i++) {
-        continuation_inputs_.push_back(cont->extra_args()[i]);
+        InstructionOperand op = cont->extra_args()[i];
+        continuation_inputs_.push_back(op);
         input_count++;
+        if (op.IsImmediate()) {
+          immediate_args_count++;
+        } else {
+          // All immediate args should be added last.
+          DCHECK_EQ(immediate_args_count, 0);
+        }
       }
     }
-    opcode |= MiscField::encode(static_cast<int>(input_count));
+    opcode |= DeoptImmedArgsCountField::encode(immediate_args_count) |
+              DeoptFrameStateOffsetField::encode(static_cast<int>(input_count));
     AppendDeoptimizeArguments(&continuation_inputs_, cont->kind(),
                               cont->reason(), cont->feedback(),
                               cont->frame_state());
@@ -2732,12 +2741,14 @@ void InstructionSelector::VisitF32x4Qfms(Node* node) { UNIMPLEMENTED(); }
 #endif  // !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_S390X
 
 #if !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_S390X && !V8_TARGET_ARCH_ARM64 && \
-    !V8_TARGET_ARCH_IA32 && !V8_TARGET_ARCH_ARM
+    !V8_TARGET_ARCH_IA32 && !V8_TARGET_ARCH_ARM && !V8_TARGET_ARCH_MIPS64 && \
+    !V8_TARGET_ARCH_MIPS
 void InstructionSelector::VisitI64x2Eq(Node* node) { UNIMPLEMENTED(); }
 #endif  // !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_S390X && !V8_TARGET_ARCH_ARM64
         // && !V8_TARGET_ARCH_IA32 && !V8_TARGET_ARCH_ARM
+        // && !V8_TARGET_ARCH_MIPS64 && !V8_TARGET_ARCH_MIPS
 
-#if !V8_TARGET_ARCH_ARM64
+#if !V8_TARGET_ARCH_ARM64 && !V8_TARGET_ARCH_X64
 // TODO(v8:10971) Prototype i16x8.q15mulr_sat_s
 void InstructionSelector::VisitI16x8Q15MulRSatS(Node* node) { UNIMPLEMENTED(); }
 
@@ -2757,48 +2768,23 @@ void InstructionSelector::VisitI64x2UConvertI32x4Low(Node* node) {
 void InstructionSelector::VisitI64x2UConvertI32x4High(Node* node) {
   UNIMPLEMENTED();
 }
+#endif  // !V8_TARGET_ARCH_ARM64 || !V8_TARGET_ARCH_X64
 
+#if !V8_TARGET_ARCH_ARM64
+// TODO(v8:11168): Prototyping prefetch.
+void InstructionSelector::VisitPrefetchTemporal(Node* node) { UNIMPLEMENTED(); }
+void InstructionSelector::VisitPrefetchNonTemporal(Node* node) {
+  UNIMPLEMENTED();
+}
+#endif  // !V8_TARGET_ARCH_ARM64
+
+#if !V8_TARGET_ARCH_ARM64 && !V8_TARGET_ARCH_ARM
 // TODO(v8:11002) Prototype i8x16.popcnt.
 void InstructionSelector::VisitI8x16Popcnt(Node* node) { UNIMPLEMENTED(); }
+#endif  // !V8_TARGET_ARCH_ARM64 && !V8_TARGET_ARCH_ARM
 
-// TODO(v8:11008) Prototype extended multiplication.
-void InstructionSelector::VisitI64x2ExtMulLowI32x4S(Node* node) {
-  UNIMPLEMENTED();
-}
-void InstructionSelector::VisitI64x2ExtMulHighI32x4S(Node* node) {
-  UNIMPLEMENTED();
-}
-void InstructionSelector::VisitI64x2ExtMulLowI32x4U(Node* node) {
-  UNIMPLEMENTED();
-}
-void InstructionSelector::VisitI64x2ExtMulHighI32x4U(Node* node) {
-  UNIMPLEMENTED();
-}
-void InstructionSelector::VisitI32x4ExtMulLowI16x8S(Node* node) {
-  UNIMPLEMENTED();
-}
-void InstructionSelector::VisitI32x4ExtMulHighI16x8S(Node* node) {
-  UNIMPLEMENTED();
-}
-void InstructionSelector::VisitI32x4ExtMulLowI16x8U(Node* node) {
-  UNIMPLEMENTED();
-}
-void InstructionSelector::VisitI32x4ExtMulHighI16x8U(Node* node) {
-  UNIMPLEMENTED();
-}
-void InstructionSelector::VisitI16x8ExtMulLowI8x16S(Node* node) {
-  UNIMPLEMENTED();
-}
-void InstructionSelector::VisitI16x8ExtMulHighI8x16S(Node* node) {
-  UNIMPLEMENTED();
-}
-void InstructionSelector::VisitI16x8ExtMulLowI8x16U(Node* node) {
-  UNIMPLEMENTED();
-}
-void InstructionSelector::VisitI16x8ExtMulHighI8x16U(Node* node) {
-  UNIMPLEMENTED();
-}
-
+#if !V8_TARGET_ARCH_ARM64 && !V8_TARGET_ARCH_ARM && !V8_TARGET_ARCH_X64 && \
+    !V8_TARGET_ARCH_IA32
 // TODO(v8:11086) Prototype extended pairwise add.
 void InstructionSelector::VisitI32x4ExtAddPairwiseI16x8S(Node* node) {
   UNIMPLEMENTED();
@@ -2812,27 +2798,26 @@ void InstructionSelector::VisitI16x8ExtAddPairwiseI8x16S(Node* node) {
 void InstructionSelector::VisitI16x8ExtAddPairwiseI8x16U(Node* node) {
   UNIMPLEMENTED();
 }
+#endif  // !V8_TARGET_ARCH_ARM64 && !V8_TARGET_ARCH_ARM && !V8_TARGET_ARCH_X64
+        // && !V8_TARGET_ARCH_IA32
 
-// TODO(v8:11168): Prototyping prefetch.
-void InstructionSelector::VisitPrefetchTemporal(Node* node) { UNIMPLEMENTED(); }
-void InstructionSelector::VisitPrefetchNonTemporal(Node* node) {
-  UNIMPLEMENTED();
-}
-#endif  // !V8_TARGET_ARCH_ARM64
-
-#if !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_IA32 && !V8_TARGET_ARCH_ARM64
+#if !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_IA32 && !V8_TARGET_ARCH_ARM64 && \
+    !V8_TARGET_ARCH_ARM && !V8_TARGET_ARCH_MIPS64
 // TODO(v8:10975): Prototyping load lane and store lane.
 void InstructionSelector::VisitLoadLane(Node* node) { UNIMPLEMENTED(); }
 void InstructionSelector::VisitStoreLane(Node* node) { UNIMPLEMENTED(); }
 #endif  // !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_IA32 && !V8_TARGET_ARCH_ARM64
+        // && !V8_TARGET_ARCH_ARM && !V8_TARGET_ARCH_MIPS64
 
-#if !V8_TARGET_ARCH_X64
+#if !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_IA32 && !V8_TARGET_ARCH_ARM64 && \
+    !V8_TARGET_ARCH_ARM
 // TODO(v8:10983) Prototyping sign select.
 void InstructionSelector::VisitI8x16SignSelect(Node* node) { UNIMPLEMENTED(); }
 void InstructionSelector::VisitI16x8SignSelect(Node* node) { UNIMPLEMENTED(); }
 void InstructionSelector::VisitI32x4SignSelect(Node* node) { UNIMPLEMENTED(); }
 void InstructionSelector::VisitI64x2SignSelect(Node* node) { UNIMPLEMENTED(); }
-#endif  // !V8_TARGET_ARCH_X64
+#endif  // !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_IA32 && !V8_TARGET_ARCH_ARM64
+        // && !V8_TARGET_ARCH_ARM
 
 #if !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_ARM64 && !V8_TARGET_ARCH_ARM && \
     !V8_TARGET_ARCH_IA32 && !V8_TARGET_ARCH_MIPS64 && !V8_TARGET_ARCH_MIPS
@@ -3189,13 +3174,9 @@ void InstructionSelector::VisitDynamicCheckMapsWithDeoptUnless(Node* node) {
   CallDescriptor* call_descriptor = Linkage::GetStubCallDescriptor(
       zone(), descriptor, descriptor.GetStackParameterCount(),
       CallDescriptor::kNoFlags, Operator::kNoDeopt | Operator::kNoThrow);
-  // TODO(rmcilroy): Pass the constant values as immediates and move them into
-  // the correct location out of the fast-path (e.g., at deopt or in trampoline)
   InstructionOperand dynamic_check_args[] = {
-      g.UseLocation(n.slot(), call_descriptor->GetInputLocation(1)),
-      g.UseLocation(n.map(), call_descriptor->GetInputLocation(2)),
-      g.UseLocation(n.handler(), call_descriptor->GetInputLocation(3)),
-  };
+      g.UseLocation(n.map(), call_descriptor->GetInputLocation(1)),
+      g.UseImmediate(n.slot()), g.UseImmediate(n.handler())};
 
   if (NeedsPoisoning(IsSafetyCheck::kCriticalSafetyCheck)) {
     FlagsContinuation cont = FlagsContinuation::ForDeoptimizeAndPoison(

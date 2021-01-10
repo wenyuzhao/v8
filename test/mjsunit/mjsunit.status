@@ -41,10 +41,6 @@
   ##############################################################################
   # Open bugs.
 
-  # https://crbug.com/v8/10929
-  'wasm/externref-liftoff' : [PASS, ['arch == arm64', SKIP]],
-  'wasm/externref-globals-liftoff' : [PASS, ['arch == arm64', SKIP]],
-
   # BUG(v8:2989).
   'regress/regress-2989': [FAIL, NO_VARIANTS, ['lite_mode == True', SKIP]],
 
@@ -155,7 +151,8 @@
   'wasm/compare-exchange64-stress': [PASS, SLOW, NO_VARIANTS],
 
   # Very slow on ARM and MIPS, contains no architecture dependent code.
-  'unicode-case-overoptimization': [PASS, NO_VARIANTS, ['arch in (arm, arm64, mipsel, mips64el, mips64, mips)', SKIP]],
+  'unicode-case-overoptimization0': [PASS, NO_VARIANTS, ['arch in (arm, arm64, mipsel, mips64el, mips64, mips)', SKIP]],
+  'unicode-case-overoptimization1': [PASS, NO_VARIANTS, ['arch in (arm, arm64, mipsel, mips64el, mips64, mips)', SKIP]],
   'regress/regress-3976': [PASS, NO_VARIANTS, ['arch in (arm, arm64, mipsel, mips64el, mips64, mips)', SKIP]],
   'regress/regress-crbug-482998': [PASS, NO_VARIANTS, ['arch in (arm, arm64, mipsel, mips64el, mips)', SKIP]],
   'regress/regress-740784': [PASS, NO_VARIANTS, ['arch in (arm, arm64, mipsel, mips64el, mips)', SKIP]],
@@ -184,6 +181,7 @@
   # Skip slow tests in debug mode.
   'array-functions-prototype-misc': [SKIP],
   'compiler/regress-808472': [SKIP],
+  'compiler/regress-1161357': [SKIP],
   'es6/promise-all-overflow-2': [SKIP],
   'generated-transition-stub': [SKIP],
   'regress/regress-524': [SKIP],
@@ -319,6 +317,9 @@
 
   # BUG(v8:10035)
   'compiler/deopt-array-builtins': [SKIP],
+
+  # BUG(v8:11240)
+  'regress/regress-v8-9267-1': [SKIP],
 }],  # 'gc_stress'
 
 ##############################################################################
@@ -1205,9 +1206,6 @@
   'compiler/abstract-equal-receiver': [FAIL],
   'compiler/constant-fold-cow-array': [FAIL],
   'compiler/promise-resolve-stable-maps': [FAIL],
-
-  # https://crbug.com/v8/10894
-  'math-floor-of-div': [SLOW],
 }],  # variant == turboprop
 
 ##############################################################################
