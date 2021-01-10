@@ -681,7 +681,8 @@ TNode<Object> CodeAssembler::LoadFullTagged(Node* base,
 
 TNode<Object> CodeAssembler::LoadFullTagged(Node* base, Node* offset,
                                             LoadSensitivity needs_poisoning) {
-  // Please use LoadFromObject(MachineType::MapInHeader(), object, IntPtrConstant(-kHeapObjectTag)) instead.
+  // Please use LoadFromObject(MachineType::MapInHeader(), object,
+  // IntPtrConstant(-kHeapObjectTag)) instead.
   DCHECK(!raw_assembler()->IsMapOffsetConstantMinusTag(offset));
   return BitcastWordToTagged(
       Load(MachineType::Pointer(), base, offset, needs_poisoning));
