@@ -130,7 +130,6 @@ bool Serializer::MustBeDeferred(HeapObject object) { return false; }
 void Serializer::VisitRootPointers(Root root, const char* description,
                                    FullObjectSlot start, FullObjectSlot end) {
   for (FullObjectSlot current = start; current < end; ++current) {
-    DCHECK(!MapWord::IsPacked(current.Relaxed_Load().ptr()));
     SerializeRootObject(current);
   }
 }
@@ -808,7 +807,6 @@ void Serializer::ObjectSerializer::VisitPointers(HeapObject host,
   HandleScope scope(isolate());
   DisallowGarbageCollection no_gc;
 
-  DCHECK_NE(host.ptr(), start.address());
   MaybeObjectSlot current = start;
   while (current < end) {
     while (current < end && (*current)->IsSmi()) {

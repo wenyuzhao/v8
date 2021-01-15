@@ -63,7 +63,6 @@ class RootVisitor {
 
   // Visits a contiguous arrays of pointers in the half-open range
   // [start, end). Any or all of the values may be modified on return.
-  // Note: Root pointers should never be packed map words.
   virtual void VisitRootPointers(Root root, const char* description,
                                  FullObjectSlot start, FullObjectSlot end) = 0;
 
