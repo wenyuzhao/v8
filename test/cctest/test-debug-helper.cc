@@ -228,7 +228,6 @@ TEST(GetObjectProperties) {
   d::ObjectPropertiesResultPtr props2;
   {
     heap_addresses.read_only_space_first_page = 0;
-#ifdef V8_MAP_PACKING
     uintptr_t map_ptr = props->properties[0]->address;
     uintptr_t map_map_ptr =
         (*reinterpret_cast<MapWord*>(map_ptr)).ToMap().ptr();
@@ -236,14 +235,6 @@ TEST(GetObjectProperties) {
         d::GetObjectProperties(map_map_ptr, &ReadMemory, heap_addresses)
             ->properties[0]
             ->address;
-#else
-    uintptr_t map_address =
-        d::GetObjectProperties(
-            *reinterpret_cast<i::Tagged_t*>(props->properties[0]->address),
-            &ReadMemory, heap_addresses)
-            ->properties[0]
-            ->address;
-#endif
     MemoryFailureRegion failure(map_address, map_address + i::Map::kSize);
     props2 = d::GetObjectProperties(second_string_address, &ReadMemory,
                                     heap_addresses, "v8::internal::String");
@@ -347,14 +338,9 @@ TEST(GetObjectProperties) {
   // Verify the result for a heap object field which is itself a struct: the
   // "descriptors" field on a DescriptorArray.
   // Start by getting the object's map and the map's descriptor array.
-#ifdef V8_MAP_PACKING
   props =
       d::GetObjectProperties(ReadProp<i::MapWord>(*props, "map").ToMap().ptr(),
                              &ReadMemory, heap_addresses);
-#else
-  props = d::GetObjectProperties(ReadProp<i::Tagged_t>(*props, "map"),
-                                 &ReadMemory, heap_addresses);
-#endif
   props = d::GetObjectProperties(
       ReadProp<i::Tagged_t>(*props, "instance_descriptors"), &ReadMemory,
       heap_addresses);

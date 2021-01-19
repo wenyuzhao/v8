@@ -343,16 +343,16 @@ void RunLoadStore(MachineType type, TestAlignment t) {
 
 template <typename CType>
 void RunUnalignedLoadStoreUnalignedAccess(MachineType type) {
-  CType in[4], out;
+  CType in, out;
   byte in_buffer[2 * sizeof(CType)];
   byte out_buffer[2 * sizeof(CType)];
 
-  InitBuffer(&in[0], 1, type);
+  InitBuffer(&in, 1, type);
 
   for (int x = 0; x < static_cast<int>(sizeof(CType)); x++) {
     // Direct write to &in_buffer[x] may cause unaligned access in C++ code so
     // we use MemCopy() to handle that.
-    MemCopy(&in_buffer[x], &in[0], sizeof(CType));
+    MemCopy(&in_buffer[x], &in, sizeof(CType));
 
     for (int y = 0; y < static_cast<int>(sizeof(CType)); y++) {
       RawMachineAssemblerTester<int32_t> m;
@@ -373,7 +373,7 @@ void RunUnalignedLoadStoreUnalignedAccess(MachineType type) {
       // so we use MemCopy() to handle that.
       MemCopy(&out, &out_buffer[y], sizeof(CType));
       // Mostly same as CHECK_EQ() but customized for compressed tagged values.
-      CheckEq<CType>(in[0], out);
+      CheckEq<CType>(in, out);
     }
   }
 }

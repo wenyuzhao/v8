@@ -5374,7 +5374,7 @@ static void CheckLeak(const v8::FunctionCallbackInfo<v8::Value>& args) {
   Isolate* isolate = CcTest::i_isolate();
   Object message(
       *reinterpret_cast<Address*>(isolate->pending_message_obj_address()));
-  CHECK((MapWord::IsPacked(message.ptr()) || message.IsTheHole(isolate)));
+  CHECK(message.IsTheHole(isolate));
 }
 
 

@@ -111,12 +111,8 @@ let kWasmAnyRef = 0x6e;
 let kWasmEqRef = 0x6d;
 let kWasmOptRef = 0x6c;
 let kWasmRef = 0x6b;
-function wasmOptRefType(index) {
-  return {opcode: kWasmOptRef, index: index};
-}
-function wasmRefType(index) {
-  return {opcode: kWasmRef, index: index};
-}
+function wasmOptRefType(index) { return {opcode: kWasmOptRef, index: index}; }
+function wasmRefType(index) { return {opcode: kWasmRef, index: index}; }
 let kWasmI31Ref = 0x6a;
 let kWasmRtt = 0x69;
 function wasmRtt(index, depth) {
@@ -983,14 +979,14 @@ class WasmTableBuilder {
 }
 
 function makeField(type, mutability) {
-  assertEquals(
-      'boolean', typeof mutability, 'field mutability must be boolean');
+  assertEquals("boolean", typeof mutability,
+               "field mutability must be boolean");
   return {type: type, mutability: mutability};
 }
 
 class WasmStruct {
   constructor(fields) {
-    assertTrue(Array.isArray(fields), 'struct fields must be an array');
+    assertTrue(Array.isArray(fields), "struct fields must be an array");
     this.fields = fields;
   }
 }
@@ -1144,14 +1140,8 @@ class WasmModuleBuilder {
     if (this.tables.length != 0) {
       throw new Error('Imported tables must be declared before local ones');
     }
-    let o = {
-      module: module,
-      name: name,
-      kind: kExternalTable,
-      initial: initial,
-      maximum: maximum,
-      type: type || kWasmFuncRef
-    };
+    let o = {module: module, name: name, kind: kExternalTable, initial: initial,
+             maximum: maximum, type: type || kWasmFuncRef};
     this.imports.push(o);
     return this.num_imported_tables++;
   }
@@ -1285,7 +1275,7 @@ class WasmModuleBuilder {
           } else if (type instanceof WasmArray) {
             section.emit_u8(kWasmArrayTypeForm);
             section.emit_type(type.type);
-            section.emit_u8(1);  // Only mutable arrays supported currently.
+            section.emit_u8(1); // Only mutable arrays supported currently.
           } else {
             section.emit_u8(kWasmFunctionTypeForm);
             section.emit_u32v(type.params.length);
