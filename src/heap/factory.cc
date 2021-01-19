@@ -2121,7 +2121,7 @@ Handle<JSObject> Factory::NewJSObjectFromMap(
     Handle<AllocationSite> allocation_site) {
   // JSFunctions should be allocated using AllocateFunction to be
   // properly initialized.
-  DCHECK(map->instance_type() != JS_FUNCTION_TYPE);
+  DCHECK(!InstanceTypeChecker::IsJSFunction((map->instance_type())));
 
   // Both types of global objects should be allocated using
   // AllocateGlobalObject to be properly initialized.
@@ -3506,7 +3506,7 @@ Handle<JSFunction> Factory::JSFunctionBuilder::BuildRaw(Handle<Code> code) {
   Handle<Map> map = maybe_map_.ToHandleChecked();
   Handle<FeedbackCell> feedback_cell = maybe_feedback_cell_.ToHandleChecked();
 
-  DCHECK_EQ(JS_FUNCTION_TYPE, map->instance_type());
+  DCHECK(InstanceTypeChecker::IsJSFunction(map->instance_type()));
 
   // Allocation.
   Handle<JSFunction> function(
@@ -3543,15 +3543,8 @@ void Factory::JSFunctionBuilder::PrepareMap() {
 void Factory::JSFunctionBuilder::PrepareFeedbackCell() {
   Handle<FeedbackCell> feedback_cell;
   if (maybe_feedback_cell_.ToHandle(&feedback_cell)) {
-    // Track the newly-created closure, and check that the optimized code in
-    // the feedback cell wasn't marked for deoptimization while not pointed to
-    // by any live JSFunction.
+    // Track the newly-created closure.
     feedback_cell->IncrementClosureCount(isolate_);
-    if (feedback_cell->value().IsFeedbackVector()) {
-      FeedbackVector::cast(feedback_cell->value())
-          .EvictOptimizedCodeMarkedForDeoptimization(
-              *sfi_, "new function from shared function info");
-    }
   } else {
     // Fall back to the many_closures_cell.
     maybe_feedback_cell_ = isolate_->factory()->many_closures_cell();

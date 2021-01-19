@@ -360,10 +360,11 @@ class LiftoffAssembler : public TurboAssembler {
   // register is then assigned to the stack slot. The value stack height is not
   // modified. The top of the stack is index 0, i.e. {PopToRegister()} and
   // {PeekToRegister(0)} should result in the same register.
-  // {PeekToRegister} already decrements the used count of the register of the
-  // stack slot. Therefore the register must not be popped by {PopToRegister}
-  // but discarded with {stack_state.pop_back(count)}.
+  // When the value is finally popped, the use counter of its register has to be
+  // decremented. This can be done by popping the value with {DropValues}.
   LiftoffRegister PeekToRegister(int index, LiftoffRegList pinned);
+
+  void DropValues(int count);
 
   // Ensure that the loop inputs are either in a register or spilled to the
   // stack, so that we can merge different values on the back-edge.
@@ -1035,6 +1036,9 @@ class LiftoffAssembler : public TurboAssembler {
   inline void emit_i16x8_extmul_high_i8x16_u(LiftoffRegister dst,
                                              LiftoffRegister src1,
                                              LiftoffRegister src2);
+  inline void emit_i16x8_q15mulr_sat_s(LiftoffRegister dst,
+                                       LiftoffRegister src1,
+                                       LiftoffRegister src2);
   inline void emit_i32x4_neg(LiftoffRegister dst, LiftoffRegister src);
   inline void emit_v32x4_anytrue(LiftoffRegister dst, LiftoffRegister src);
   inline void emit_v32x4_alltrue(LiftoffRegister dst, LiftoffRegister src);
@@ -1110,6 +1114,15 @@ class LiftoffAssembler : public TurboAssembler {
   inline void emit_i64x2_extmul_high_i32x4_u(LiftoffRegister dst,
                                              LiftoffRegister src1,
                                              LiftoffRegister src2);
+  inline void emit_i64x2_bitmask(LiftoffRegister dst, LiftoffRegister src);
+  inline void emit_i64x2_sconvert_i32x4_low(LiftoffRegister dst,
+                                            LiftoffRegister src);
+  inline void emit_i64x2_sconvert_i32x4_high(LiftoffRegister dst,
+                                             LiftoffRegister src);
+  inline void emit_i64x2_uconvert_i32x4_low(LiftoffRegister dst,
+                                            LiftoffRegister src);
+  inline void emit_i64x2_uconvert_i32x4_high(LiftoffRegister dst,
+                                             LiftoffRegister src);
   inline void emit_f32x4_abs(LiftoffRegister dst, LiftoffRegister src);
   inline void emit_f32x4_neg(LiftoffRegister dst, LiftoffRegister src);
   inline void emit_f32x4_sqrt(LiftoffRegister dst, LiftoffRegister src);

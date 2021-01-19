@@ -2748,10 +2748,8 @@ void InstructionSelector::VisitI64x2Eq(Node* node) { UNIMPLEMENTED(); }
         // && !V8_TARGET_ARCH_IA32 && !V8_TARGET_ARCH_ARM
         // && !V8_TARGET_ARCH_MIPS64 && !V8_TARGET_ARCH_MIPS
 
-#if !V8_TARGET_ARCH_ARM64 && !V8_TARGET_ARCH_X64
-// TODO(v8:10971) Prototype i16x8.q15mulr_sat_s
-void InstructionSelector::VisitI16x8Q15MulRSatS(Node* node) { UNIMPLEMENTED(); }
-
+#if !V8_TARGET_ARCH_ARM64 && !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_IA32 && \
+    !V8_TARGET_ARCH_ARM && !V8_TARGET_ARCH_MIPS64 && !V8_TARGET_ARCH_MIPS
 // TODO(v8:10972) Prototype i64x2 widen i32x4.
 void InstructionSelector::VisitI64x2SConvertI32x4Low(Node* node) {
   UNIMPLEMENTED();
@@ -2768,7 +2766,9 @@ void InstructionSelector::VisitI64x2UConvertI32x4Low(Node* node) {
 void InstructionSelector::VisitI64x2UConvertI32x4High(Node* node) {
   UNIMPLEMENTED();
 }
-#endif  // !V8_TARGET_ARCH_ARM64 || !V8_TARGET_ARCH_X64
+#endif  // !V8_TARGET_ARCH_ARM64 || !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_IA32
+        // && !V8_TARGET_ARCH_ARM && !V8_TARGET_ARCH_MIPS64 &&
+        // !V8_TARGET_ARCH_MIPS
 
 #if !V8_TARGET_ARCH_ARM64
 // TODO(v8:11168): Prototyping prefetch.
@@ -2818,14 +2818,6 @@ void InstructionSelector::VisitI32x4SignSelect(Node* node) { UNIMPLEMENTED(); }
 void InstructionSelector::VisitI64x2SignSelect(Node* node) { UNIMPLEMENTED(); }
 #endif  // !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_IA32 && !V8_TARGET_ARCH_ARM64
         // && !V8_TARGET_ARCH_ARM
-
-#if !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_ARM64 && !V8_TARGET_ARCH_ARM && \
-    !V8_TARGET_ARCH_IA32 && !V8_TARGET_ARCH_MIPS64 && !V8_TARGET_ARCH_MIPS
-// TODO(v8:10997) Prototype i64x2.bitmask.
-void InstructionSelector::VisitI64x2BitMask(Node* node) { UNIMPLEMENTED(); }
-#endif  // !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_ARM64 && !V8_TARGET_ARCH_ARM
-        // && !V8_TARGET_ARCH_IA32 && !V8_TARGET_ARCH_MIPS64
-        // && !V8_TARGET_ARCH_MIPS
 
 void InstructionSelector::VisitFinishRegion(Node* node) { EmitIdentity(node); }
 
@@ -3056,10 +3048,6 @@ void InstructionSelector::VisitTailCall(Node* node) {
         break;
       default:
         UNREACHABLE();
-    }
-    int temps_count = GetTempsCountForTailCallFromJSFunction();
-    for (int i = 0; i < temps_count; i++) {
-      temps.push_back(g.TempRegister());
     }
   } else {
     switch (call_descriptor->kind()) {
@@ -3339,6 +3327,15 @@ FrameStateDescriptor* GetFrameStateDescriptorInternal(Zone* zone, Node* state) {
   Node* outer_node = state->InputAt(kFrameStateOuterStateInput);
   if (outer_node->opcode() == IrOpcode::kFrameState) {
     outer_state = GetFrameStateDescriptorInternal(zone, outer_node);
+  }
+
+  if (state_info.type() == FrameStateType::kJSToWasmBuiltinContinuation) {
+    auto function_info = static_cast<const JSToWasmFrameStateFunctionInfo*>(
+        state_info.function_info());
+    return zone->New<JSToWasmFrameStateDescriptor>(
+        zone, state_info.type(), state_info.bailout_id(),
+        state_info.state_combine(), parameters, locals, stack,
+        state_info.shared_info(), outer_state, function_info->signature());
   }
 
   return zone->New<FrameStateDescriptor>(

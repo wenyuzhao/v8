@@ -1048,8 +1048,8 @@ Handle<Code> ContinuationForConcurrentOptimization(
     // Tiering up to Turbofan and cached optimized code exists. Continue
     // execution there until TF optimization has finished.
     return cached_code;
-  } else if (FLAG_turboprop_as_midtier &&
-             function->HasAvailableOptimizedCode()) {
+  } else if (FLAG_turboprop && function->HasAvailableOptimizedCode()) {
+    DCHECK(!FLAG_turboprop_as_toptier);
     DCHECK(function->NextTier() == CodeKind::TURBOFAN);
     // It is possible that we have marked a closure for TurboFan optimization
     // but the marker is processed by another closure that doesn't have
@@ -3108,14 +3108,20 @@ void Compiler::PostInstantiation(Handle<JSFunction> function) {
   if (is_compiled_scope.is_compiled() && shared->HasBytecodeArray()) {
     JSFunction::InitializeFeedbackCell(function, &is_compiled_scope);
 
-    Code code = function->has_feedback_vector()
-                    ? function->feedback_vector().optimized_code()
-                    : Code();
-    if (!code.is_null()) {
-      // Caching of optimized code enabled and optimized code found.
-      DCHECK(!code.marked_for_deoptimization());
-      DCHECK(function->shared().is_compiled());
-      function->set_code(code);
+    if (function->has_feedback_vector()) {
+      // Evict any deoptimized code on feedback vector. We need to do this after
+      // creating the closure, since any heap allocations could trigger a GC and
+      // deoptimized the code on the feedback vector. So check for any
+      // deoptimized code just before installing it on the funciton.
+      function->feedback_vector().EvictOptimizedCodeMarkedForDeoptimization(
+          *shared, "new function from shared function info");
+      Code code = function->feedback_vector().optimized_code();
+      if (!code.is_null()) {
+        // Caching of optimized code enabled and optimized code found.
+        DCHECK(!code.marked_for_deoptimization());
+        DCHECK(function->shared().is_compiled());
+        function->set_code(code);
+      }
     }
 
     if (FLAG_always_opt && shared->allows_lazy_compilation() &&

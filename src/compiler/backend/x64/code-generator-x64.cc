@@ -710,28 +710,6 @@ void CodeGenerator::AssemblePrepareTailCall() {
   frame_access_state()->SetFrameAccessToSP();
 }
 
-void CodeGenerator::AssemblePopArgumentsAdaptorFrame(Register args_reg,
-                                                     Register scratch1,
-                                                     Register scratch2,
-                                                     Register scratch3) {
-  DCHECK(!AreAliased(args_reg, scratch1, scratch2, scratch3));
-  Label done;
-
-  // Check if current frame is an arguments adaptor frame.
-  __ cmpq(Operand(rbp, CommonFrameConstants::kContextOrFrameTypeOffset),
-          Immediate(StackFrame::TypeToMarker(StackFrame::ARGUMENTS_ADAPTOR)));
-  __ j(not_equal, &done, Label::kNear);
-
-  // Load arguments count from current arguments adaptor frame (note, it
-  // does not include receiver).
-  Register caller_args_count_reg = scratch1;
-  __ SmiUntag(caller_args_count_reg,
-              Operand(rbp, ArgumentsAdaptorFrameConstants::kLengthOffset));
-
-  __ PrepareForTailCall(args_reg, caller_args_count_reg, scratch2, scratch3);
-  __ bind(&done);
-}
-
 namespace {
 
 void AdjustStackPointerForTailCall(Instruction* instr,
@@ -923,13 +901,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       frame_access_state()->ClearSPDelta();
       break;
     }
+    // TODO(victorgomes): Remove kArchTailCallCodeObjectFromJSFunction.
     case kArchTailCallCodeObjectFromJSFunction:
-      if (!instr->HasCallDescriptorFlag(CallDescriptor::kIsTailCallForTierUp)) {
-        AssemblePopArgumentsAdaptorFrame(kJavaScriptCallArgCountRegister,
-                                         i.TempRegister(0), i.TempRegister(1),
-                                         i.TempRegister(2));
-      }
-      V8_FALLTHROUGH;
     case kArchTailCallCodeObject: {
       if (HasImmediateInput(instr, 0)) {
         Handle<Code> code = i.InputCode(0);
@@ -2294,59 +2267,55 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     case kX64Inc32:
       __ incl(i.OutputRegister());
       break;
-    case kX64Push:
+    case kX64Push: {
+      int stack_decrement = i.InputInt32(0);
       if (HasAddressingMode(instr)) {
-        size_t index = 0;
+        // 1 slot values are never padded.
+        DCHECK_EQ(stack_decrement, kSystemPointerSize);
+        size_t index = 1;
         Operand operand = i.MemoryOperand(&index);
         __ pushq(operand);
-        frame_access_state()->IncreaseSPDelta(1);
-        unwinding_info_writer_.MaybeIncreaseBaseOffsetAt(__ pc_offset(),
-                                                         kSystemPointerSize);
-      } else if (HasImmediateInput(instr, 0)) {
-        __ pushq(i.InputImmediate(0));
-        frame_access_state()->IncreaseSPDelta(1);
-        unwinding_info_writer_.MaybeIncreaseBaseOffsetAt(__ pc_offset(),
-                                                         kSystemPointerSize);
-      } else if (HasRegisterInput(instr, 0)) {
-        __ pushq(i.InputRegister(0));
-        frame_access_state()->IncreaseSPDelta(1);
-        unwinding_info_writer_.MaybeIncreaseBaseOffsetAt(__ pc_offset(),
-                                                         kSystemPointerSize);
-      } else if (instr->InputAt(0)->IsFloatRegister() ||
-                 instr->InputAt(0)->IsDoubleRegister()) {
-        // TODO(titzer): use another machine instruction?
-        __ AllocateStackSpace(kDoubleSize);
-        frame_access_state()->IncreaseSPDelta(kDoubleSize / kSystemPointerSize);
-        unwinding_info_writer_.MaybeIncreaseBaseOffsetAt(__ pc_offset(),
-                                                         kDoubleSize);
-        __ Movsd(Operand(rsp, 0), i.InputDoubleRegister(0));
-      } else if (instr->InputAt(0)->IsSimd128Register()) {
-        // TODO(titzer): use another machine instruction?
-        __ AllocateStackSpace(kSimd128Size);
-        frame_access_state()->IncreaseSPDelta(kSimd128Size /
-                                              kSystemPointerSize);
-        unwinding_info_writer_.MaybeIncreaseBaseOffsetAt(__ pc_offset(),
-                                                         kSimd128Size);
-        __ Movups(Operand(rsp, 0), i.InputSimd128Register(0));
-      } else if (instr->InputAt(0)->IsStackSlot() ||
-                 instr->InputAt(0)->IsFloatStackSlot() ||
-                 instr->InputAt(0)->IsDoubleStackSlot()) {
-        __ pushq(i.InputOperand(0));
-        frame_access_state()->IncreaseSPDelta(1);
-        unwinding_info_writer_.MaybeIncreaseBaseOffsetAt(__ pc_offset(),
-                                                         kSystemPointerSize);
+      } else if (HasImmediateInput(instr, 1)) {
+        // 1 slot values are never padded.
+        DCHECK_EQ(stack_decrement, kSystemPointerSize);
+        __ pushq(i.InputImmediate(1));
+      } else if (HasRegisterInput(instr, 1)) {
+        // 1 slot values are never padded.
+        DCHECK_EQ(stack_decrement, kSystemPointerSize);
+        __ pushq(i.InputRegister(1));
+      } else if (instr->InputAt(1)->IsFloatRegister() ||
+                 instr->InputAt(1)->IsDoubleRegister()) {
+        // 1 slot values are never padded.
+        DCHECK_EQ(stack_decrement, kSystemPointerSize);
+        __ AllocateStackSpace(kSystemPointerSize);
+        __ Movsd(Operand(rsp, 0), i.InputDoubleRegister(1));
+      } else if (instr->InputAt(1)->IsSimd128Register()) {
+        // 2 slot values have up to 1 slot of padding.
+        DCHECK_GE(stack_decrement, kSimd128Size);
+        __ AllocateStackSpace(stack_decrement);
+        // TODO(bbudge) Use Movaps when slots are aligned.
+        __ Movups(Operand(rsp, 0), i.InputSimd128Register(1));
+      } else if (instr->InputAt(1)->IsStackSlot() ||
+                 instr->InputAt(1)->IsFloatStackSlot() ||
+                 instr->InputAt(1)->IsDoubleStackSlot()) {
+        // 1 slot values are never padded.
+        DCHECK_EQ(stack_decrement, kSystemPointerSize);
+        __ pushq(i.InputOperand(1));
       } else {
-        DCHECK(instr->InputAt(0)->IsSimd128StackSlot());
-        __ Movups(kScratchDoubleReg, i.InputOperand(0));
-        // TODO(titzer): use another machine instruction?
-        __ AllocateStackSpace(kSimd128Size);
-        frame_access_state()->IncreaseSPDelta(kSimd128Size /
-                                              kSystemPointerSize);
-        unwinding_info_writer_.MaybeIncreaseBaseOffsetAt(__ pc_offset(),
-                                                         kSimd128Size);
+        DCHECK(instr->InputAt(1)->IsSimd128StackSlot());
+        // 2 slot values have up to 1 slot of padding.
+        DCHECK_GE(stack_decrement, kSimd128Size);
+        // TODO(bbudge) Use Movaps when slots are aligned.
+        __ Movups(kScratchDoubleReg, i.InputOperand(1));
+        __ AllocateStackSpace(stack_decrement);
         __ Movups(Operand(rsp, 0), kScratchDoubleReg);
       }
+      int slots = stack_decrement / kSystemPointerSize;
+      frame_access_state()->IncreaseSPDelta(slots);
+      unwinding_info_writer_.MaybeIncreaseBaseOffsetAt(__ pc_offset(),
+                                                       stack_decrement);
       break;
+    }
     case kX64Poke: {
       int slot = MiscField::decode(instr->opcode());
       if (HasImmediateInput(instr, 0)) {
@@ -2885,15 +2854,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kX64I64x2SConvertI32x4High: {
-      XMMRegister dst = i.OutputSimd128Register();
-      XMMRegister src = i.InputSimd128Register(0);
-      if (CpuFeatures::IsSupported(AVX)) {
-        CpuFeatureScope avx_scope(tasm(), AVX);
-        __ vpunpckhqdq(dst, src, src);
-      } else {
-        __ pshufd(dst, src, 0xEE);
-      }
-      __ Pmovsxdq(dst, dst);
+      __ I64x2SConvertI32x4High(i.OutputSimd128Register(),
+                                i.InputSimd128Register(0));
       break;
     }
     case kX64I64x2UConvertI32x4Low: {
@@ -2901,16 +2863,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kX64I64x2UConvertI32x4High: {
-      XMMRegister dst = i.OutputSimd128Register();
-      XMMRegister src = i.InputSimd128Register(0);
-      if (CpuFeatures::IsSupported(AVX)) {
-        CpuFeatureScope avx_scope(tasm(), AVX);
-        __ vpxor(kScratchDoubleReg, kScratchDoubleReg, kScratchDoubleReg);
-        __ vpunpckhdq(dst, src, kScratchDoubleReg);
-      } else {
-        __ pshufd(dst, src, 0xEE);
-        __ pmovzxdq(dst, dst);
-      }
+      __ I64x2UConvertI32x4High(i.OutputSimd128Register(),
+                                i.InputSimd128Register(0));
       break;
     }
     case kX64I32x4Splat: {
@@ -3370,16 +3324,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kX64I16x8Q15MulRSatS: {
-      XMMRegister dst = i.OutputSimd128Register();
-      XMMRegister src0 = i.InputSimd128Register(0);
-      XMMRegister src1 = i.InputSimd128Register(1);
-      // k = i16x8.splat(0x8000)
-      __ Pcmpeqd(kScratchDoubleReg, kScratchDoubleReg);
-      __ Psllw(kScratchDoubleReg, byte{15});
-
-      __ Pmulhrsw(dst, src0, src1);
-      __ Pcmpeqw(kScratchDoubleReg, dst);
-      __ Pxor(dst, kScratchDoubleReg);
+      __ I16x8Q15MulRSatS(i.OutputSimd128Register(), i.InputSimd128Register(0),
+                          i.InputSimd128Register(1));
       break;
     }
     case kX64I8x16Splat: {
@@ -4757,7 +4703,6 @@ void CodeGenerator::AssembleReturn(InstructionOperand* additional_pop_count) {
   }
 
   Register argc_reg = rcx;
-#ifdef V8_NO_ARGUMENTS_ADAPTOR
   // Functions with JS linkage have at least one parameter (the receiver).
   // If {parameter_count} == 0, it means it is a builtin with
   // kDontAdaptArgumentsSentinel, which takes care of JS arguments popping
@@ -4765,9 +4710,6 @@ void CodeGenerator::AssembleReturn(InstructionOperand* additional_pop_count) {
   const bool drop_jsargs = frame_access_state()->has_frame() &&
                            call_descriptor->IsJSFunctionCall() &&
                            parameter_count != 0;
-#else
-  const bool drop_jsargs = false;
-#endif
   if (call_descriptor->IsCFunctionCall()) {
     AssembleDeconstructFrame();
   } else if (frame_access_state()->has_frame()) {

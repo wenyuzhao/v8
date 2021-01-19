@@ -511,41 +511,9 @@ void InstructionSelector::VisitAbortCSAAssert(Node* node) {
   Emit(kArchAbortCSAAssert, g.NoOutput(), g.UseFixed(node->InputAt(0), r1));
 }
 
-namespace {
-// Helper struct for load lane and store lane to indicate which opcode to use
-// and what memory size to be encoded in the opcode, and the new lane index.
-struct LoadStoreLaneParams {
-  bool low_op;
-  NeonSize sz;
-  uint8_t laneidx;
-  LoadStoreLaneParams(uint8_t laneidx, NeonSize sz, int lanes)
-      : low_op(laneidx < lanes), sz(sz), laneidx(laneidx % lanes) {}
-};
-
-// The register mapping on ARM (1 Q to 2 D), means that loading/storing high
-// lanes of a Q register is equivalent to loading/storing the high D reg, modulo
-// number of lanes in a D reg. This function decides, based on the laneidx and
-// load/store size, whether the low or high D reg is accessed, and what the new
-// lane index is.
-LoadStoreLaneParams GetLoadStoreLaneParams(MachineRepresentation rep,
-                                           uint8_t laneidx) {
-  if (rep == MachineRepresentation::kWord8) {
-    return LoadStoreLaneParams(laneidx, Neon8, 8);
-  } else if (rep == MachineRepresentation::kWord16) {
-    return LoadStoreLaneParams(laneidx, Neon16, 4);
-  } else if (rep == MachineRepresentation::kWord32) {
-    return LoadStoreLaneParams(laneidx, Neon32, 2);
-  } else if (rep == MachineRepresentation::kWord64) {
-    return LoadStoreLaneParams(laneidx, Neon64, 1);
-  } else {
-    UNREACHABLE();
-  }
-}
-}  // namespace
-
 void InstructionSelector::VisitStoreLane(Node* node) {
   StoreLaneParameters params = StoreLaneParametersOf(node->op());
-  LoadStoreLaneParams f = GetLoadStoreLaneParams(params.rep, params.laneidx);
+  LoadStoreLaneParams f(params.rep, params.laneidx);
   InstructionCode opcode =
       f.low_op ? kArmS128StoreLaneLow : kArmS128StoreLaneHigh;
   opcode |= MiscField::encode(f.sz);
@@ -563,8 +531,7 @@ void InstructionSelector::VisitStoreLane(Node* node) {
 
 void InstructionSelector::VisitLoadLane(Node* node) {
   LoadLaneParameters params = LoadLaneParametersOf(node->op());
-  LoadStoreLaneParams f =
-      GetLoadStoreLaneParams(params.rep.representation(), params.laneidx);
+  LoadStoreLaneParams f(params.rep.representation(), params.laneidx);
   InstructionCode opcode =
       f.low_op ? kArmS128LoadLaneLow : kArmS128LoadLaneHigh;
   opcode |= MiscField::encode(f.sz);
@@ -1743,10 +1710,14 @@ void InstructionSelector::EmitPrepareArguments(
     }
   } else {
     // Push any stack arguments.
+    int stack_decrement = 0;
     for (PushParameter input : base::Reversed(*arguments)) {
+      stack_decrement += kSystemPointerSize;
       // Skip any alignment holes in pushed nodes.
       if (input.node == nullptr) continue;
-      Emit(kArmPush, g.NoOutput(), g.UseRegister(input.node));
+      InstructionOperand decrement = g.UseImmediate(stack_decrement);
+      stack_decrement = 0;
+      Emit(kArmPush, g.NoOutput(), decrement, g.UseRegister(input.node));
     }
   }
 }
@@ -1777,8 +1748,6 @@ void InstructionSelector::EmitPrepareResults(
 }
 
 bool InstructionSelector::IsTailCallAddressImmediate() { return false; }
-
-int InstructionSelector::GetTempsCountForTailCallFromJSFunction() { return 3; }
 
 namespace {
 
@@ -2607,6 +2576,10 @@ void InstructionSelector::VisitWord32AtomicPairCompareExchange(Node* node) {
   V(F32x4Neg, kArmF32x4Neg)                             \
   V(F32x4RecipApprox, kArmF32x4RecipApprox)             \
   V(F32x4RecipSqrtApprox, kArmF32x4RecipSqrtApprox)     \
+  V(I64x2SConvertI32x4Low, kArmI64x2SConvertI32x4Low)   \
+  V(I64x2SConvertI32x4High, kArmI64x2SConvertI32x4High) \
+  V(I64x2UConvertI32x4Low, kArmI64x2UConvertI32x4Low)   \
+  V(I64x2UConvertI32x4High, kArmI64x2UConvertI32x4High) \
   V(I32x4SConvertF32x4, kArmI32x4SConvertF32x4)         \
   V(I32x4SConvertI16x8Low, kArmI32x4SConvertI16x8Low)   \
   V(I32x4SConvertI16x8High, kArmI32x4SConvertI16x8High) \
@@ -2705,6 +2678,7 @@ void InstructionSelector::VisitWord32AtomicPairCompareExchange(Node* node) {
   V(I16x8GtU, kArmI16x8GtU)                           \
   V(I16x8GeU, kArmI16x8GeU)                           \
   V(I16x8RoundingAverageU, kArmI16x8RoundingAverageU) \
+  V(I16x8Q15MulRSatS, kArmI16x8Q15MulRSatS)           \
   V(I8x16SConvertI16x8, kArmI8x16SConvertI16x8)       \
   V(I8x16Add, kArmI8x16Add)                           \
   V(I8x16AddSatS, kArmI8x16AddSatS)                   \

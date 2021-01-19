@@ -5915,7 +5915,7 @@ TEST(Regress631969) {
 
   {
     StaticOneByteResource external_string("12345678901234");
-    CHECK(s3->MakeExternal(&external_string));
+    s3->MakeExternal(&external_string);
     CcTest::CollectGarbage(OLD_SPACE);
     // This avoids the GC from trying to free stack allocated resources.
     i::Handle<i::ExternalOneByteString>::cast(s3)->SetResource(isolate,
@@ -7323,6 +7323,23 @@ TEST(Regress10900) {
   // Force garbage collection that compacts code pages and triggers
   // an assertion in Isolate::AddCodeMemoryRange before the bug fix.
   CcTest::CollectAllAvailableGarbage();
+}
+
+TEST(Regress11181) {
+  FLAG_always_compact = true;
+  CcTest::InitializeVM();
+  TracingFlags::runtime_stats.store(
+      v8::tracing::TracingCategoryObserver::ENABLED_BY_NATIVE,
+      std::memory_order_relaxed);
+  v8::HandleScope scope(CcTest::isolate());
+  const char* source =
+      "let roots = [];"
+      "for (let i = 0; i < 100; i++) roots.push(new Array(1000).fill(0));"
+      "roots.push(new Array(1000000).fill(0));"
+      "roots;";
+  CompileRun(source);
+  CcTest::CollectAllAvailableGarbage();
+  TracingFlags::runtime_stats.store(0, std::memory_order_relaxed);
 }
 
 }  // namespace heap

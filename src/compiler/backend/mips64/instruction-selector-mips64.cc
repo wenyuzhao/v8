@@ -1840,8 +1840,6 @@ void InstructionSelector::EmitPrepareResults(
 
 bool InstructionSelector::IsTailCallAddressImmediate() { return false; }
 
-int InstructionSelector::GetTempsCountForTailCallFromJSFunction() { return 3; }
-
 void InstructionSelector::VisitUnalignedLoad(Node* node) {
   LoadRepresentation load_rep = LoadRepresentationOf(node->op());
   Mips64OperandGenerator g(this);
@@ -2897,6 +2895,10 @@ void InstructionSelector::VisitInt64AbsWithOverflow(Node* node) {
   V(F32x4Floor, kMips64F32x4Floor)                         \
   V(F32x4Trunc, kMips64F32x4Trunc)                         \
   V(F32x4NearestInt, kMips64F32x4NearestInt)               \
+  V(I64x2SConvertI32x4Low, kMips64I64x2SConvertI32x4Low)   \
+  V(I64x2SConvertI32x4High, kMips64I64x2SConvertI32x4High) \
+  V(I64x2UConvertI32x4Low, kMips64I64x2UConvertI32x4Low)   \
+  V(I64x2UConvertI32x4High, kMips64I64x2UConvertI32x4High) \
   V(I32x4SConvertF32x4, kMips64I32x4SConvertF32x4)         \
   V(I32x4UConvertF32x4, kMips64I32x4UConvertF32x4)         \
   V(I32x4Neg, kMips64I32x4Neg)                             \
@@ -2953,10 +2955,6 @@ void InstructionSelector::VisitInt64AbsWithOverflow(Node* node) {
   V(I64x2Add, kMips64I64x2Add)                           \
   V(I64x2Sub, kMips64I64x2Sub)                           \
   V(I64x2Mul, kMips64I64x2Mul)                           \
-  V(I64x2ExtMulLowI32x4S, kMips64I64x2ExtMulLowI32x4S)   \
-  V(I64x2ExtMulHighI32x4S, kMips64I64x2ExtMulHighI32x4S) \
-  V(I64x2ExtMulLowI32x4U, kMips64I64x2ExtMulLowI32x4U)   \
-  V(I64x2ExtMulHighI32x4U, kMips64I64x2ExtMulHighI32x4U) \
   V(F32x4Add, kMips64F32x4Add)                           \
   V(F32x4AddHoriz, kMips64F32x4AddHoriz)                 \
   V(F32x4Sub, kMips64F32x4Sub)                           \
@@ -2983,10 +2981,6 @@ void InstructionSelector::VisitInt64AbsWithOverflow(Node* node) {
   V(I32x4GtU, kMips64I32x4GtU)                           \
   V(I32x4GeU, kMips64I32x4GeU)                           \
   V(I32x4DotI16x8S, kMips64I32x4DotI16x8S)               \
-  V(I32x4ExtMulLowI16x8S, kMips64I32x4ExtMulLowI16x8S)   \
-  V(I32x4ExtMulHighI16x8S, kMips64I32x4ExtMulHighI16x8S) \
-  V(I32x4ExtMulLowI16x8U, kMips64I32x4ExtMulLowI16x8U)   \
-  V(I32x4ExtMulHighI16x8U, kMips64I32x4ExtMulHighI16x8U) \
   V(I16x8Add, kMips64I16x8Add)                           \
   V(I16x8AddSatS, kMips64I16x8AddSatS)                   \
   V(I16x8AddSatU, kMips64I16x8AddSatU)                   \
@@ -3008,10 +3002,7 @@ void InstructionSelector::VisitInt64AbsWithOverflow(Node* node) {
   V(I16x8RoundingAverageU, kMips64I16x8RoundingAverageU) \
   V(I16x8SConvertI32x4, kMips64I16x8SConvertI32x4)       \
   V(I16x8UConvertI32x4, kMips64I16x8UConvertI32x4)       \
-  V(I16x8ExtMulLowI8x16S, kMips64I16x8ExtMulLowI8x16S)   \
-  V(I16x8ExtMulHighI8x16S, kMips64I16x8ExtMulHighI8x16S) \
-  V(I16x8ExtMulLowI8x16U, kMips64I16x8ExtMulLowI8x16U)   \
-  V(I16x8ExtMulHighI8x16U, kMips64I16x8ExtMulHighI8x16U) \
+  V(I16x8Q15MulRSatS, kMips64I16x8Q15MulRSatS)           \
   V(I8x16Add, kMips64I8x16Add)                           \
   V(I8x16AddSatS, kMips64I8x16AddSatS)                   \
   V(I8x16AddSatU, kMips64I8x16AddSatU)                   \
@@ -3279,6 +3270,27 @@ void InstructionSelector::VisitF64x2Pmin(Node* node) {
 void InstructionSelector::VisitF64x2Pmax(Node* node) {
   VisitUniqueRRR(this, kMips64F64x2Pmax, node);
 }
+
+#define VISIT_EXT_MUL(OPCODE1, OPCODE2, TYPE)                                  \
+  void InstructionSelector::Visit##OPCODE1##ExtMulLow##OPCODE2(Node* node) {   \
+    Mips64OperandGenerator g(this);                                            \
+    Emit(kMips64ExtMulLow | MiscField::encode(TYPE), g.DefineAsRegister(node), \
+         g.UseRegister(node->InputAt(0)), g.UseRegister(node->InputAt(1)));    \
+  }                                                                            \
+  void InstructionSelector::Visit##OPCODE1##ExtMulHigh##OPCODE2(Node* node) {  \
+    Mips64OperandGenerator g(this);                                            \
+    Emit(kMips64ExtMulHigh | MiscField::encode(TYPE),                          \
+         g.DefineAsRegister(node), g.UseRegister(node->InputAt(0)),            \
+         g.UseRegister(node->InputAt(1)));                                     \
+  }
+
+VISIT_EXT_MUL(I64x2, I32x4S, MSAS32)
+VISIT_EXT_MUL(I64x2, I32x4U, MSAU32)
+VISIT_EXT_MUL(I32x4, I16x8S, MSAS16)
+VISIT_EXT_MUL(I32x4, I16x8U, MSAU16)
+VISIT_EXT_MUL(I16x8, I8x16S, MSAS8)
+VISIT_EXT_MUL(I16x8, I8x16U, MSAU8)
+#undef VISIT_EXT_MUL
 
 // static
 MachineOperatorBuilder::Flags

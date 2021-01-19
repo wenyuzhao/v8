@@ -294,13 +294,6 @@ enum class PrimitiveType { kBoolean, kNumber, kString, kSymbol };
 #define CSA_SLOW_ASSERT(csa, ...) ((void)0)
 #endif
 
-// Provides a constexpr boolean to be used inside Torque.
-#ifdef V8_NO_ARGUMENTS_ADAPTOR
-constexpr bool kNoArgumentsAdaptor = true;
-#else
-constexpr bool kNoArgumentsAdaptor = false;
-#endif
-
 // Provides JavaScript-specific "macro-assembler" functionality on top of the
 // CodeAssembler. By factoring the JavaScript-isms out of the CodeAssembler,
 // it's possible to add JavaScript-specific useful CodeAssembler "macros"
@@ -2396,6 +2389,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   TNode<BoolT> IsJSArray(TNode<HeapObject> object);
   TNode<BoolT> IsJSArrayIterator(TNode<HeapObject> object);
   TNode<BoolT> IsJSAsyncGeneratorObject(TNode<HeapObject> object);
+  TNode<BoolT> IsFunctionInstanceType(TNode<Int32T> instance_type);
   TNode<BoolT> IsJSFunctionInstanceType(SloppyTNode<Int32T> instance_type);
   TNode<BoolT> IsJSFunctionMap(TNode<Map> map);
   TNode<BoolT> IsJSFunction(TNode<HeapObject> object);

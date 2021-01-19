@@ -1928,15 +1928,17 @@ using Instr = uint32_t;
   /* Floating Reciprocal Square Root Estimate Single */ \
   V(frsqrtes, FRSQRTES, 0xEC000034)
 
-#define PPC_VA_OPCODE_A_FORM_LIST(V)                     \
-  /* Vector Permute */                                   \
-  V(vperm, VPERM, 0x1000002B)                            \
-  /* Vector Multiply-Low-Add Unsigned Halfword Modulo */ \
-  V(vmladduhm, VMLADDUHM, 0x10000022)                    \
-  /* Vector Select */                                    \
-  V(vsel, VSEL, 0x1000002A)                              \
-  /* Vector Multiply-Sum Signed Halfword Modulo */       \
-  V(vmsumshm, VMSUMSHM, 0x10000028)
+#define PPC_VA_OPCODE_A_FORM_LIST(V)                            \
+  /* Vector Permute */                                          \
+  V(vperm, VPERM, 0x1000002B)                                   \
+  /* Vector Multiply-Low-Add Unsigned Halfword Modulo */        \
+  V(vmladduhm, VMLADDUHM, 0x10000022)                           \
+  /* Vector Select */                                           \
+  V(vsel, VSEL, 0x1000002A)                                     \
+  /* Vector Multiply-Sum Signed Halfword Modulo */              \
+  V(vmsumshm, VMSUMSHM, 0x10000028)                             \
+  /* Vector Multiply-High-Round-Add Signed Halfword Saturate */ \
+  V(vmhraddshs, VMHRADDSHS, 0x10000021)
 
 #define PPC_VA_OPCODE_UNUSED_LIST(V)                             \
   /* Vector Add Extended & write Carry Unsigned Quadword */      \
@@ -1947,8 +1949,6 @@ using Instr = uint32_t;
   V(vmaddfp, VMADDFP, 0x1000002E)                                \
   /* Vector Multiply-High-Add Signed Halfword Saturate */        \
   V(vmhaddshs, VMHADDSHS, 0x10000020)                            \
-  /* Vector Multiply-High-Round-Add Signed Halfword Saturate */  \
-  V(vmhraddshs, VMHRADDSHS, 0x10000021)                          \
   /* Vector Multiply-Sum Mixed Byte Modulo */                    \
   V(vmsummbm, VMSUMMBM, 0x10000025)                              \
   /* Vector Multiply-Sum Signed Halfword Saturate */             \
@@ -2273,14 +2273,22 @@ using Instr = uint32_t;
   V(vmuluwm, VMULUWM, 0x10000089)                          \
   /* Vector Pack Unsigned Halfword Unsigned Modulo */      \
   V(vpkuhum, VPKUHUM, 0x1000000E)                          \
+  /* Vector Multiply Even Signed Byte */                   \
+  V(vmulesb, VMULESB, 0x10000308)                          \
   /* Vector Multiply Even Unsigned Byte */                 \
   V(vmuleub, VMULEUB, 0x10000208)                          \
+  /* Vector Multiply Odd Signed Byte */                    \
+  V(vmulosb, VMULOSB, 0x10000108)                          \
   /* Vector Multiply Odd Unsigned Byte */                  \
   V(vmuloub, VMULOUB, 0x10000008)                          \
   /* Vector Multiply Even Unsigned Halfword */             \
   V(vmuleuh, VMULEUH, 0x10000248)                          \
+  /* Vector Multiply Even Signed Halfword */               \
+  V(vmulesh, VMULESH, 0x10000348)                          \
   /* Vector Multiply Odd Unsigned Halfword */              \
   V(vmulouh, VMULOUH, 0x10000048)                          \
+  /* Vector Multiply Odd Signed Halfword */                \
+  V(vmulosh, VMULOSH, 0x10000148)                          \
   /* Vector Sum across Quarter Signed Halfword Saturate */ \
   V(vsum4shs, VSUM4SHS, 0x10000648)                        \
   /* Vector Pack Unsigned Word Unsigned Saturate */        \
@@ -2385,6 +2393,8 @@ using Instr = uint32_t;
   V(vbpermq, VBPERMQ, 0x1000054C)
 
 #define PPC_VX_OPCODE_C_FORM_LIST(V)       \
+  /* Vector Unpack Low Signed Word */      \
+  V(vupklsw, VUPKLSW, 0x100006CE)          \
   /* Vector Unpack High Signed Word */     \
   V(vupkhsw, VUPKHSW, 0x1000064E)          \
   /* Vector Unpack Low Signed Halfword */  \
@@ -2461,18 +2471,10 @@ using Instr = uint32_t;
   V(vmrglh, VMRGLH, 0x1000014C)                                           \
   /* Vector Merge Low Word */                                             \
   V(vmrglw, VMRGLW, 0x1000018C)                                           \
-  /* Vector Multiply Even Signed Byte */                                  \
-  V(vmulesb, VMULESB, 0x10000308)                                         \
-  /* Vector Multiply Even Signed Halfword */                              \
-  V(vmulesh, VMULESH, 0x10000348)                                         \
   /* Vector Multiply Even Signed Word */                                  \
   V(vmulesw, VMULESW, 0x10000388)                                         \
   /* Vector Multiply Even Unsigned Word */                                \
   V(vmuleuw, VMULEUW, 0x10000288)                                         \
-  /* Vector Multiply Odd Signed Byte */                                   \
-  V(vmulosb, VMULOSB, 0x10000108)                                         \
-  /* Vector Multiply Odd Signed Halfword */                               \
-  V(vmulosh, VMULOSH, 0x10000148)                                         \
   /* Vector Multiply Odd Signed Word */                                   \
   V(vmulosw, VMULOSW, 0x10000188)                                         \
   /* Vector Multiply Odd Unsigned Word */                                 \
@@ -2559,8 +2561,6 @@ using Instr = uint32_t;
   V(vupkhpx, VUPKHPX, 0x1000034E)                                         \
   /* Vector Unpack Low Pixel */                                           \
   V(vupklpx, VUPKLPX, 0x100003CE)                                         \
-  /* Vector Unpack Low Signed Word */                                     \
-  V(vupklsw, VUPKLSW, 0x100006CE)                                         \
   /* Vector AES Cipher */                                                 \
   V(vcipher, VCIPHER, 0x10000508)                                         \
   /* Vector AES Cipher Last */                                            \

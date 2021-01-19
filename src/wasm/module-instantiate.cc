@@ -39,12 +39,30 @@ uint32_t EvalUint32InitExpr(Handle<WasmInstanceObject> instance,
     case WasmInitExpr::kI32Const:
       return expr.immediate().i32_const;
     case WasmInitExpr::kGlobalGet: {
-      uint32_t offset =
-          instance->module()->globals[expr.immediate().index].offset;
+      const auto& global = instance->module()->globals[expr.immediate().index];
+      DCHECK_EQ(kWasmI32, global.type);
       auto raw_addr = reinterpret_cast<Address>(
                           instance->untagged_globals_buffer().backing_store()) +
-                      offset;
+                      global.offset;
       return ReadLittleEndianValue<uint32_t>(raw_addr);
+    }
+    default:
+      UNREACHABLE();
+  }
+}
+
+uint64_t EvalUint64InitExpr(Handle<WasmInstanceObject> instance,
+                            const WasmInitExpr& expr) {
+  switch (expr.kind()) {
+    case WasmInitExpr::kI64Const:
+      return expr.immediate().i64_const;
+    case WasmInitExpr::kGlobalGet: {
+      const auto& global = instance->module()->globals[expr.immediate().index];
+      DCHECK_EQ(kWasmI64, global.type);
+      auto raw_addr = reinterpret_cast<Address>(
+                          instance->untagged_globals_buffer().backing_store()) +
+                      global.offset;
+      return ReadLittleEndianValue<uint64_t>(raw_addr);
     }
     default:
       UNREACHABLE();
@@ -655,45 +673,6 @@ MaybeHandle<WasmInstanceObject> InstanceBuilder::Build() {
     InitializeExceptions(instance);
   }
 
-  // The bulk memory proposal changes the MVP behavior here; the segments are
-  // written as if `memory.init` and `table.init` are executed directly, and
-  // not bounds checked ahead of time.
-  if (!enabled_.has_bulk_memory()) {
-    //--------------------------------------------------------------------------
-    // Check that indirect function table segments are within bounds.
-    //--------------------------------------------------------------------------
-    for (const WasmElemSegment& elem_segment : module_->elem_segments) {
-      if (elem_segment.status != WasmElemSegment::kStatusActive) continue;
-      DCHECK_LT(elem_segment.table_index, table_count);
-      uint32_t base = EvalUint32InitExpr(instance, elem_segment.offset);
-      // Because of imported tables, {table_size} has to come from the table
-      // object itself.
-      auto table_object = handle(WasmTableObject::cast(instance->tables().get(
-                                     elem_segment.table_index)),
-                                 isolate_);
-      uint32_t table_size = table_object->current_length();
-      if (!base::IsInBounds<uint32_t>(
-              base, static_cast<uint32_t>(elem_segment.entries.size()),
-              table_size)) {
-        thrower_->LinkError("table initializer is out of bounds");
-        return {};
-      }
-    }
-
-    //--------------------------------------------------------------------------
-    // Check that memory segments are within bounds.
-    //--------------------------------------------------------------------------
-    for (const WasmDataSegment& seg : module_->data_segments) {
-      if (!seg.active) continue;
-      uint32_t base = EvalUint32InitExpr(instance, seg.dest_addr);
-      if (!base::IsInBounds<uint64_t>(base, seg.source.length(),
-                                      instance->memory_size())) {
-        thrower_->LinkError("data segment is out of bounds");
-        return {};
-      }
-    }
-  }
-
   //--------------------------------------------------------------------------
   // Set up the exports object for the new instance.
   //--------------------------------------------------------------------------
@@ -862,33 +841,28 @@ void InstanceBuilder::LoadDataSegments(Handle<WasmInstanceObject> instance) {
   for (const WasmDataSegment& segment : module_->data_segments) {
     uint32_t size = segment.source.length();
 
-    if (enabled_.has_bulk_memory()) {
-      // Passive segments are not copied during instantiation.
-      if (!segment.active) continue;
+    // Passive segments are not copied during instantiation.
+    if (!segment.active) continue;
 
-      uint32_t dest_offset = EvalUint32InitExpr(instance, segment.dest_addr);
-      bool ok = base::ClampToBounds(
-          dest_offset, &size, static_cast<uint32_t>(instance->memory_size()));
-      if (!ok) {
-        thrower_->RuntimeError("data segment is out of bounds");
-        return;
-      }
-      // No need to copy empty segments.
-      if (size == 0) continue;
-      std::memcpy(instance->memory_start() + dest_offset,
-                  wire_bytes.begin() + segment.source.offset(), size);
+    size_t dest_offset;
+    if (module_->is_memory64) {
+      uint64_t dest_offset_64 = EvalUint64InitExpr(instance, segment.dest_addr);
+      // Clamp to {std::numeric_limits<size_t>::max()}, which is always an
+      // invalid offset.
+      DCHECK_GT(std::numeric_limits<size_t>::max(), instance->memory_size());
+      dest_offset = static_cast<size_t>(std::min(
+          dest_offset_64, uint64_t{std::numeric_limits<size_t>::max()}));
     } else {
-      DCHECK(segment.active);
-      // Segments of size == 0 are just nops.
-      if (size == 0) continue;
-
-      uint32_t dest_offset = EvalUint32InitExpr(instance, segment.dest_addr);
-      DCHECK(base::IsInBounds<uint64_t>(dest_offset, size,
-                                        instance->memory_size()));
-      byte* dest = instance->memory_start() + dest_offset;
-      const byte* src = wire_bytes.begin() + segment.source.offset();
-      base::Memcpy(dest, src, size);
+      dest_offset = EvalUint32InitExpr(instance, segment.dest_addr);
     }
+
+    if (!base::IsInBounds<size_t>(dest_offset, size, instance->memory_size())) {
+      thrower_->RuntimeError("data segment is out of bounds");
+      return;
+    }
+
+    std::memcpy(instance->memory_start() + dest_offset,
+                wire_bytes.begin() + segment.source.offset(), size);
   }
 }
 
@@ -1590,8 +1564,6 @@ Handle<Object> InstanceBuilder::RecursivelyEvaluateGlobalInitializer(
           return isolate_->root_handle(RootIndex::kWasmRttI31refMap);
         case wasm::HeapType::kAny:
           return isolate_->root_handle(RootIndex::kWasmRttAnyrefMap);
-        case wasm::HeapType::kExn:
-          UNIMPLEMENTED();  // TODO(jkummerow): This is going away?
         case wasm::HeapType::kBottom:
           UNREACHABLE();
       }
@@ -1661,7 +1633,7 @@ void InstanceBuilder::InitGlobals(Handle<WasmInstanceObject> instance) {
             module_->globals[global.init.immediate().index].offset;
         TRACE("init [globals+%u] = [globals+%d]\n", global.offset, old_offset);
         if (global.type.is_reference_type()) {
-          DCHECK(enabled_.has_reftypes() || enabled_.has_eh());
+          DCHECK(enabled_.has_reftypes());
           tagged_globals_->set(new_offset, tagged_globals_->get(old_offset));
         } else {
           size_t size = (global.type == kWasmI64 || global.type == kWasmF64)
@@ -1994,16 +1966,12 @@ void InstanceBuilder::LoadTableSegments(Handle<WasmInstanceObject> instance) {
     // a dropped passive segment and an active segment have the same
     // behavior.
     instance->dropped_elem_segments()[segment_index] = 1;
-    if (enabled_.has_bulk_memory()) {
-      if (!success) {
-        thrower_->RuntimeError("table initializer is out of bounds");
-        // Break out instead of returning; we don't want to continue to
-        // initialize any further element segments, but still need to add
-        // dispatch tables below.
-        break;
-      }
-    } else {
-      CHECK(success);
+    if (!success) {
+      thrower_->RuntimeError("table initializer is out of bounds");
+      // Break out instead of returning; we don't want to continue to
+      // initialize any further element segments, but still need to add
+      // dispatch tables below.
+      break;
     }
   }
 

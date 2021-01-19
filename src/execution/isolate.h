@@ -458,6 +458,7 @@ using DebugObjectCache = std::vector<Handle<HeapObject>>;
   /* Current code coverage mode */                                             \
   V(debug::CoverageMode, code_coverage_mode, debug::CoverageMode::kBestEffort) \
   V(debug::TypeProfileMode, type_profile_mode, debug::TypeProfileMode::kNone)  \
+  V(bool, disable_bytecode_flushing, false)                                    \
   V(int, last_console_context_id, 0)                                           \
   V(v8_inspector::V8Inspector*, inspector, nullptr)                            \
   V(bool, next_v8_call_is_safe_for_termination, false)                         \
@@ -1088,6 +1089,8 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
         OFFSET_OF(Isolate, thread_local_top()->thread_in_wasm_flag_address_) -
         isolate_root_bias());
   }
+
+  THREAD_LOCAL_TOP_ADDRESS(Address, thread_in_wasm_flag_address)
 
   MaterializedObjectStore* materialized_object_store() {
     return materialized_object_store_;

@@ -581,6 +581,8 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   void I16x8UConvertI8x16High(XMMRegister dst, XMMRegister src);
   void I32x4SConvertI16x8High(XMMRegister dst, XMMRegister src);
   void I32x4UConvertI16x8High(XMMRegister dst, XMMRegister src);
+  void I64x2SConvertI32x4High(XMMRegister dst, XMMRegister src);
+  void I64x2UConvertI32x4High(XMMRegister dst, XMMRegister src);
 
   // Requires dst == mask when AVX is not supported.
   void S128Select(XMMRegister dst, XMMRegister mask, XMMRegister src1,
@@ -593,6 +595,8 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
                    bool low, bool is_signed);
   void I16x8ExtMul(XMMRegister dst, XMMRegister src1, XMMRegister src2,
                    bool low, bool is_signed);
+
+  void I16x8Q15MulRSatS(XMMRegister dst, XMMRegister src1, XMMRegister src2);
 
   void Abspd(XMMRegister dst);
   void Negpd(XMMRegister dst);
@@ -985,6 +989,10 @@ class V8_EXPORT_PRIVATE MacroAssembler : public TurboAssembler {
   // Compare instance type for map.
   // Always use unsigned comparisons: above and below, not less and greater.
   void CmpInstanceType(Register map, InstanceType type);
+
+  // Compare instance type ranges for a map (low and high inclusive)
+  // Always use unsigned comparisons: below_equal for a positive result.
+  void CmpInstanceTypeRange(Register map, InstanceType low, InstanceType high);
 
   template <typename Field>
   void DecodeField(Register reg) {

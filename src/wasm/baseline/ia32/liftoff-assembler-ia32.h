@@ -3147,17 +3147,16 @@ void LiftoffAssembler::emit_s128_select(LiftoffRegister dst,
                                         LiftoffRegister src1,
                                         LiftoffRegister src2,
                                         LiftoffRegister mask) {
-  if (CpuFeatures::IsSupported(AVX)) {
-    CpuFeatureScope scope(this, AVX);
-    vxorps(liftoff::kScratchDoubleReg, src1.fp(), src2.fp());
-    vandps(liftoff::kScratchDoubleReg, liftoff::kScratchDoubleReg, mask.fp());
-    vxorps(dst.fp(), liftoff::kScratchDoubleReg, src2.fp());
+  // Ensure that we don't overwrite any inputs with the movdqu below.
+  DCHECK_NE(dst, src1);
+  DCHECK_NE(dst, src2);
+  if (!CpuFeatures::IsSupported(AVX) && dst != mask) {
+    movdqu(dst.fp(), mask.fp());
+    S128Select(dst.fp(), dst.fp(), src1.fp(), src2.fp(),
+               liftoff::kScratchDoubleReg);
   } else {
-    movaps(liftoff::kScratchDoubleReg, src1.fp());
-    xorps(liftoff::kScratchDoubleReg, src2.fp());
-    andps(liftoff::kScratchDoubleReg, mask.fp());
-    if (dst.fp() != src2.fp()) movaps(dst.fp(), src2.fp());
-    xorps(dst.fp(), liftoff::kScratchDoubleReg);
+    S128Select(dst.fp(), mask.fp(), src1.fp(), src2.fp(),
+               liftoff::kScratchDoubleReg);
   }
 }
 
@@ -3575,6 +3574,12 @@ void LiftoffAssembler::emit_i16x8_extmul_high_i8x16_u(LiftoffRegister dst,
               /*low=*/false, /*is_signed=*/false);
 }
 
+void LiftoffAssembler::emit_i16x8_q15mulr_sat_s(LiftoffRegister dst,
+                                                LiftoffRegister src1,
+                                                LiftoffRegister src2) {
+  I16x8Q15MulRSatS(dst.fp(), src1.fp(), src2.fp(), liftoff::kScratchDoubleReg);
+}
+
 void LiftoffAssembler::emit_i32x4_neg(LiftoffRegister dst,
                                       LiftoffRegister src) {
   if (dst.fp() == src.fp()) {
@@ -3897,6 +3902,31 @@ void LiftoffAssembler::emit_i64x2_extmul_high_i32x4_u(LiftoffRegister dst,
                                                       LiftoffRegister src2) {
   I64x2ExtMul(dst.fp(), src1.fp(), src2.fp(), liftoff::kScratchDoubleReg,
               /*low=*/false, /*is_signed=*/false);
+}
+
+void LiftoffAssembler::emit_i64x2_bitmask(LiftoffRegister dst,
+                                          LiftoffRegister src) {
+  Movmskpd(dst.gp(), src.fp());
+}
+
+void LiftoffAssembler::emit_i64x2_sconvert_i32x4_low(LiftoffRegister dst,
+                                                     LiftoffRegister src) {
+  Pmovsxdq(dst.fp(), src.fp());
+}
+
+void LiftoffAssembler::emit_i64x2_sconvert_i32x4_high(LiftoffRegister dst,
+                                                      LiftoffRegister src) {
+  I64x2SConvertI32x4High(dst.fp(), src.fp());
+}
+
+void LiftoffAssembler::emit_i64x2_uconvert_i32x4_low(LiftoffRegister dst,
+                                                     LiftoffRegister src) {
+  Pmovzxdq(dst.fp(), src.fp());
+}
+
+void LiftoffAssembler::emit_i64x2_uconvert_i32x4_high(LiftoffRegister dst,
+                                                      LiftoffRegister src) {
+  I64x2UConvertI32x4High(dst.fp(), src.fp(), liftoff::kScratchDoubleReg);
 }
 
 void LiftoffAssembler::emit_f32x4_abs(LiftoffRegister dst,

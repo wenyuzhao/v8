@@ -1519,7 +1519,6 @@ void MacroAssembler::InvokePrologue(Register expected_parameter_count,
   DCHECK_EQ(actual_parameter_count, r2);
   DCHECK_EQ(expected_parameter_count, r4);
 
-#ifdef V8_NO_ARGUMENTS_ADAPTOR
   // If the expected parameter count is equal to the adaptor sentinel, no need
   // to push undefined value as arguments.
   CmpS64(expected_parameter_count, Operand(kDontAdaptArgumentsSentinel));
@@ -1576,20 +1575,7 @@ void MacroAssembler::InvokePrologue(Register expected_parameter_count,
     CallRuntime(Runtime::kThrowStackOverflow);
     bkpt(0);
   }
-#else
-  // Check whether the expected and actual arguments count match. If not,
-  // setup registers according to contract with ArgumentsAdaptorTrampoline.
-  CmpS64(expected_parameter_count, actual_parameter_count);
-  beq(&regular_invoke);
 
-  Handle<Code> adaptor = BUILTIN_CODE(isolate(), ArgumentsAdaptorTrampoline);
-  if (flag == CALL_FUNCTION) {
-    Call(adaptor);
-    b(done);
-  } else {
-    Jump(adaptor, RelocInfo::CODE_TARGET);
-  }
-#endif
   bind(&regular_invoke);
 }
 
@@ -3660,17 +3646,104 @@ void TurboAssembler::LoadU8(Register dst, Register src) {
 #endif
 }
 
-void TurboAssembler::LoadLogicalReversedWordP(Register dst,
-                                              const MemOperand& mem) {
-  lrv(dst, mem);
+#ifdef V8_TARGET_BIG_ENDIAN
+void TurboAssembler::LoadU64LE(Register dst, const MemOperand& mem,
+                               Register scratch) {
+  lrvg(dst, mem);
+}
+
+void TurboAssembler::LoadS32LE(Register dst, const MemOperand& opnd,
+                               Register scratch) {
+  lrv(dst, opnd);
+  LoadS32(dst, dst);
+}
+
+void TurboAssembler::LoadU32LE(Register dst, const MemOperand& opnd,
+                               Register scratch) {
+  lrv(dst, opnd);
   LoadU32(dst, dst);
 }
 
-void TurboAssembler::LoadLogicalReversedHalfWordP(Register dst,
-                                                  const MemOperand& mem) {
-  lrvh(dst, mem);
+void TurboAssembler::LoadU16LE(Register dst, const MemOperand& opnd) {
+  lrvh(dst, opnd);
   LoadU16(dst, dst);
 }
+
+void TurboAssembler::LoadS16LE(Register dst, const MemOperand& opnd) {
+  lrvh(dst, opnd);
+  LoadS16(dst, dst);
+}
+
+void TurboAssembler::LoadV128LE(DoubleRegister dst, const MemOperand& opnd,
+                                Register scratch0, Register scratch1) {
+  bool use_vlbr = CpuFeatures::IsSupported(VECTOR_ENHANCE_FACILITY_2) &&
+                  is_uint12(opnd.offset());
+  if (use_vlbr) {
+    vlbr(dst, opnd, Condition(4));
+  } else {
+    lrvg(scratch0, opnd);
+    lrvg(scratch1,
+         MemOperand(opnd.rx(), opnd.rb(), opnd.offset() + kSystemPointerSize));
+    vlvgp(dst, scratch1, scratch0);
+  }
+}
+
+void TurboAssembler::LoadF64LE(DoubleRegister dst, const MemOperand& opnd,
+                               Register scratch) {
+  lrvg(scratch, opnd);
+  ldgr(dst, scratch);
+}
+
+void TurboAssembler::LoadF32LE(DoubleRegister dst, const MemOperand& opnd,
+                               Register scratch) {
+  lrv(scratch, opnd);
+  ShiftLeftU64(scratch, scratch, Operand(32));
+  ldgr(dst, scratch);
+}
+
+#else
+void TurboAssembler::LoadU64LE(Register dst, const MemOperand& mem,
+                               Register scratch) {
+  LoadU64(dst, mem, scratch);
+}
+
+void TurboAssembler::LoadS32LE(Register dst, const MemOperand& opnd,
+                               Register scratch) {
+  LoadS32(dst, opnd, scratch);
+}
+
+void TurboAssembler::LoadU32LE(Register dst, const MemOperand& opnd,
+                               Register scratch) {
+  LoadU32(dst, opnd, scratch);
+}
+
+void TurboAssembler::LoadU16LE(Register dst, const MemOperand& opnd) {
+  LoadU16(dst, opnd);
+}
+
+void TurboAssembler::LoadS16LE(Register dst, const MemOperand& opnd) {
+  LoadS16(dst, opnd);
+}
+
+void TurboAssembler::LoadV128LE(DoubleRegister dst, const MemOperand& opnd,
+                                Register scratch0, Register scratch1) {
+  USE(scratch1);
+  LoadV128(dst, opnd, scratch0);
+}
+
+void TurboAssembler::LoadF64LE(DoubleRegister dst, const MemOperand& opnd,
+                               Register scratch) {
+  USE(scratch);
+  LoadF64(dst, opnd);
+}
+
+void TurboAssembler::LoadF32LE(DoubleRegister dst, const MemOperand& opnd,
+                               Register scratch) {
+  USE(scratch);
+  LoadF32(dst, opnd);
+}
+
+#endif
 
 // Load And Test (Reg <- Reg)
 void TurboAssembler::LoadAndTest32(Register dst, Register src) {

@@ -2689,6 +2689,43 @@ void TurboAssembler::StoreLane(MSASize sz, MSARegister src, uint8_t laneidx,
   }
 }
 
+#define EXT_MUL_BINOP(type, ilv_instr, dotp_instr)            \
+  case type:                                                  \
+    xor_v(kSimd128RegZero, kSimd128RegZero, kSimd128RegZero); \
+    ilv_instr(kSimd128ScratchReg, kSimd128RegZero, src1);     \
+    ilv_instr(kSimd128RegZero, kSimd128RegZero, src2);        \
+    dotp_instr(dst, kSimd128ScratchReg, kSimd128RegZero);     \
+    break;
+
+void TurboAssembler::ExtMulLow(MSADataType type, MSARegister dst,
+                               MSARegister src1, MSARegister src2) {
+  switch (type) {
+    EXT_MUL_BINOP(MSAS8, ilvr_b, dotp_s_h)
+    EXT_MUL_BINOP(MSAS16, ilvr_h, dotp_s_w)
+    EXT_MUL_BINOP(MSAS32, ilvr_w, dotp_s_d)
+    EXT_MUL_BINOP(MSAU8, ilvr_b, dotp_u_h)
+    EXT_MUL_BINOP(MSAU16, ilvr_h, dotp_u_w)
+    EXT_MUL_BINOP(MSAU32, ilvr_w, dotp_u_d)
+    default:
+      UNREACHABLE();
+  }
+}
+
+void TurboAssembler::ExtMulHigh(MSADataType type, MSARegister dst,
+                                MSARegister src1, MSARegister src2) {
+  switch (type) {
+    EXT_MUL_BINOP(MSAS8, ilvl_b, dotp_s_h)
+    EXT_MUL_BINOP(MSAS16, ilvl_h, dotp_s_w)
+    EXT_MUL_BINOP(MSAS32, ilvl_w, dotp_s_d)
+    EXT_MUL_BINOP(MSAU8, ilvl_b, dotp_u_h)
+    EXT_MUL_BINOP(MSAU16, ilvl_h, dotp_u_w)
+    EXT_MUL_BINOP(MSAU32, ilvl_w, dotp_u_d)
+    default:
+      UNREACHABLE();
+  }
+}
+#undef EXT_MUL_BINOP
+
 void TurboAssembler::MSARoundW(MSARegister dst, MSARegister src,
                                FPURoundingMode mode) {
   BlockTrampolinePoolScope block_trampoline_pool(this);
@@ -4778,7 +4815,6 @@ void MacroAssembler::InvokePrologue(Register expected_parameter_count,
   DCHECK_EQ(actual_parameter_count, a0);
   DCHECK_EQ(expected_parameter_count, a2);
 
-#ifdef V8_NO_ARGUMENTS_ADAPTOR
   // If the expected parameter count is equal to the adaptor sentinel, no need
   // to push undefined value as arguments.
   Branch(&regular_invoke, eq, expected_parameter_count,
@@ -4832,21 +4868,7 @@ void MacroAssembler::InvokePrologue(Register expected_parameter_count,
     CallRuntime(Runtime::kThrowStackOverflow);
     break_(0xCC);
   }
-#else
-  // Check whether the expected and actual arguments count match. The registers
-  // are set up according to contract with ArgumentsAdaptorTrampoline:
 
-  Branch(&regular_invoke, eq, expected_parameter_count,
-         Operand(actual_parameter_count));
-
-  Handle<Code> adaptor = BUILTIN_CODE(isolate(), ArgumentsAdaptorTrampoline);
-  if (flag == CALL_FUNCTION) {
-    Call(adaptor);
-    Branch(done);
-  } else {
-    Jump(adaptor, RelocInfo::CODE_TARGET);
-  }
-#endif
   bind(&regular_invoke);
 }
 

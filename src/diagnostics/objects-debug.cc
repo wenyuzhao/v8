@@ -182,7 +182,6 @@ void HeapObject::HeapObjectVerify(Isolate* isolate) {
     case NUMBER_DICTIONARY_TYPE:
     case SIMPLE_NUMBER_DICTIONARY_TYPE:
     case EPHEMERON_HASH_TABLE_TYPE:
-    case FIXED_ARRAY_TYPE:
     case SCOPE_INFO_TYPE:
     case SCRIPT_CONTEXT_TABLE_TYPE:
       FixedArray::cast(*this).FixedArrayVerify(isolate);
@@ -201,9 +200,6 @@ void HeapObject::HeapObjectVerify(Isolate* isolate) {
     case NATIVE_CONTEXT_TYPE:
       NativeContext::cast(*this).NativeContextVerify(isolate);
       break;
-    case WEAK_FIXED_ARRAY_TYPE:
-      WeakFixedArray::cast(*this).WeakFixedArrayVerify(isolate);
-      break;
     case FEEDBACK_METADATA_TYPE:
       FeedbackMetadata::cast(*this).FeedbackMetadataVerify(isolate);
       break;
@@ -221,7 +217,6 @@ void HeapObject::HeapObjectVerify(Isolate* isolate) {
     case JS_ITERATOR_PROTOTYPE_TYPE:
     case JS_MAP_ITERATOR_PROTOTYPE_TYPE:
     case JS_OBJECT_PROTOTYPE_TYPE:
-    case JS_OBJECT_TYPE:
     case JS_PROMISE_PROTOTYPE_TYPE:
     case JS_REG_EXP_PROTOTYPE_TYPE:
     case JS_SET_ITERATOR_PROTOTYPE_TYPE:
@@ -233,9 +228,6 @@ void HeapObject::HeapObjectVerify(Isolate* isolate) {
       break;
     case WASM_INSTANCE_OBJECT_TYPE:
       WasmInstanceObject::cast(*this).WasmInstanceObjectVerify(isolate);
-      break;
-    case JS_GENERATOR_OBJECT_TYPE:
-      JSGeneratorObject::cast(*this).JSGeneratorObjectVerify(isolate);
       break;
     case JS_SET_KEY_VALUE_ITERATOR_TYPE:
     case JS_SET_VALUE_ITERATOR_TYPE:
@@ -262,9 +254,6 @@ void HeapObject::HeapObjectVerify(Isolate* isolate) {
       TORQUE_INSTANCE_CHECKERS_MULTIPLE_FULLY_DEFINED(MAKE_TORQUE_CASE)
 #undef MAKE_TORQUE_CASE
 
-    case FOREIGN_TYPE:
-      break;  // No interesting fields.
-
     case ALLOCATION_SITE_TYPE:
       AllocationSite::cast(*this).AllocationSiteVerify(isolate);
       break;
@@ -275,6 +264,16 @@ void HeapObject::HeapObjectVerify(Isolate* isolate) {
 
     case STORE_HANDLER_TYPE:
       StoreHandler::cast(*this).StoreHandlerVerify(isolate);
+      break;
+
+    case JS_PROMISE_CONSTRUCTOR_TYPE:
+    case JS_REG_EXP_CONSTRUCTOR_TYPE:
+    case JS_ARRAY_CONSTRUCTOR_TYPE:
+#define TYPED_ARRAY_CONSTRUCTORS_SWITCH(Type, type, TYPE, Ctype) \
+  case TYPE##_TYPED_ARRAY_CONSTRUCTOR_TYPE:
+      TYPED_ARRAYS(TYPED_ARRAY_CONSTRUCTORS_SWITCH)
+#undef TYPED_ARRAY_CONSTRUCTORS_SWITCH
+      JSFunction::cast(*this).JSFunctionVerify(isolate);
       break;
   }
 }
@@ -493,7 +492,8 @@ void Map::MapVerify(Isolate* isolate) {
               layout_descriptor(kAcquireLoad).IsConsistentWithMap(*this));
   // Only JSFunction maps have has_prototype_slot() bit set and constructible
   // JSFunction objects must have prototype slot.
-  CHECK_IMPLIES(has_prototype_slot(), instance_type() == JS_FUNCTION_TYPE);
+  CHECK_IMPLIES(has_prototype_slot(),
+                InstanceTypeChecker::IsJSFunction(instance_type()));
   if (!may_have_interesting_symbols()) {
     CHECK(!has_named_interceptor());
     CHECK(!is_dictionary_map());

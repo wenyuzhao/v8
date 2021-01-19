@@ -1696,31 +1696,34 @@ void LiftoffAssembler::emit_f64x2_splat(LiftoffRegister dst,
   fill_d(dst.fp().toW(), kScratchReg);
 }
 
-#define SIMD_BINOP(name, ilv_instr, dotp_instr)                          \
-  void LiftoffAssembler::emit_##name(                                    \
+#define SIMD_BINOP(name1, name2, type)                                   \
+  void LiftoffAssembler::emit_##name1##_extmul_low_##name2(              \
       LiftoffRegister dst, LiftoffRegister src1, LiftoffRegister src2) { \
-    xor_v(kSimd128RegZero, kSimd128RegZero, kSimd128RegZero);            \
-    ilv_instr(kSimd128ScratchReg, kSimd128RegZero, src1.fp().toW());     \
-    ilv_instr(kSimd128RegZero, kSimd128RegZero, src2.fp().toW());        \
-    dotp_instr(dst.fp().toW(), kSimd128ScratchReg, kSimd128RegZero);     \
+    TurboAssembler::ExtMulLow(type, dst.fp().toW(), src1.fp().toW(),     \
+                              src2.fp().toW());                          \
+  }                                                                      \
+  void LiftoffAssembler::emit_##name1##_extmul_high_##name2(             \
+      LiftoffRegister dst, LiftoffRegister src1, LiftoffRegister src2) { \
+    TurboAssembler::ExtMulHigh(type, dst.fp().toW(), src1.fp().toW(),    \
+                               src2.fp().toW());                         \
   }
 
-SIMD_BINOP(i16x8_extmul_low_i8x16_s, ilvr_b, dotp_s_h)
-SIMD_BINOP(i16x8_extmul_high_i8x16_s, ilvl_b, dotp_s_h)
-SIMD_BINOP(i16x8_extmul_low_i8x16_u, ilvr_b, dotp_u_h)
-SIMD_BINOP(i16x8_extmul_high_i8x16_u, ilvl_b, dotp_u_h)
+SIMD_BINOP(i16x8, i8x16_s, MSAS8)
+SIMD_BINOP(i16x8, i8x16_u, MSAU8)
 
-SIMD_BINOP(i32x4_extmul_low_i16x8_s, ilvr_h, dotp_s_w)
-SIMD_BINOP(i32x4_extmul_high_i16x8_s, ilvl_h, dotp_s_w)
-SIMD_BINOP(i32x4_extmul_low_i16x8_u, ilvr_h, dotp_u_w)
-SIMD_BINOP(i32x4_extmul_high_i16x8_u, ilvl_h, dotp_u_w)
+SIMD_BINOP(i32x4, i16x8_s, MSAS16)
+SIMD_BINOP(i32x4, i16x8_u, MSAU16)
 
-SIMD_BINOP(i64x2_extmul_low_i32x4_s, ilvr_w, dotp_s_d)
-SIMD_BINOP(i64x2_extmul_high_i32x4_s, ilvl_w, dotp_s_d)
-SIMD_BINOP(i64x2_extmul_low_i32x4_u, ilvr_w, dotp_u_d)
-SIMD_BINOP(i64x2_extmul_high_i32x4_u, ilvl_w, dotp_u_d)
+SIMD_BINOP(i64x2, i32x4_s, MSAS32)
+SIMD_BINOP(i64x2, i32x4_u, MSAU32)
 
 #undef SIMD_BINOP
+
+void LiftoffAssembler::emit_i16x8_q15mulr_sat_s(LiftoffRegister dst,
+                                                LiftoffRegister src1,
+                                                LiftoffRegister src2) {
+  mulr_q_h(dst.fp().toW(), src1.fp().toW(), src2.fp().toW());
+}
 
 void LiftoffAssembler::emit_i8x16_eq(LiftoffRegister dst, LiftoffRegister lhs,
                                      LiftoffRegister rhs) {
@@ -2279,6 +2282,15 @@ void LiftoffAssembler::emit_i64x2_neg(LiftoffRegister dst,
   subv_d(dst.fp().toW(), kSimd128RegZero, src.fp().toW());
 }
 
+void LiftoffAssembler::emit_i64x2_bitmask(LiftoffRegister dst,
+                                          LiftoffRegister src) {
+  srli_d(kSimd128RegZero, src.fp().toW(), 63);
+  shf_w(kSimd128ScratchReg, kSimd128RegZero, 0x02);
+  slli_d(kSimd128ScratchReg, kSimd128ScratchReg, 1);
+  or_v(kSimd128RegZero, kSimd128RegZero, kSimd128ScratchReg);
+  copy_u_b(dst.gp(), kSimd128RegZero, 0);
+}
+
 void LiftoffAssembler::emit_i64x2_shl(LiftoffRegister dst, LiftoffRegister lhs,
                                       LiftoffRegister rhs) {
   fill_d(kSimd128ScratchReg, rhs.gp());
@@ -2683,6 +2695,32 @@ void LiftoffAssembler::emit_i32x4_uconvert_i16x8_high(LiftoffRegister dst,
                                                       LiftoffRegister src) {
   xor_v(kSimd128RegZero, kSimd128RegZero, kSimd128RegZero);
   ilvl_h(dst.fp().toW(), kSimd128RegZero, src.fp().toW());
+}
+
+void LiftoffAssembler::emit_i64x2_sconvert_i32x4_low(LiftoffRegister dst,
+                                                     LiftoffRegister src) {
+  ilvr_w(kSimd128ScratchReg, src.fp().toW(), src.fp().toW());
+  slli_d(dst.fp().toW(), kSimd128ScratchReg, 32);
+  srai_d(dst.fp().toW(), dst.fp().toW(), 32);
+}
+
+void LiftoffAssembler::emit_i64x2_sconvert_i32x4_high(LiftoffRegister dst,
+                                                      LiftoffRegister src) {
+  ilvl_w(kSimd128ScratchReg, src.fp().toW(), src.fp().toW());
+  slli_d(dst.fp().toW(), kSimd128ScratchReg, 32);
+  srai_d(dst.fp().toW(), dst.fp().toW(), 32);
+}
+
+void LiftoffAssembler::emit_i64x2_uconvert_i32x4_low(LiftoffRegister dst,
+                                                     LiftoffRegister src) {
+  xor_v(kSimd128RegZero, kSimd128RegZero, kSimd128RegZero);
+  ilvr_w(dst.fp().toW(), kSimd128RegZero, src.fp().toW());
+}
+
+void LiftoffAssembler::emit_i64x2_uconvert_i32x4_high(LiftoffRegister dst,
+                                                      LiftoffRegister src) {
+  xor_v(kSimd128RegZero, kSimd128RegZero, kSimd128RegZero);
+  ilvl_w(dst.fp().toW(), kSimd128RegZero, src.fp().toW());
 }
 
 void LiftoffAssembler::emit_i8x16_rounding_average_u(LiftoffRegister dst,

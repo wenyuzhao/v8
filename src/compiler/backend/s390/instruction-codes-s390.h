@@ -92,7 +92,6 @@ namespace compiler {
   V(S390_Tst64)                             \
   V(S390_Push)                              \
   V(S390_PushFrame)                         \
-  V(S390_StackClaim)                        \
   V(S390_StoreToStackSlot)                  \
   V(S390_SignExtendWord8ToInt32)            \
   V(S390_SignExtendWord16ToInt32)           \
@@ -260,6 +259,10 @@ namespace compiler {
   V(S390_I64x2ExtMulHighI32x4S)             \
   V(S390_I64x2ExtMulLowI32x4U)              \
   V(S390_I64x2ExtMulHighI32x4U)             \
+  V(S390_I64x2SConvertI32x4Low)             \
+  V(S390_I64x2SConvertI32x4High)            \
+  V(S390_I64x2UConvertI32x4Low)             \
+  V(S390_I64x2UConvertI32x4High)            \
   V(S390_I32x4Splat)                        \
   V(S390_I32x4ExtractLane)                  \
   V(S390_I32x4ReplaceLane)                  \
@@ -337,6 +340,7 @@ namespace compiler {
   V(S390_I16x8ExtMulHighI8x16U)             \
   V(S390_I16x8ExtAddPairwiseI8x16S)         \
   V(S390_I16x8ExtAddPairwiseI8x16U)         \
+  V(S390_I16x8Q15MulRSatS)                  \
   V(S390_I8x16Splat)                        \
   V(S390_I8x16ExtractLaneU)                 \
   V(S390_I8x16ExtractLaneS)                 \

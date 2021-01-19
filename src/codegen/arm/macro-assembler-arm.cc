@@ -1609,7 +1609,6 @@ void MacroAssembler::InvokePrologue(Register expected_parameter_count,
   DCHECK_EQ(actual_parameter_count, r0);
   DCHECK_EQ(expected_parameter_count, r2);
 
-#ifdef V8_NO_ARGUMENTS_ADAPTOR
   // If the expected parameter count is equal to the adaptor sentinel, no need
   // to push undefined value as arguments.
   cmp(expected_parameter_count, Operand(kDontAdaptArgumentsSentinel));
@@ -1663,20 +1662,7 @@ void MacroAssembler::InvokePrologue(Register expected_parameter_count,
     CallRuntime(Runtime::kThrowStackOverflow);
     bkpt(0);
   }
-#else
-  // Check whether the expected and actual arguments count match. If not,
-  // setup registers according to contract with ArgumentsAdaptorTrampoline.
-  cmp(expected_parameter_count, actual_parameter_count);
-  b(eq, &regular_invoke);
 
-  Handle<Code> adaptor = BUILTIN_CODE(isolate(), ArgumentsAdaptorTrampoline);
-  if (flag == CALL_FUNCTION) {
-    Call(adaptor);
-    b(done);
-  } else {
-    Jump(adaptor, RelocInfo::CODE_TARGET);
-  }
-#endif
   bind(&regular_invoke);
 }
 
@@ -1853,6 +1839,17 @@ void MacroAssembler::CompareInstanceType(Register map, Register type_reg,
                                          InstanceType type) {
   ldrh(type_reg, FieldMemOperand(map, Map::kInstanceTypeOffset));
   cmp(type_reg, Operand(type));
+}
+
+void MacroAssembler::CompareInstanceTypeRange(Register map, Register type_reg,
+                                              InstanceType lower_limit,
+                                              InstanceType higher_limit) {
+  DCHECK_LT(lower_limit, higher_limit);
+  UseScratchRegisterScope temps(this);
+  Register scratch = temps.Acquire();
+  ldrh(type_reg, FieldMemOperand(map, Map::kInstanceTypeOffset));
+  sub(scratch, type_reg, Operand(lower_limit));
+  cmp(scratch, Operand(higher_limit - lower_limit));
 }
 
 void MacroAssembler::CompareRoot(Register obj, RootIndex index) {
@@ -2155,9 +2152,11 @@ void MacroAssembler::AssertFunction(Register object) {
     tst(object, Operand(kSmiTagMask));
     Check(ne, AbortReason::kOperandIsASmiAndNotAFunction);
     push(object);
-    CompareObjectType(object, object, object, JS_FUNCTION_TYPE);
+    LoadMap(object, object);
+    CompareInstanceTypeRange(object, object, FIRST_JS_FUNCTION_TYPE,
+                             LAST_JS_FUNCTION_TYPE);
     pop(object);
-    Check(eq, AbortReason::kOperandIsNotAFunction);
+    Check(ls, AbortReason::kOperandIsNotAFunction);
   }
 }
 
@@ -2629,6 +2628,17 @@ void TurboAssembler::CallForDeoptimization(Builtins::Name target, int,
 
 void TurboAssembler::Trap() { stop(); }
 void TurboAssembler::DebugBreak() { stop(); }
+
+void TurboAssembler::I64x2BitMask(Register dst, QwNeonRegister src) {
+  UseScratchRegisterScope temps(this);
+  QwNeonRegister tmp1 = temps.AcquireQ();
+  Register tmp = temps.Acquire();
+
+  vshr(NeonU64, tmp1, src, 63);
+  vmov(NeonU32, dst, tmp1.low(), 0);
+  vmov(NeonU32, tmp, tmp1.high(), 0);
+  add(dst, dst, Operand(tmp, LSL, 1));
+}
 
 }  // namespace internal
 }  // namespace v8

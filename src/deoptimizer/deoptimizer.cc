@@ -29,6 +29,7 @@
 #include "src/objects/smi.h"
 #include "src/snapshot/embedded/embedded-data.h"
 #include "src/tracing/trace-event.h"
+#include "src/wasm/wasm-linkage.h"
 
 // Has to be the last include (doesn't have include guards)
 #include "src/objects/object-macros.h"
@@ -267,6 +268,7 @@ class ActivationsFinder : public ThreadVisitor {
           SafepointEntry safepoint = code.GetSafepointEntry(it.frame()->pc());
           int trampoline_pc = safepoint.trampoline_pc();
           DCHECK_IMPLIES(code == topmost_, safe_to_deopt_);
+          STATIC_ASSERT(SafepointEntry::kNoTrampolinePC == -1);
           CHECK_GE(trampoline_pc, 0);
           // Replace the current pc on the stack with the trampoline.
           // TODO(v8:10026): avoid replacing a signed pointer.
@@ -481,6 +483,24 @@ namespace {
 uint16_t InternalFormalParameterCountWithReceiver(SharedFunctionInfo sfi) {
   static constexpr int kTheReceiver = 1;
   return sfi.internal_formal_parameter_count() + kTheReceiver;
+}
+
+}  // namespace
+
+namespace {
+
+// Encodes/decodes the return type of a Wasm function as the integer value of
+// wasm::ValueType::Kind, or -1 if the function returns void.
+
+int EncodeWasmReturnType(base::Optional<wasm::ValueType::Kind> return_type) {
+  return return_type ? static_cast<int>(return_type.value()) : -1;
+}
+
+base::Optional<wasm::ValueType::Kind> DecodeWasmReturnType(int code) {
+  if (code >= 0) {
+    return {static_cast<wasm::ValueType::Kind>(code)};
+  }
+  return {};
 }
 
 }  // namespace
@@ -939,6 +959,7 @@ void Deoptimizer::DoComputeOutputFrames() {
         DoComputeConstructStubFrame(translated_frame, frame_index);
         break;
       case TranslatedFrame::kBuiltinContinuation:
+      case TranslatedFrame::kJSToWasmBuiltinContinuation:
         DoComputeBuiltinContinuation(translated_frame, frame_index,
                                      BuiltinContinuationMode::STUB);
         break;
@@ -997,7 +1018,6 @@ void Deoptimizer::DoComputeInterpretedFrame(TranslatedFrame* translated_frame,
 
   const int parameters_count = InternalFormalParameterCountWithReceiver(shared);
 
-#ifdef V8_NO_ARGUMENTS_ADAPTOR
   // If this is the bottom most frame or the previous frame was the arguments
   // adaptor fake frame, then we already have extra arguments in the stack
   // (including any extra padding). Therefore we should not try to add any
@@ -1005,9 +1025,6 @@ void Deoptimizer::DoComputeInterpretedFrame(TranslatedFrame* translated_frame,
   bool should_pad_arguments =
       !is_bottommost && (translated_state_.frames()[frame_index - 1]).kind() !=
                             TranslatedFrame::kArgumentsAdaptor;
-#else
-  bool should_pad_arguments = true;
-#endif
 
   const int locals_count = translated_frame->height();
   InterpretedFrameInfo frame_info = InterpretedFrameInfo::Precise(
@@ -1285,12 +1302,12 @@ void Deoptimizer::DoComputeArgumentsAdaptorFrame(
   CHECK_GT(frame_index, 0);
   CHECK_NULL(output_[frame_index]);
 
-#ifdef V8_NO_ARGUMENTS_ADAPTOR
   // During execution, V8 does not understand arguments adaptor frames anymore,
   // so during deoptimization we only push the extra arguments (arguments with
   // index greater than the formal parameter count). Therefore we call this
-  // TranslatedFrame the fake adaptor frame. For more info, see the design
-  // document shorturl.at/fKT49.
+  // TranslatedFrame the fake adaptor frame.
+  // For more info, see the design document:
+  // https://docs.google.com/document/d/150wGaUREaZI6YWqOQFD5l2mWQXaPbbZjcAIJLOFrzMs
 
   TranslatedFrame::iterator value_iterator = translated_frame->begin();
   const int argument_count_without_receiver = translated_frame->height() - 1;
@@ -1341,104 +1358,6 @@ void Deoptimizer::DoComputeArgumentsAdaptorFrame(
     for (int i = 0; i < formal_parameter_count; i++) value_iterator++;
     frame_writer.PushStackJSArguments(value_iterator, extra_argument_count);
   }
-#else
-  TranslatedFrame::iterator value_iterator = translated_frame->begin();
-  const bool is_bottommost = (0 == frame_index);
-
-  const int parameters_count = translated_frame->height();
-  ArgumentsAdaptorFrameInfo frame_info =
-      ArgumentsAdaptorFrameInfo::Precise(parameters_count);
-  const uint32_t output_frame_size = frame_info.frame_size_in_bytes();
-
-  TranslatedFrame::iterator function_iterator = value_iterator++;
-  if (verbose_tracing_enabled()) {
-    PrintF(trace_scope()->file(),
-           "  translating arguments adaptor => variable_frame_size=%d, "
-           "frame_size=%d\n",
-           frame_info.frame_size_in_bytes_without_fixed(), output_frame_size);
-  }
-
-  // Allocate and store the output frame description.
-  FrameDescription* output_frame = new (output_frame_size)
-      FrameDescription(output_frame_size, parameters_count);
-  FrameWriter frame_writer(this, output_frame, verbose_trace_scope());
-
-  // Arguments adaptor can not be topmost.
-  CHECK(frame_index < output_count_ - 1);
-  CHECK_NULL(output_[frame_index]);
-  output_[frame_index] = output_frame;
-
-  // The top address of the frame is computed from the previous frame's top and
-  // this frame's size.
-  const intptr_t top_address =
-      is_bottommost ? caller_frame_top_ - output_frame_size
-                    : output_[frame_index - 1]->GetTop() - output_frame_size;
-  output_frame->SetTop(top_address);
-
-  ReadOnlyRoots roots(isolate());
-  if (ShouldPadArguments(parameters_count)) {
-    frame_writer.PushRawObject(roots.the_hole_value(), "padding\n");
-  }
-
-  // Compute the incoming parameter translation.
-  frame_writer.PushStackJSArguments(value_iterator, parameters_count);
-
-  DCHECK_EQ(output_frame->GetLastArgumentSlotOffset(),
-            frame_writer.top_offset());
-
-  // Read caller's PC from the previous frame.
-  if (is_bottommost) {
-    frame_writer.PushBottommostCallerPc(caller_pc_);
-  } else {
-    frame_writer.PushApprovedCallerPc(output_[frame_index - 1]->GetPc());
-  }
-
-  // Read caller's FP from the previous frame, and set this frame's FP.
-  const intptr_t caller_fp =
-      is_bottommost ? caller_fp_ : output_[frame_index - 1]->GetFp();
-  frame_writer.PushCallerFp(caller_fp);
-
-  intptr_t fp_value = top_address + frame_writer.top_offset();
-  output_frame->SetFp(fp_value);
-
-  if (FLAG_enable_embedded_constant_pool) {
-    // Read the caller's constant pool from the previous frame.
-    const intptr_t caller_cp =
-        is_bottommost ? caller_constant_pool_
-                      : output_[frame_index - 1]->GetConstantPool();
-    frame_writer.PushCallerConstantPool(caller_cp);
-  }
-
-  // A marker value is used in place of the context.
-  intptr_t marker = StackFrame::TypeToMarker(StackFrame::ARGUMENTS_ADAPTOR);
-  frame_writer.PushRawValue(marker, "context (adaptor sentinel)\n");
-
-  // The function was mentioned explicitly in the ARGUMENTS_ADAPTOR_FRAME.
-  frame_writer.PushTranslatedValue(function_iterator, "function\n");
-
-  // Number of incoming arguments.
-  const uint32_t parameters_count_without_receiver = parameters_count - 1;
-  frame_writer.PushRawObject(Smi::FromInt(parameters_count_without_receiver),
-                             "argc\n");
-
-  frame_writer.PushRawObject(roots.the_hole_value(), "padding\n");
-
-  CHECK_EQ(translated_frame->end(), value_iterator);
-  DCHECK_EQ(0, frame_writer.top_offset());
-
-  Builtins* builtins = isolate_->builtins();
-  Code adaptor_trampoline =
-      builtins->builtin(Builtins::kArgumentsAdaptorTrampoline);
-  intptr_t pc_value = static_cast<intptr_t>(
-      adaptor_trampoline.InstructionStart() +
-      isolate_->heap()->arguments_adaptor_deopt_pc_offset().value());
-  output_frame->SetPc(pc_value);
-  if (FLAG_enable_embedded_constant_pool) {
-    intptr_t constant_pool_value =
-        static_cast<intptr_t>(adaptor_trampoline.constant_pool());
-    output_frame->SetConstantPool(constant_pool_value);
-  }
-#endif
 }
 
 void Deoptimizer::DoComputeConstructStubFrame(TranslatedFrame* translated_frame,
@@ -1658,6 +1577,36 @@ Builtins::Name Deoptimizer::TrampolineForBuiltinContinuation(
   UNREACHABLE();
 }
 
+TranslatedValue Deoptimizer::TranslatedValueForWasmReturnType(
+    base::Optional<wasm::ValueType::Kind> wasm_call_return_type) {
+  if (wasm_call_return_type) {
+    switch (wasm_call_return_type.value()) {
+      case wasm::ValueType::kI32:
+        return TranslatedValue::NewInt32(
+            &translated_state_,
+            (int32_t)input_->GetRegister(kReturnRegister0.code()));
+      case wasm::ValueType::kI64:
+        return TranslatedValue::NewInt64ToBigInt(
+            &translated_state_,
+            (int64_t)input_->GetRegister(kReturnRegister0.code()));
+      case wasm::ValueType::kF32:
+        return TranslatedValue::NewFloat(
+            &translated_state_,
+            Float32(*reinterpret_cast<float*>(
+                input_->GetDoubleRegister(wasm::kFpReturnRegisters[0].code())
+                    .get_bits_address())));
+      case wasm::ValueType::kF64:
+        return TranslatedValue::NewDouble(
+            &translated_state_,
+            input_->GetDoubleRegister(wasm::kFpReturnRegisters[0].code()));
+      default:
+        UNREACHABLE();
+    }
+  }
+  return TranslatedValue::NewTagged(&translated_state_,
+                                    ReadOnlyRoots(isolate()).undefined_value());
+}
+
 // BuiltinContinuationFrames capture the machine state that is expected as input
 // to a builtin, including both input register values and stack parameters. When
 // the frame is reactivated (i.e. the frame below it returns), a
@@ -1719,6 +1668,21 @@ Builtins::Name Deoptimizer::TrampolineForBuiltinContinuation(
 void Deoptimizer::DoComputeBuiltinContinuation(
     TranslatedFrame* translated_frame, int frame_index,
     BuiltinContinuationMode mode) {
+  TranslatedFrame::iterator result_iterator = translated_frame->end();
+
+  bool is_js_to_wasm_builtin_continuation =
+      translated_frame->kind() == TranslatedFrame::kJSToWasmBuiltinContinuation;
+  if (is_js_to_wasm_builtin_continuation) {
+    // For JSToWasmBuiltinContinuations, add a TranslatedValue with the result
+    // of the Wasm call, extracted from the input FrameDescription.
+    // This TranslatedValue will be written in the output frame in place of the
+    // hole and we'll use ContinueToCodeStubBuiltin in place of
+    // ContinueToCodeStubBuiltinWithResult.
+    TranslatedValue result = TranslatedValueForWasmReturnType(
+        translated_frame->wasm_call_return_type());
+    translated_frame->Add(result);
+  }
+
   TranslatedFrame::iterator value_iterator = translated_frame->begin();
 
   const BailoutId bailout_id = translated_frame->node_id();
@@ -1802,9 +1766,15 @@ void Deoptimizer::DoComputeBuiltinContinuation(
       frame_writer.PushTranslatedValue(value_iterator, "stack parameter");
     }
     if (frame_info.frame_has_result_stack_slot()) {
-      frame_writer.PushRawObject(
-          roots.the_hole_value(),
-          "placeholder for return result on lazy deopt\n");
+      if (is_js_to_wasm_builtin_continuation) {
+        frame_writer.PushTranslatedValue(result_iterator,
+                                         "return result on lazy deopt\n");
+      } else {
+        DCHECK_EQ(result_iterator, translated_frame->end());
+        frame_writer.PushRawObject(
+            roots.the_hole_value(),
+            "placeholder for return result on lazy deopt\n");
+      }
     }
   } else {
     // JavaScript builtin.
@@ -1899,7 +1869,7 @@ void Deoptimizer::DoComputeBuiltinContinuation(
   frame_writer.PushRawObject(Smi::FromInt(output_frame_size_above_fp),
                              "frame height at deoptimization\n");
 
-  // The context even if this is a stub contininuation frame. We can't use the
+  // The context even if this is a stub continuation frame. We can't use the
   // usual context slot, because we must store the frame marker there.
   frame_writer.PushTranslatedValue(context_register_value,
                                    "builtin JavaScript context\n");
@@ -1952,7 +1922,7 @@ void Deoptimizer::DoComputeBuiltinContinuation(
     }
   }
 
-  CHECK_EQ(translated_frame->end(), value_iterator);
+  CHECK_EQ(result_iterator, value_iterator);
   CHECK_EQ(0u, frame_writer.top_offset());
 
   // Clear the context register. The context might be a de-materialized object
@@ -1968,10 +1938,13 @@ void Deoptimizer::DoComputeBuiltinContinuation(
   // will build its own frame once we continue to it.
   Register fp_reg = JavaScriptFrame::fp_register();
   output_frame->SetRegister(fp_reg.code(), fp_value);
-
+  // For JSToWasmBuiltinContinuations use ContinueToCodeStubBuiltin, and not
+  // ContinueToCodeStubBuiltinWithResult because we don't want to overwrite the
+  // return value that we have already set.
   Code continue_to_builtin =
       isolate()->builtins()->builtin(TrampolineForBuiltinContinuation(
-          mode, frame_info.frame_has_result_stack_slot()));
+          mode, frame_info.frame_has_result_stack_slot() &&
+                    !is_js_to_wasm_builtin_continuation));
   if (is_topmost) {
     // Only the pc of the topmost frame needs to be signed since it is
     // authenticated at the end of the DeoptimizationEntry builtin.
@@ -2067,9 +2040,6 @@ unsigned Deoptimizer::ComputeInputFrameSize() const {
 // static
 unsigned Deoptimizer::ComputeIncomingArgumentSize(SharedFunctionInfo shared) {
   int parameter_slots = InternalFormalParameterCountWithReceiver(shared);
-#ifndef V8_NO_ARGUMENTS_ADAPTOR
-  if (ShouldPadArguments(parameter_slots)) parameter_slots++;
-#endif
   return parameter_slots * kSystemPointerSize;
 }
 
@@ -2156,6 +2126,16 @@ void Translation::BeginBuiltinContinuationFrame(BailoutId bailout_id,
   buffer_->Add(bailout_id.ToInt());
   buffer_->Add(literal_id);
   buffer_->Add(height);
+}
+
+void Translation::BeginJSToWasmBuiltinContinuationFrame(
+    BailoutId bailout_id, int literal_id, unsigned height,
+    base::Optional<wasm::ValueType::Kind> return_type) {
+  buffer_->Add(JS_TO_WASM_BUILTIN_CONTINUATION_FRAME);
+  buffer_->Add(bailout_id.ToInt());
+  buffer_->Add(literal_id);
+  buffer_->Add(height);
+  buffer_->Add(EncodeWasmReturnType(return_type));
 }
 
 void Translation::BeginJavaScriptBuiltinContinuationFrame(BailoutId bailout_id,
@@ -2334,6 +2314,7 @@ int Translation::NumberOfOperandsFor(Opcode opcode) {
     case BEGIN:
     case CONSTRUCT_STUB_FRAME:
     case BUILTIN_CONTINUATION_FRAME:
+    case JS_TO_WASM_BUILTIN_CONTINUATION_FRAME:
     case JAVA_SCRIPT_BUILTIN_CONTINUATION_FRAME:
     case JAVA_SCRIPT_BUILTIN_CONTINUATION_WITH_CATCH_FRAME:
       return 3;
@@ -2580,6 +2561,14 @@ TranslatedValue TranslatedValue::NewInt64(TranslatedState* container,
 }
 
 // static
+TranslatedValue TranslatedValue::NewInt64ToBigInt(TranslatedState* container,
+                                                  int64_t value) {
+  TranslatedValue slot(container, kInt64ToBigInt);
+  slot.int64_value_ = value;
+  return slot;
+}
+
+// static
 TranslatedValue TranslatedValue::NewUInt32(TranslatedState* container,
                                            uint32_t value) {
   TranslatedValue slot(container, kUInt32);
@@ -2621,7 +2610,7 @@ int32_t TranslatedValue::int32_value() const {
 }
 
 int64_t TranslatedValue::int64_value() const {
-  DCHECK_EQ(kInt64, kind());
+  DCHECK(kInt64 == kind() || kInt64ToBigInt == kind());
   return int64_value_;
 }
 
@@ -2682,6 +2671,10 @@ Object TranslatedValue::GetRawValue() const {
       }
       break;
     }
+
+    case kInt64ToBigInt:
+      // Return the arguments marker.
+      break;
 
     case kUInt32: {
       bool is_smi = (uint32_value() <= static_cast<uintptr_t>(Smi::kMaxValue));
@@ -2772,28 +2765,37 @@ Handle<Object> TranslatedValue::GetValue() {
     return container_->InitializeObjectAt(this);
   }
 
-  double number;
+  double number = 0;
+  Handle<HeapObject> heap_object;
   switch (kind()) {
     case TranslatedValue::kInt32:
       number = int32_value();
+      heap_object = isolate()->factory()->NewHeapNumber(number);
       break;
     case TranslatedValue::kInt64:
       number = int64_value();
+      heap_object = isolate()->factory()->NewHeapNumber(number);
+      break;
+    case TranslatedValue::kInt64ToBigInt:
+      heap_object = BigInt::FromInt64(isolate(), int64_value());
       break;
     case TranslatedValue::kUInt32:
       number = uint32_value();
+      heap_object = isolate()->factory()->NewHeapNumber(number);
       break;
     case TranslatedValue::kFloat:
       number = float_value().get_scalar();
+      heap_object = isolate()->factory()->NewHeapNumber(number);
       break;
     case TranslatedValue::kDouble:
       number = double_value().get_scalar();
+      heap_object = isolate()->factory()->NewHeapNumber(number);
       break;
     default:
       UNREACHABLE();
   }
-  DCHECK(!IsSmiDouble(number));
-  set_initialized_storage(isolate()->factory()->NewHeapNumber(number));
+  DCHECK(!IsSmiDouble(number) || kind() == TranslatedValue::kInt64ToBigInt);
+  set_initialized_storage(heap_object);
   return storage_;
 }
 
@@ -2885,6 +2887,15 @@ TranslatedFrame TranslatedFrame::BuiltinContinuationFrame(
   return frame;
 }
 
+TranslatedFrame TranslatedFrame::JSToWasmBuiltinContinuationFrame(
+    BailoutId bailout_id, SharedFunctionInfo shared_info, int height,
+    base::Optional<wasm::ValueType::Kind> return_type) {
+  TranslatedFrame frame(kJSToWasmBuiltinContinuation, shared_info, height);
+  frame.node_id_ = bailout_id;
+  frame.return_type_ = return_type;
+  return frame;
+}
+
 TranslatedFrame TranslatedFrame::JavaScriptBuiltinContinuationFrame(
     BailoutId bailout_id, SharedFunctionInfo shared_info, int height) {
   TranslatedFrame frame(kJavaScriptBuiltinContinuation, shared_info, height);
@@ -2920,6 +2931,7 @@ int TranslatedFrame::GetValueCount() {
 
     case kConstructStub:
     case kBuiltinContinuation:
+    case kJSToWasmBuiltinContinuation:
     case kJavaScriptBuiltinContinuation:
     case kJavaScriptBuiltinContinuationWithCatch: {
       static constexpr int kTheContext = 1;
@@ -3014,6 +3026,26 @@ TranslatedFrame TranslatedState::CreateNextTranslatedFrame(
                                                        height);
     }
 
+    case Translation::JS_TO_WASM_BUILTIN_CONTINUATION_FRAME: {
+      BailoutId bailout_id = BailoutId(iterator->Next());
+      SharedFunctionInfo shared_info =
+          SharedFunctionInfo::cast(literal_array.get(iterator->Next()));
+      int height = iterator->Next();
+      base::Optional<wasm::ValueType::Kind> return_type =
+          DecodeWasmReturnType(iterator->Next());
+      if (trace_file != nullptr) {
+        std::unique_ptr<char[]> name = shared_info.DebugNameCStr();
+        PrintF(trace_file, "  reading JS to Wasm builtin continuation frame %s",
+               name.get());
+        PrintF(trace_file,
+               " => bailout_id=%d, height=%d return_type=%d; inputs:\n",
+               bailout_id.ToInt(), height,
+               return_type.has_value() ? return_type.value() : -1);
+      }
+      return TranslatedFrame::JSToWasmBuiltinContinuationFrame(
+          bailout_id, shared_info, height, return_type);
+    }
+
     case Translation::JAVA_SCRIPT_BUILTIN_CONTINUATION_FRAME: {
       BailoutId bailout_id = BailoutId(iterator->Next());
       SharedFunctionInfo shared_info =
@@ -3086,30 +3118,6 @@ void TranslatedFrame::AdvanceIterator(
   }
 }
 
-Address TranslatedState::ComputeArgumentsPosition(Address input_frame_pointer,
-                                                  int* length) {
-  Address parent_frame_pointer = *reinterpret_cast<Address*>(
-      input_frame_pointer + StandardFrameConstants::kCallerFPOffset);
-  intptr_t parent_frame_type = Memory<intptr_t>(
-      parent_frame_pointer + CommonFrameConstants::kContextOrFrameTypeOffset);
-
-  Address arguments_frame;
-  if (parent_frame_type ==
-      StackFrame::TypeToMarker(StackFrame::ARGUMENTS_ADAPTOR)) {
-    if (length)
-      *length = Smi::cast(*FullObjectSlot(
-                              parent_frame_pointer +
-                              ArgumentsAdaptorFrameConstants::kLengthOffset))
-                    .value();
-    arguments_frame = parent_frame_pointer;
-  } else {
-    if (length) *length = formal_parameter_count_;
-    arguments_frame = input_frame_pointer;
-  }
-
-  return arguments_frame;
-}
-
 // Creates translated values for an arguments backing store, or the backing
 // store for rest parameters depending on the given {type}. The TranslatedValue
 // objects for the fields are not read from the TranslationIterator, but instead
@@ -3118,19 +3126,10 @@ void TranslatedState::CreateArgumentsElementsTranslatedValues(
     int frame_index, Address input_frame_pointer, CreateArgumentsType type,
     FILE* trace_file) {
   TranslatedFrame& frame = frames_[frame_index];
-
-#ifdef V8_NO_ARGUMENTS_ADAPTOR
-  int arguments_length = actual_argument_count_;
-#else
-  int arguments_length;
-  Address arguments_frame =
-      ComputeArgumentsPosition(input_frame_pointer, &arguments_length);
-#endif
-
-  int length = type == CreateArgumentsType::kRestParameter
-                   ? std::max(0, arguments_length - formal_parameter_count_)
-                   : arguments_length;
-
+  int length =
+      type == CreateArgumentsType::kRestParameter
+          ? std::max(0, actual_argument_count_ - formal_parameter_count_)
+          : actual_argument_count_;
   int object_index = static_cast<int>(object_positions_.size());
   int value_index = static_cast<int>(frame.values_.size());
   if (trace_file != nullptr) {
@@ -3163,11 +3162,9 @@ void TranslatedState::CreateArgumentsElementsTranslatedValues(
   for (int i = 0; i < argc; i++) {
     // Skip the receiver.
     int offset = i + start_index + 1;
-#ifdef V8_NO_ARGUMENTS_ADAPTOR
     Address arguments_frame = offset > formal_parameter_count_
                                   ? stack_frame_pointer_
                                   : input_frame_pointer;
-#endif
     Address argument_slot = arguments_frame +
                             CommonFrameConstants::kFixedFrameSizeAboveFp +
                             offset * kSystemPointerSize;
@@ -3203,6 +3200,7 @@ int TranslatedState::CreateNextTranslatedValue(
     case Translation::JAVA_SCRIPT_BUILTIN_CONTINUATION_FRAME:
     case Translation::JAVA_SCRIPT_BUILTIN_CONTINUATION_WITH_CATCH_FRAME:
     case Translation::BUILTIN_CONTINUATION_FRAME:
+    case Translation::JS_TO_WASM_BUILTIN_CONTINUATION_FRAME:
     case Translation::UPDATE_FEEDBACK:
       // Peeled off before getting here.
       break;
@@ -3228,17 +3226,11 @@ int TranslatedState::CreateNextTranslatedValue(
     }
 
     case Translation::ARGUMENTS_LENGTH: {
-#ifdef V8_NO_ARGUMENTS_ADAPTOR
-      int arguments_length = actual_argument_count_;
-#else
-      int arguments_length;
-      ComputeArgumentsPosition(fp, &arguments_length);
-#endif
       if (trace_file != nullptr) {
         PrintF(trace_file, "arguments length field (length = %d)",
-               arguments_length);
+               actual_argument_count_);
       }
-      frame.Add(TranslatedValue::NewInt32(this, arguments_length));
+      frame.Add(TranslatedValue::NewInt32(this, actual_argument_count_));
       return 0;
     }
 
@@ -3518,11 +3510,7 @@ TranslatedState::TranslatedState(const JavaScriptFrame* frame) {
   DCHECK(!data.is_null() && deopt_index != Safepoint::kNoDeoptimizationIndex);
   TranslationIterator it(data.TranslationByteArray(),
                          data.TranslationIndex(deopt_index).value());
-#ifdef V8_NO_ARGUMENTS_ADAPTOR
   int actual_argc = frame->GetActualArgumentCount();
-#else
-  int actual_argc = 0;
-#endif
   Init(frame->isolate(), frame->fp(), frame->fp(), &it, data.LiteralArray(),
        nullptr /* registers */, nullptr /* trace file */,
        frame->function().shared().internal_formal_parameter_count(),

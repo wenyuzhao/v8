@@ -47,11 +47,12 @@ class BigIntObject;
 class Boolean;
 class BooleanObject;
 class CFunction;
+class CallHandlerHelper;
 class Context;
 class CppHeap;
-struct CppHeapCreateParams;
 class Data;
 class Date;
+class EscapableHandleScope;
 class External;
 class Function;
 class FunctionTemplate;
@@ -60,8 +61,7 @@ class ImplementationUtilities;
 class Int32;
 class Integer;
 class Isolate;
-template <class T>
-class Maybe;
+class Isolate;
 class MicrotaskQueue;
 class Name;
 class Number;
@@ -71,6 +71,8 @@ class ObjectOperationDescriptor;
 class ObjectTemplate;
 class Platform;
 class Primitive;
+class PrimitiveArray;
+class Private;
 class Promise;
 class PropertyDescriptor;
 class Proxy;
@@ -78,75 +80,73 @@ class RawOperationDescriptor;
 class Script;
 class SharedArrayBuffer;
 class Signature;
-class StartupData;
 class StackFrame;
 class StackTrace;
+class StartupData;
 class String;
 class StringObject;
 class Symbol;
 class SymbolObject;
 class TracedReferenceBase;
-class PrimitiveArray;
-class Private;
 class Uint32;
 class Utils;
 class Value;
 class WasmMemoryObject;
 class WasmModuleObject;
-template <class T> class Local;
-template <class T>
-class MaybeLocal;
-template <class T> class Eternal;
+struct CppHeapCreateParams;
+template <class K, class V, class T>
+class GlobalValueMap;
+template <class K, class V, class T>
+class PersistentValueMapBase;
 template<class T> class NonCopyablePersistentTraits;
-template<class T> class PersistentBase;
-template <class T, class M = NonCopyablePersistentTraits<T> >
+template <class T, class M = NonCopyablePersistentTraits<T>>
 class Persistent;
 template <class T>
+class BasicTracedReference;
+template <class T>
+class Eternal;
+template <class T>
 class Global;
+template <class T>
+class Local;
+template <class T>
+class Maybe;
+template <class T>
+class MaybeLocal;
 template <class T>
 class TracedGlobal;
 template <class T>
 class TracedReference;
-template <class T>
-class BasicTracedReference;
 template<class K, class V, class T> class PersistentValueMap;
-template <class K, class V, class T>
-class PersistentValueMapBase;
-template <class K, class V, class T>
-class GlobalValueMap;
-template<class V, class T> class PersistentValueVector;
 template<class T, class P> class WeakCallbackObject;
-class FunctionTemplate;
-class ObjectTemplate;
+template <class T>
+class PersistentBase;
+template <class V, class T>
+class PersistentValueVector;
 template<typename T> class FunctionCallbackInfo;
 template<typename T> class PropertyCallbackInfo;
-class StackTrace;
-class StackFrame;
-class Isolate;
-class CallHandlerHelper;
-class EscapableHandleScope;
 template<typename T> class ReturnValue;
 
 namespace internal {
-enum class ArgumentsType;
-template <ArgumentsType>
-class Arguments;
 class BasicTracedReferenceExtractor;
-template <typename T>
-class CustomArguments;
+class ExternalString;
 class FunctionCallbackArguments;
 class GlobalHandles;
 class Heap;
 class HeapObject;
-class ExternalString;
 class Isolate;
 class LocalEmbedderHeapTracer;
 class MicrotaskQueue;
 class PropertyCallbackArguments;
 class ReadOnlyHeap;
 class ScopedExternalStringLock;
-struct ScriptStreamingData;
 class ThreadLocalTop;
+struct ScriptStreamingData;
+enum class ArgumentsType;
+template <ArgumentsType>
+class Arguments;
+template <typename T>
+class CustomArguments;
 
 namespace wasm {
 class NativeModule;
@@ -1343,6 +1343,11 @@ class V8_EXPORT Data {
    */
   bool IsFunctionTemplate() const;
 
+  /**
+   * Returns true if this data is a |v8::Context|.
+   */
+  bool IsContext() const;
+
  private:
   Data();
 };
@@ -1423,7 +1428,7 @@ class ScriptOriginOptions {
  */
 class ScriptOrigin {
  public:
-  V8_DEPRECATE_SOON("Use constructor with primitvie C++ types")
+  V8_DEPRECATE_SOON("Use constructor with primitive C++ types")
   V8_INLINE explicit ScriptOrigin(
       Local<Value> resource_name, Local<Integer> resource_line_offset,
       Local<Integer> resource_column_offset,
@@ -1434,9 +1439,18 @@ class ScriptOrigin {
       Local<Boolean> is_wasm = Local<Boolean>(),
       Local<Boolean> is_module = Local<Boolean>(),
       Local<PrimitiveArray> host_defined_options = Local<PrimitiveArray>());
+  V8_DEPRECATE_SOON("Use constructor that takes an isolate")
   V8_INLINE explicit ScriptOrigin(
       Local<Value> resource_name, int resource_line_offset = 0,
       int resource_column_offset = 0,
+      bool resource_is_shared_cross_origin = false, int script_id = -1,
+      Local<Value> source_map_url = Local<Value>(),
+      bool resource_is_opaque = false, bool is_wasm = false,
+      bool is_module = false,
+      Local<PrimitiveArray> host_defined_options = Local<PrimitiveArray>());
+  V8_INLINE explicit ScriptOrigin(
+      Isolate* isolate, Local<Value> resource_name,
+      int resource_line_offset = 0, int resource_column_offset = 0,
       bool resource_is_shared_cross_origin = false, int script_id = -1,
       Local<Value> source_map_url = Local<Value>(),
       bool resource_is_opaque = false, bool is_wasm = false,
@@ -8665,7 +8679,7 @@ class V8_EXPORT Isolate {
     kWasmSimdOpcodes = 106,
     kVarRedeclaredCatchBinding = 107,
     kWasmRefTypes = 108,
-    kWasmBulkMemory = 109,
+    kWasmBulkMemory = 109,  // Unused.
     kWasmMultiValue = 110,
 
     // If you add new values here, you'll also need to update Chromium's:
@@ -10430,7 +10444,7 @@ class V8_EXPORT ExtensionConfiguration {
  * A sandboxed execution context with its own set of built-in objects
  * and functions.
  */
-class V8_EXPORT Context {
+class V8_EXPORT Context : public Data {
  public:
   /**
    * Returns the global proxy object.
@@ -10707,17 +10721,20 @@ class V8_EXPORT Context {
     const BackupIncumbentScope* prev_ = nullptr;
   };
 
+  V8_INLINE static Context* Cast(Data* data);
+
  private:
   friend class Value;
   friend class Script;
   friend class Object;
   friend class Function;
 
+  static void CheckCast(Data* obj);
+
   internal::Address* GetDataFromSnapshotOnce(size_t index);
   Local<Value> SlowGetEmbedderData(int index);
   void* SlowGetAlignedPointerFromEmbedderData(int index);
 };
-
 
 /**
  * Multiple threads in V8 are allowed, but only one thread at a time is allowed
@@ -11480,7 +11497,7 @@ ScriptOrigin::ScriptOrigin(
     Local<Boolean> is_opaque, Local<Boolean> is_wasm, Local<Boolean> is_module,
     Local<PrimitiveArray> host_defined_options)
     : ScriptOrigin(
-          resource_name,
+          Isolate::GetCurrent(), resource_name,
           line_offset.IsEmpty() ? 0 : static_cast<int>(line_offset->Value()),
           column_offset.IsEmpty() ? 0
                                   : static_cast<int>(column_offset->Value()),
@@ -11496,6 +11513,21 @@ ScriptOrigin::ScriptOrigin(Local<Value> resource_name, int line_offset,
                            bool is_opaque, bool is_wasm, bool is_module,
                            Local<PrimitiveArray> host_defined_options)
     : isolate_(Isolate::GetCurrent()),
+      resource_name_(resource_name),
+      resource_line_offset_(line_offset),
+      resource_column_offset_(column_offset),
+      options_(is_shared_cross_origin, is_opaque, is_wasm, is_module),
+      script_id_(script_id),
+      source_map_url_(source_map_url),
+      host_defined_options_(host_defined_options) {}
+
+ScriptOrigin::ScriptOrigin(Isolate* isolate, Local<Value> resource_name,
+                           int line_offset, int column_offset,
+                           bool is_shared_cross_origin, int script_id,
+                           Local<Value> source_map_url, bool is_opaque,
+                           bool is_wasm, bool is_module,
+                           Local<PrimitiveArray> host_defined_options)
+    : isolate_(isolate),
       resource_name_(resource_name),
       resource_line_offset_(line_offset),
       resource_column_offset_(column_offset),
@@ -11870,6 +11902,13 @@ BigInt* BigInt::Cast(v8::Data* data) {
   CheckCast(data);
 #endif
   return static_cast<BigInt*>(data);
+}
+
+Context* Context::Cast(v8::Data* data) {
+#ifdef V8_ENABLE_CHECKS
+  CheckCast(data);
+#endif
+  return static_cast<Context*>(data);
 }
 
 Date* Date::Cast(v8::Value* value) {

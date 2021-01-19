@@ -43,6 +43,7 @@
 #include "src/base/overflowing-math.h"
 #include "src/codegen/arm/assembler-arm-inl.h"
 #include "src/codegen/assembler-inl.h"
+#include "src/codegen/machine-type.h"
 #include "src/codegen/macro-assembler.h"
 #include "src/codegen/string-constants.h"
 #include "src/deoptimizer/deoptimizer.h"
@@ -4308,7 +4309,8 @@ enum IntegerBinOp {
   VCEQ,
   VCGE,
   VCGT,
-  VRHADD
+  VRHADD,
+  VQRDMULH
 };
 
 static Instr EncodeNeonBinOp(IntegerBinOp op, NeonDataType dt,
@@ -4351,6 +4353,9 @@ static Instr EncodeNeonBinOp(IntegerBinOp op, NeonDataType dt,
       break;
     case VRHADD:
       op_encoding = B8;
+      break;
+    case VQRDMULH:
+      op_encoding = B24 | 0xB * B8;
       break;
     default:
       UNREACHABLE();
@@ -4943,6 +4948,13 @@ void Assembler::vpaddl(NeonDataType dt, QwNeonRegister dst,
                          NeonDataTypeToSize(dt), dst.code(), src.code()));
 }
 
+void Assembler::vqrdmulh(NeonDataType dt, QwNeonRegister dst,
+                         QwNeonRegister src1, QwNeonRegister src2) {
+  DCHECK(IsEnabled(NEON));
+  DCHECK(dt == NeonS16 || dt == NeonS32);
+  emit(EncodeNeonBinOp(VQRDMULH, dt, dst, src1, src2));
+}
+
 void Assembler::vcnt(QwNeonRegister dst, QwNeonRegister src) {
   // Qd = vcnt(Qm) SIMD Vector Count Set Bits.
   // Instruction details available at ARM DDI 0487F.b, F6-5094.
@@ -5384,6 +5396,21 @@ Register UseScratchRegisterScope::Acquire() {
   Register reg = Register::from_code(index);
   *available &= ~reg.bit();
   return reg;
+}
+
+LoadStoreLaneParams::LoadStoreLaneParams(MachineRepresentation rep,
+                                         uint8_t laneidx) {
+  if (rep == MachineRepresentation::kWord8) {
+    *this = LoadStoreLaneParams(laneidx, Neon8, 8);
+  } else if (rep == MachineRepresentation::kWord16) {
+    *this = LoadStoreLaneParams(laneidx, Neon16, 4);
+  } else if (rep == MachineRepresentation::kWord32) {
+    *this = LoadStoreLaneParams(laneidx, Neon32, 2);
+  } else if (rep == MachineRepresentation::kWord64) {
+    *this = LoadStoreLaneParams(laneidx, Neon64, 1);
+  } else {
+    UNREACHABLE();
+  }
 }
 
 }  // namespace internal

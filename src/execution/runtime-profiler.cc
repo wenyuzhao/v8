@@ -160,7 +160,6 @@ void RuntimeProfiler::AttemptOnStackReplacement(InterpretedFrame* frame,
 void RuntimeProfiler::MaybeOptimizeFrame(JSFunction function,
                                          JavaScriptFrame* frame,
                                          CodeKind code_kind) {
-  DCHECK(CodeKindCanTierUp(code_kind));
   if (function.IsInOptimizationQueue()) {
     TraceInOptimizationQueue(function);
     return;
@@ -178,7 +177,6 @@ void RuntimeProfiler::MaybeOptimizeFrame(JSFunction function,
   // Note: We currently do not trigger OSR compilation from NCI or TP code.
   // TODO(jgruber,v8:8888): But we should.
   if (frame->is_interpreted()) {
-    DCHECK_EQ(code_kind, CodeKind::INTERPRETED_FUNCTION);
     if (FLAG_always_osr) {
       AttemptOnStackReplacement(InterpretedFrame::cast(frame),
                                 AbstractCode::kMaxLoopNestingMarker);
@@ -308,8 +306,7 @@ void RuntimeProfiler::MarkCandidatesForOptimization(JavaScriptFrame* frame) {
   MarkCandidatesForOptimizationScope scope(this);
 
   JSFunction function = frame->function();
-  CodeKind code_kind = frame->is_interpreted() ? CodeKind::INTERPRETED_FUNCTION
-                                               : function.code().kind();
+  CodeKind code_kind = function.GetActiveTier();
 
   DCHECK(function.shared().is_compiled());
   DCHECK(function.shared().IsInterpreted());

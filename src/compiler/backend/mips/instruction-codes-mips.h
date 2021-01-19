@@ -169,6 +169,10 @@ namespace compiler {
   V(MipsI64x2ShrU)                 \
   V(MipsI64x2BitMask)              \
   V(MipsI64x2Eq)                   \
+  V(MipsI64x2SConvertI32x4Low)     \
+  V(MipsI64x2SConvertI32x4High)    \
+  V(MipsI64x2UConvertI32x4Low)     \
+  V(MipsI64x2UConvertI32x4High)    \
   V(MipsI64x2ExtMulLowI32x4S)      \
   V(MipsI64x2ExtMulHighI32x4S)     \
   V(MipsI64x2ExtMulLowI32x4U)      \
@@ -256,6 +260,7 @@ namespace compiler {
   V(MipsI16x8RoundingAverageU)     \
   V(MipsI16x8Abs)                  \
   V(MipsI16x8BitMask)              \
+  V(MipsI16x8Q15MulRSatS)          \
   V(MipsI16x8ExtMulLowI8x16S)      \
   V(MipsI16x8ExtMulHighI8x16S)     \
   V(MipsI16x8ExtMulLowI8x16U)      \

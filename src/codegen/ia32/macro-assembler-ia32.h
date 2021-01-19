@@ -611,6 +611,9 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   void Roundps(XMMRegister dst, XMMRegister src, RoundingMode mode);
   void Roundpd(XMMRegister dst, XMMRegister src, RoundingMode mode);
 
+  // Handles SSE and AVX. On SSE, moves src to dst if they are not equal.
+  void Pmulhrsw(XMMRegister dst, XMMRegister src1, XMMRegister src2);
+
   // These Wasm SIMD ops do not have direct lowerings on IA32. These
   // helpers are optimized to produce the fastest and smallest codegen.
   // Defined here to allow usage on both TurboFan and Liftoff.
@@ -621,6 +624,14 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
                    XMMRegister scratch, bool low, bool is_signed);
   void I16x8ExtMul(XMMRegister dst, XMMRegister src1, XMMRegister src2,
                    XMMRegister scratch, bool low, bool is_signed);
+  // Requires dst == mask when AVX is not supported.
+  void S128Select(XMMRegister dst, XMMRegister mask, XMMRegister src1,
+                  XMMRegister src2, XMMRegister scratch);
+  void I64x2SConvertI32x4High(XMMRegister dst, XMMRegister src);
+  void I64x2UConvertI32x4High(XMMRegister dst, XMMRegister src,
+                              XMMRegister scratch);
+  void I16x8Q15MulRSatS(XMMRegister dst, XMMRegister src1, XMMRegister src2,
+                        XMMRegister scratch);
 
   void Push(Register src) { push(src); }
   void Push(Operand src) { push(src); }
@@ -799,6 +810,15 @@ class V8_EXPORT_PRIVATE MacroAssembler : public TurboAssembler {
   // Compare instance type for map.
   void CmpInstanceType(Register map, InstanceType type);
 
+  // Compare instance type ranges for a map (lower_limit and higher_limit
+  // inclusive).
+  //
+  // Always use unsigned comparisons: below_equal for a positive
+  // result.
+  void CmpInstanceTypeRange(Register map, Register scratch,
+                            InstanceType lower_limit,
+                            InstanceType higher_limit);
+
   // Smi tagging support.
   void SmiTag(Register reg) {
     STATIC_ASSERT(kSmiTag == 0);
@@ -836,7 +856,7 @@ class V8_EXPORT_PRIVATE MacroAssembler : public TurboAssembler {
   void AssertNotSmi(Register object);
 
   // Abort execution if argument is not a JSFunction, enabled via --debug-code.
-  void AssertFunction(Register object);
+  void AssertFunction(Register object, Register scratch);
 
   // Abort execution if argument is not a Constructor, enabled via --debug-code.
   void AssertConstructor(Register object);

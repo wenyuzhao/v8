@@ -430,6 +430,7 @@ DEFINE_BOOL(future, FUTURE_BOOL,
 DEFINE_WEAK_IMPLICATION(future, write_protect_code_memory)
 DEFINE_WEAK_IMPLICATION(future, finalize_streaming_on_background)
 DEFINE_WEAK_IMPLICATION(future, super_ic)
+DEFINE_WEAK_IMPLICATION(future, turbo_inline_js_wasm_calls)
 
 // Flags for jitless
 DEFINE_BOOL(jitless, V8_LITE_BOOL,
@@ -560,9 +561,10 @@ DEFINE_BOOL(turboprop, false, "enable experimental turboprop mid-tier compiler")
 DEFINE_IMPLICATION(turboprop, turbo_direct_heap_access)
 DEFINE_BOOL(turboprop_mid_tier_reg_alloc, true,
             "enable mid-tier register allocator for turboprop")
-DEFINE_BOOL(turboprop_as_midtier, false,
-            "enable experimental turboprop mid-tier compiler")
-DEFINE_IMPLICATION(turboprop_as_midtier, turboprop)
+DEFINE_BOOL(
+    turboprop_as_toptier, false,
+    "enable experimental turboprop compiler without further tierup to turbofan")
+DEFINE_IMPLICATION(turboprop_as_toptier, turboprop)
 DEFINE_VALUE_IMPLICATION(turboprop, interrupt_budget, 15 * KB)
 DEFINE_VALUE_IMPLICATION(turboprop, reuse_opt_code_count, 2)
 DEFINE_UINT_READONLY(max_minimorphic_map_checks, 4,
@@ -671,9 +673,10 @@ DEFINE_INT(max_inlined_bytecode_size, 500,
 DEFINE_INT(max_inlined_bytecode_size_cumulative, 1000,
            "maximum cumulative size of bytecode considered for inlining")
 DEFINE_INT(max_inlined_bytecode_size_absolute, 5000,
-           "maximum cumulative size of bytecode considered for inlining")
-DEFINE_FLOAT(reserve_inline_budget_scale_factor, 1.2,
-             "maximum cumulative size of bytecode considered for inlining")
+           "maximum absolute size of bytecode considered for inlining")
+DEFINE_FLOAT(
+    reserve_inline_budget_scale_factor, 1.2,
+    "scale factor of bytecode size used to calculate the inlining budget")
 DEFINE_INT(max_inlined_bytecode_size_small, 30,
            "maximum size of bytecode considered for small function inlining")
 DEFINE_INT(max_optimized_bytecode_size, 60 * KB,
@@ -741,6 +744,7 @@ DEFINE_INT(reuse_opt_code_count, 0,
 DEFINE_BOOL(turbo_dynamic_map_checks, true,
             "use dynamic map checks when generating code for property accesses "
             "if all handlers in an IC are the same for turboprop and NCI")
+DEFINE_BOOL(turbo_inline_js_wasm_calls, false, "inline JS->Wasm calls")
 
 // Native context independent (NCI) code.
 DEFINE_BOOL(turbo_nci, false,
@@ -826,8 +830,11 @@ DEFINE_BOOL(liftoff_only, false,
 DEFINE_IMPLICATION(liftoff_only, liftoff)
 DEFINE_NEG_IMPLICATION(liftoff_only, wasm_tier_up)
 DEFINE_NEG_IMPLICATION(fuzzing, liftoff_only)
-DEFINE_BOOL(experimental_liftoff_extern_ref, false,
+DEFINE_BOOL(experimental_liftoff_extern_ref, true,
             "enable support for externref in Liftoff")
+DEFINE_DEBUG_BOOL(
+    enable_testing_opcode_in_wasm, false,
+    "enables a testing opcode in wasm that is only implemented in TurboFan")
 // We can't tier up (from Liftoff to TurboFan) in single-threaded mode, hence
 // disable tier up in that configuration for now.
 DEFINE_NEG_IMPLICATION(single_threaded, wasm_tier_up)
@@ -883,6 +890,9 @@ DEFINE_BOOL(wasm_stack_checks, true,
 DEFINE_BOOL(wasm_math_intrinsics, true,
             "intrinsify some Math imports into wasm")
 
+DEFINE_BOOL(wasm_loop_unrolling, false,
+            "generate and then remove loop exits in wasm turbofan code "
+            "(placeholder for future loop unrolling feature)")
 DEFINE_BOOL(wasm_trap_handler, true,
             "use signal handlers to catch out of bounds memory access in wasm"
             " (currently Linux x86_64 only)")
@@ -1350,6 +1360,8 @@ DEFINE_BOOL(heap_profiler_use_embedder_graph, true,
             "Use the new EmbedderGraph API to get embedder nodes")
 DEFINE_INT(heap_snapshot_string_limit, 1024,
            "truncate strings to this length in the heap snapshot")
+DEFINE_BOOL(heap_profiler_show_hidden_objects, false,
+            "use 'native' rather than 'hidden' node type in snapshot")
 
 // sampling-heap-profiler.cc
 DEFINE_BOOL(sampling_heap_profiler_suppress_randomness, false,
@@ -1512,7 +1524,7 @@ DEFINE_IMPLICATION(default_to_experimental_regexp_engine,
 DEFINE_BOOL(trace_experimental_regexp_engine, false,
             "trace execution of experimental regexp engine")
 
-DEFINE_BOOL(enable_experimental_regexp_engine_on_excessive_backtracks, true,
+DEFINE_BOOL(enable_experimental_regexp_engine_on_excessive_backtracks, false,
             "fall back to a breadth-first regexp engine on excessive "
             "backtracking")
 DEFINE_UINT(regexp_backtracks_before_fallback, 50000,

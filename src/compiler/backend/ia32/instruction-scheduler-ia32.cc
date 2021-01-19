@@ -136,15 +136,17 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kIA32I64x2ExtMulHighI32x4S:
     case kIA32I64x2ExtMulLowI32x4U:
     case kIA32I64x2ExtMulHighI32x4U:
+    case kIA32I64x2SConvertI32x4Low:
+    case kIA32I64x2SConvertI32x4High:
+    case kIA32I64x2UConvertI32x4Low:
+    case kIA32I64x2UConvertI32x4High:
     case kIA32F32x4Splat:
     case kIA32F32x4ExtractLane:
     case kIA32Insertps:
     case kIA32F32x4SConvertI32x4:
     case kIA32F32x4UConvertI32x4:
-    case kSSEF32x4Abs:
-    case kAVXF32x4Abs:
-    case kSSEF32x4Neg:
-    case kAVXF32x4Neg:
+    case kIA32F32x4Abs:
+    case kIA32F32x4Neg:
     case kIA32F32x4Sqrt:
     case kIA32F32x4RecipApprox:
     case kIA32F32x4RecipSqrtApprox:
@@ -279,6 +281,7 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kIA32I16x8ExtMulHighI8x16U:
     case kIA32I16x8ExtAddPairwiseI8x16S:
     case kIA32I16x8ExtAddPairwiseI8x16U:
+    case kIA32I16x8Q15MulRSatS:
     case kIA32I8x16Splat:
     case kIA32I8x16ExtractLaneS:
     case kIA32Pinsrb:
@@ -336,16 +339,14 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kIA32S128Const:
     case kIA32S128Zero:
     case kIA32S128AllOnes:
-    case kSSES128Not:
-    case kAVXS128Not:
+    case kIA32S128Not:
     case kSSES128And:
     case kAVXS128And:
     case kSSES128Or:
     case kAVXS128Or:
     case kSSES128Xor:
     case kAVXS128Xor:
-    case kSSES128Select:
-    case kAVXS128Select:
+    case kIA32S128Select:
     case kIA32S128AndNot:
     case kIA32I8x16Swizzle:
     case kIA32I8x16Shuffle:

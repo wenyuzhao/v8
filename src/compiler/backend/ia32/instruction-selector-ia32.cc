@@ -331,6 +331,16 @@ void VisitRROSimd(InstructionSelector* selector, Node* node,
                    g.UseRegister(node->InputAt(1)));
   }
 }
+void VisitRRRSimd(InstructionSelector* selector, Node* node,
+                  ArchOpcode opcode) {
+  IA32OperandGenerator g(selector);
+  InstructionOperand dst = selector->IsSupported(AVX)
+                               ? g.DefineAsRegister(node)
+                               : g.DefineSameAsFirst(node);
+  InstructionOperand operand0 = g.UseRegister(node->InputAt(0));
+  InstructionOperand operand1 = g.UseRegister(node->InputAt(1));
+  selector->Emit(opcode, dst, operand0, operand1);
+}
 
 void VisitRRISimd(InstructionSelector* selector, Node* node,
                   ArchOpcode opcode) {
@@ -1355,17 +1365,22 @@ void InstructionSelector::EmitPrepareArguments(
   } else {
     // Push any stack arguments.
     int effect_level = GetEffectLevel(node);
+    int stack_decrement = 0;
     for (PushParameter input : base::Reversed(*arguments)) {
-      // Skip any alignment holes in pushed nodes.
+      stack_decrement += kSystemPointerSize;
+      // Skip holes in the param array. These represent both extra slots for
+      // multi-slot values and padding slots for alignment.
       if (input.node == nullptr) continue;
+      InstructionOperand decrement = g.UseImmediate(stack_decrement);
+      stack_decrement = 0;
       if (g.CanBeMemoryOperand(kIA32Push, node, input.node, effect_level)) {
         InstructionOperand outputs[1];
-        InstructionOperand inputs[4];
+        InstructionOperand inputs[5];
         size_t input_count = 0;
-        InstructionCode opcode = kIA32Push;
+        inputs[input_count++] = decrement;
         AddressingMode mode = g.GetEffectiveAddressMemoryOperand(
             input.node, inputs, &input_count);
-        opcode |= AddressingModeField::encode(mode);
+        InstructionCode opcode = kIA32Push | AddressingModeField::encode(mode);
         Emit(opcode, 0, outputs, input_count, inputs);
       } else {
         InstructionOperand value =
@@ -1376,13 +1391,13 @@ void InstructionSelector::EmitPrepareArguments(
                       ? g.UseRegister(input.node)
                       : g.Use(input.node);
         if (input.location.GetType() == MachineType::Float32()) {
-          Emit(kIA32PushFloat32, g.NoOutput(), value);
+          Emit(kIA32PushFloat32, g.NoOutput(), decrement, value);
         } else if (input.location.GetType() == MachineType::Float64()) {
-          Emit(kIA32PushFloat64, g.NoOutput(), value);
+          Emit(kIA32PushFloat64, g.NoOutput(), decrement, value);
         } else if (input.location.GetType() == MachineType::Simd128()) {
-          Emit(kIA32PushSimd128, g.NoOutput(), value);
+          Emit(kIA32PushSimd128, g.NoOutput(), decrement, value);
         } else {
-          Emit(kIA32Push, g.NoOutput(), value);
+          Emit(kIA32Push, g.NoOutput(), decrement, value);
         }
       }
     }
@@ -1415,8 +1430,6 @@ void InstructionSelector::EmitPrepareResults(
 }
 
 bool InstructionSelector::IsTailCallAddressImmediate() { return true; }
-
-int InstructionSelector::GetTempsCountForTailCallFromJSFunction() { return 0; }
 
 namespace {
 
@@ -2244,28 +2257,39 @@ void InstructionSelector::VisitWord32AtomicPairCompareExchange(Node* node) {
   V(I64x2Add)                              \
   V(I64x2Sub)                              \
   V(I64x2Eq)                               \
-  V(I64x2ExtMulLowI32x4S)                  \
-  V(I64x2ExtMulHighI32x4S)                 \
-  V(I64x2ExtMulLowI32x4U)                  \
-  V(I64x2ExtMulHighI32x4U)                 \
   V(I32x4DotI16x8S)                        \
-  V(I32x4ExtMulLowI16x8S)                  \
-  V(I32x4ExtMulHighI16x8S)                 \
-  V(I32x4ExtMulLowI16x8U)                  \
-  V(I32x4ExtMulHighI16x8U)                 \
   V(I16x8RoundingAverageU)                 \
-  V(I16x8ExtMulLowI8x16S)                  \
-  V(I16x8ExtMulHighI8x16S)                 \
-  V(I16x8ExtMulLowI8x16U)                  \
-  V(I16x8ExtMulHighI8x16U)                 \
+  V(I16x8Q15MulRSatS)                      \
   V(I8x16RoundingAverageU)
 
+// These opcodes require all inputs to be registers because the codegen is
+// simpler with all registers.
+#define SIMD_BINOP_RRR(V)  \
+  V(I64x2ExtMulLowI32x4S)  \
+  V(I64x2ExtMulHighI32x4S) \
+  V(I64x2ExtMulLowI32x4U)  \
+  V(I64x2ExtMulHighI32x4U) \
+  V(I32x4ExtMulLowI16x8S)  \
+  V(I32x4ExtMulHighI16x8S) \
+  V(I32x4ExtMulLowI16x8U)  \
+  V(I32x4ExtMulHighI16x8U) \
+  V(I16x8ExtMulLowI8x16S)  \
+  V(I16x8ExtMulHighI8x16S) \
+  V(I16x8ExtMulLowI8x16U)  \
+  V(I16x8ExtMulHighI8x16U)
+
 #define SIMD_UNOP_LIST(V)   \
+  V(F32x4Abs)               \
+  V(F32x4Neg)               \
   V(F32x4Sqrt)              \
   V(F32x4SConvertI32x4)     \
   V(F32x4RecipApprox)       \
   V(F32x4RecipSqrtApprox)   \
   V(I64x2BitMask)           \
+  V(I64x2SConvertI32x4Low)  \
+  V(I64x2SConvertI32x4High) \
+  V(I64x2UConvertI32x4Low)  \
+  V(I64x2UConvertI32x4High) \
   V(I32x4SConvertI16x8Low)  \
   V(I32x4SConvertI16x8High) \
   V(I32x4Neg)               \
@@ -2281,11 +2305,7 @@ void InstructionSelector::VisitWord32AtomicPairCompareExchange(Node* node) {
   V(I16x8Abs)               \
   V(I8x16Neg)               \
   V(I8x16Abs)               \
-  V(I8x16BitMask)
-
-#define SIMD_UNOP_PREFIX_LIST(V) \
-  V(F32x4Abs)                    \
-  V(F32x4Neg)                    \
+  V(I8x16BitMask)           \
   V(S128Not)
 
 #define SIMD_ANYTRUE_LIST(V) \
@@ -2478,16 +2498,10 @@ void InstructionSelector::VisitS128Zero(Node* node) {
 
 void InstructionSelector::VisitS128Select(Node* node) {
   IA32OperandGenerator g(this);
-  InstructionOperand operand0 = g.UseRegister(node->InputAt(0));
-  InstructionOperand operand1 = g.UseRegister(node->InputAt(1));
-  InstructionOperand operand2 = g.UseRegister(node->InputAt(2));
-  if (IsSupported(AVX)) {
-    Emit(kAVXS128Select, g.DefineAsRegister(node), operand0, operand1,
-         operand2);
-  } else {
-    Emit(kSSES128Select, g.DefineSameAsFirst(node), operand0, operand1,
-         operand2);
-  }
+  InstructionOperand dst =
+      IsSupported(AVX) ? g.DefineAsRegister(node) : g.DefineSameAsFirst(node);
+  Emit(kIA32S128Select, dst, g.UseRegister(node->InputAt(0)),
+       g.UseRegister(node->InputAt(1)), g.UseRegister(node->InputAt(2)));
 }
 
 void InstructionSelector::VisitS128AndNot(Node* node) {
@@ -2596,25 +2610,6 @@ SIMD_UNOP_LIST(VISIT_SIMD_UNOP)
 #undef VISIT_SIMD_UNOP
 #undef SIMD_UNOP_LIST
 
-// TODO(v8:9198): SSE instructions that read 16 bytes from memory require the
-// operand to be 16-byte aligned. AVX instructions relax this requirement, but
-// might have reduced performance if the memory crosses cache line. But since we
-// have limited xmm registers, this might be okay to alleviate register
-// pressure.
-#define VISIT_SIMD_UNOP_PREFIX(Opcode)                                       \
-  void InstructionSelector::Visit##Opcode(Node* node) {                      \
-    IA32OperandGenerator g(this);                                            \
-    if (IsSupported(AVX)) {                                                  \
-      Emit(kAVX##Opcode, g.DefineAsRegister(node), g.Use(node->InputAt(0))); \
-    } else {                                                                 \
-      Emit(kSSE##Opcode, g.DefineSameAsFirst(node),                          \
-           g.UseRegister(node->InputAt(0)));                                 \
-    }                                                                        \
-  }
-SIMD_UNOP_PREFIX_LIST(VISIT_SIMD_UNOP_PREFIX)
-#undef VISIT_SIMD_UNOP_PREFIX
-#undef SIMD_UNOP_PREFIX_LIST
-
 // The implementation of AnyTrue is the same for all shapes.
 #define VISIT_SIMD_ANYTRUE(Opcode)                                  \
   void InstructionSelector::Visit##Opcode(Node* node) {             \
@@ -2653,6 +2648,14 @@ SIMD_BINOP_LIST(VISIT_SIMD_BINOP)
 SIMD_BINOP_UNIFIED_SSE_AVX_LIST(VISIT_SIMD_BINOP_UNIFIED_SSE_AVX)
 #undef VISIT_SIMD_BINOP_UNIFIED_SSE_AVX
 #undef SIMD_BINOP_UNIFIED_SSE_AVX_LIST
+
+#define VISIT_SIMD_BINOP_RRR(OPCODE)                    \
+  void InstructionSelector::Visit##OPCODE(Node* node) { \
+    VisitRRRSimd(this, node, kIA32##OPCODE);            \
+  }
+SIMD_BINOP_RRR(VISIT_SIMD_BINOP_RRR)
+#undef VISIT_SIMD_BINOP_RRR
+#undef SIMD_BINOP_RRR
 
 // TODO(v8:9198): SSE requires operand1 to be a register as we don't have memory
 // alignment yet. For AVX, memory operands are fine, but can have performance

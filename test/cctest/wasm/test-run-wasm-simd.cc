@@ -1635,11 +1635,7 @@ WASM_SIMD_TEST(I32x4BitMask) {
   }
 }
 
-// TODO(v8:10997) Prototyping i64x2.bitmask.
-#if V8_TARGET_ARCH_X64 || V8_TARGET_ARCH_ARM64 || V8_TARGET_ARCH_ARM || \
-    V8_TARGET_ARCH_IA32 || V8_TARGET_ARCH_MIPS64 || V8_TARGET_ARCH_MIPS
 WASM_SIMD_TEST_NO_LOWERING(I64x2BitMask) {
-  FLAG_SCOPE(wasm_simd_post_mvp);
   WasmRunner<int32_t, int64_t> r(execution_tier, lower_simd);
   byte value1 = r.AllocateLocal(kWasmS128);
 
@@ -1655,8 +1651,6 @@ WASM_SIMD_TEST_NO_LOWERING(I64x2BitMask) {
     CHECK_EQ(actual, expected);
   }
 }
-#endif  // V8_TARGET_ARCH_X64 || V8_TARGET_ARCH_ARM64 || V8_TARGET_ARCH_ARM ||
-        // V8_TARGET_ARCH_IA32 || V8_TARGET_ARCH_MIPS64 || V8_TARGET_ARCH_MIPS
 
 WASM_SIMD_TEST(I8x16Splat) {
   WasmRunner<int32_t, int32_t> r(execution_tier, lower_simd);
@@ -1812,15 +1806,16 @@ WASM_SIMD_TEST(I32x4ConvertI16x8) {
 
 // TODO(v8:10972) Prototyping i64x2 convert from i32x4.
 // Tests both signed and unsigned conversion from I32x4 (unpacking).
-#if V8_TARGET_ARCH_ARM64 || V8_TARGET_ARCH_X64
+#if V8_TARGET_ARCH_ARM64 || V8_TARGET_ARCH_X64 || V8_TARGET_ARCH_IA32 || \
+    V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_MIPS64 || V8_TARGET_ARCH_MIPS
 WASM_SIMD_TEST_NO_LOWERING(I64x2ConvertI32x4) {
   FLAG_SCOPE(wasm_simd_post_mvp);
   WasmRunner<int32_t, int32_t> r(execution_tier, lower_simd);
   // Create four output vectors to hold signed and unsigned results.
   int64_t* g0 = r.builder().AddGlobal<int64_t>(kWasmS128);
   int64_t* g1 = r.builder().AddGlobal<int64_t>(kWasmS128);
-  int64_t* g2 = r.builder().AddGlobal<int64_t>(kWasmS128);
-  int64_t* g3 = r.builder().AddGlobal<int64_t>(kWasmS128);
+  uint64_t* g2 = r.builder().AddGlobal<uint64_t>(kWasmS128);
+  uint64_t* g3 = r.builder().AddGlobal<uint64_t>(kWasmS128);
   // Build fn to splat test value, perform conversions, and write the results.
   byte value = 0;
   byte temp1 = r.AllocateLocal(kWasmS128);
@@ -1838,16 +1833,18 @@ WASM_SIMD_TEST_NO_LOWERING(I64x2ConvertI32x4) {
   FOR_INT32_INPUTS(x) {
     r.Call(x);
     int64_t expected_signed = static_cast<int64_t>(x);
-    int64_t expected_unsigned = static_cast<int64_t>(static_cast<uint32_t>(x));
+    uint64_t expected_unsigned =
+        static_cast<uint64_t>(static_cast<uint32_t>(x));
     for (int i = 0; i < 2; i++) {
       CHECK_EQ(expected_signed, ReadLittleEndianValue<int64_t>(&g0[i]));
       CHECK_EQ(expected_signed, ReadLittleEndianValue<int64_t>(&g1[i]));
-      CHECK_EQ(expected_unsigned, ReadLittleEndianValue<int64_t>(&g2[i]));
-      CHECK_EQ(expected_unsigned, ReadLittleEndianValue<int64_t>(&g3[i]));
+      CHECK_EQ(expected_unsigned, ReadLittleEndianValue<uint64_t>(&g2[i]));
+      CHECK_EQ(expected_unsigned, ReadLittleEndianValue<uint64_t>(&g3[i]));
     }
   }
 }
-#endif  // V8_TARGET_ARCH_ARM64 || V8_TARGET_ARCH_X64
+#endif  // V8_TARGET_ARCH_ARM64 || V8_TARGET_ARCH_X64 || V8_TARGET_ARCH_IA32 ||
+        // V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_MIPS64 || V8_TARGET_ARCH_MIPS
 
 void RunI32x4UnOpTest(TestExecutionTier execution_tier, LowerSimd lower_simd,
                       WasmOpcode opcode, Int32UnOp expected_op) {
@@ -2328,14 +2325,11 @@ WASM_SIMD_TEST(I16x8RoundingAverageU) {
                               base::RoundingAverageUnsigned);
 }
 
-#if V8_TARGET_ARCH_ARM64 || V8_TARGET_ARCH_X64
-// TODO(v8:10971) Prototype i16x8.q15mulr_sat_s
 WASM_SIMD_TEST_NO_LOWERING(I16x8Q15MulRSatS) {
   FLAG_SCOPE(wasm_simd_post_mvp);
   RunI16x8BinOpTest<int16_t>(execution_tier, lower_simd, kExprI16x8Q15MulRSatS,
                              SaturateRoundingQMul<int16_t>);
 }
-#endif  // V8_TARGET_ARCH_ARM64 || V8_TARGET_ARCH_X64
 
 namespace {
 enum class MulHalf { kLow, kHigh };

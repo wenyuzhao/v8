@@ -1004,30 +1004,6 @@ void CodeGenerator::AssemblePrepareTailCall() {
   frame_access_state()->SetFrameAccessToSP();
 }
 
-void CodeGenerator::AssemblePopArgumentsAdaptorFrame(Register args_reg,
-                                                     Register scratch1,
-                                                     Register scratch2,
-                                                     Register scratch3) {
-  DCHECK(!AreAliased(args_reg, scratch1, scratch2, scratch3));
-  Label done;
-
-  // Check if current frame is an arguments adaptor frame.
-  __ LoadU64(scratch1, MemOperand(fp, StandardFrameConstants::kContextOffset));
-  __ CmpS64(scratch1,
-            Operand(StackFrame::TypeToMarker(StackFrame::ARGUMENTS_ADAPTOR)));
-  __ bne(&done);
-
-  // Load arguments count from current arguments adaptor frame (note, it
-  // does not include receiver).
-  Register caller_args_count_reg = scratch1;
-  __ LoadU64(caller_args_count_reg,
-             MemOperand(fp, ArgumentsAdaptorFrameConstants::kLengthOffset));
-  __ SmiUntag(caller_args_count_reg);
-
-  __ PrepareForTailCall(args_reg, caller_args_count_reg, scratch2, scratch3);
-  __ bind(&done);
-}
-
 namespace {
 
 void FlushPendingPushRegisters(TurboAssembler* tasm,
@@ -1237,11 +1213,6 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     }
     case kArchTailCallCodeObjectFromJSFunction:
     case kArchTailCallCodeObject: {
-      if (opcode == kArchTailCallCodeObjectFromJSFunction) {
-        AssemblePopArgumentsAdaptorFrame(kJavaScriptCallArgCountRegister,
-                                         i.TempRegister(0), i.TempRegister(1),
-                                         i.TempRegister(2));
-      }
       if (HasRegisterInput(instr, 0)) {
         Register reg = i.InputRegister(0);
         DCHECK_IMPLIES(
@@ -1991,30 +1962,41 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ CanonicalizeNaN(result, value);
       break;
     }
-    case kS390_StackClaim: {
-      int num_slots = i.InputInt32(0);
-      __ lay(sp, MemOperand(sp, -num_slots * kSystemPointerSize));
-      frame_access_state()->IncreaseSPDelta(num_slots);
-      break;
-    }
-    case kS390_Push:
-      if (instr->InputAt(0)->IsFPRegister()) {
-        LocationOperand* op = LocationOperand::cast(instr->InputAt(0));
+    case kS390_Push: {
+      int stack_decrement = i.InputInt32(0);
+      if (instr->InputAt(1)->IsFPRegister()) {
+        LocationOperand* op = LocationOperand::cast(instr->InputAt(1));
         switch (op->representation()) {
           case MachineRepresentation::kFloat32:
+            // 1 slot values are never padded.
+            DCHECK_EQ(stack_decrement, kSystemPointerSize);
             __ lay(sp, MemOperand(sp, -kSystemPointerSize));
-            __ StoreF32(i.InputDoubleRegister(0), MemOperand(sp));
+            __ StoreF32(i.InputDoubleRegister(1), MemOperand(sp));
+            frame_access_state()->IncreaseSPDelta(1);
             break;
           case MachineRepresentation::kFloat64:
+            // 2 slot values have up to 1 slot of padding.
+            DCHECK_GE(stack_decrement, kDoubleSize);
+            if (stack_decrement > kDoubleSize) {
+              DCHECK_EQ(stack_decrement, kDoubleSize + kSystemPointerSize);
+              __ lay(sp, MemOperand(sp, -kSystemPointerSize));
+            }
             __ lay(sp, MemOperand(sp, -kDoubleSize));
-            __ StoreF64(i.InputDoubleRegister(0), MemOperand(sp));
-            frame_access_state()->IncreaseSPDelta(kDoubleSize /
+            __ StoreF64(i.InputDoubleRegister(1), MemOperand(sp));
+            frame_access_state()->IncreaseSPDelta(stack_decrement /
                                                   kSystemPointerSize);
             break;
           case MachineRepresentation::kSimd128: {
+            // 4 slot values have up to 3 slots of padding.
+            DCHECK_GE(stack_decrement, kSimd128Size);
+            if (stack_decrement > kSimd128Size) {
+              int padding = stack_decrement - kSimd128Size;
+              DCHECK_LT(padding, kSimd128Size);
+              __ lay(sp, MemOperand(sp, -padding));
+            }
             __ lay(sp, MemOperand(sp, -kSimd128Size));
-            __ StoreV128(i.InputDoubleRegister(0), MemOperand(sp), kScratchReg);
-            frame_access_state()->IncreaseSPDelta(kSimd128Size /
+            __ StoreV128(i.InputDoubleRegister(1), MemOperand(sp), kScratchReg);
+            frame_access_state()->IncreaseSPDelta(stack_decrement /
                                                   kSystemPointerSize);
             break;
           }
@@ -2023,10 +2005,11 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
             break;
         }
       } else {
-        __ Push(i.InputRegister(0));
+        DCHECK_EQ(stack_decrement, kSystemPointerSize);
+        __ Push(i.InputRegister(1));
         frame_access_state()->IncreaseSPDelta(1);
       }
-      break;
+    } break;
     case kS390_PushFrame: {
       int num_slots = i.InputInt32(1);
       __ lay(sp, MemOperand(sp, -num_slots * kSystemPointerSize));
@@ -3719,6 +3702,22 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
 #define VECTOR_UNPACK(op, mode)                                             \
   __ op(i.OutputSimd128Register(), i.InputSimd128Register(0), Condition(0), \
         Condition(0), Condition(mode));
+    case kS390_I64x2SConvertI32x4Low: {
+      VECTOR_UNPACK(vupl, 2)
+      break;
+    }
+    case kS390_I64x2SConvertI32x4High: {
+      VECTOR_UNPACK(vuph, 2)
+      break;
+    }
+    case kS390_I64x2UConvertI32x4Low: {
+      VECTOR_UNPACK(vupll, 2)
+      break;
+    }
+    case kS390_I64x2UConvertI32x4High: {
+      VECTOR_UNPACK(vuplh, 2)
+      break;
+    }
     case kS390_I32x4SConvertI16x8Low: {
       VECTOR_UNPACK(vupl, 1)
       break;
@@ -4221,6 +4220,33 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
 #undef EXT_ADD_PAIRWISE
+#define Q15_MUL_ROAUND(accumulator, unpack)                                    \
+  __ unpack(tempFPReg1, i.InputSimd128Register(0), Condition(0), Condition(0), \
+            Condition(1));                                                     \
+  __ unpack(accumulator, i.InputSimd128Register(1), Condition(0),              \
+            Condition(0), Condition(1));                                       \
+  __ vml(accumulator, tempFPReg1, accumulator, Condition(0), Condition(0),     \
+         Condition(2));                                                        \
+  __ va(accumulator, accumulator, tempFPReg2, Condition(0), Condition(0),      \
+        Condition(2));                                                         \
+  __ vrepi(tempFPReg1, Operand(15), Condition(2));                             \
+  __ vesrav(accumulator, accumulator, tempFPReg1, Condition(0), Condition(0),  \
+            Condition(2));
+    case kS390_I16x8Q15MulRSatS: {
+      Simd128Register dst = i.OutputSimd128Register();
+      Simd128Register tempFPReg1 = i.ToSimd128Register(instr->TempAt(0));
+      Simd128Register tempFPReg2 = i.ToSimd128Register(instr->TempAt(1));
+      __ vrepi(tempFPReg2, Operand(0x4000), Condition(2));
+      Q15_MUL_ROAUND(kScratchDoubleReg, vupl)
+      Q15_MUL_ROAUND(dst, vuph)
+#ifdef V8_TARGET_BIG_ENDIAN
+      __ vpks(dst, dst, kScratchDoubleReg, Condition(0), Condition(2));
+#else
+      __ vpks(dst, kScratchDoubleReg, dst, Condition(0), Condition(2));
+#endif
+      break;
+    }
+#undef Q15_MUL_ROAUND
     case kS390_StoreCompressTagged: {
       CHECK(!instr->HasOutput());
       size_t index = 0;
@@ -4610,7 +4636,6 @@ void CodeGenerator::AssembleReturn(InstructionOperand* additional_pop_count) {
   }
 
   Register argc_reg = r5;
-#ifdef V8_NO_ARGUMENTS_ADAPTOR
   // Functions with JS linkage have at least one parameter (the receiver).
   // If {parameter_count} == 0, it means it is a builtin with
   // kDontAdaptArgumentsSentinel, which takes care of JS arguments popping
@@ -4618,9 +4643,7 @@ void CodeGenerator::AssembleReturn(InstructionOperand* additional_pop_count) {
   const bool drop_jsargs = frame_access_state()->has_frame() &&
                            call_descriptor->IsJSFunctionCall() &&
                            parameter_count != 0;
-#else
-  const bool drop_jsargs = false;
-#endif
+
   if (call_descriptor->IsCFunctionCall()) {
     AssembleDeconstructFrame();
   } else if (frame_access_state()->has_frame()) {

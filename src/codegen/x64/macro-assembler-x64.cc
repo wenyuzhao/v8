@@ -2131,6 +2131,28 @@ void TurboAssembler::I16x8UConvertI8x16High(XMMRegister dst, XMMRegister src) {
   }
 }
 
+void TurboAssembler::I64x2SConvertI32x4High(XMMRegister dst, XMMRegister src) {
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope avx_scope(this, AVX);
+    vpunpckhqdq(dst, src, src);
+    vpmovsxdq(dst, dst);
+  } else {
+    pshufd(dst, src, 0xEE);
+    pmovsxdq(dst, dst);
+  }
+}
+
+void TurboAssembler::I64x2UConvertI32x4High(XMMRegister dst, XMMRegister src) {
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope avx_scope(this, AVX);
+    vpxor(kScratchDoubleReg, kScratchDoubleReg, kScratchDoubleReg);
+    vpunpckhdq(dst, src, kScratchDoubleReg);
+  } else {
+    pshufd(dst, src, 0xEE);
+    pmovzxdq(dst, dst);
+  }
+}
+
 // 1. Unpack src0, src0 into even-number elements of scratch.
 // 2. Unpack src1, src1 into even-number elements of dst.
 // 3. Multiply 1. with 2.
@@ -2200,6 +2222,17 @@ void TurboAssembler::I16x8ExtMul(XMMRegister dst, XMMRegister src1,
     is_signed ? Pmovsxbw(dst, dst) : Pmovzxbw(dst, dst);
     Pmullw(dst, kScratchDoubleReg);
   }
+}
+
+void TurboAssembler::I16x8Q15MulRSatS(XMMRegister dst, XMMRegister src1,
+                                      XMMRegister src2) {
+  // k = i16x8.splat(0x8000)
+  Pcmpeqd(kScratchDoubleReg, kScratchDoubleReg);
+  Psllw(kScratchDoubleReg, byte{15});
+
+  Pmulhrsw(dst, src1, src2);
+  Pcmpeqw(kScratchDoubleReg, dst);
+  Pxor(dst, kScratchDoubleReg);
 }
 
 void TurboAssembler::Abspd(XMMRegister dst) {
@@ -2445,6 +2478,15 @@ void MacroAssembler::CmpInstanceType(Register map, InstanceType type) {
   cmpw(FieldOperand(map, Map::kInstanceTypeOffset), Immediate(type));
 }
 
+void MacroAssembler::CmpInstanceTypeRange(Register map,
+                                          InstanceType lower_limit,
+                                          InstanceType higher_limit) {
+  DCHECK_LT(lower_limit, higher_limit);
+  movzxwl(kScratchRegister, FieldOperand(map, Map::kInstanceTypeOffset));
+  leal(kScratchRegister, Operand(kScratchRegister, 0u - lower_limit));
+  cmpl(kScratchRegister, Immediate(higher_limit - lower_limit));
+}
+
 void MacroAssembler::AssertNotSmi(Register object) {
   if (emit_debug_code()) {
     Condition is_smi = CheckSmi(object);
@@ -2493,9 +2535,10 @@ void MacroAssembler::AssertFunction(Register object) {
     testb(object, Immediate(kSmiTagMask));
     Check(not_equal, AbortReason::kOperandIsASmiAndNotAFunction);
     Push(object);
-    CmpObjectType(object, JS_FUNCTION_TYPE, object);
+    LoadMap(object, object);
+    CmpInstanceTypeRange(object, FIRST_JS_FUNCTION_TYPE, LAST_JS_FUNCTION_TYPE);
     Pop(object);
-    Check(equal, AbortReason::kOperandIsNotAFunction);
+    Check(below_equal, AbortReason::kOperandIsNotAFunction);
   }
 }
 
@@ -2770,7 +2813,6 @@ void MacroAssembler::InvokePrologue(Register expected_parameter_count,
                                     Label* done, InvokeFlag flag) {
   if (expected_parameter_count != actual_parameter_count) {
     Label regular_invoke;
-#ifdef V8_NO_ARGUMENTS_ADAPTOR
     // If the expected parameter count is equal to the adaptor sentinel, no need
     // to push undefined value as arguments.
     cmpl(expected_parameter_count, Immediate(kDontAdaptArgumentsSentinel));
@@ -2828,22 +2870,6 @@ void MacroAssembler::InvokePrologue(Register expected_parameter_count,
       CallRuntime(Runtime::kThrowStackOverflow);
       int3();  // This should be unreachable.
     }
-#else
-    // Both expected and actual are in (different) registers. This
-    // is the case when we invoke functions using call and apply.
-    cmpq(expected_parameter_count, actual_parameter_count);
-    j(equal, &regular_invoke, Label::kNear);
-    DCHECK_EQ(actual_parameter_count, rax);
-    DCHECK_EQ(expected_parameter_count, rbx);
-    Handle<Code> adaptor = BUILTIN_CODE(isolate(), ArgumentsAdaptorTrampoline);
-    if (flag == CALL_FUNCTION) {
-      Call(adaptor, RelocInfo::CODE_TARGET);
-      jmp(done, Label::kNear);
-    } else {
-      Jump(adaptor, RelocInfo::CODE_TARGET);
-    }
-#endif
-
     bind(&regular_invoke);
   } else {
     Move(rax, actual_parameter_count);

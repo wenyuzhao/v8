@@ -441,7 +441,7 @@ ZoneVector<MachineType> const* MachineTypesOf(Operator const* op) {
 V8_EXPORT_PRIVATE bool operator==(IfValueParameters const& l,
                                   IfValueParameters const& r) {
   return l.value() == r.value() &&
-         r.comparison_order() == r.comparison_order() && l.hint() == r.hint();
+         l.comparison_order() == r.comparison_order() && l.hint() == r.hint();
 }
 
 size_t hash_value(IfValueParameters const& p) {
@@ -1620,9 +1620,15 @@ const Operator* CommonOperatorBuilder::ResizeMergeOrPhi(const Operator* op,
 const FrameStateFunctionInfo*
 CommonOperatorBuilder::CreateFrameStateFunctionInfo(
     FrameStateType type, int parameter_count, int local_count,
-    Handle<SharedFunctionInfo> shared_info) {
-  return zone()->New<FrameStateFunctionInfo>(type, parameter_count, local_count,
-                                             shared_info);
+    Handle<SharedFunctionInfo> shared_info,
+    const wasm::FunctionSig* signature) {
+  DCHECK_EQ(type == FrameStateType::kJSToWasmBuiltinContinuation,
+            signature != nullptr);
+  return type == FrameStateType::kJSToWasmBuiltinContinuation
+             ? zone()->New<JSToWasmFrameStateFunctionInfo>(
+                   type, parameter_count, local_count, shared_info, signature)
+             : zone()->New<FrameStateFunctionInfo>(type, parameter_count,
+                                                   local_count, shared_info);
 }
 
 const Operator* CommonOperatorBuilder::DeadValue(MachineRepresentation rep) {

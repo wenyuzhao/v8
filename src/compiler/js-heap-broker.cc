@@ -47,6 +47,7 @@ namespace compiler {
 HEAP_BROKER_SERIALIZED_OBJECT_LIST(FORWARD_DECL)
 // TODO(solanes, v8:10866): Remove once FLAG_turbo_direct_heap_access is
 // removed.
+HEAP_BROKER_POSSIBLY_BACKGROUND_SERIALIZED_OBJECT_LIST(FORWARD_DECL)
 HEAP_BROKER_NEVER_SERIALIZED_OBJECT_LIST(FORWARD_DECL)
 #undef FORWARD_DECL
 
@@ -60,6 +61,10 @@ HEAP_BROKER_NEVER_SERIALIZED_OBJECT_LIST(FORWARD_DECL)
 // kSerializedHeapObject: The underlying V8 object is a HeapObject and the
 //   data is an instance of the corresponding (most-specific) subclass, e.g.
 //   JSFunctionData, which provides serialized information about the object.
+//
+// kPossiblyBackgroundSerializedHeapObject: Like kSerializedHeapObject, but
+//   allows serialization from the background thread where this is safe
+//   (indicated by corresponding ObjectRef constructor argument).
 //
 // kUnserializedHeapObject: The underlying V8 object is a HeapObject and the
 //   data is an instance of the base class (ObjectData), i.e. it basically
@@ -78,6 +83,7 @@ HEAP_BROKER_NEVER_SERIALIZED_OBJECT_LIST(FORWARD_DECL)
 enum ObjectDataKind {
   kSmi,
   kSerializedHeapObject,
+  kPossiblyBackgroundSerializedHeapObject,
   kUnserializedHeapObject,
   kNeverSerializedHeapObject,
   kUnserializedReadOnlyHeapObject
@@ -116,13 +122,16 @@ class ObjectData : public ZoneObject {
             broker->mode() == JSHeapBroker::kSerializing,
         broker->isolate()->handle_scope_data()->canonical_scope != nullptr);
     CHECK_IMPLIES(broker->mode() == JSHeapBroker::kSerialized,
-                  (kind == kUnserializedReadOnlyHeapObject &&
-                   IsReadOnlyHeapObject(*object)) ||
-                      kind == kNeverSerializedHeapObject);
+                  kind == kUnserializedReadOnlyHeapObject || kind == kSmi ||
+                      kind == kNeverSerializedHeapObject ||
+                      kind == kPossiblyBackgroundSerializedHeapObject);
+    CHECK_IMPLIES(kind == kUnserializedReadOnlyHeapObject,
+                  IsReadOnlyHeapObject(*object));
   }
 
 #define DECLARE_IS(Name) bool Is##Name() const;
   HEAP_BROKER_SERIALIZED_OBJECT_LIST(DECLARE_IS)
+  HEAP_BROKER_POSSIBLY_BACKGROUND_SERIALIZED_OBJECT_LIST(DECLARE_IS)
   HEAP_BROKER_NEVER_SERIALIZED_OBJECT_LIST(DECLARE_IS)
 #undef DECLARE_IS
 
@@ -130,6 +139,7 @@ class ObjectData : public ZoneObject {
   HEAP_BROKER_SERIALIZED_OBJECT_LIST(DECLARE_AS)
   // TODO(solanes, v8:10866): Remove once FLAG_turbo_direct_heap_access is
   // removed.
+  HEAP_BROKER_POSSIBLY_BACKGROUND_SERIALIZED_OBJECT_LIST(DECLARE_AS)
   HEAP_BROKER_NEVER_SERIALIZED_OBJECT_LIST(DECLARE_AS)
 #undef DECLARE_AS
 
@@ -155,7 +165,8 @@ class ObjectData : public ZoneObject {
 class HeapObjectData : public ObjectData {
  public:
   HeapObjectData(JSHeapBroker* broker, ObjectData** storage,
-                 Handle<HeapObject> object);
+                 Handle<HeapObject> object,
+                 ObjectDataKind kind = ObjectDataKind::kSerializedHeapObject);
 
   bool boolean_value() const { return boolean_value_; }
   ObjectData* map() const { return map_; }
@@ -607,14 +618,28 @@ class JSFunctionData : public JSObjectData {
   void Serialize(JSHeapBroker* broker);
   bool serialized() const { return serialized_; }
 
+  void SerializeCodeAndFeedback(JSHeapBroker* broker);
+  bool serialized_code_and_feedback() const {
+    return serialized_code_and_feedback_;
+  }
+
   ObjectData* context() const { return context_; }
   ObjectData* native_context() const { return native_context_; }
   ObjectData* initial_map() const { return initial_map_; }
   ObjectData* prototype() const { return prototype_; }
   ObjectData* shared() const { return shared_; }
-  ObjectData* raw_feedback_cell() const { return feedback_cell_; }
-  ObjectData* feedback_vector() const { return feedback_vector_; }
-  ObjectData* code() const { return code_; }
+  ObjectData* raw_feedback_cell() const {
+    DCHECK(serialized_code_and_feedback());
+    return feedback_cell_;
+  }
+  ObjectData* feedback_vector() const {
+    DCHECK(serialized_code_and_feedback());
+    return feedback_vector_;
+  }
+  ObjectData* code() const {
+    DCHECK(serialized_code_and_feedback());
+    return code_;
+  }
   int initial_map_instance_size_with_min_slack() const {
     CHECK(serialized_);
     return initial_map_instance_size_with_min_slack_;
@@ -628,6 +653,7 @@ class JSFunctionData : public JSObjectData {
   bool PrototypeRequiresRuntimeLookup_;
 
   bool serialized_ = false;
+  bool serialized_code_and_feedback_ = false;
 
   ObjectData* context_ = nullptr;
   ObjectData* native_context_ = nullptr;
@@ -668,7 +694,9 @@ class HeapNumberData : public HeapObjectData {
  public:
   HeapNumberData(JSHeapBroker* broker, ObjectData** storage,
                  Handle<HeapNumber> object)
-      : HeapObjectData(broker, storage, object), value_(object->value()) {}
+      : HeapObjectData(broker, storage, object,
+                       kPossiblyBackgroundSerializedHeapObject),
+        value_(object->value()) {}
 
   double value() const { return value_; }
 
@@ -965,7 +993,8 @@ class AllocationSiteData : public HeapObjectData {
 class BigIntData : public HeapObjectData {
  public:
   BigIntData(JSHeapBroker* broker, ObjectData** storage, Handle<BigInt> object)
-      : HeapObjectData(broker, storage, object),
+      : HeapObjectData(broker, storage, object,
+                       ObjectDataKind::kPossiblyBackgroundSerializedHeapObject),
         as_uint64_(object->AsUint64(nullptr)) {}
 
   uint64_t AsUint64() const { return as_uint64_; }
@@ -1153,8 +1182,8 @@ void AllocationSiteData::SerializeBoilerplate(JSHeapBroker* broker) {
 }
 
 HeapObjectData::HeapObjectData(JSHeapBroker* broker, ObjectData** storage,
-                               Handle<HeapObject> object)
-    : ObjectData(broker, storage, object, kSerializedHeapObject),
+                               Handle<HeapObject> object, ObjectDataKind kind)
+    : ObjectData(broker, storage, object, kind),
       boolean_value_(object->BooleanValue(broker->isolate())),
       // We have to use a raw cast below instead of AsMap() because of
       // recursion. AsMap() would call IsMap(), which accesses the
@@ -1162,7 +1191,10 @@ HeapObjectData::HeapObjectData(JSHeapBroker* broker, ObjectData** storage,
       // meta map (whose map is itself), this member has not yet been
       // initialized.
       map_(broker->GetOrCreateData(object->map())) {
-  CHECK_EQ(broker->mode(), JSHeapBroker::kSerializing);
+  CHECK_IMPLIES(kind == kSerializedHeapObject,
+                broker->mode() == JSHeapBroker::kSerializing);
+  CHECK_IMPLIES(broker->mode() == JSHeapBroker::kSerialized,
+                kind == kPossiblyBackgroundSerializedHeapObject);
 }
 
 InstanceType HeapObjectData::GetMapInstanceType() const {
@@ -1250,18 +1282,11 @@ void JSFunctionData::Serialize(JSHeapBroker* broker) {
   DCHECK_NULL(initial_map_);
   DCHECK_NULL(prototype_);
   DCHECK_NULL(shared_);
-  DCHECK_NULL(feedback_cell_);
-  DCHECK_NULL(feedback_vector_);
-  DCHECK_NULL(code_);
 
   context_ = broker->GetOrCreateData(function->context());
   native_context_ = broker->GetOrCreateData(function->native_context());
   shared_ = broker->GetOrCreateData(function->shared());
-  feedback_cell_ = broker->GetOrCreateData(function->raw_feedback_cell());
-  feedback_vector_ = has_feedback_vector()
-                         ? broker->GetOrCreateData(function->feedback_vector())
-                         : nullptr;
-  code_ = broker->GetOrCreateData(function->code());
+
   initial_map_ = has_initial_map()
                      ? broker->GetOrCreateData(function->initial_map())
                      : nullptr;
@@ -1282,6 +1307,24 @@ void JSFunctionData::Serialize(JSHeapBroker* broker) {
     // show up, we should move this into NativeContextData::Serialize.
     initial_map_->AsMap()->SerializePrototype(broker);
   }
+}
+
+void JSFunctionData::SerializeCodeAndFeedback(JSHeapBroker* broker) {
+  DCHECK(serialized_);
+  if (serialized_code_and_feedback_) return;
+  serialized_code_and_feedback_ = true;
+
+  TraceScope tracer(broker, this, "JSFunctionData::SerializeCodeAndFeedback");
+  Handle<JSFunction> function = Handle<JSFunction>::cast(object());
+
+  DCHECK_NULL(feedback_cell_);
+  DCHECK_NULL(feedback_vector_);
+  DCHECK_NULL(code_);
+  code_ = broker->GetOrCreateData(function->code());
+  feedback_cell_ = broker->GetOrCreateData(function->raw_feedback_cell());
+  feedback_vector_ = has_feedback_vector()
+                         ? broker->GetOrCreateData(function->feedback_vector())
+                         : nullptr;
 }
 
 void MapData::SerializeElementsKindGeneralizations(JSHeapBroker* broker) {
@@ -1984,16 +2027,26 @@ class CodeData : public HeapObjectData {
     return InstanceTypeChecker::Is##Name(instance_type);                \
   }
 HEAP_BROKER_SERIALIZED_OBJECT_LIST(DEFINE_IS)
+HEAP_BROKER_POSSIBLY_BACKGROUND_SERIALIZED_OBJECT_LIST(DEFINE_IS)
 HEAP_BROKER_NEVER_SERIALIZED_OBJECT_LIST(DEFINE_IS)
 #undef DEFINE_IS
 
-#define DEFINE_AS(Name)                     \
-  Name##Data* ObjectData::As##Name() {      \
-    CHECK(Is##Name());                      \
-    CHECK_EQ(kind_, kSerializedHeapObject); \
-    return static_cast<Name##Data*>(this);  \
+#define DEFINE_AS(Name)                                      \
+  Name##Data* ObjectData::As##Name() {                       \
+    CHECK(Is##Name());                                       \
+    CHECK(kind_ == kSerializedHeapObject ||                  \
+          kind_ == kPossiblyBackgroundSerializedHeapObject); \
+    return static_cast<Name##Data*>(this);                   \
   }
 HEAP_BROKER_SERIALIZED_OBJECT_LIST(DEFINE_AS)
+#undef DEFINE_AS
+#define DEFINE_AS(Name)                                       \
+  Name##Data* ObjectData::As##Name() {                        \
+    CHECK(Is##Name());                                        \
+    CHECK_EQ(kind_, kPossiblyBackgroundSerializedHeapObject); \
+    return static_cast<Name##Data*>(this);                    \
+  }
+HEAP_BROKER_POSSIBLY_BACKGROUND_SERIALIZED_OBJECT_LIST(DEFINE_AS)
 #undef DEFINE_AS
 
 // TODO(solanes, v8:10866): Remove once FLAG_turbo_direct_heap_access is
@@ -2673,7 +2726,8 @@ void JSHeapBroker::InitializeAndStartSerializing(
 }
 
 // clang-format off
-ObjectData* JSHeapBroker::GetOrCreateData(Handle<Object> object) {
+ObjectData* JSHeapBroker::GetOrCreateData(Handle<Object> object,
+    ObjectRef::BackgroundSerialization background_serialization) {
   RefsMap::Entry* entry = refs_->LookupOrInsert(object.address());
   ObjectData* object_data = entry->value;
 
@@ -2701,6 +2755,17 @@ ObjectData* JSHeapBroker::GetOrCreateData(Handle<Object> object) {
       }
     HEAP_BROKER_NEVER_SERIALIZED_OBJECT_LIST(CREATE_DATA_FOR_DIRECT_READ)
 #undef CREATE_DATA_FOR_DIRECT_READ
+#define CREATE_DATA_FOR_POSSIBLE_SERIALIZATION(name)                         \
+    } else if (object->Is##name()) {                                         \
+      CHECK_IMPLIES(mode() == kSerialized,                                   \
+                    background_serialization                                 \
+                      == ObjectRef::BackgroundSerialization::kAllowed);      \
+      AllowHandleAllocation handle_allocation;                               \
+      object_data = zone()->New<name##Data>(this, data_storage,              \
+                                            Handle<name>::cast(object));
+    HEAP_BROKER_POSSIBLY_BACKGROUND_SERIALIZED_OBJECT_LIST(
+      CREATE_DATA_FOR_POSSIBLE_SERIALIZATION)
+#undef CREATE_DATA_FOR_POSSIBLE_SERIALIZATION
 #define CREATE_DATA_FOR_SERIALIZATION(name)                     \
     } else if (object->Is##name()) {                            \
       CHECK_EQ(mode(), kSerializing);                           \
@@ -2720,8 +2785,11 @@ ObjectData* JSHeapBroker::GetOrCreateData(Handle<Object> object) {
 }
 // clang-format on
 
-ObjectData* JSHeapBroker::GetOrCreateData(Object object) {
-  return GetOrCreateData(CanonicalPersistentHandle(object));
+ObjectData* JSHeapBroker::GetOrCreateData(
+    Object object,
+    ObjectRef::BackgroundSerialization background_serialization) {
+  return GetOrCreateData(CanonicalPersistentHandle(object),
+                         background_serialization);
 }
 
 #define DEFINE_IS_AND_AS(Name)                                    \
@@ -2731,6 +2799,7 @@ ObjectData* JSHeapBroker::GetOrCreateData(Object object) {
     return Name##Ref(broker(), data());                           \
   }
 HEAP_BROKER_SERIALIZED_OBJECT_LIST(DEFINE_IS_AND_AS)
+HEAP_BROKER_POSSIBLY_BACKGROUND_SERIALIZED_OBJECT_LIST(DEFINE_IS_AND_AS)
 HEAP_BROKER_NEVER_SERIALIZED_OBJECT_LIST(DEFINE_IS_AND_AS)
 #undef DEFINE_IS_AND_AS
 
@@ -3102,6 +3171,14 @@ base::Optional<uint16_t> StringRef::GetFirstChar() {
 
 base::Optional<double> StringRef::ToNumber() {
   if (data_->should_access_heap()) {
+    if (data_->kind() == kNeverSerializedHeapObject &&
+        !this->IsInternalizedString()) {
+      TRACE_BROKER_MISSING(
+          broker(),
+          "number for kNeverSerialized non-internalized string " << *this);
+      return base::nullopt;
+    }
+
     return TryStringToDouble(broker()->local_isolate(), object());
   }
   return data()->AsString()->to_number();
@@ -3772,6 +3849,7 @@ ObjectRef SourceTextModuleRef::import_meta() const {
 }
 
 ObjectRef::ObjectRef(JSHeapBroker* broker, Handle<Object> object,
+                     BackgroundSerialization background_serialization,
                      bool check_type)
     : broker_(broker) {
   switch (broker->mode()) {
@@ -3780,7 +3858,7 @@ ObjectRef::ObjectRef(JSHeapBroker* broker, Handle<Object> object,
     // them.
     case JSHeapBroker::kSerialized:
     case JSHeapBroker::kSerializing:
-      data_ = broker->GetOrCreateData(object);
+      data_ = broker->GetOrCreateData(object, background_serialization);
       break;
     case JSHeapBroker::kDisabled: {
       RefsMap::Entry* entry = broker->refs_->LookupOrInsert(object.address());
@@ -3971,6 +4049,7 @@ Handle<Object> ObjectRef::object() const {
 #endif  // DEBUG
 
 HEAP_BROKER_SERIALIZED_OBJECT_LIST(DEF_OBJECT_GETTER)
+HEAP_BROKER_POSSIBLY_BACKGROUND_SERIALIZED_OBJECT_LIST(DEF_OBJECT_GETTER)
 HEAP_BROKER_NEVER_SERIALIZED_OBJECT_LIST(DEF_OBJECT_GETTER)
 #undef DEF_OBJECT_GETTER
 
@@ -4053,6 +4132,12 @@ void JSFunctionRef::Serialize() {
   data()->AsJSFunction()->Serialize(broker());
 }
 
+void JSFunctionRef::SerializeCodeAndFeedback() {
+  if (data_->should_access_heap()) return;
+  CHECK_EQ(broker()->mode(), JSHeapBroker::kSerializing);
+  data()->AsJSFunction()->SerializeCodeAndFeedback(broker());
+}
+
 bool JSBoundFunctionRef::serialized() const {
   if (data_->should_access_heap()) return true;
   return data()->AsJSBoundFunction()->serialized();
@@ -4061,6 +4146,11 @@ bool JSBoundFunctionRef::serialized() const {
 bool JSFunctionRef::serialized() const {
   if (data_->should_access_heap()) return true;
   return data()->AsJSFunction()->serialized();
+}
+
+bool JSFunctionRef::serialized_code_and_feedback() const {
+  if (data_->should_access_heap()) return true;
+  return data()->AsJSFunction()->serialized_code_and_feedback();
 }
 
 void SharedFunctionInfoRef::SerializeFunctionTemplateInfo() {

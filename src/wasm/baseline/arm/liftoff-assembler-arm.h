@@ -2362,7 +2362,17 @@ void LiftoffAssembler::LoadLane(LiftoffRegister dst, LiftoffRegister src,
                                 Register addr, Register offset_reg,
                                 uintptr_t offset_imm, LoadType type,
                                 uint8_t laneidx, uint32_t* protected_load_pc) {
-  bailout(kSimd, "loadlane");
+  UseScratchRegisterScope temps(this);
+  Register actual_src_addr = liftoff::CalculateActualAddress(
+      this, &temps, addr, offset_reg, offset_imm);
+  TurboAssembler::Move(liftoff::GetSimd128Register(dst),
+                       liftoff::GetSimd128Register(src));
+  *protected_load_pc = pc_offset();
+  LoadStoreLaneParams load_params(type.mem_type().representation(), laneidx);
+  NeonListOperand dst_op =
+      NeonListOperand(load_params.low_op ? dst.low_fp() : dst.high_fp());
+  TurboAssembler::LoadLane(load_params.sz, dst_op, load_params.laneidx,
+                           NeonMemOperand(actual_src_addr));
 }
 
 void LiftoffAssembler::emit_i8x16_swizzle(LiftoffRegister dst,
@@ -2888,6 +2898,31 @@ void LiftoffAssembler::emit_i64x2_extmul_high_i32x4_u(LiftoffRegister dst,
         src2.high_fp());
 }
 
+void LiftoffAssembler::emit_i64x2_bitmask(LiftoffRegister dst,
+                                          LiftoffRegister src) {
+  I64x2BitMask(dst.gp(), liftoff::GetSimd128Register(src));
+}
+
+void LiftoffAssembler::emit_i64x2_sconvert_i32x4_low(LiftoffRegister dst,
+                                                     LiftoffRegister src) {
+  vmovl(NeonS32, liftoff::GetSimd128Register(dst), src.low_fp());
+}
+
+void LiftoffAssembler::emit_i64x2_sconvert_i32x4_high(LiftoffRegister dst,
+                                                      LiftoffRegister src) {
+  vmovl(NeonS32, liftoff::GetSimd128Register(dst), src.high_fp());
+}
+
+void LiftoffAssembler::emit_i64x2_uconvert_i32x4_low(LiftoffRegister dst,
+                                                     LiftoffRegister src) {
+  vmovl(NeonU32, liftoff::GetSimd128Register(dst), src.low_fp());
+}
+
+void LiftoffAssembler::emit_i64x2_uconvert_i32x4_high(LiftoffRegister dst,
+                                                      LiftoffRegister src) {
+  vmovl(NeonU32, liftoff::GetSimd128Register(dst), src.high_fp());
+}
+
 void LiftoffAssembler::emit_i32x4_splat(LiftoffRegister dst,
                                         LiftoffRegister src) {
   vdup(Neon32, liftoff::GetSimd128Register(dst), src.gp());
@@ -3290,6 +3325,14 @@ void LiftoffAssembler::emit_i16x8_extmul_high_i8x16_u(LiftoffRegister dst,
                                                       LiftoffRegister src2) {
   vmull(NeonU8, liftoff::GetSimd128Register(dst), src1.high_fp(),
         src2.high_fp());
+}
+
+void LiftoffAssembler::emit_i16x8_q15mulr_sat_s(LiftoffRegister dst,
+                                                LiftoffRegister src1,
+                                                LiftoffRegister src2) {
+  vqrdmulh(NeonS16, liftoff::GetSimd128Register(dst),
+           liftoff::GetSimd128Register(src1),
+           liftoff::GetSimd128Register(src2));
 }
 
 void LiftoffAssembler::emit_i8x16_shuffle(LiftoffRegister dst,

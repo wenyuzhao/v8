@@ -1488,9 +1488,10 @@ void MacroAssembler::AssertFunction(Register object) {
 
     UseScratchRegisterScope temps(this);
     Register temp = temps.AcquireX();
-
-    CompareObjectType(object, temp, temp, JS_FUNCTION_TYPE);
-    Check(eq, AbortReason::kOperandIsNotAFunction);
+    LoadMap(temp, object);
+    CompareInstanceTypeRange(temp, temp, FIRST_JS_FUNCTION_TYPE,
+                             LAST_JS_FUNCTION_TYPE);
+    Check(ls, AbortReason::kOperandIsNotAFunction);
   }
 }
 
@@ -2128,7 +2129,6 @@ void MacroAssembler::InvokePrologue(Register formal_parameter_count,
   DCHECK_EQ(actual_argument_count, x0);
   DCHECK_EQ(formal_parameter_count, x2);
 
-#ifdef V8_NO_ARGUMENTS_ADAPTOR
   // If the formal parameter count is equal to the adaptor sentinel, no need
   // to push undefined value as arguments.
   Cmp(formal_parameter_count, Operand(kDontAdaptArgumentsSentinel));
@@ -2222,24 +2222,6 @@ void MacroAssembler::InvokePrologue(Register formal_parameter_count,
     CallRuntime(Runtime::kThrowStackOverflow);
     Unreachable();
   }
-#else
-  // Check whether the expected and actual arguments count match. The registers
-  // are set up according to contract with ArgumentsAdaptorTrampoline.ct.
-  // If actual == expected perform a regular invocation.
-  Cmp(formal_parameter_count, actual_argument_count);
-  B(eq, &regular_invoke);
-
-  // The argument counts mismatch, generate a call to the argument adaptor.
-  Handle<Code> adaptor = BUILTIN_CODE(isolate(), ArgumentsAdaptorTrampoline);
-  if (flag == CALL_FUNCTION) {
-    Call(adaptor);
-    // If the arg counts don't match, no extra code is emitted by
-    // MAsm::InvokeFunctionCode and we can just fall through.
-    B(done);
-  } else {
-    Jump(adaptor, RelocInfo::CODE_TARGET);
-  }
-#endif
 
   Bind(&regular_invoke);
 }
@@ -2678,6 +2660,18 @@ void MacroAssembler::CompareInstanceType(Register map, Register type_reg,
                                          InstanceType type) {
   Ldrh(type_reg, FieldMemOperand(map, Map::kInstanceTypeOffset));
   Cmp(type_reg, type);
+}
+
+// Sets condition flags based on comparison, and returns type in type_reg.
+void MacroAssembler::CompareInstanceTypeRange(Register map, Register type_reg,
+                                              InstanceType lower_limit,
+                                              InstanceType higher_limit) {
+  DCHECK_LT(lower_limit, higher_limit);
+  UseScratchRegisterScope temps(this);
+  Register scratch = temps.AcquireX();
+  Ldrh(type_reg, FieldMemOperand(map, Map::kInstanceTypeOffset));
+  Sub(scratch, type_reg, Operand(lower_limit));
+  Cmp(scratch, Operand(higher_limit - lower_limit));
 }
 
 void MacroAssembler::LoadElementsKindFromMap(Register result, Register map) {
@@ -3406,6 +3400,16 @@ void TurboAssembler::StoreReturnAddressInWasmExitFrame(Label* return_location) {
   Pacib1716();
 #endif
   Str(x17, MemOperand(fp, WasmExitFrameConstants::kCallingPCOffset));
+}
+
+void TurboAssembler::I64x2BitMask(Register dst, VRegister src) {
+  UseScratchRegisterScope scope(this);
+  VRegister tmp1 = scope.AcquireV(kFormat2D);
+  Register tmp2 = scope.AcquireX();
+  Ushr(tmp1.V2D(), src.V2D(), 63);
+  Mov(dst.X(), tmp1.D(), 0);
+  Mov(tmp2.X(), tmp1.D(), 1);
+  Add(dst.W(), dst.W(), Operand(tmp2.W(), LSL, 1));
 }
 
 }  // namespace internal

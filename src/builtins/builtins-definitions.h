@@ -40,7 +40,6 @@ namespace internal {
   TFC(AdaptorWithBuiltinExitFrame, CppBuiltinAdaptor)                          \
                                                                                \
   /* Calls */                                                                  \
-  ASM(ArgumentsAdaptorTrampoline, ArgumentsAdaptor)                            \
   /* ES6 section 9.2.1 [[Call]] ( thisArgument, argumentsList) */              \
   ASM(CallFunction_ReceiverIsNullOrUndefined, CallTrampoline)                  \
   ASM(CallFunction_ReceiverIsNotNullOrUndefined, CallTrampoline)               \
@@ -202,7 +201,7 @@ namespace internal {
   TFC(I32PairToBigInt, I32PairToBigInt)                                        \
                                                                                \
   /* Type conversions continuations */                                         \
-  TFC(ToBooleanLazyDeoptContinuation, TypeConversionStackParameter)            \
+  TFC(ToBooleanLazyDeoptContinuation, SingleParameterOnStack)                  \
                                                                                \
   /* Handlers */                                                               \
   TFH(KeyedLoadIC_PolymorphicName, LoadWithVector)                             \
@@ -817,6 +816,7 @@ namespace internal {
   TFC(WasmI32AtomicWait32, WasmI32AtomicWait32)                                \
   TFC(WasmI64AtomicWait32, WasmI64AtomicWait32)                                \
   TFS(WasmAllocatePair, kValue1, kValue2)                                      \
+  TFC(JSToWasmLazyDeoptContinuation, SingleParameterOnStack)                   \
                                                                                \
   /* WeakMap */                                                                \
   TFJ(WeakMapConstructor, kDontAdaptArgumentsSentinel)                         \

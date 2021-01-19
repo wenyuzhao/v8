@@ -650,6 +650,20 @@ void TurboAssembler::Roundpd(XMMRegister dst, XMMRegister src,
   }
 }
 
+void TurboAssembler::Pmulhrsw(XMMRegister dst, XMMRegister src1,
+                              XMMRegister src2) {
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope avx_scope(this, AVX);
+    vpmulhrsw(dst, src1, src2);
+  } else {
+    if (dst != src1) {
+      movdqu(dst, src1);
+    }
+    CpuFeatureScope sse_scope(this, SSSE3);
+    pmulhrsw(dst, src2);
+  }
+}
+
 // 1. Unpack src0, src1 into even-number elements of scratch.
 // 2. Unpack src1, src0 into even-number elements of dst.
 // 3. Multiply 1. with 2.
@@ -718,6 +732,60 @@ void TurboAssembler::I16x8ExtMul(XMMRegister dst, XMMRegister src1,
     is_signed ? Pmovsxbw(dst, dst) : Pmovzxbw(dst, dst);
     Pmullw(dst, scratch);
   }
+}
+
+void TurboAssembler::S128Select(XMMRegister dst, XMMRegister mask,
+                                XMMRegister src1, XMMRegister src2,
+                                XMMRegister scratch) {
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope scope(this, AVX);
+    vpandn(scratch, mask, src2);
+    vpand(dst, src1, mask);
+    vpor(dst, dst, scratch);
+  } else {
+    DCHECK_EQ(dst, mask);
+    // Use float ops as they are 1 byte shorter than int ops.
+    movaps(scratch, dst);
+    andnps(scratch, src2);
+    andps(dst, src1);
+    orps(dst, scratch);
+  }
+}
+
+void TurboAssembler::I64x2SConvertI32x4High(XMMRegister dst, XMMRegister src) {
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope avx_scope(this, AVX);
+    vpunpckhqdq(dst, src, src);
+    vpmovsxdq(dst, dst);
+  } else {
+    CpuFeatureScope sse_scope(this, SSE4_1);
+    pshufd(dst, src, 0xEE);
+    pmovsxdq(dst, dst);
+  }
+}
+
+void TurboAssembler::I64x2UConvertI32x4High(XMMRegister dst, XMMRegister src,
+                                            XMMRegister scratch) {
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope avx_scope(this, AVX);
+    vpxor(scratch, scratch, scratch);
+    vpunpckhdq(dst, src, scratch);
+  } else {
+    CpuFeatureScope sse_scope(this, SSE4_1);
+    pshufd(dst, src, 0xEE);
+    pmovzxdq(dst, dst);
+  }
+}
+
+void TurboAssembler::I16x8Q15MulRSatS(XMMRegister dst, XMMRegister src1,
+                                      XMMRegister src2, XMMRegister scratch) {
+  // k = i16x8.splat(0x8000)
+  Pcmpeqd(scratch, scratch);
+  Psllw(scratch, scratch, byte{15});
+
+  Pmulhrsw(dst, src1, src2);
+  Pcmpeqw(scratch, dst);
+  Pxor(dst, scratch);
 }
 
 void TurboAssembler::ShlPair(Register high, Register low, uint8_t shift) {
@@ -803,6 +871,15 @@ void MacroAssembler::CmpInstanceType(Register map, InstanceType type) {
   cmpw(FieldOperand(map, Map::kInstanceTypeOffset), Immediate(type));
 }
 
+void MacroAssembler::CmpInstanceTypeRange(Register map, Register scratch,
+                                          InstanceType lower_limit,
+                                          InstanceType higher_limit) {
+  DCHECK_LT(lower_limit, higher_limit);
+  movzx_w(scratch, FieldOperand(map, Map::kInstanceTypeOffset));
+  lea(scratch, Operand(scratch, 0u - lower_limit));
+  cmp(scratch, Immediate(higher_limit - lower_limit));
+}
+
 void MacroAssembler::AssertSmi(Register object) {
   if (emit_debug_code()) {
     test(object, Immediate(kSmiTagMask));
@@ -823,14 +900,16 @@ void MacroAssembler::AssertConstructor(Register object) {
   }
 }
 
-void MacroAssembler::AssertFunction(Register object) {
+void MacroAssembler::AssertFunction(Register object, Register scratch) {
   if (emit_debug_code()) {
     test(object, Immediate(kSmiTagMask));
     Check(not_equal, AbortReason::kOperandIsASmiAndNotAFunction);
     Push(object);
-    CmpObjectType(object, JS_FUNCTION_TYPE, object);
+    LoadMap(object, object);
+    CmpInstanceTypeRange(object, scratch, FIRST_JS_FUNCTION_TYPE,
+                         LAST_JS_FUNCTION_TYPE);
     Pop(object);
-    Check(equal, AbortReason::kOperandIsNotAFunction);
+    Check(below_equal, AbortReason::kOperandIsNotAFunction);
   }
 }
 
@@ -1268,7 +1347,7 @@ void MacroAssembler::InvokePrologue(Register expected_parameter_count,
     DCHECK_EQ(actual_parameter_count, eax);
     DCHECK_EQ(expected_parameter_count, ecx);
     Label regular_invoke;
-#ifdef V8_NO_ARGUMENTS_ADAPTOR
+
     // If the expected parameter count is equal to the adaptor sentinel, no need
     // to push undefined value as arguments.
     cmp(expected_parameter_count, Immediate(kDontAdaptArgumentsSentinel));
@@ -1340,17 +1419,7 @@ void MacroAssembler::InvokePrologue(Register expected_parameter_count,
       CallRuntime(Runtime::kThrowStackOverflow);
       int3();  // This should be unreachable.
     }
-#else
-    cmp(expected_parameter_count, actual_parameter_count);
-    j(equal, &regular_invoke);
-    Handle<Code> adaptor = BUILTIN_CODE(isolate(), ArgumentsAdaptorTrampoline);
-    if (flag == CALL_FUNCTION) {
-      Call(adaptor, RelocInfo::CODE_TARGET);
-      jmp(done, Label::kNear);
-    } else {
-      Jump(adaptor, RelocInfo::CODE_TARGET);
-    }
-#endif
+
     bind(&regular_invoke);
   }
 }

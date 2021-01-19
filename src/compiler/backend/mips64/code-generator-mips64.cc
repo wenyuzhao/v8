@@ -496,15 +496,6 @@ void EmitWordLoadPoisoningIfNeeded(CodeGenerator* codegen,
           i.InputSimd128Register(1));                           \
   } while (0)
 
-#define ASSEMBLE_SIMD_EXTENDED_MULTIPLY(op0, op1)                           \
-  do {                                                                      \
-    CpuFeatureScope msa_scope(tasm(), MIPS_SIMD);                           \
-    __ xor_v(kSimd128RegZero, kSimd128RegZero, kSimd128RegZero);            \
-    __ op0(kSimd128ScratchReg, kSimd128RegZero, i.InputSimd128Register(0)); \
-    __ op0(kSimd128RegZero, kSimd128RegZero, i.InputSimd128Register(1));    \
-    __ op1(i.OutputSimd128Register(), kSimd128ScratchReg, kSimd128RegZero); \
-  } while (0)
-
 void CodeGenerator::AssembleDeconstructFrame() {
   __ mov(sp, fp);
   __ Pop(ra, fp);
@@ -516,29 +507,6 @@ void CodeGenerator::AssemblePrepareTailCall() {
     __ Ld(fp, MemOperand(fp, StandardFrameConstants::kCallerFPOffset));
   }
   frame_access_state()->SetFrameAccessToSP();
-}
-
-void CodeGenerator::AssemblePopArgumentsAdaptorFrame(Register args_reg,
-                                                     Register scratch1,
-                                                     Register scratch2,
-                                                     Register scratch3) {
-  DCHECK(!AreAliased(args_reg, scratch1, scratch2, scratch3));
-  Label done;
-
-  // Check if current frame is an arguments adaptor frame.
-  __ Ld(scratch3, MemOperand(fp, StandardFrameConstants::kContextOffset));
-  __ Branch(&done, ne, scratch3,
-            Operand(StackFrame::TypeToMarker(StackFrame::ARGUMENTS_ADAPTOR)));
-
-  // Load arguments count from current arguments adaptor frame (note, it
-  // does not include receiver).
-  Register caller_args_count_reg = scratch1;
-  __ Ld(caller_args_count_reg,
-        MemOperand(fp, ArgumentsAdaptorFrameConstants::kLengthOffset));
-  __ SmiUntag(caller_args_count_reg);
-
-  __ PrepareForTailCall(args_reg, caller_args_count_reg, scratch2, scratch3);
-  __ bind(&done);
 }
 
 namespace {
@@ -655,11 +623,6 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kArchCallWasmFunction: {
-      if (arch_opcode == kArchTailCallCodeObjectFromJSFunction) {
-        AssemblePopArgumentsAdaptorFrame(kJavaScriptCallArgCountRegister,
-                                         i.TempRegister(0), i.TempRegister(1),
-                                         i.TempRegister(2));
-      }
       if (instr->InputAt(0)->IsImmediate()) {
         Constant constant = i.ToConstant(instr->InputAt(0));
         Address wasm_code = static_cast<Address>(constant.ToInt64());
@@ -674,11 +637,6 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     }
     case kArchTailCallCodeObjectFromJSFunction:
     case kArchTailCallCodeObject: {
-      if (arch_opcode == kArchTailCallCodeObjectFromJSFunction) {
-        AssemblePopArgumentsAdaptorFrame(kJavaScriptCallArgCountRegister,
-                                         i.TempRegister(0), i.TempRegister(1),
-                                         i.TempRegister(2));
-      }
       if (instr->InputAt(0)->IsImmediate()) {
         __ Jump(i.InputCode(0), RelocInfo::CODE_TARGET);
       } else {
@@ -2450,42 +2408,50 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
                i.InputSimd128Register(1));
       break;
     }
-    case kMips64I64x2ExtMulLowI32x4S:
-      ASSEMBLE_SIMD_EXTENDED_MULTIPLY(ilvr_w, dotp_s_d);
+    case kMips64I64x2SConvertI32x4Low: {
+      CpuFeatureScope msa_scope(tasm(), MIPS_SIMD);
+      Simd128Register dst = i.OutputSimd128Register();
+      Simd128Register src = i.InputSimd128Register(0);
+      __ ilvr_w(kSimd128ScratchReg, src, src);
+      __ slli_d(dst, kSimd128ScratchReg, 32);
+      __ srai_d(dst, dst, 32);
       break;
-    case kMips64I64x2ExtMulHighI32x4S:
-      ASSEMBLE_SIMD_EXTENDED_MULTIPLY(ilvl_w, dotp_s_d);
+    }
+    case kMips64I64x2SConvertI32x4High: {
+      CpuFeatureScope msa_scope(tasm(), MIPS_SIMD);
+      Simd128Register dst = i.OutputSimd128Register();
+      Simd128Register src = i.InputSimd128Register(0);
+      __ ilvl_w(kSimd128ScratchReg, src, src);
+      __ slli_d(dst, kSimd128ScratchReg, 32);
+      __ srai_d(dst, dst, 32);
       break;
-    case kMips64I64x2ExtMulLowI32x4U:
-      ASSEMBLE_SIMD_EXTENDED_MULTIPLY(ilvr_w, dotp_u_d);
+    }
+    case kMips64I64x2UConvertI32x4Low: {
+      CpuFeatureScope msa_scope(tasm(), MIPS_SIMD);
+      __ xor_v(kSimd128RegZero, kSimd128RegZero, kSimd128RegZero);
+      __ ilvr_w(i.OutputSimd128Register(), kSimd128RegZero,
+                i.InputSimd128Register(0));
       break;
-    case kMips64I64x2ExtMulHighI32x4U:
-      ASSEMBLE_SIMD_EXTENDED_MULTIPLY(ilvl_w, dotp_u_d);
+    }
+    case kMips64I64x2UConvertI32x4High: {
+      CpuFeatureScope msa_scope(tasm(), MIPS_SIMD);
+      __ xor_v(kSimd128RegZero, kSimd128RegZero, kSimd128RegZero);
+      __ ilvl_w(i.OutputSimd128Register(), kSimd128RegZero,
+                i.InputSimd128Register(0));
       break;
-    case kMips64I32x4ExtMulLowI16x8S:
-      ASSEMBLE_SIMD_EXTENDED_MULTIPLY(ilvr_h, dotp_s_w);
+    }
+    case kMips64ExtMulLow: {
+      auto dt = static_cast<MSADataType>(MiscField::decode(instr->opcode()));
+      __ ExtMulLow(dt, i.OutputSimd128Register(), i.InputSimd128Register(0),
+                   i.InputSimd128Register(1));
       break;
-    case kMips64I32x4ExtMulHighI16x8S:
-      ASSEMBLE_SIMD_EXTENDED_MULTIPLY(ilvl_h, dotp_s_w);
+    }
+    case kMips64ExtMulHigh: {
+      auto dt = static_cast<MSADataType>(MiscField::decode(instr->opcode()));
+      __ ExtMulHigh(dt, i.OutputSimd128Register(), i.InputSimd128Register(0),
+                    i.InputSimd128Register(1));
       break;
-    case kMips64I32x4ExtMulLowI16x8U:
-      ASSEMBLE_SIMD_EXTENDED_MULTIPLY(ilvr_h, dotp_u_w);
-      break;
-    case kMips64I32x4ExtMulHighI16x8U:
-      ASSEMBLE_SIMD_EXTENDED_MULTIPLY(ilvl_h, dotp_u_w);
-      break;
-    case kMips64I16x8ExtMulLowI8x16S:
-      ASSEMBLE_SIMD_EXTENDED_MULTIPLY(ilvr_b, dotp_s_h);
-      break;
-    case kMips64I16x8ExtMulHighI8x16S:
-      ASSEMBLE_SIMD_EXTENDED_MULTIPLY(ilvl_b, dotp_s_h);
-      break;
-    case kMips64I16x8ExtMulLowI8x16U:
-      ASSEMBLE_SIMD_EXTENDED_MULTIPLY(ilvr_b, dotp_u_h);
-      break;
-    case kMips64I16x8ExtMulHighI8x16U:
-      ASSEMBLE_SIMD_EXTENDED_MULTIPLY(ilvl_b, dotp_u_h);
-      break;
+    }
     case kMips64F32x4Splat: {
       CpuFeatureScope msa_scope(tasm(), MIPS_SIMD);
       __ FmoveLow(kScratchReg, i.InputSingleRegister(0));
@@ -3048,6 +3014,12 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ slli_d(scratch1, scratch1, 4);
       __ or_v(scratch0, scratch0, scratch1);
       __ copy_u_b(dst, scratch0, 0);
+      break;
+    }
+    case kMips64I16x8Q15MulRSatS: {
+      CpuFeatureScope msa_scope(tasm(), MIPS_SIMD);
+      __ mulr_q_h(i.OutputSimd128Register(), i.InputSimd128Register(0),
+                  i.InputSimd128Register(1));
       break;
     }
     case kMips64I8x16Splat: {
@@ -4413,7 +4385,7 @@ void CodeGenerator::AssembleReturn(InstructionOperand* additional_pop_count) {
                 Operand(static_cast<int64_t>(0)));
     }
   }
-#ifdef V8_NO_ARGUMENTS_ADAPTOR
+
   // Functions with JS linkage have at least one parameter (the receiver).
   // If {parameter_count} == 0, it means it is a builtin with
   // kDontAdaptArgumentsSentinel, which takes care of JS arguments popping
@@ -4421,9 +4393,6 @@ void CodeGenerator::AssembleReturn(InstructionOperand* additional_pop_count) {
   const bool drop_jsargs = frame_access_state()->has_frame() &&
                            call_descriptor->IsJSFunctionCall() &&
                            parameter_count != 0;
-#else
-  const bool drop_jsargs = false;
-#endif
 
   if (call_descriptor->IsCFunctionCall()) {
     AssembleDeconstructFrame();
@@ -4738,7 +4707,6 @@ void CodeGenerator::AssembleJumpTable(Label** targets, size_t target_count) {
 #undef ASSEMBLE_IEEE754_BINOP
 #undef ASSEMBLE_IEEE754_UNOP
 #undef ASSEMBLE_F64X2_ARITHMETIC_BINOP
-#undef ASSEMBLE_SIMD_EXTENDED_MULTIPLY
 
 #undef TRACE_MSG
 #undef TRACE_UNIMPL

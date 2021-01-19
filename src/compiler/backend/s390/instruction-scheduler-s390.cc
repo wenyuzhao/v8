@@ -206,6 +206,10 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kS390_I64x2ExtMulHighI32x4S:
     case kS390_I64x2ExtMulLowI32x4U:
     case kS390_I64x2ExtMulHighI32x4U:
+    case kS390_I64x2SConvertI32x4Low:
+    case kS390_I64x2SConvertI32x4High:
+    case kS390_I64x2UConvertI32x4Low:
+    case kS390_I64x2UConvertI32x4High:
     case kS390_I32x4Splat:
     case kS390_I32x4ExtractLane:
     case kS390_I32x4ReplaceLane:
@@ -283,6 +287,7 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kS390_I16x8ExtMulHighI8x16U:
     case kS390_I16x8ExtAddPairwiseI8x16S:
     case kS390_I16x8ExtAddPairwiseI8x16U:
+    case kS390_I16x8Q15MulRSatS:
     case kS390_I8x16Splat:
     case kS390_I8x16ExtractLaneU:
     case kS390_I8x16ExtractLaneS:
@@ -366,7 +371,6 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kS390_Push:
     case kS390_PushFrame:
     case kS390_StoreToStackSlot:
-    case kS390_StackClaim:
       return kHasSideEffect;
 
     case kS390_Word64AtomicExchangeUint8:

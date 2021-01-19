@@ -353,9 +353,6 @@ void LiftoffAssembler::Load(LiftoffRegister dst, Register src_addr,
                             Register offset_reg, uintptr_t offset_imm,
                             LoadType type, LiftoffRegList pinned,
                             uint32_t* protected_load_pc, bool is_load_mem) {
-  if (emit_debug_code() && offset_reg != no_reg) {
-    AssertZeroExtended(offset_reg);
-  }
   Operand src_op = liftoff::GetMemOp(this, src_addr, offset_reg, offset_imm);
   if (protected_load_pc) *protected_load_pc = pc_offset();
   switch (type.value()) {
@@ -405,9 +402,6 @@ void LiftoffAssembler::Store(Register dst_addr, Register offset_reg,
                              uintptr_t offset_imm, LiftoffRegister src,
                              StoreType type, LiftoffRegList /* pinned */,
                              uint32_t* protected_store_pc, bool is_store_mem) {
-  if (emit_debug_code() && offset_reg != no_reg) {
-    AssertZeroExtended(offset_reg);
-  }
   Operand dst_op = liftoff::GetMemOp(this, dst_addr, offset_reg, offset_imm);
   if (protected_store_pc) *protected_store_pc = pc_offset();
   switch (type.value()) {
@@ -441,9 +435,6 @@ void LiftoffAssembler::Store(Register dst_addr, Register offset_reg,
 void LiftoffAssembler::AtomicStore(Register dst_addr, Register offset_reg,
                                    uintptr_t offset_imm, LiftoffRegister src,
                                    StoreType type, LiftoffRegList pinned) {
-  if (emit_debug_code() && offset_reg != no_reg) {
-    AssertZeroExtended(offset_reg);
-  }
   Operand dst_op = liftoff::GetMemOp(this, dst_addr, offset_reg, offset_imm);
   Register src_reg = src.gp();
   if (cache_state()->is_used(src)) {
@@ -481,9 +472,6 @@ void LiftoffAssembler::AtomicAdd(Register dst_addr, Register offset_reg,
     // {result} register in the code below.
     movq(result.gp(), value.gp());
     value = result;
-  }
-  if (emit_debug_code() && offset_reg != no_reg) {
-    AssertZeroExtended(offset_reg);
   }
   Operand dst_op = liftoff::GetMemOp(this, dst_addr, offset_reg, offset_imm);
   lock();
@@ -526,9 +514,6 @@ void LiftoffAssembler::AtomicSub(Register dst_addr, Register offset_reg,
     // {result} register in the code below.
     movq(result.gp(), value.gp());
     value = result;
-  }
-  if (emit_debug_code() && offset_reg != no_reg) {
-    AssertZeroExtended(offset_reg);
   }
   Operand dst_op = liftoff::GetMemOp(this, dst_addr, offset_reg, offset_imm);
   switch (type.value()) {
@@ -585,9 +570,6 @@ inline void AtomicBinop(LiftoffAssembler* lasm,
   LiftoffRegList pinned =
       LiftoffRegList::ForRegs(dst_addr, offset_reg, value_reg);
   __ ClearRegister(rax, {&dst_addr, &offset_reg, &value_reg}, pinned);
-  if (__ emit_debug_code() && offset_reg != no_reg) {
-    __ AssertZeroExtended(offset_reg);
-  }
   Operand dst_op = liftoff::GetMemOp(lasm, dst_addr, offset_reg, offset_imm);
 
   switch (type.value()) {
@@ -684,9 +666,6 @@ void LiftoffAssembler::AtomicExchange(Register dst_addr, Register offset_reg,
     movq(result.gp(), value.gp());
     value = result;
   }
-  if (emit_debug_code() && offset_reg != no_reg) {
-    AssertZeroExtended(offset_reg);
-  }
   Operand dst_op = liftoff::GetMemOp(this, dst_addr, offset_reg, offset_imm);
   switch (type.value()) {
     case StoreType::kI32Store8:
@@ -732,9 +711,6 @@ void LiftoffAssembler::AtomicCompareExchange(
     movq(rax, expected.gp());
   }
 
-  if (emit_debug_code() && offset_reg != no_reg) {
-    AssertZeroExtended(offset_reg);
-  }
   Operand dst_op = liftoff::GetMemOp(this, dst_addr, offset_reg, offset_imm);
 
   lock();
@@ -2351,9 +2327,6 @@ void LiftoffAssembler::LoadTransform(LiftoffRegister dst, Register src_addr,
                                      LoadType type,
                                      LoadTransformationKind transform,
                                      uint32_t* protected_load_pc) {
-  if (emit_debug_code() && offset_reg != no_reg) {
-    AssertZeroExtended(offset_reg);
-  }
   Operand src_op = liftoff::GetMemOp(this, src_addr, offset_reg, offset_imm);
   *protected_load_pc = pc_offset();
   MachineType memtype = type.mem_type();
@@ -2406,9 +2379,6 @@ void LiftoffAssembler::LoadLane(LiftoffRegister dst, LiftoffRegister src,
                                 Register addr, Register offset_reg,
                                 uintptr_t offset_imm, LoadType type,
                                 uint8_t laneidx, uint32_t* protected_load_pc) {
-  if (emit_debug_code() && offset_reg != no_reg) {
-    AssertZeroExtended(offset_reg);
-  }
   Operand src_op = liftoff::GetMemOp(this, addr, offset_reg, offset_imm);
   *protected_load_pc = pc_offset();
 
@@ -3205,6 +3175,12 @@ void LiftoffAssembler::emit_i16x8_extmul_high_i8x16_u(LiftoffRegister dst,
               /*is_signed=*/false);
 }
 
+void LiftoffAssembler::emit_i16x8_q15mulr_sat_s(LiftoffRegister dst,
+                                                LiftoffRegister src1,
+                                                LiftoffRegister src2) {
+  I16x8Q15MulRSatS(dst.fp(), src1.fp(), src2.fp());
+}
+
 void LiftoffAssembler::emit_i32x4_neg(LiftoffRegister dst,
                                       LiftoffRegister src) {
   if (dst.fp() == src.fp()) {
@@ -3488,6 +3464,31 @@ void LiftoffAssembler::emit_i64x2_extmul_high_i32x4_u(LiftoffRegister dst,
                                                       LiftoffRegister src2) {
   I64x2ExtMul(dst.fp(), src1.fp(), src2.fp(), /*low=*/false,
               /*is_signed=*/false);
+}
+
+void LiftoffAssembler::emit_i64x2_bitmask(LiftoffRegister dst,
+                                          LiftoffRegister src) {
+  Movmskpd(dst.gp(), src.fp());
+}
+
+void LiftoffAssembler::emit_i64x2_sconvert_i32x4_low(LiftoffRegister dst,
+                                                     LiftoffRegister src) {
+  Pmovsxdq(dst.fp(), src.fp());
+}
+
+void LiftoffAssembler::emit_i64x2_sconvert_i32x4_high(LiftoffRegister dst,
+                                                      LiftoffRegister src) {
+  I64x2SConvertI32x4High(dst.fp(), src.fp());
+}
+
+void LiftoffAssembler::emit_i64x2_uconvert_i32x4_low(LiftoffRegister dst,
+                                                     LiftoffRegister src) {
+  Pmovzxdq(dst.fp(), src.fp());
+}
+
+void LiftoffAssembler::emit_i64x2_uconvert_i32x4_high(LiftoffRegister dst,
+                                                      LiftoffRegister src) {
+  I64x2UConvertI32x4High(dst.fp(), src.fp());
 }
 
 void LiftoffAssembler::emit_f32x4_abs(LiftoffRegister dst,

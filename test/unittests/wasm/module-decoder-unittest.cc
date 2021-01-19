@@ -225,6 +225,13 @@ TEST_F(WasmModuleVerifyTest, WrongVersion) {
   }
 }
 
+TEST_F(WasmModuleVerifyTest, WrongSection) {
+  constexpr byte kInvalidSection = 0x1c;
+  const byte data[] = {kInvalidSection, 0};
+  ModuleResult result = DecodeModule(data, data + sizeof(data));
+  EXPECT_FALSE(result.ok());
+}
+
 TEST_F(WasmModuleVerifyTest, DecodeEmpty) {
   ModuleResult result = DecodeModule(nullptr, nullptr);
   EXPECT_TRUE(result.ok());
@@ -280,7 +287,6 @@ TEST_F(WasmModuleVerifyTest, S128Global) {
 
 TEST_F(WasmModuleVerifyTest, ExternRefGlobal) {
   WASM_FEATURE_SCOPE(reftypes);
-  WASM_FEATURE_SCOPE(bulk_memory);
   static const byte data[] = {
       // sig#0 ---------------------------------------------------------------
       TYPE_SECTION_ONE_SIG_VOID_VOID,
@@ -329,7 +335,6 @@ TEST_F(WasmModuleVerifyTest, ExternRefGlobal) {
 
 TEST_F(WasmModuleVerifyTest, FuncRefGlobal) {
   WASM_FEATURE_SCOPE(reftypes);
-  WASM_FEATURE_SCOPE(bulk_memory);
   static const byte data[] = {
       // sig#0 ---------------------------------------------------------------
       TYPE_SECTION_ONE_SIG_VOID_VOID,
@@ -1628,7 +1633,6 @@ TEST_F(WasmModuleVerifyTest, ElementSectionMultipleTables) {
   // Test that if we have multiple tables, in the element section we can target
   // and initialize all tables.
   WASM_FEATURE_SCOPE(reftypes);
-  WASM_FEATURE_SCOPE(bulk_memory);
   static const byte data[] = {
       // sig#0 ---------------------------------------------------------------
       TYPE_SECTION_ONE_SIG_VOID_VOID,
@@ -1661,7 +1665,6 @@ TEST_F(WasmModuleVerifyTest, ElementSectionMixedTables) {
   // Test that if we have multiple tables, both imported and module-defined, in
   // the element section we can target and initialize all tables.
   WASM_FEATURE_SCOPE(reftypes);
-  WASM_FEATURE_SCOPE(bulk_memory);
   static const byte data[] = {
       // sig#0 ---------------------------------------------------------------
       TYPE_SECTION_ONE_SIG_VOID_VOID,
@@ -1719,7 +1722,6 @@ TEST_F(WasmModuleVerifyTest, ElementSectionMultipleTablesArbitraryOrder) {
   // Test that the order in which tables are targeted in the element secion
   // can be arbitrary.
   WASM_FEATURE_SCOPE(reftypes);
-  WASM_FEATURE_SCOPE(bulk_memory);
   static const byte data[] = {
       // sig#0 ---------------------------------------------------------------
       TYPE_SECTION_ONE_SIG_VOID_VOID,
@@ -1756,7 +1758,6 @@ TEST_F(WasmModuleVerifyTest, ElementSectionMixedTablesArbitraryOrder) {
   // Test that the order in which tables are targeted in the element secion can
   // be arbitrary. In this test, tables can be both imported and module-defined.
   WASM_FEATURE_SCOPE(reftypes);
-  WASM_FEATURE_SCOPE(bulk_memory);
   static const byte data[] = {
       // sig#0 ---------------------------------------------------------------
       TYPE_SECTION_ONE_SIG_VOID_VOID,
@@ -1812,7 +1813,6 @@ TEST_F(WasmModuleVerifyTest, ElementSectionMixedTablesArbitraryOrder) {
 
 TEST_F(WasmModuleVerifyTest, ElementSectionInitExternRefTableWithFuncRef) {
   WASM_FEATURE_SCOPE(reftypes);
-  WASM_FEATURE_SCOPE(bulk_memory);
   static const byte data[] = {
       // sig#0 ---------------------------------------------------------------
       TYPE_SECTION_ONE_SIG_VOID_VOID,
@@ -1847,7 +1847,6 @@ TEST_F(WasmModuleVerifyTest, ElementSectionDontInitExternRefImportedTable) {
   // Test that imported tables of type ExternRef cannot be initialized in the
   // elements section.
   WASM_FEATURE_SCOPE(reftypes);
-  WASM_FEATURE_SCOPE(bulk_memory);
   static const byte data[] = {
       // sig#0 ---------------------------------------------------------------
       TYPE_SECTION_ONE_SIG_VOID_VOID,
@@ -1994,9 +1993,10 @@ TEST_F(WasmModuleVerifyTest, IllegalTableTypes) {
 
     auto result = DecodeModule(data.data(), data.data() + data.size());
 
-    EXPECT_NOT_OK(result,
-                  "Currently, only nullable exnref, externref, and "
-                  "function references are allowed as table types");
+    EXPECT_NOT_OK(
+        result,
+        "Currently, only externref and function references are allowed "
+        "as table types");
   }
 }
 
@@ -3016,8 +3016,6 @@ TEST_F(WasmModuleVerifyTest, PassiveDataSegment) {
       // data segments  --------------------------------------------------------
       SECTION(Data, ENTRY_COUNT(1), PASSIVE, ADD_COUNT('h', 'i')),
   };
-  EXPECT_FAILURE(data);
-  WASM_FEATURE_SCOPE(bulk_memory);
   EXPECT_VERIFIES(data);
   EXPECT_OFF_END_FAILURE(data, arraysize(data) - 5);
 }
@@ -3036,8 +3034,6 @@ TEST_F(WasmModuleVerifyTest, ActiveElementSegmentWithElements) {
               REF_FUNC_ELEMENT(0), REF_FUNC_ELEMENT(0), REF_NULL_ELEMENT),
       // code ------------------------------------------------------------------
       ONE_EMPTY_BODY};
-  EXPECT_FAILURE(data);
-  WASM_FEATURE_SCOPE(bulk_memory);
   EXPECT_VERIFIES(data);
   EXPECT_OFF_END_FAILURE(data, arraysize(data) - 5);
 }
@@ -3056,8 +3052,6 @@ TEST_F(WasmModuleVerifyTest, PassiveElementSegment) {
               REF_NULL_ELEMENT),
       // code ------------------------------------------------------------------
       ONE_EMPTY_BODY};
-  EXPECT_FAILURE(data);
-  WASM_FEATURE_SCOPE(bulk_memory);
   EXPECT_VERIFIES(data);
   EXPECT_OFF_END_FAILURE(data, arraysize(data) - 5);
 }
@@ -3075,7 +3069,6 @@ TEST_F(WasmModuleVerifyTest, PassiveElementSegmentExternRef) {
               U32V_1(0)),
       // code ------------------------------------------------------------------
       ONE_EMPTY_BODY};
-  WASM_FEATURE_SCOPE(bulk_memory);
   EXPECT_FAILURE(data);
 }
 
@@ -3092,8 +3085,6 @@ TEST_F(WasmModuleVerifyTest, PassiveElementSegmentWithIndices) {
               ENTRY_COUNT(3), U32V_1(0), U32V_1(0), U32V_1(0)),
       // code ------------------------------------------------------------------
       ONE_EMPTY_BODY};
-  EXPECT_FAILURE(data);
-  WASM_FEATURE_SCOPE(bulk_memory);
   EXPECT_VERIFIES(data);
   EXPECT_OFF_END_FAILURE(data, arraysize(data) - 5);
 }
@@ -3113,14 +3104,11 @@ TEST_F(WasmModuleVerifyTest, DeclarativeElementSegmentFuncRef) {
       // code ------------------------------------------------------------------
       ONE_EMPTY_BODY};
   EXPECT_FAILURE(data);
-  WASM_FEATURE_SCOPE(bulk_memory);
-  EXPECT_FAILURE(data);
   WASM_FEATURE_SCOPE(reftypes);
   EXPECT_VERIFIES(data);
 }
 
 TEST_F(WasmModuleVerifyTest, DeclarativeElementSegmentWithInvalidIndex) {
-  WASM_FEATURE_SCOPE(bulk_memory);
   WASM_FEATURE_SCOPE(reftypes);
   static const byte data[] = {
       // sig#0 -----------------------------------------------------------------
@@ -3144,15 +3132,12 @@ TEST_F(WasmModuleVerifyTest, DataCountSectionCorrectPlacement) {
   static const byte data[] = {SECTION(Element, ENTRY_COUNT(0)),
                               SECTION(DataCount, ENTRY_COUNT(0)),
                               SECTION(Code, ENTRY_COUNT(0))};
-  EXPECT_FAILURE(data);
-  WASM_FEATURE_SCOPE(bulk_memory);
   EXPECT_VERIFIES(data);
 }
 
 TEST_F(WasmModuleVerifyTest, DataCountSectionAfterCode) {
   static const byte data[] = {SECTION(Code, ENTRY_COUNT(0)),
                               SECTION(DataCount, ENTRY_COUNT(0))};
-  WASM_FEATURE_SCOPE(bulk_memory);
   ModuleResult result = DecodeModule(data, data + sizeof(data));
   EXPECT_NOT_OK(result,
                 "The DataCount section must appear before the Code section");
@@ -3161,7 +3146,6 @@ TEST_F(WasmModuleVerifyTest, DataCountSectionAfterCode) {
 TEST_F(WasmModuleVerifyTest, DataCountSectionBeforeElement) {
   static const byte data[] = {SECTION(DataCount, ENTRY_COUNT(0)),
                               SECTION(Element, ENTRY_COUNT(0))};
-  WASM_FEATURE_SCOPE(bulk_memory);
   ModuleResult result = DecodeModule(data, data + sizeof(data));
   EXPECT_NOT_OK(result, "unexpected section <Element>");
 }
@@ -3178,7 +3162,6 @@ TEST_F(WasmModuleVerifyTest, DataCountSectionAfterStartBeforeElement) {
       SECTION(DataCount, ENTRY_COUNT(0)),  // DataCount section.
       SECTION(Element, ENTRY_COUNT(0))     // Element section.
   };
-  WASM_FEATURE_SCOPE(bulk_memory);
   ModuleResult result = DecodeModule(data, data + sizeof(data));
   EXPECT_NOT_OK(result, "unexpected section <Element>");
 }
@@ -3186,7 +3169,6 @@ TEST_F(WasmModuleVerifyTest, DataCountSectionAfterStartBeforeElement) {
 TEST_F(WasmModuleVerifyTest, MultipleDataCountSections) {
   static const byte data[] = {SECTION(DataCount, ENTRY_COUNT(0)),
                               SECTION(DataCount, ENTRY_COUNT(0))};
-  WASM_FEATURE_SCOPE(bulk_memory);
   ModuleResult result = DecodeModule(data, data + sizeof(data));
   EXPECT_NOT_OK(result, "Multiple DataCount sections not allowed");
 }
@@ -3198,8 +3180,6 @@ TEST_F(WasmModuleVerifyTest, DataCountSegmentCountMatch) {
       SECTION(Data, ENTRY_COUNT(1), LINEAR_MEMORY_INDEX_0,  // Data section.
               WASM_INIT_EXPR_I32V_1(12), ADD_COUNT('h', 'i'))};
 
-  EXPECT_FAILURE(data);
-  WASM_FEATURE_SCOPE(bulk_memory);
   EXPECT_VERIFIES(data);
 }
 
@@ -3208,7 +3188,6 @@ TEST_F(WasmModuleVerifyTest, DataCountSegmentCount_greater) {
       SECTION(Memory, ENTRY_COUNT(1), 0, 1),  // Memory section.
       SECTION(DataCount, ENTRY_COUNT(3)),     // DataCount section.
       SECTION(Data, ENTRY_COUNT(0))};         // Data section.
-  WASM_FEATURE_SCOPE(bulk_memory);
   ModuleResult result = DecodeModule(data, data + sizeof(data));
   EXPECT_NOT_OK(result, "data segments count 0 mismatch (3 expected)");
 }
@@ -3219,7 +3198,6 @@ TEST_F(WasmModuleVerifyTest, DataCountSegmentCount_less) {
       SECTION(DataCount, ENTRY_COUNT(0)),     // DataCount section.
       SECTION(Data, ENTRY_COUNT(1), LINEAR_MEMORY_INDEX_0,  // Data section.
               WASM_INIT_EXPR_I32V_1(12), ADD_COUNT('a', 'b', 'c'))};
-  WASM_FEATURE_SCOPE(bulk_memory);
   ModuleResult result = DecodeModule(data, data + sizeof(data));
   EXPECT_NOT_OK(result, "data segments count 1 mismatch (0 expected)");
 }
@@ -3227,7 +3205,6 @@ TEST_F(WasmModuleVerifyTest, DataCountSegmentCount_less) {
 TEST_F(WasmModuleVerifyTest, DataCountSegmentCount_omitted) {
   static const byte data[] = {SECTION(Memory, ENTRY_COUNT(1), 0, 1),
                               SECTION(DataCount, ENTRY_COUNT(1))};
-  WASM_FEATURE_SCOPE(bulk_memory);
   ModuleResult result = DecodeModule(data, data + sizeof(data));
   EXPECT_NOT_OK(result, "data segments count 0 mismatch (1 expected)");
 }

@@ -2119,36 +2119,15 @@ void InstructionSelector::EmitPrepareArguments(
     }
   } else {
     // Push any stack arguments.
-    int num_slots = 0;
-    int slot = 0;
-
-#define INPUT_SWITCH(param)                            \
-  switch (input.location.GetType().representation()) { \
-    case MachineRepresentation::kSimd128:              \
-      param += kSimd128Size / kSystemPointerSize;      \
-      break;                                           \
-    case MachineRepresentation::kFloat64:              \
-      param += kDoubleSize / kSystemPointerSize;       \
-      break;                                           \
-    default:                                           \
-      param += 1;                                      \
-      break;                                           \
-  }
-    for (PushParameter input : *arguments) {
-      if (input.node == nullptr) continue;
-      INPUT_SWITCH(num_slots)
-    }
-    Emit(kS390_StackClaim, g.NoOutput(), g.TempImmediate(num_slots));
-    for (PushParameter input : *arguments) {
+    int stack_decrement = 0;
+    for (PushParameter input : base::Reversed(*arguments)) {
+      stack_decrement += kSystemPointerSize;
       // Skip any alignment holes in pushed nodes.
-      if (input.node) {
-        Emit(kS390_StoreToStackSlot, g.NoOutput(), g.UseRegister(input.node),
-             g.TempImmediate(slot));
-        INPUT_SWITCH(slot)
-      }
+      if (input.node == nullptr) continue;
+      InstructionOperand decrement = g.UseImmediate(stack_decrement);
+      stack_decrement = 0;
+      Emit(kS390_Push, g.NoOutput(), decrement, g.UseRegister(input.node));
     }
-#undef INPUT_SWITCH
-    DCHECK(num_slots == slot);
   }
 }
 
@@ -2158,8 +2137,6 @@ void InstructionSelector::VisitMemoryBarrier(Node* node) {
 }
 
 bool InstructionSelector::IsTailCallAddressImmediate() { return false; }
-
-int InstructionSelector::GetTempsCountForTailCallFromJSFunction() { return 3; }
 
 void InstructionSelector::VisitWord32AtomicLoad(Node* node) {
   LoadRepresentation load_rep = LoadRepresentationOf(node->op());
@@ -2450,6 +2427,7 @@ void InstructionSelector::VisitWord64AtomicStore(Node* node) {
   V(I64x2ExtMulHighI32x4S) \
   V(I64x2ExtMulLowI32x4U)  \
   V(I64x2ExtMulHighI32x4U) \
+  V(I16x8Q15MulRSatS)      \
   V(I32x4Add)              \
   V(I32x4AddHoriz)         \
   V(I32x4Sub)              \
@@ -2698,6 +2676,7 @@ SIMD_VISIT_QFMOP(F32x4Qfms)
 SIMD_VISIT_BITMASK(I8x16BitMask)
 SIMD_VISIT_BITMASK(I16x8BitMask)
 SIMD_VISIT_BITMASK(I32x4BitMask)
+SIMD_VISIT_BITMASK(I64x2BitMask)
 #undef SIMD_VISIT_BITMASK
 
 #define SIMD_VISIT_PMIN_MAX(Type)                                           \

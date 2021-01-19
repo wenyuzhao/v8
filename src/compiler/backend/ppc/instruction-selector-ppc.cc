@@ -1863,17 +1863,19 @@ void InstructionSelector::EmitPrepareArguments(
     }
   } else {
     // Push any stack arguments.
+    int stack_decrement = 0;
     for (PushParameter input : base::Reversed(*arguments)) {
+      stack_decrement += kSystemPointerSize;
       // Skip any alignment holes in pushed nodes.
       if (input.node == nullptr) continue;
-      Emit(kPPC_Push, g.NoOutput(), g.UseRegister(input.node));
+      InstructionOperand decrement = g.UseImmediate(stack_decrement);
+      stack_decrement = 0;
+      Emit(kPPC_Push, g.NoOutput(), decrement, g.UseRegister(input.node));
     }
   }
 }
 
 bool InstructionSelector::IsTailCallAddressImmediate() { return false; }
-
-int InstructionSelector::GetTempsCountForTailCallFromJSFunction() { return 3; }
 
 void InstructionSelector::VisitFloat64ExtractLowWord32(Node* node) {
   PPCOperandGenerator g(this);
@@ -2211,6 +2213,7 @@ void InstructionSelector::VisitInt64AbsWithOverflow(Node* node) {
   V(I16x8AddSatU)          \
   V(I16x8SubSatU)          \
   V(I16x8RoundingAverageU) \
+  V(I16x8Q15MulRSatS)      \
   V(I8x16Add)              \
   V(I8x16Sub)              \
   V(I8x16Mul)              \
@@ -2388,6 +2391,7 @@ SIMD_BOOL_LIST(SIMD_VISIT_BOOL)
 SIMD_VISIT_BITMASK(I8x16BitMask)
 SIMD_VISIT_BITMASK(I16x8BitMask)
 SIMD_VISIT_BITMASK(I32x4BitMask)
+SIMD_VISIT_BITMASK(I64x2BitMask)
 #undef SIMD_VISIT_BITMASK
 
 #define SIMD_VISIT_PMIN_MAX(Type)                                           \

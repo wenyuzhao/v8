@@ -20,12 +20,9 @@ namespace internal {
 
 template <typename T>
 class Handle;
-class JSObject;
-class JSProxy;
 template <typename T>
 class Vector;
 class WasmFrame;
-class WasmInstanceObject;
 
 namespace wasm {
 
@@ -137,10 +134,6 @@ class DebugSideTable {
   std::vector<Entry> entries_;
 };
 
-// Get the module scope for a given instance. This will contain the wasm memory
-// (if the instance has a memory) and the values of all globals.
-Handle<JSObject> GetModuleScopeObject(Handle<WasmInstanceObject>);
-
 // Debug info per NativeModule, created lazily on demand.
 // Implementation in {wasm-debug.cc} using PIMPL.
 class V8_EXPORT_PRIVATE DebugInfo {
@@ -161,11 +154,16 @@ class V8_EXPORT_PRIVATE DebugInfo {
   WasmValue GetStackValue(int index, Address pc, Address fp,
                           Address debug_break_fp);
 
-  Handle<JSObject> GetLocalScopeObject(Isolate*, Address pc, Address fp,
-                                       Address debug_break_fp);
+  // Returns the name of the entity (with the given |index| and |kind|) derived
+  // from the exports table. If the entity is not exported, an empty reference
+  // will be returned instead.
+  WireBytesRef GetExportName(ImportExportKindCode kind, uint32_t index);
 
-  Handle<JSObject> GetStackScopeObject(Isolate*, Address pc, Address fp,
-                                       Address debug_break_fp);
+  // Returns the module and field name of the entity (with the given |index|
+  // and |kind|) derived from the imports table. If the entity is not imported,
+  // a pair of empty references will be returned instead.
+  std::pair<WireBytesRef, WireBytesRef> GetImportName(ImportExportKindCode kind,
+                                                      uint32_t index);
 
   WireBytesRef GetLocalName(int func_index, int local_index);
 
@@ -194,8 +192,6 @@ class V8_EXPORT_PRIVATE DebugInfo {
  private:
   std::unique_ptr<DebugInfoImpl> impl_;
 };
-
-Handle<JSObject> GetJSDebugProxy(WasmFrame* frame);
 
 }  // namespace wasm
 }  // namespace internal
