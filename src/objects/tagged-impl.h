@@ -93,8 +93,6 @@ class TaggedImpl {
     return kCanBeWeak ? HAS_STRONG_HEAP_OBJECT_TAG(ptr_) : !IsSmi();
   }
 
-  inline bool IsFillerMap(Isolate* isolate) const;
-
   // Returns true if this tagged value is a weak pointer to a HeapObject.
   constexpr inline bool IsWeak() const {
     return IsWeakOrCleared() && !IsCleared();

@@ -554,9 +554,7 @@ void PropertyArray::PropertyArrayVerify(Isolate* isolate) {
   CHECK_LT(0, length());
   for (int i = 0; i < length(); i++) {
     Object e = get(i);
-    if (!e.IsFillerMap(isolate)) {
-      Object::VerifyPointer(isolate, e);
-    }
+    Object::VerifyPointer(isolate, e);
   }
 }
 

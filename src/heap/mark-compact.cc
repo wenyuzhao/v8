@@ -1074,7 +1074,6 @@ class InternalizedStringTableCleaner : public RootVisitor {
     for (OffHeapObjectSlot p = start; p < end; ++p) {
       Object o = p.load(isolate);
       if (o.IsHeapObject()) {
-        DCHECK(!MapWord::IsPacked(p.Relaxed_Load(isolate).ptr()));
         HeapObject heap_object = HeapObject::cast(o);
         DCHECK(!Heap::InYoungGeneration(heap_object));
         if (marking_state->IsWhite(heap_object)) {
@@ -1106,7 +1105,6 @@ class ExternalStringTableCleaner : public RootVisitor {
     for (FullObjectSlot p = start; p < end; ++p) {
       Object o = *p;
       if (o.IsHeapObject()) {
-        DCHECK(!MapWord::IsPacked(p.Relaxed_Load().ptr()));
         HeapObject heap_object = HeapObject::cast(o);
         if (marking_state->IsWhite(heap_object)) {
           if (o.IsExternalString()) {
@@ -1829,7 +1827,6 @@ size_t MarkCompactCollector::ProcessMarkingWorklist(size_t bytes_to_process) {
          local_marking_worklists()->PopOnHold(&object)) {
     // Left trimming may result in grey or black filler objects on the marking
     // worklist. Ignore these objects.
-    DCHECK(!MapWord::IsPacked(object.ptr()));
     if (object.IsFreeSpaceOrFiller()) {
       // Due to copying mark bits and the fact that grey and black have their
       // first bit set, one word fillers are always black.
@@ -2752,9 +2749,7 @@ class PointersUpdatingVisitor : public ObjectVisitor, public RootVisitor {
   void VisitPointers(HeapObject host, ObjectSlot start,
                      ObjectSlot end) override {
     for (ObjectSlot p = start; p < end; ++p) {
-      DCHECK_IMPLIES(!p.Relaxed_Load().IsFillerMap(
-                         internal::GetIsolateFromWritableObject(host)),
-                     !MapWord::IsPacked((*p).ptr()));
+      DCHECK(!MapWord::IsPacked((*p).ptr()));
       UpdateStrongSlotInternal(isolate_, p);
     }
   }
@@ -4329,12 +4324,7 @@ class YoungGenerationMarkingVisitor final
   template <typename TSlot>
   V8_INLINE void VisitPointersImpl(HeapObject host, TSlot start, TSlot end) {
     for (TSlot slot = start; slot < end; ++slot) {
-      DCHECK_IMPLIES(!slot.Relaxed_Load().IsFillerMap(
-                         internal::GetIsolateFromWritableObject(host)),
-                     !MapWord::IsPacked((*slot).ptr()));
-      DCHECK_IMPLIES(MapWord::IsPacked((*slot).ptr()),
-                     slot.Relaxed_Load().IsFillerMap(
-                         internal::GetIsolateFromWritableObject(host)));
+      DCHECK(!MapWord::IsPacked((*slot).ptr()));
       VisitPointer(host, slot);
     }
   }

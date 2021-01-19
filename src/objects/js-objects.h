@@ -670,9 +670,9 @@ class JSObject : public TorqueGeneratedJSObject<JSObject, JSReceiver> {
 
   // Initializes the body starting at |start_offset|. It is responsibility of
   // the caller to initialize object header. Fill the pre-allocated fields with
-  // pre_allocated_value and the rest with filler_value.
+  // undefined_value and the rest with filler_map.
   // Note: this call does not update write barrier, the caller is responsible
-  // to ensure that |filler_value| can be collected without WB here.
+  // to ensure that |filler_map| can be collected without WB here.
   inline void InitializeBody(Map map, int start_offset,
                              bool is_slack_tracking_in_progress,
                              MapWord filler_map, Object undefined_value);
