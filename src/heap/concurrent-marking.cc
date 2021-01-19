@@ -175,7 +175,6 @@ class ConcurrentMarkingVisitor final
                        ObjectSlot end) override {
       for (ObjectSlot p = start; p < end; ++p) {
         Object object = p.Relaxed_Load();
-        DCHECK(!MapWord::IsPacked(object.ptr()));
         slot_snapshot_->add(p, object);
       }
     }
@@ -251,7 +250,6 @@ class ConcurrentMarkingVisitor final
       ObjectSlot slot = snapshot.slot(i);
       Object object = snapshot.value(i);
       DCHECK(!HasWeakHeapObjectTag(object));
-      DCHECK(!MapWord::IsPacked(object.ptr()));
       if (!object.IsHeapObject()) continue;
       HeapObject heap_object = HeapObject::cast(object);
       MarkObject(host, heap_object);

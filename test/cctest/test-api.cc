@@ -3002,7 +3002,7 @@ THREADED_TEST(InternalFieldsAlignedPointers) {
   int stack_allocated[100];
   CheckAlignedPointerInInternalField(obj, stack_allocated);
 
-  void* huge = reinterpret_cast<void*>(~static_cast<uintptr_t>(3));
+  void* huge = reinterpret_cast<void*>(~static_cast<uintptr_t>(1));
   CheckAlignedPointerInInternalField(obj, huge);
 
   v8::Global<v8::Object> persistent(isolate, obj);
@@ -3078,7 +3078,7 @@ THREADED_TEST(EmbedderDataAlignedPointers) {
   CheckAlignedPointerInEmbedderData(&env, 2, stack_allocated);
   CHECK_EQ(3, (*env)->GetNumberOfEmbedderDataFields());
 
-  void* huge = reinterpret_cast<void*>(~static_cast<uintptr_t>(3));
+  void* huge = reinterpret_cast<void*>(~static_cast<uintptr_t>(1));
   CheckAlignedPointerInEmbedderData(&env, 3, huge);
   CHECK_EQ(4, (*env)->GetNumberOfEmbedderDataFields());
 
