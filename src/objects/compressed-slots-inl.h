@@ -29,7 +29,8 @@ bool CompressedObjectSlot::contains_value(Address raw_value) const {
 }
 
 bool CompressedObjectSlot::contains_map_value(Address raw_value) const {
-  // Simply forward to contains_value because map packing is not supported with pointer compression.
+  // Simply forward to contains_value because map packing is not supported with
+  // pointer compression.
   DCHECK(!V8_MAP_PACKING_BOOL);
   return contains_value(raw_value);
 }
@@ -49,13 +50,15 @@ void CompressedObjectSlot::store(Object value) const {
 }
 
 void CompressedObjectSlot::store_map(Map map) const {
-  // Simply forward to store because map packing is not supported with pointer compression.
+  // Simply forward to store because map packing is not supported with pointer
+  // compression.
   DCHECK(!V8_MAP_PACKING_BOOL);
   store(map);
 }
 
 Map CompressedObjectSlot::load_map() const {
-  // Simply forward to Relaxed_Load because map packing is not supported with pointer compression.
+  // Simply forward to Relaxed_Load because map packing is not supported with
+  // pointer compression.
   DCHECK(!V8_MAP_PACKING_BOOL);
   return Map::unchecked_cast(Relaxed_Load());
 }

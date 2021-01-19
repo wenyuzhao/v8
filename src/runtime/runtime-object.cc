@@ -97,12 +97,14 @@ namespace {
 // This function sets the sentinel value in a deleted field. Thes sentinel has
 // to look like a proper standalone object because the slack tracking may
 // complete at any time. For this reason we use the filler map word.
-// If V8_MAP_PACKING is enabled, then the filler map word is a packed filler map.
-// Otherwise, the filler map word is the same as the filler map.
+// If V8_MAP_PACKING is enabled, then the filler map word is a packed filler
+// map. Otherwise, the filler map word is the same as the filler map.
 inline void ClearField(Isolate* isolate, JSObject object, FieldIndex index) {
-  MapWord filler_map_word = ReadOnlyRoots(isolate).one_pointer_filler_map_word();
+  MapWord filler_map_word =
+      ReadOnlyRoots(isolate).one_pointer_filler_map_word();
 #ifndef V8_MAP_PACKING
-  DCHECK_EQ(filler_map_word.ToMap(), ReadOnlyRoots(isolate).one_pointer_filler_map());
+  DCHECK_EQ(filler_map_word.ToMap(),
+            ReadOnlyRoots(isolate).one_pointer_filler_map());
 #endif
   if (index.is_inobject()) {
     int offset = index.offset();
