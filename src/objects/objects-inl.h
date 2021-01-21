@@ -677,9 +677,9 @@ MapWord MapWord::FromMap(const Map map) {
 
 Map MapWord::ToMap() const {
 #ifdef V8_MAP_PACKING
-  return Map::cast(Object(Unpack(value_)));
+  return Map::unchecked_cast(Object(Unpack(value_)));
 #else
-  return Map::cast(Object(value_));
+  return Map::unchecked_cast(Object(value_));
 #endif
 }
 
