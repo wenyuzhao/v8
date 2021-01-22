@@ -74,7 +74,6 @@ class IterateAndScavengePromotedObjectsVisitor final : public ObjectVisitor {
       typename TSlot::TObject object = *slot;
       HeapObject heap_object;
       if (object.GetHeapObject(&heap_object)) {
-        DCHECK(!MapWord::IsPacked(object.ptr()));
         HandleSlot(host, THeapObjectSlot(slot), heap_object);
       }
     }

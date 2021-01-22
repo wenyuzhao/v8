@@ -1911,7 +1911,6 @@ class StringTableVerifier : public RootVisitor {
     for (OffHeapObjectSlot p = start; p < end; ++p) {
       Object o = p.load(isolate_);
       DCHECK(!HasWeakHeapObjectTag(o));
-      DCHECK(!MapWord::IsPacked(p.Relaxed_Load(isolate_).ptr()));
       if (o.IsHeapObject()) {
         HeapObject object = HeapObject::cast(o);
         // Check that the string is actually internalized.
@@ -2769,7 +2768,6 @@ void Heap::VisitExternalResources(v8::ExternalResourceVisitor* visitor) {
     void VisitRootPointers(Root root, const char* description,
                            FullObjectSlot start, FullObjectSlot end) override {
       for (FullObjectSlot p = start; p < end; ++p) {
-        DCHECK(!MapWord::IsPacked(p.Relaxed_Load().ptr()));
         DCHECK((*p).IsExternalString());
         visitor_->VisitExternalString(
             Utils::ToLocal(Handle<String>(String::cast(*p), isolate_)));
@@ -3051,7 +3049,6 @@ class LeftTrimmerVerifierRootVisitor : public RootVisitor {
   void VisitRootPointers(Root root, const char* description,
                          FullObjectSlot start, FullObjectSlot end) override {
     for (FullObjectSlot p = start; p < end; ++p) {
-      DCHECK(!MapWord::IsPacked(p.Relaxed_Load().ptr()));
       DCHECK_NE(*p, to_check_);
     }
   }
@@ -3561,7 +3558,6 @@ class SlotCollectingVisitor final : public ObjectVisitor {
   void VisitPointers(HeapObject host, MaybeObjectSlot start,
                      MaybeObjectSlot end) final {
     for (MaybeObjectSlot p = start; p < end; ++p) {
-      DCHECK(!MapWord::IsPacked(p.Relaxed_Load().ptr()));
       slots_.push_back(p);
     }
   }
@@ -4155,7 +4151,7 @@ class SlotVerifyingVisitor : public ObjectVisitor {
                      ObjectSlot end) override {
 #ifdef DEBUG
     for (ObjectSlot slot = start; slot < end; ++slot) {
-      DCHECK(!MapWord::IsPacked(slot.Relaxed_Load().ptr()) ||
+      DCHECK(!MapWord::IsPacked((*slot).ptr()) ||
              !HasWeakHeapObjectTag(*slot));
     }
 #endif  // DEBUG
@@ -4218,18 +4214,14 @@ class OldToNewSlotVerifyingVisitor : public SlotVerifyingVisitor {
         ephemeron_remembered_set_(ephemeron_remembered_set) {}
 
   bool ShouldHaveBeenRecorded(HeapObject host, MaybeObject target) override {
-    DCHECK_IMPLIES(target->IsStrongOrWeak() &&
-                       !MapWord::IsPacked(target.ptr()) &&
-                       Heap::InYoungGeneration(target),
+    DCHECK_IMPLIES(target->IsStrongOrWeak() && Heap::InYoungGeneration(target),
                    Heap::InToPage(target));
-    DCHECK_IMPLIES(target->IsStrongOrWeak(), !MapWord::IsPacked(target.ptr()));
     return target->IsStrongOrWeak() && Heap::InYoungGeneration(target) &&
            !Heap::InYoungGeneration(host);
   }
 
   void VisitEphemeron(HeapObject host, int index, ObjectSlot key,
                       ObjectSlot target) override {
-    DCHECK_NE(target, host.map_slot());
     VisitPointer(host, target);
 #ifdef ENABLE_MINOR_MC
     if (FLAG_minor_mc) return VisitPointer(host, target);
@@ -4419,10 +4411,8 @@ class FixStaleLeftTrimmedHandlesVisitor : public RootVisitor {
   inline void FixHandle(FullObjectSlot p) {
     if (!(*p).IsHeapObject()) return;
     HeapObject current = HeapObject::cast(*p);
-    const MapWord map_word = current.map_word();
-    DCHECK_IMPLIES(MapWord::IsPacked(p.Relaxed_Load().ptr()),
-                   current.IsFreeSpaceOrFiller());
-    if (!map_word.IsForwardingAddress() && current.IsFreeSpaceOrFiller()) {
+    if (!current.map_word().IsForwardingAddress() &&
+        current.IsFreeSpaceOrFiller()) {
 #ifdef DEBUG
       // We need to find a FixedArrayBase map after walking the fillers.
       while (!current.map_word().IsForwardingAddress() &&
@@ -5935,7 +5925,6 @@ class UnreachableObjectsFilter : public HeapObjectsFilter {
     void TransitiveClosure() {
       while (!marking_stack_.empty()) {
         HeapObject obj = marking_stack_.back();
-        DCHECK(!MapWord::IsPacked(obj.ptr()));
         marking_stack_.pop_back();
         obj.Iterate(this);
       }
@@ -5954,7 +5943,6 @@ class UnreachableObjectsFilter : public HeapObjectsFilter {
         typename TSlot::TObject object = p.load(isolate);
         HeapObject heap_object;
         if (object.GetHeapObject(&heap_object)) {
-          DCHECK(!MapWord::IsPacked(object.ptr()));
           MarkHeapObject(heap_object);
         }
       }

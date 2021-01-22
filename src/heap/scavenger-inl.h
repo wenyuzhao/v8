@@ -418,7 +418,6 @@ SlotCallbackResult Scavenger::CheckAndScavengeObject(Heap* heap, TSlot slot) {
       "Only FullMaybeObjectSlot and MaybeObjectSlot are expected here");
   using THeapObjectSlot = typename TSlot::THeapObjectSlot;
   MaybeObject object = *slot;
-  DCHECK_IMPLIES(object->IsHeapObject(), !MapWord::IsPacked(object->ptr()));
   if (Heap::InFromPage(object)) {
     HeapObject heap_object = object->GetHeapObject();
 
@@ -472,7 +471,6 @@ void ScavengeVisitor::VisitEmbeddedPointer(Code host, RelocInfo* rinfo) {
 
 template <typename TSlot>
 void ScavengeVisitor::VisitHeapObjectImpl(TSlot slot, HeapObject heap_object) {
-  DCHECK(!MapWord::IsPacked(heap_object.ptr()));
   if (Heap::InYoungGeneration(heap_object)) {
     using THeapObjectSlot = typename TSlot::THeapObjectSlot;
     scavenger_->ScavengeObject(THeapObjectSlot(slot), heap_object);
@@ -487,7 +485,6 @@ void ScavengeVisitor::VisitPointersImpl(HeapObject host, TSlot start,
     HeapObject heap_object;
     // Treat weak references as strong.
     if (object.GetHeapObject(&heap_object)) {
-      DCHECK(!MapWord::IsPacked(object.ptr()));
       VisitHeapObjectImpl(slot, heap_object);
     }
   }

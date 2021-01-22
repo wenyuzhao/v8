@@ -409,7 +409,6 @@ bool Heap::InYoungGeneration(MaybeObject object) {
 // static
 bool Heap::InYoungGeneration(HeapObject heap_object) {
   if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) return false;
-  DCHECK(!MapWord::IsPacked(heap_object.ptr()));
   bool result =
       BasicMemoryChunk::FromHeapObject(heap_object)->InYoungGeneration();
 #ifdef DEBUG
@@ -504,7 +503,7 @@ AllocationMemento Heap::FindAllocationMemento(Map map, HeapObject object) {
   // initialized to silence MemorySanitizer warnings.
   MSAN_MEMORY_IS_INITIALIZED(candidate_map_slot.address(), kTaggedSize);
   if (!candidate_map_slot.contains_map_value(
-          ReadOnlyRoots(this).allocation_memento_map().ptr())) {  // FIXME check
+          ReadOnlyRoots(this).allocation_memento_map().ptr())) {
     return AllocationMemento();
   }
 

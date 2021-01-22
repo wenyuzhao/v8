@@ -23,7 +23,6 @@ namespace v8 {
 namespace internal {
 
 void MarkCompactCollector::MarkObject(HeapObject host, HeapObject obj) {
-  DCHECK(!MapWord::IsPacked(obj.ptr()));
   if (marking_state()->WhiteToGrey(obj)) {
     local_marking_worklists()->Push(obj);
     if (V8_UNLIKELY(FLAG_track_retaining_path)) {
@@ -33,7 +32,6 @@ void MarkCompactCollector::MarkObject(HeapObject host, HeapObject obj) {
 }
 
 void MarkCompactCollector::MarkRootObject(Root root, HeapObject obj) {
-  DCHECK(!MapWord::IsPacked(obj.ptr()));
   if (marking_state()->WhiteToGrey(obj)) {
     local_marking_worklists()->Push(obj);
     if (V8_UNLIKELY(FLAG_track_retaining_path)) {
@@ -45,7 +43,6 @@ void MarkCompactCollector::MarkRootObject(Root root, HeapObject obj) {
 #ifdef ENABLE_MINOR_MC
 
 void MinorMarkCompactCollector::MarkRootObject(HeapObject obj) {
-  DCHECK(!MapWord::IsPacked(obj.ptr()));
   if (Heap::InYoungGeneration(obj) &&
       non_atomic_marking_state_.WhiteToGrey(obj)) {
     worklist_->Push(kMainThreadTask, obj);
@@ -55,7 +52,6 @@ void MinorMarkCompactCollector::MarkRootObject(HeapObject obj) {
 #endif
 
 void MarkCompactCollector::MarkExternallyReferencedObject(HeapObject obj) {
-  DCHECK(!MapWord::IsPacked(obj.ptr()));
   if (marking_state()->WhiteToGrey(obj)) {
     local_marking_worklists()->Push(obj);
     if (V8_UNLIKELY(FLAG_track_retaining_path)) {
@@ -66,13 +62,11 @@ void MarkCompactCollector::MarkExternallyReferencedObject(HeapObject obj) {
 
 void MarkCompactCollector::RecordSlot(HeapObject object, ObjectSlot slot,
                                       HeapObject target) {
-  DCHECK(!MapWord::IsPacked(object.ptr()));
   RecordSlot(object, HeapObjectSlot(slot), target);
 }
 
 void MarkCompactCollector::RecordSlot(HeapObject object, HeapObjectSlot slot,
                                       HeapObject target) {
-  DCHECK(!MapWord::IsPacked(object.ptr()));
   BasicMemoryChunk* target_page = BasicMemoryChunk::FromHeapObject(target);
   MemoryChunk* source_page = MemoryChunk::FromHeapObject(object);
   if (target_page->IsEvacuationCandidate<AccessMode::ATOMIC>() &&
@@ -211,7 +205,7 @@ void LiveObjectRange<mode>::iterator::AdvanceToNextValidObject() {
         // make sure that we skip all set bits in the black area until the
         // object ends.
         HeapObject black_object = HeapObject::FromAddress(addr);
-        Object map_object = black_object.map();
+        Object map_object = black_object.synchronized_map();
         CHECK(map_object.IsMap());
         map = Map::cast(map_object);
         DCHECK(map.IsMap());
@@ -243,7 +237,7 @@ void LiveObjectRange<mode>::iterator::AdvanceToNextValidObject() {
         }
       } else if ((mode == kGreyObjects || mode == kAllLiveObjects)) {
         object = HeapObject::FromAddress(addr);
-        Object map_object = object.map();
+        Object map_object = object.synchronized_map();
         CHECK(map_object.IsMap());
         map = Map::cast(map_object);
         DCHECK(map.IsMap());
