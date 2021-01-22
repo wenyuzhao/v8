@@ -100,17 +100,15 @@ namespace {
 // If V8_MAP_PACKING is enabled, then the filler map word is a packed filler
 // map. Otherwise, the filler map word is the same as the filler map.
 inline void ClearField(Isolate* isolate, JSObject object, FieldIndex index) {
-  MapWord filler_map_word =
-      ReadOnlyRoots(isolate).one_pointer_filler_map_word();
-#ifndef V8_MAP_PACKING
-  DCHECK_EQ(filler_map_word.ToMap(),
-            ReadOnlyRoots(isolate).one_pointer_filler_map());
-#endif
   if (index.is_inobject()) {
+    MapWord filler_map_word = ReadOnlyRoots(isolate).one_pointer_filler_map_word();
+#ifndef V8_MAP_PACKING
+    DCHECK_EQ(filler_map_word.ToMap(), ReadOnlyRoots(isolate).one_pointer_filler_map());
+#endif
     int offset = index.offset();
     TaggedField<MapWord>::Release_Store(object, offset, filler_map_word);
   } else {
-    object.property_array().set(index.outobject_array_index(), filler_map_word);
+    object.property_array().set(index.outobject_array_index(), ReadOnlyRoots(isolate).one_pointer_filler_map());
   }
 }
 

@@ -35,8 +35,6 @@ class PropertyArray : public HeapObject {
   inline void set(int index, Object value);
   // Setter with explicit barrier mode.
   inline void set(int index, Object value, WriteBarrierMode mode);
-  // Setter with MapWord argument. Does not trigger write barriers.
-  inline void set(int index, MapWord value);
 
   // Signature must be in sync with FixedArray::CopyElements().
   inline void CopyElements(Isolate* isolate, int dst_index, PropertyArray src,

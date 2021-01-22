@@ -654,14 +654,12 @@ void JSReceiver::initialize_properties(Isolate* isolate) {
 }
 
 DEF_GETTER(JSReceiver, HasFastProperties, bool) {
-  Map m = map(isolate);
-  DCHECK(m.IsMap());
   DCHECK(raw_properties_or_hash(isolate).IsSmi() ||
          ((raw_properties_or_hash(isolate).IsGlobalDictionary(isolate) ||
            raw_properties_or_hash(isolate).IsNameDictionary(isolate) ||
            raw_properties_or_hash(isolate).IsOrderedNameDictionary(isolate)) ==
-          m.is_dictionary_map()));
-  return !m.is_dictionary_map();
+          map(isolate).is_dictionary_map()));
+  return !map(isolate).is_dictionary_map();
 }
 
 DEF_GETTER(JSReceiver, property_dictionary, NameDictionary) {

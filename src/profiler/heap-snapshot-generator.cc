@@ -763,7 +763,6 @@ class IndexedReferencesExtractor : public ObjectVisitor {
     // The last parameter {field_offset} is only used to check some well-known
     // skipped references, so passing -1 * kTaggedSize for objects embedded
     // into code is fine.
-    DCHECK(!MapWord::IsPacked(heap_object.ptr()));
     generator_->SetHiddenReference(parent_obj_, parent_, next_index_++,
                                    heap_object, field_index * kTaggedSize);
   }

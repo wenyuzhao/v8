@@ -794,11 +794,11 @@ ObjectSlot HeapObject::map_slot() const {
 }
 
 DEF_GETTER(HeapObject, map_word, MapWord) {
-  return MapField::Relaxed_Load_No_Unpack(isolate, *this);
+  return MapField::Relaxed_Load_Map_Word(isolate, *this);
 }
 
 void HeapObject::set_map_word(MapWord map_word) {
-  MapField::Relaxed_Store_No_Pack(*this, map_word);
+  MapField::Relaxed_Store_Map_Word(*this, map_word);
 }
 
 DEF_GETTER(HeapObject, synchronized_map_word, MapWord) {
@@ -806,7 +806,7 @@ DEF_GETTER(HeapObject, synchronized_map_word, MapWord) {
 }
 
 void HeapObject::synchronized_set_map_word(MapWord map_word) {
-  MapField::Release_Store_No_Pack(*this, map_word);
+  MapField::Release_Store_Map_Word(*this, map_word);
 }
 
 bool HeapObject::release_compare_and_swap_map_word(MapWord old_map_word,
