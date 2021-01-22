@@ -1530,6 +1530,7 @@ TNode<Map> CodeStubAssembler::GetInstanceTypeMap(InstanceType instance_type) {
 TNode<Map> CodeStubAssembler::LoadMap(TNode<HeapObject> object) {
   TNode<Map> map = LoadObjectField<Map>(object, HeapObject::kMapOffset);
 #ifdef V8_MAP_PACKING
+  // Check the loaded map is unpacked. i.e. the lowest two bits != 0b10
   CSA_ASSERT(this,
              WordNotEqual(WordAnd(BitcastTaggedToWord(map),
                                   IntPtrConstant(Internals::kMapWordXorMask)),
@@ -2816,12 +2817,13 @@ void CodeStubAssembler::StoreMapNoWriteBarrier(TNode<HeapObject> object,
 
 void CodeStubAssembler::StoreObjectFieldRoot(TNode<HeapObject> object,
                                              int offset, RootIndex root_index) {
+  TNode<Object> root = LoadRoot(root_index);
   if (offset == HeapObject::kMapOffset) {
-    StoreMap(object, CAST(LoadRoot(root_index)));
+    StoreMap(object, CAST(root));
   } else if (RootsTable::IsImmortalImmovable(root_index)) {
-    StoreObjectFieldNoWriteBarrier(object, offset, LoadRoot(root_index));
+    StoreObjectFieldNoWriteBarrier(object, offset, root);
   } else {
-    StoreObjectField(object, offset, LoadRoot(root_index));
+    StoreObjectField(object, offset, root);
   }
 }
 

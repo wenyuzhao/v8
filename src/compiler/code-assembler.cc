@@ -721,7 +721,7 @@ Node* CodeAssembler::PackMapWord(Node* value) {
 TNode<AnyTaggedT> CodeAssembler::LoadRootMapWord(RootIndex root_index) {
 #ifdef V8_MAP_PACKING
   Handle<Object> root = isolate()->root_handle(root_index);
-  Node* map = HeapConstant(Handle<HeapObject>::cast(root));
+  Node* map = HeapConstant(Handle<Map>::cast(root));
   map = PackMapWord(map);
   return ReinterpretCast<AnyTaggedT>(map);
 #else
@@ -730,13 +730,6 @@ TNode<AnyTaggedT> CodeAssembler::LoadRootMapWord(RootIndex root_index) {
 }
 
 TNode<Object> CodeAssembler::LoadRoot(RootIndex root_index) {
-#ifdef V8_MAP_PACKING
-  // Use LoadRootMapWord instead.
-  DCHECK_NE(root_index, RootIndex::kOnePointerFillerMap);
-  DCHECK_NE(root_index, RootIndex::kTwoPointerFillerMap);
-  DCHECK_NE(root_index, RootIndex::kFreeSpaceMap);
-#endif
-
   if (RootsTable::IsImmortalImmovable(root_index)) {
     Handle<Object> root = isolate()->root_handle(root_index);
     if (root->IsSmi()) {

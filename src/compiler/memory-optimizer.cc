@@ -308,13 +308,9 @@ void MemoryOptimizer::VisitLoadFromObject(Node* node,
   DCHECK_EQ(IrOpcode::kLoadFromObject, node->opcode());
   Reduction reduction = memory_lowering()->ReduceLoadFromObject(node);
   EnqueueUses(node, state);
-#ifdef V8_MAP_PACKING
-  if (reduction.replacement() != node) {
+  if (V8_MAP_PACKING_BOOL && reduction.replacement() != node) {
     ReplaceUsesAndKillNode(node, reduction.replacement());
   }
-#else
-  USE(reduction);
-#endif
 }
 
 void MemoryOptimizer::VisitStoreToObject(Node* node,

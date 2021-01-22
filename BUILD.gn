@@ -538,6 +538,7 @@ external_v8_defines = [
   "V8_IMMINENT_DEPRECATION_WARNINGS",
   "V8_NO_ARGUMENTS_ADAPTOR",
   "V8_USE_PERFETTO",
+  "V8_MAP_PACKING",
 ]
 
 enabled_external_v8_defines = []
@@ -566,6 +567,9 @@ if (v8_imminent_deprecation_warnings) {
 if (v8_use_perfetto) {
   enabled_external_v8_defines += [ "V8_USE_PERFETTO" ]
 }
+if (v8_enable_map_packing) {
+  enabled_external_v8_defines += [ "V8_MAP_PACKING" ]
+}
 
 disabled_external_v8_defines = external_v8_defines - enabled_external_v8_defines
 
@@ -578,10 +582,6 @@ config("v8_header_features") {
     defines = [ "V8_GN_HEADER" ]
   } else {
     defines = enabled_external_v8_defines
-  }
-
-  if (v8_enable_map_packing) {
-    defines += [ "V8_MAP_PACKING" ]
   }
 }
 

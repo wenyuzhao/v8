@@ -126,7 +126,6 @@ struct FieldAccess {
 #endif
   {
     DCHECK_GE(offset, 0);
-
     DCHECK_IMPLIES(
         machine_type.IsMapWord(),
         offset == HeapObject::kMapOffset && base_is_tagged != kUntaggedBase);

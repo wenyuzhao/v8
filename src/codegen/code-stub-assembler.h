@@ -1186,16 +1186,16 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
                              std::is_same<T, MaybeObject>::value,
                          int>::type = 0>
   void StoreReference(Reference reference, TNode<T> value) {
+    if (IsMapOffsetConstant(reference.offset)) {
+      DCHECK((std::is_base_of<T, Map>::value));
+      return StoreMap(CAST(reference.object), ReinterpretCast<Map>(value));
+    }
     MachineRepresentation rep = MachineRepresentationOf<T>::value;
     StoreToObjectWriteBarrier write_barrier = StoreToObjectWriteBarrier::kFull;
     if (std::is_same<T, Smi>::value) {
       write_barrier = StoreToObjectWriteBarrier::kNone;
     } else if (std::is_same<T, Map>::value) {
       write_barrier = StoreToObjectWriteBarrier::kMap;
-    }
-    if (IsMapOffsetConstant(reference.offset)) {
-      DCHECK((std::is_base_of<T, Map>::value));
-      return StoreMap(CAST(reference.object), ReinterpretCast<Map>(value));
     }
     TNode<IntPtrT> offset =
         IntPtrSub(reference.offset, IntPtrConstant(kHeapObjectTag));

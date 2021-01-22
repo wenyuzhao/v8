@@ -210,9 +210,6 @@ class WasmGraphAssembler : public GraphAssembler {
 
   // Maps and their contents.
 
-  Node* LoadMap(Node* heap_object) {
-    return GraphAssembler::LoadMap(heap_object);
-  }
   Node* LoadInstanceType(Node* map) {
     return Load(MachineType::Uint16(), map,
                 wasm::ObjectAccess::ToTagged(Map::kInstanceTypeOffset));

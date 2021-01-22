@@ -297,13 +297,8 @@ Reduction MemoryLowering::ReduceLoadFromObject(Node* node) {
   MachineType machine_type = access.machine_type;
 
   if (machine_type.IsMapWord()) {
-#ifdef V8_MAP_PACKING
-    NodeProperties::ChangeOp(node, machine()->Load(MachineType::AnyTagged()));
     CHECK_EQ(machine_type.semantic(), MachineSemantic::kAny);
     return ReduceLoadMap(node);
-#else
-    machine_type = MachineType::TaggedPointer();
-#endif
   }
 
   NodeProperties::ChangeOp(node, machine()->Load(machine_type));
@@ -363,16 +358,21 @@ Node* MemoryLowering::DecodeExternalPointer(
 #endif  // V8_HEAP_SANDBOX
 }
 
-#ifdef V8_MAP_PACKING
 Reduction MemoryLowering::ReduceLoadMap(Node* node) {
+#ifdef V8_MAP_PACKING
+  NodeProperties::ChangeOp(node, machine()->Load(MachineType::AnyTagged()));
+
   Node* effect = NodeProperties::GetEffectInput(node);
   Node* control = NodeProperties::GetControlInput(node);
   __ InitializeEffectControl(effect, control);
 
   node = __ AddNode(graph()->CloneNode(node));
   return Replace(__ UnpackMapWord(node));
-}
+#else
+  NodeProperties::ChangeOp(node, machine()->Load(MachineType::TaggedPointer()));
+  return Changed(node);
 #endif
+}
 
 Reduction MemoryLowering::ReduceLoadField(Node* node) {
   DCHECK_EQ(IrOpcode::kLoadField, node->opcode());
@@ -387,12 +387,9 @@ Reduction MemoryLowering::ReduceLoadField(Node* node) {
   }
 
   if (type.IsMapWord()) {
-#ifdef V8_MAP_PACKING
-    NodeProperties::ChangeOp(node, machine()->Load(MachineType::AnyTagged()));
+    DCHECK(!NeedsPoisoning(access.load_sensitivity));
+    DCHECK(!access.type.Is(Type::SandboxedExternalPointer()));
     return ReduceLoadMap(node);
-#else
-    type = MachineType::TaggedPointer();
-#endif
   }
 
   if (NeedsPoisoning(access.load_sensitivity)) {
@@ -422,10 +419,6 @@ Reduction MemoryLowering::ReduceStoreToObject(Node* node,
   ObjectAccess const& access = ObjectAccessOf(node->op());
   Node* object = node->InputAt(0);
   Node* value = node->InputAt(2);
-
-  Node* effect = NodeProperties::GetEffectInput(node);
-  Node* control = NodeProperties::GetControlInput(node);
-  __ InitializeEffectControl(effect, control);
 
   MachineType machine_type = access.machine_type;
   WriteBarrierKind write_barrier_kind = ComputeWriteBarrierKind(
