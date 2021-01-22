@@ -209,9 +209,6 @@ void HeapObject::HeapObjectPrint(std::ostream& os) {  // NOLINT
     case STORE_HANDLER_TYPE:
       StoreHandler::cast(*this).StoreHandlerPrint(os);
       break;
-    case SCOPE_INFO_TYPE:
-      ScopeInfo::cast(*this).ScopeInfoPrint(os);
-      break;
     case FEEDBACK_METADATA_TYPE:
       FeedbackMetadata::cast(*this).FeedbackMetadataPrint(os);
       break;
@@ -915,18 +912,18 @@ void GlobalDictionary::GlobalDictionaryPrint(std::ostream& os) {
 
 void SmallOrderedHashSet::SmallOrderedHashSetPrint(std::ostream& os) {
   PrintHeader(os, "SmallOrderedHashSet");
-  // TODO(tebbi): Print all fields.
+  // TODO(turbofan): Print all fields.
 }
 
 void SmallOrderedHashMap::SmallOrderedHashMapPrint(std::ostream& os) {
   PrintHeader(os, "SmallOrderedHashMap");
-  // TODO(tebbi): Print all fields.
+  // TODO(turbofan): Print all fields.
 }
 
 void SmallOrderedNameDictionary::SmallOrderedNameDictionaryPrint(
     std::ostream& os) {
   PrintHeader(os, "SmallOrderedNameDictionary");
-  // TODO(tebbi): Print all fields.
+  // TODO(turbofan): Print all fields.
 }
 
 void OrderedHashSet::OrderedHashSetPrint(std::ostream& os) {
@@ -1460,9 +1457,6 @@ void SharedFunctionInfo::SharedFunctionInfoPrint(std::ostream& os) {  // NOLINT
   }
   os << "\n - kind: " << kind();
   os << "\n - syntax kind: " << syntax_kind();
-  if (needs_home_object()) {
-    os << "\n - needs_home_object";
-  }
   os << "\n - function_map_index: " << function_map_index();
   os << "\n - formal_parameter_count: " << internal_formal_parameter_count();
   os << "\n - expected_nof_properties: " << expected_nof_properties();

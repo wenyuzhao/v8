@@ -38,7 +38,7 @@ class BytecodeGraphBuilder {
                        NativeContextRef const& native_context,
                        SharedFunctionInfoRef const& shared_info,
                        FeedbackCellRef const& feedback_cell,
-                       BailoutId osr_offset, JSGraph* jsgraph,
+                       BytecodeOffset osr_offset, JSGraph* jsgraph,
                        CallFrequency const& invocation_frequency,
                        SourcePositionTable* source_positions, int inlining_id,
                        CodeKind code_kind, BytecodeGraphBuilderFlags flags,
@@ -207,10 +207,54 @@ class BytecodeGraphBuilder {
 
   // Prepare information for lazy deoptimization. This information is attached
   // to the given node and the output value produced by the node is combined.
-  // Conceptually this frame state is "after" a given operation.
-  void PrepareFrameState(Node* node, OutputFrameStateCombine combine);
+  //
+  // The low-level chokepoint - use the variants below instead.
   void PrepareFrameState(Node* node, OutputFrameStateCombine combine,
-                         BailoutId bailout_id);
+                         BytecodeOffset bailout_id,
+                         const BytecodeLivenessState* liveness);
+
+  // In the common case, frame states are conceptually "after" a given
+  // operation and at the current bytecode offset.
+  void PrepareFrameState(Node* node, OutputFrameStateCombine combine) {
+    if (!OperatorProperties::HasFrameStateInput(node->op())) return;
+    const int offset = bytecode_iterator().current_offset();
+    return PrepareFrameState(node, combine, BytecodeOffset(offset),
+                             bytecode_analysis().GetOutLivenessFor(offset));
+  }
+
+  // For function-entry stack checks, they're conceptually "before" the first
+  // bytecode and at a special marker bytecode offset.
+  // In the case of FE stack checks, the current bytecode is also the first
+  // bytecode, so we use a special marker bytecode offset to signify a virtual
+  // bytecode before the first physical bytecode.
+  void PrepareFrameStateForFunctionEntryStackCheck(Node* node) {
+    DCHECK_EQ(bytecode_iterator().current_offset(), 0);
+    DCHECK(OperatorProperties::HasFrameStateInput(node->op()));
+    DCHECK(node->opcode() == IrOpcode::kJSStackCheck);
+    return PrepareFrameState(node, OutputFrameStateCombine::Ignore(),
+                             BytecodeOffset(kFunctionEntryBytecodeOffset),
+                             bytecode_analysis().GetInLivenessFor(0));
+  }
+
+  // For OSR-entry stack checks, they're conceptually "before" the first
+  // bytecode of the current loop. We implement this in a similar manner to
+  // function-entry (FE) stack checks above, i.e. we deopt at the predecessor
+  // of the current bytecode.
+  // In the case of OSR-entry stack checks, a physical predecessor bytecode
+  // exists: the JumpLoop bytecode. We attach to JumpLoop by using
+  // `bytecode_analysis().osr_bailout_id()` instead of current_offset (the
+  // former points at JumpLoop, the latter at the loop header, i.e. the target
+  // of JumpLoop).
+  void PrepareFrameStateForOSREntryStackCheck(Node* node) {
+    DCHECK_EQ(bytecode_iterator().current_offset(),
+              bytecode_analysis().osr_entry_point());
+    DCHECK(OperatorProperties::HasFrameStateInput(node->op()));
+    DCHECK(node->opcode() == IrOpcode::kJSStackCheck);
+    const int offset = bytecode_analysis().osr_bailout_id().ToInt();
+    return PrepareFrameState(node, OutputFrameStateCombine::Ignore(),
+                             BytecodeOffset(offset),
+                             bytecode_analysis().GetOutLivenessFor(offset));
+  }
 
   void BuildCreateArguments(CreateArgumentsType type);
   Node* BuildLoadGlobal(NameRef name, uint32_t feedback_slot_index,
@@ -304,6 +348,7 @@ class BytecodeGraphBuilder {
   // StackChecks.
   void BuildFunctionEntryStackCheck();
   void BuildIterationBodyStackCheck();
+  void MaybeBuildOSREntryStackCheck();
 
   // Control flow plumbing.
   void BuildJump();
@@ -434,6 +479,7 @@ class BytecodeGraphBuilder {
   Environment* environment_;
   bool const osr_;
   int currently_peeled_loop_offset_;
+  bool is_osr_entry_stack_check_pending_;
 
   const bool skip_first_stack_check_;
 
@@ -532,7 +578,8 @@ class BytecodeGraphBuilder::Environment : public ZoneObject {
 
   // Preserve a checkpoint of the environment for the IR graph. Any
   // further mutation of the environment will not affect checkpoints.
-  Node* Checkpoint(BailoutId bytecode_offset, OutputFrameStateCombine combine,
+  Node* Checkpoint(BytecodeOffset bytecode_offset,
+                   OutputFrameStateCombine combine,
                    const BytecodeLivenessState* liveness);
 
   // Control dependency tracked by this environment.
@@ -955,7 +1002,7 @@ Node* BytecodeGraphBuilder::Environment::GetStateValuesFromCache(
 }
 
 Node* BytecodeGraphBuilder::Environment::Checkpoint(
-    BailoutId bailout_id, OutputFrameStateCombine combine,
+    BytecodeOffset bailout_id, OutputFrameStateCombine combine,
     const BytecodeLivenessState* liveness) {
   if (parameter_count() == register_count()) {
     // Re-use the state-value cache if the number of local registers happens
@@ -991,7 +1038,7 @@ BytecodeGraphBuilder::BytecodeGraphBuilder(
     JSHeapBroker* broker, Zone* local_zone,
     NativeContextRef const& native_context,
     SharedFunctionInfoRef const& shared_info,
-    FeedbackCellRef const& feedback_cell, BailoutId osr_offset,
+    FeedbackCellRef const& feedback_cell, BytecodeOffset osr_offset,
     JSGraph* jsgraph, CallFrequency const& invocation_frequency,
     SourcePositionTable* source_positions, int inlining_id, CodeKind code_kind,
     BytecodeGraphBuilderFlags flags, TickCounter* tick_counter)
@@ -1022,6 +1069,7 @@ BytecodeGraphBuilder::BytecodeGraphBuilder(
       environment_(nullptr),
       osr_(!osr_offset.IsNone()),
       currently_peeled_loop_offset_(-1),
+      is_osr_entry_stack_check_pending_(osr_),
       skip_first_stack_check_(flags &
                               BytecodeGraphBuilderFlag::kSkipFirstStackCheck),
       merge_environments_(local_zone),
@@ -1213,7 +1261,7 @@ void BytecodeGraphBuilder::PrepareEagerCheckpoint() {
     DCHECK_EQ(1, OperatorProperties::GetFrameStateInputCount(node->op()));
     DCHECK_EQ(IrOpcode::kDead,
               NodeProperties::GetFrameStateInput(node)->opcode());
-    BailoutId bailout_id(bytecode_iterator().current_offset());
+    BytecodeOffset bailout_id(bytecode_iterator().current_offset());
 
     const BytecodeLivenessState* liveness_before =
         bytecode_analysis().GetInLivenessFor(
@@ -1239,36 +1287,18 @@ void BytecodeGraphBuilder::PrepareEagerCheckpoint() {
 #endif  // DEBUG
 }
 
-void BytecodeGraphBuilder::PrepareFrameState(Node* node,
-                                             OutputFrameStateCombine combine) {
-  if (OperatorProperties::HasFrameStateInput(node->op())) {
-    PrepareFrameState(node, combine,
-                      BailoutId(bytecode_iterator().current_offset()));
-  }
-}
-
-void BytecodeGraphBuilder::PrepareFrameState(Node* node,
-                                             OutputFrameStateCombine combine,
-                                             BailoutId bailout_id) {
+void BytecodeGraphBuilder::PrepareFrameState(
+    Node* node, OutputFrameStateCombine combine, BytecodeOffset bailout_id,
+    const BytecodeLivenessState* liveness) {
   if (OperatorProperties::HasFrameStateInput(node->op())) {
     // Add the frame state for after the operation. The node in question has
     // already been created and had a {Dead} frame state input up until now.
     DCHECK_EQ(1, OperatorProperties::GetFrameStateInputCount(node->op()));
     DCHECK_EQ(IrOpcode::kDead,
               NodeProperties::GetFrameStateInput(node)->opcode());
-    DCHECK_IMPLIES(bailout_id.ToInt() == kFunctionEntryBytecodeOffset,
-                   bytecode_iterator().current_offset() == 0);
-
-    // If we have kFunctionEntryBytecodeOffset as the bailout_id, we want to get
-    // the liveness at the moment of function entry. This is the same as the IN
-    // liveness of the first actual bytecode.
-    const BytecodeLivenessState* liveness_after =
-        bailout_id.ToInt() == kFunctionEntryBytecodeOffset
-            ? bytecode_analysis().GetInLivenessFor(0)
-            : bytecode_analysis().GetOutLivenessFor(bailout_id.ToInt());
 
     Node* frame_state_after =
-        environment()->Checkpoint(bailout_id, combine, liveness_after);
+        environment()->Checkpoint(bailout_id, combine, liveness);
     NodeProperties::ReplaceFrameStateInput(node, frame_state_after);
   }
 }
@@ -1378,8 +1408,7 @@ void BytecodeGraphBuilder::BuildFunctionEntryStackCheck() {
   if (!skip_first_stack_check()) {
     Node* node =
         NewNode(javascript()->StackCheck(StackCheckKind::kJSFunctionEntry));
-    PrepareFrameState(node, OutputFrameStateCombine::Ignore(),
-                      BailoutId(kFunctionEntryBytecodeOffset));
+    PrepareFrameStateForFunctionEntryStackCheck(node);
   }
 }
 
@@ -1387,6 +1416,15 @@ void BytecodeGraphBuilder::BuildIterationBodyStackCheck() {
   Node* node =
       NewNode(javascript()->StackCheck(StackCheckKind::kJSIterationBody));
   environment()->RecordAfterState(node, Environment::kAttachFrameState);
+}
+
+void BytecodeGraphBuilder::MaybeBuildOSREntryStackCheck() {
+  if (V8_UNLIKELY(is_osr_entry_stack_check_pending_)) {
+    is_osr_entry_stack_check_pending_ = false;
+    Node* node =
+        NewNode(javascript()->StackCheck(StackCheckKind::kJSFunctionEntry));
+    PrepareFrameStateForOSREntryStackCheck(node);
+  }
 }
 
 // We will iterate through the OSR loop, then its parent, and so on
@@ -1469,6 +1507,13 @@ void BytecodeGraphBuilder::VisitSingleBytecode() {
 
   if (environment() != nullptr) {
     BuildLoopHeaderEnvironment(current_offset);
+
+    // The OSR-entry stack check must be emitted during the first call to
+    // VisitSingleBytecode in an OSR'd function. We don't know if that call
+    // will be made from AdvanceToOsrEntryAndPeelLoops or from VisitBytecodes,
+    // therefore we insert the logic here inside VisitSingleBytecode itself.
+    MaybeBuildOSREntryStackCheck();
+
     switch (bytecode_iterator().current_bytecode()) {
 #define BYTECODE_CASE(name, ...)       \
   case interpreter::Bytecode::k##name: \
@@ -4509,7 +4554,7 @@ void BytecodeGraphBuilder::UpdateSourcePosition(int offset) {
 void BuildGraphFromBytecode(JSHeapBroker* broker, Zone* local_zone,
                             SharedFunctionInfoRef const& shared_info,
                             FeedbackCellRef const& feedback_cell,
-                            BailoutId osr_offset, JSGraph* jsgraph,
+                            BytecodeOffset osr_offset, JSGraph* jsgraph,
                             CallFrequency const& invocation_frequency,
                             SourcePositionTable* source_positions,
                             int inlining_id, CodeKind code_kind,

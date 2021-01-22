@@ -2925,7 +2925,10 @@ TEST(TracingCpuProfiler) {
           const profile_header = json[0];
           if (typeof profile_header['startTime'] !== 'number')
             return false;
-          return json.some(event => (event.lines || []).some(line => line));
+          return json.some(event => (event.lines || []).some(line => line)) &&
+              json.filter(e => e.cpuProfile && e.cpuProfile.nodes)
+              .some(e => e.cpuProfile.nodes
+                  .some(n => n.callFrame.codeType == "JS"));
         }
         checkProfile()" + profile_json +
                                        ")";
@@ -3999,8 +4002,7 @@ TEST(FastApiCPUProfiler) {
 
   v8::TryCatch try_catch(isolate);
 
-  v8::CFunction c_func =
-      v8::CFunction::MakeWithFallbackSupport(FastApiReceiver::FastCallback);
+  v8::CFunction c_func = v8::CFunction::Make(FastApiReceiver::FastCallback);
 
   Local<v8::FunctionTemplate> receiver_templ = v8::FunctionTemplate::New(
       isolate, FastApiReceiver::SlowCallback, v8::Local<v8::Value>(),

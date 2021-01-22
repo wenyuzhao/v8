@@ -978,7 +978,7 @@ class MachineRepresentationChecker {
       case MachineRepresentation::kMapWord:
       case MachineRepresentation::kTaggedSigned:
       case MachineRepresentation::kTaggedPointer:
-        // TODO(tebbi): At the moment, the machine graph doesn't contain
+        // TODO(turbofan): At the moment, the machine graph doesn't contain
         // reliable information if a node is kTaggedSigned, kTaggedPointer or
         // kTagged, and often this is context-dependent. We should at least
         // check for obvious violations: kTaggedSigned where we expect

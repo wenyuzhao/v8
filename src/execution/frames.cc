@@ -1551,13 +1551,13 @@ void OptimizedFrame::Summarize(std::vector<FrameSummary>* frames) const {
           it->kind() ==
               TranslatedFrame::kJavaScriptBuiltinContinuationWithCatch) {
         code_offset = 0;
-        abstract_code =
-            handle(AbstractCode::cast(isolate()->builtins()->builtin(
-                       Builtins::GetBuiltinFromBailoutId(it->node_id()))),
-                   isolate());
+        abstract_code = handle(
+            AbstractCode::cast(isolate()->builtins()->builtin(
+                Builtins::GetBuiltinFromBytecodeOffset(it->bytecode_offset()))),
+            isolate());
       } else {
         DCHECK_EQ(it->kind(), TranslatedFrame::kInterpretedFunction);
-        code_offset = it->node_id().ToInt();  // Points to current bytecode.
+        code_offset = it->bytecode_offset().ToInt();
         abstract_code =
             handle(shared_info->abstract_code(isolate()), isolate());
       }
@@ -1642,8 +1642,8 @@ void OptimizedFrame::GetFunctions(
   DCHECK_NE(Safepoint::kNoDeoptimizationIndex, deopt_index);
   FixedArray const literal_array = data.LiteralArray();
 
-  TranslationIterator it(data.TranslationByteArray(),
-                         data.TranslationIndex(deopt_index).value());
+  TranslationArrayIterator it(data.TranslationByteArray(),
+                              data.TranslationIndex(deopt_index).value());
   Translation::Opcode opcode = static_cast<Translation::Opcode>(it.Next());
   DCHECK_EQ(Translation::BEGIN, opcode);
   it.Next();  // Skip frame count.
@@ -2223,16 +2223,6 @@ InterpretedFrameInfo::InterpretedFrameInfo(int parameters_count_with_receiver,
       (parameters_count_with_receiver + parameter_padding_slots) *
           kSystemPointerSize;
   frame_size_in_bytes_ = frame_size_in_bytes_without_fixed_ + fixed_frame_size;
-}
-
-ArgumentsAdaptorFrameInfo::ArgumentsAdaptorFrameInfo(int translation_height) {
-  // Note: This is according to the Translation's notion of 'parameters' which
-  // differs to that of the SharedFunctionInfo, e.g. by including the receiver.
-  const int parameters_count = translation_height;
-  frame_size_in_bytes_without_fixed_ =
-      (parameters_count + ArgumentPaddingSlots(parameters_count)) *
-      kSystemPointerSize;
-  frame_size_in_bytes_ = frame_size_in_bytes_without_fixed_;
 }
 
 ConstructStubFrameInfo::ConstructStubFrameInfo(int translation_height,

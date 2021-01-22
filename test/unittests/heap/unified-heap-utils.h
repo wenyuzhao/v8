@@ -17,16 +17,16 @@ class CppHeap;
 class UnifiedHeapTest : public TestWithHeapInternals {
  public:
   UnifiedHeapTest();
-  ~UnifiedHeapTest() override;
+  ~UnifiedHeapTest() override = default;
 
-  void CollectGarbageWithEmbedderStack();
-  void CollectGarbageWithoutEmbedderStack();
+  void CollectGarbageWithEmbedderStack(cppgc::Heap::SweepingType sweeping_type =
+                                           cppgc::Heap::SweepingType::kAtomic);
+  void CollectGarbageWithoutEmbedderStack(
+      cppgc::Heap::SweepingType sweeping_type =
+          cppgc::Heap::SweepingType::kAtomic);
 
   CppHeap& cpp_heap() const;
   cppgc::AllocationHandle& allocation_handle();
-
- private:
-  bool saved_incremental_marking_wrappers_;
 };
 
 class WrapperHelper {
@@ -41,6 +41,11 @@ class WrapperHelper {
   // Resets the connection of a wrapper (JS) to its wrappable (C++), meaning
   // that the wrappable object is not longer kept alive by the wrapper object.
   static void ResetWrappableConnection(v8::Local<v8::Object> api_object);
+
+  // Sets up the connection of a wrapper (JS) to its wrappable (C++). Does not
+  // emit any possibly needed write barrier.
+  static void SetWrappableConnection(v8::Local<v8::Object> api_object, void*,
+                                     void*);
 };
 
 }  // namespace internal

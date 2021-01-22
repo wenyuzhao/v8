@@ -75,6 +75,12 @@ constexpr struct alignas(16) {
 } double_negate_constant = {uint64_t{0x8000000000000000},
                             uint64_t{0x8000000000000000}};
 
+constexpr struct alignas(16) {
+  uint64_t a;
+  uint64_t b;
+} wasm_i8x16_popcnt_mask = {uint64_t{0x03020201'02010100},
+                            uint64_t{0x04030302'03020201}};
+
 // Implementation of ExternalReference
 
 static ExternalReference::Type BuiltinCallTypeForResultSize(int result_size) {
@@ -480,6 +486,10 @@ ExternalReference ExternalReference::address_of_double_neg_constant() {
   return ExternalReference(reinterpret_cast<Address>(&double_negate_constant));
 }
 
+ExternalReference ExternalReference::address_of_wasm_i8x16_popcnt_mask() {
+  return ExternalReference(reinterpret_cast<Address>(&wasm_i8x16_popcnt_mask));
+}
+
 ExternalReference
 ExternalReference::address_of_enable_experimental_regexp_engine() {
   return ExternalReference(&FLAG_enable_experimental_regexp_engine);
@@ -684,9 +694,21 @@ void StringWriteToFlatTwoByte(Address source, uint16_t* sink, int32_t from,
 }
 
 const uint8_t* ExternalOneByteStringGetChars(Address string) {
+  // The following CHECK is a workaround to prevent a CFI bug where
+  // ExternalOneByteStringGetChars() and ExternalTwoByteStringGetChars() are
+  // merged by the linker, resulting in one of the input type's vtable address
+  // failing the address range check.
+  // TODO(chromium:1160961): Consider removing the CHECK when CFI is fixed.
+  CHECK(Object(string).IsExternalOneByteString());
   return ExternalOneByteString::cast(Object(string)).GetChars();
 }
 const uint16_t* ExternalTwoByteStringGetChars(Address string) {
+  // The following CHECK is a workaround to prevent a CFI bug where
+  // ExternalOneByteStringGetChars() and ExternalTwoByteStringGetChars() are
+  // merged by the linker, resulting in one of the input type's vtable address
+  // failing the address range check.
+  // TODO(chromium:1160961): Consider removing the CHECK when CFI is fixed.
+  CHECK(Object(string).IsExternalTwoByteString());
   return ExternalTwoByteString::cast(Object(string)).GetChars();
 }
 

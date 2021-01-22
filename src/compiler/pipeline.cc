@@ -1037,7 +1037,7 @@ class PipelineCompilationJob final : public OptimizedCompilationJob {
  public:
   PipelineCompilationJob(Isolate* isolate,
                          Handle<SharedFunctionInfo> shared_info,
-                         Handle<JSFunction> function, BailoutId osr_offset,
+                         Handle<JSFunction> function, BytecodeOffset osr_offset,
                          JavaScriptFrame* osr_frame, CodeKind code_kind);
   ~PipelineCompilationJob() final;
   PipelineCompilationJob(const PipelineCompilationJob&) = delete;
@@ -1075,7 +1075,7 @@ bool ShouldUseConcurrentInlining(CodeKind code_kind, bool is_osr) {
 
 PipelineCompilationJob::PipelineCompilationJob(
     Isolate* isolate, Handle<SharedFunctionInfo> shared_info,
-    Handle<JSFunction> function, BailoutId osr_offset,
+    Handle<JSFunction> function, BytecodeOffset osr_offset,
     JavaScriptFrame* osr_frame, CodeKind code_kind)
     // Note that the OptimizedCompilationInfo is not initialized at the time
     // we pass it to the CompilationJob constructor, but it is not
@@ -1698,7 +1698,8 @@ struct EscapeAnalysisPhase {
     UnparkedScopeIfNeeded scope(data->broker());
 
     reducer.ReduceGraph();
-    // TODO(tebbi): Turn this into a debug mode check once we have confidence.
+    // TODO(turbofan): Turn this into a debug mode check once we have
+    // confidence.
     escape_reducer.VerifyReplacement();
   }
 };
@@ -1740,7 +1741,10 @@ struct LoopPeelingPhase {
     GraphTrimmer trimmer(temp_zone, data->graph());
     NodeVector roots(temp_zone);
     data->jsgraph()->GetCachedNodes(&roots);
-    trimmer.TrimGraph(roots.begin(), roots.end());
+    {
+      UnparkedScopeIfNeeded scope(data->broker(), FLAG_trace_turbo_trimming);
+      trimmer.TrimGraph(roots.begin(), roots.end());
+    }
 
     LoopTree* loop_tree = LoopFinder::BuildLoopTree(
         data->jsgraph()->graph(), &data->info()->tick_counter(), temp_zone);
@@ -1828,7 +1832,10 @@ struct EffectControlLinearizationPhase {
       GraphTrimmer trimmer(temp_zone, data->graph());
       NodeVector roots(temp_zone);
       data->jsgraph()->GetCachedNodes(&roots);
-      trimmer.TrimGraph(roots.begin(), roots.end());
+      {
+        UnparkedScopeIfNeeded scope(data->broker(), FLAG_trace_turbo_trimming);
+        trimmer.TrimGraph(roots.begin(), roots.end());
+      }
 
       // Schedule the graph without node splitting so that we can
       // fix the effect and control flow for nodes with low-level side
@@ -1883,7 +1890,10 @@ struct StoreStoreEliminationPhase {
     GraphTrimmer trimmer(temp_zone, data->graph());
     NodeVector roots(temp_zone);
     data->jsgraph()->GetCachedNodes(&roots);
-    trimmer.TrimGraph(roots.begin(), roots.end());
+    {
+      UnparkedScopeIfNeeded scope(data->broker(), FLAG_trace_turbo_trimming);
+      trimmer.TrimGraph(roots.begin(), roots.end());
+    }
 
     StoreStoreElimination::Run(data->jsgraph(), &data->info()->tick_counter(),
                                temp_zone);
@@ -1943,7 +1953,10 @@ struct MemoryOptimizationPhase {
     GraphTrimmer trimmer(temp_zone, data->graph());
     NodeVector roots(temp_zone);
     data->jsgraph()->GetCachedNodes(&roots);
-    trimmer.TrimGraph(roots.begin(), roots.end());
+    {
+      UnparkedScopeIfNeeded scope(data->broker(), FLAG_trace_turbo_trimming);
+      trimmer.TrimGraph(roots.begin(), roots.end());
+    }
 
     // Optimize allocations and load/store operations.
     MemoryOptimizer optimizer(
@@ -2116,6 +2129,7 @@ struct EarlyGraphTrimmingPhase {
     GraphTrimmer trimmer(temp_zone, data->graph());
     NodeVector roots(temp_zone);
     data->jsgraph()->GetCachedNodes(&roots);
+    UnparkedScopeIfNeeded scope(data->broker(), FLAG_trace_turbo_trimming);
     trimmer.TrimGraph(roots.begin(), roots.end());
   }
 };
@@ -2130,6 +2144,7 @@ struct LateGraphTrimmingPhase {
     if (data->jsgraph()) {
       data->jsgraph()->GetCachedNodes(&roots);
     }
+    UnparkedScopeIfNeeded scope(data->broker(), FLAG_trace_turbo_trimming);
     trimmer.TrimGraph(roots.begin(), roots.end());
   }
 };
@@ -3161,7 +3176,7 @@ MaybeHandle<Code> Pipeline::GenerateCodeForTesting(
 // static
 std::unique_ptr<OptimizedCompilationJob> Pipeline::NewCompilationJob(
     Isolate* isolate, Handle<JSFunction> function, CodeKind code_kind,
-    bool has_script, BailoutId osr_offset, JavaScriptFrame* osr_frame) {
+    bool has_script, BytecodeOffset osr_offset, JavaScriptFrame* osr_frame) {
   Handle<SharedFunctionInfo> shared =
       handle(function->shared(), function->GetIsolate());
   return std::make_unique<PipelineCompilationJob>(

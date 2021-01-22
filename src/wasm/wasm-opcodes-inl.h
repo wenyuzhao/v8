@@ -365,6 +365,16 @@ constexpr const char* WasmOpcodes::OpcodeName(WasmOpcode opcode) {
     CASE_OP(PrefetchT, "prefetch_t")
     CASE_OP(PrefetchNT, "prefetch_nt")
 
+    CASE_I32x4_OP(WidenI8x16S, "widen_i8x16_s")
+    CASE_I32x4_OP(WidenI8x16U, "widen_i8x16_u")
+
+    CASE_F64x2_OP(ConvertLowI32x4S, "convert_low_i32x4_s")
+    CASE_F64x2_OP(ConvertLowI32x4U, "convert_low_i32x4_u")
+    CASE_I32x4_OP(TruncSatF64x2SZero, "trunc_sat_f64x2_s_zero")
+    CASE_I32x4_OP(TruncSatF64x2UZero, "trunc_sat_f64x2_u_zero")
+    CASE_F32x4_OP(DemoteF64x2Zero, "demote_f64x2_zero")
+    CASE_F64x2_OP(PromoteLowF32x4, "promote_low_f32x4")
+
     // Atomic operations.
     CASE_OP(AtomicNotify, "atomic.notify")
     CASE_INT_OP(AtomicWait, "atomic.wait")
@@ -534,6 +544,7 @@ constexpr bool WasmOpcodes::IsSimdPostMvpOpcode(WasmOpcode opcode) {
 #define CHECK_OPCODE(name, opcode, _) case kExpr##name:
     FOREACH_SIMD_POST_MVP_OPCODE(CHECK_OPCODE)
     FOREACH_SIMD_POST_MVP_MEM_OPCODE(CHECK_OPCODE)
+    FOREACH_SIMD_POST_MVP_ONE_OPERAND_OPCODE(CHECK_OPCODE)
 #undef CHECK_OPCODE
     return true;
     default:

@@ -145,11 +145,6 @@ void Heap_GenerationalEphemeronKeyBarrierSlow(Heap* heap,
   heap->RecordEphemeronKeyWrite(table, slot);
 }
 
-void Heap::SetArgumentsAdaptorDeoptPCOffset(int pc_offset) {
-  DCHECK_EQ(Smi::zero(), arguments_adaptor_deopt_pc_offset());
-  set_arguments_adaptor_deopt_pc_offset(Smi::FromInt(pc_offset));
-}
-
 void Heap::SetConstructStubCreateDeoptPCOffset(int pc_offset) {
   DCHECK_EQ(Smi::zero(), construct_stub_create_deopt_pc_offset());
   set_construct_stub_create_deopt_pc_offset(Smi::FromInt(pc_offset));
@@ -1798,12 +1793,8 @@ void Heap::StartIncrementalMarkingIfAllocationLimitIsReachedBackground() {
   }
 
   const size_t old_generation_space_available = OldGenerationSpaceAvailable();
-  const base::Optional<size_t> global_memory_available =
-      GlobalMemoryAvailable();
 
-  if (old_generation_space_available < new_space_->Capacity() ||
-      (global_memory_available &&
-       *global_memory_available < new_space_->Capacity())) {
+  if (old_generation_space_available < new_space_->Capacity()) {
     incremental_marking()->incremental_marking_job()->ScheduleTask(this);
   }
 }

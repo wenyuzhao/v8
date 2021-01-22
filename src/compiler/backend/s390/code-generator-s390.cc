@@ -1211,7 +1211,6 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       frame_access_state()->ClearSPDelta();
       break;
     }
-    case kArchTailCallCodeObjectFromJSFunction:
     case kArchTailCallCodeObject: {
       if (HasRegisterInput(instr, 0)) {
         Register reg = i.InputRegister(0);
@@ -2318,7 +2317,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       } else {
         __ lrvg(r0, operand);
         __ lrvg(r1, MemOperand(operand.rx(), operand.rb(),
-                               operand.offset() + kBitsPerByte));
+                               operand.offset() + kSystemPointerSize));
         __ vlvgp(i.OutputSimd128Register(), r1, r0);
       }
       break;
@@ -2385,7 +2384,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
                 Condition(3));
         __ strvg(r0, operand);
         __ strvg(r1, MemOperand(operand.rx(), operand.rb(),
-                                operand.offset() + kBitsPerByte));
+                                operand.offset() + kSystemPointerSize));
       }
       break;
     }

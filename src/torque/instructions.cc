@@ -423,8 +423,8 @@ void CallBuiltinPointerInstruction::TypeInstruction(
     ReportError("wrong argument types");
   }
   DCHECK_EQ(type, f);
-  // TODO(tebbi): Only invalidate transient types if the function pointer type
-  // is transitioning.
+  // TODO(turbofan): Only invalidate transient types if the function pointer
+  // type is transitioning.
   InvalidateTransientTypes(stack);
   stack->PushMany(LowerType(f->return_type()));
 }
@@ -558,12 +558,12 @@ void GotoExternalInstruction::RecomputeDefinitionLocations(
 
 void ReturnInstruction::TypeInstruction(Stack<const Type*>* stack,
                                         ControlFlowGraph* cfg) const {
-  cfg->SetReturnType(stack->Pop());
+  cfg->SetReturnType(stack->PopMany(count));
 }
 
 void ReturnInstruction::RecomputeDefinitionLocations(
     Stack<DefinitionLocation>* locations, Worklist<Block*>* worklist) const {
-  locations->Pop();
+  locations->PopMany(count);
 }
 
 void PrintConstantStringInstruction::TypeInstruction(

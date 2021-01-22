@@ -338,7 +338,7 @@ ArchOpcode GetStoreOpcode(StoreRepresentation store_rep) {
 
 void InstructionSelector::VisitStackSlot(Node* node) {
   StackSlotRepresentation rep = StackSlotRepresentationOf(node->op());
-  int slot = frame_->AllocateSpillSlot(rep.size());
+  int slot = frame_->AllocateSpillSlot(rep.size(), rep.alignment());
   OperandGenerator g(this);
 
   Emit(kArchStackSlot, g.DefineAsRegister(node),
@@ -576,6 +576,30 @@ void InstructionSelector::VisitStoreLane(Node* node) {
   inputs[input_count++] = value_operand;
   inputs[input_count++] = g.UseImmediate(params.laneidx);
   DCHECK_GE(4, input_count);
+  Emit(opcode, 0, nullptr, input_count, inputs);
+}
+
+void InstructionSelector::VisitPrefetchTemporal(Node* node) {
+  X64OperandGenerator g(this);
+  InstructionOperand inputs[2];
+  size_t input_count = 0;
+  InstructionCode opcode = kX64Prefetch;
+  AddressingMode addressing_mode =
+      g.GetEffectiveAddressMemoryOperand(node, inputs, &input_count);
+  DCHECK_LE(input_count, 2);
+  opcode |= AddressingModeField::encode(addressing_mode);
+  Emit(opcode, 0, nullptr, input_count, inputs);
+}
+
+void InstructionSelector::VisitPrefetchNonTemporal(Node* node) {
+  X64OperandGenerator g(this);
+  InstructionOperand inputs[2];
+  size_t input_count = 0;
+  InstructionCode opcode = kX64PrefetchNta;
+  AddressingMode addressing_mode =
+      g.GetEffectiveAddressMemoryOperand(node, inputs, &input_count);
+  DCHECK_LE(input_count, 2);
+  opcode |= AddressingModeField::encode(addressing_mode);
   Emit(opcode, 0, nullptr, input_count, inputs);
 }
 
@@ -3697,6 +3721,16 @@ void InstructionSelector::VisitI16x8ExtAddPairwiseI8x16U(Node* node) {
                                ? g.DefineAsRegister(node)
                                : g.DefineSameAsFirst(node);
   Emit(kX64I16x8ExtAddPairwiseI8x16U, dst, g.UseRegister(node->InputAt(0)));
+}
+
+void InstructionSelector::VisitI8x16Popcnt(Node* node) {
+  X64OperandGenerator g(this);
+  InstructionOperand dst = CpuFeatures::IsSupported(AVX)
+                               ? g.DefineAsRegister(node)
+                               : g.DefineAsRegister(node);
+  InstructionOperand temps[] = {g.TempSimd128Register()};
+  Emit(kX64I8x16Popcnt, dst, g.UseUniqueRegister(node->InputAt(0)),
+       arraysize(temps), temps);
 }
 
 // static

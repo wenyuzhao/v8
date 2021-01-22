@@ -283,13 +283,15 @@ static bool IsSuitableForOnStackReplacement(Isolate* isolate,
 
 namespace {
 
-BailoutId DetermineEntryAndDisarmOSRForInterpreter(JavaScriptFrame* frame) {
+BytecodeOffset DetermineEntryAndDisarmOSRForInterpreter(
+    JavaScriptFrame* frame) {
   InterpretedFrame* iframe = reinterpret_cast<InterpretedFrame*>(frame);
 
   // Note that the bytecode array active on the stack might be different from
   // the one installed on the function (e.g. patched by debugger). This however
-  // is fine because we guarantee the layout to be in sync, hence any BailoutId
-  // representing the entry point will be valid for any copy of the bytecode.
+  // is fine because we guarantee the layout to be in sync, hence any
+  // BytecodeOffset representing the entry point will be valid for any copy of
+  // the bytecode.
   Handle<BytecodeArray> bytecode(iframe->GetBytecodeArray(), iframe->isolate());
 
   DCHECK(frame->LookupCode().is_interpreter_trampoline_builtin());
@@ -299,8 +301,9 @@ BailoutId DetermineEntryAndDisarmOSRForInterpreter(JavaScriptFrame* frame) {
   // Reset the OSR loop nesting depth to disarm back edges.
   bytecode->set_osr_loop_nesting_level(0);
 
-  // Return a BailoutId representing the bytecode offset of the back branch.
-  return BailoutId(iframe->GetBytecodeOffset());
+  // Return a BytecodeOffset representing the bytecode offset of the back
+  // branch.
+  return BytecodeOffset(iframe->GetBytecodeOffset());
 }
 
 }  // namespace
@@ -319,8 +322,8 @@ RUNTIME_FUNCTION(Runtime_CompileForOnStackReplacement) {
 
   // Determine the entry point for which this OSR request has been fired and
   // also disarm all back edges in the calling code to stop new requests.
-  BailoutId ast_id = DetermineEntryAndDisarmOSRForInterpreter(frame);
-  DCHECK(!ast_id.IsNone());
+  BytecodeOffset osr_offset = DetermineEntryAndDisarmOSRForInterpreter(frame);
+  DCHECK(!osr_offset.IsNone());
 
   MaybeHandle<Code> maybe_result;
   Handle<JSFunction> function(frame->function(), isolate);
@@ -329,9 +332,10 @@ RUNTIME_FUNCTION(Runtime_CompileForOnStackReplacement) {
       CodeTracer::Scope scope(isolate->GetCodeTracer());
       PrintF(scope.file(), "[OSR - Compiling: ");
       function->PrintName(scope.file());
-      PrintF(scope.file(), " at AST id %d]\n", ast_id.ToInt());
+      PrintF(scope.file(), " at OSR bytecode offset %d]\n", osr_offset.ToInt());
     }
-    maybe_result = Compiler::GetOptimizedCodeForOSR(function, ast_id, frame);
+    maybe_result =
+        Compiler::GetOptimizedCodeForOSR(function, osr_offset, frame);
 
     // Possibly compile for NCI caching.
     if (!MaybeSpawnNativeContextIndependentCompilationJob(
@@ -350,12 +354,13 @@ RUNTIME_FUNCTION(Runtime_CompileForOnStackReplacement) {
         DeoptimizationData::cast(result->deoptimization_data());
 
     if (data.OsrPcOffset().value() >= 0) {
-      DCHECK(BailoutId(data.OsrBytecodeOffset().value()) == ast_id);
+      DCHECK(BytecodeOffset(data.OsrBytecodeOffset().value()) == osr_offset);
       if (FLAG_trace_osr) {
         CodeTracer::Scope scope(isolate->GetCodeTracer());
         PrintF(scope.file(),
-               "[OSR - Entry at AST id %d, offset %d in optimized code]\n",
-               ast_id.ToInt(), data.OsrPcOffset().value());
+               "[OSR - Entry at OSR bytecode offset %d, offset %d in optimized "
+               "code]\n",
+               osr_offset.ToInt(), data.OsrPcOffset().value());
       }
 
       DCHECK(result->is_turbofanned());
@@ -399,7 +404,7 @@ RUNTIME_FUNCTION(Runtime_CompileForOnStackReplacement) {
     CodeTracer::Scope scope(isolate->GetCodeTracer());
     PrintF(scope.file(), "[OSR - Failed: ");
     function->PrintName(scope.file());
-    PrintF(scope.file(), " at AST id %d]\n", ast_id.ToInt());
+    PrintF(scope.file(), " at OSR bytecode offset %d]\n", osr_offset.ToInt());
   }
 
   if (!function->HasAttachedOptimizedCode()) {

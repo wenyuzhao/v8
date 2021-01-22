@@ -317,6 +317,7 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kX64V16x8AllTrue:
     case kX64I8x16Swizzle:
     case kX64I8x16Shuffle:
+    case kX64I8x16Popcnt:
     case kX64Shufps:
     case kX64S32x4Rotate:
     case kX64S32x4Swizzle:
@@ -417,18 +418,10 @@ int InstructionScheduler::GetTargetInstructionFlags(
 
     case kX64MFence:
     case kX64LFence:
+    case kX64Prefetch:
+    case kX64PrefetchNta:
       return kHasSideEffect;
 
-    case kX64Word64AtomicLoadUint8:
-    case kX64Word64AtomicLoadUint16:
-    case kX64Word64AtomicLoadUint32:
-    case kX64Word64AtomicLoadUint64:
-      return kIsLoadOperation;
-
-    case kX64Word64AtomicStoreWord8:
-    case kX64Word64AtomicStoreWord16:
-    case kX64Word64AtomicStoreWord32:
-    case kX64Word64AtomicStoreWord64:
     case kX64Word64AtomicAddUint8:
     case kX64Word64AtomicAddUint16:
     case kX64Word64AtomicAddUint32:

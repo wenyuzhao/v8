@@ -850,9 +850,9 @@ DEFINE_INT(wasm_tier_mask_for_testing, 0,
 DEFINE_BOOL(validate_asm, true, "validate asm.js modules before compiling")
 DEFINE_BOOL(suppress_asm_messages, false,
             "don't emit asm.js related messages (for golden file testing)")
-DEFINE_BOOL(trace_asm_time, false, "log asm.js timing info to the console")
+DEFINE_BOOL(trace_asm_time, false, "print asm.js timing info to the console")
 DEFINE_BOOL(trace_asm_scanner, false,
-            "log tokens encountered by asm.js scanner")
+            "print tokens encountered by asm.js scanner")
 DEFINE_BOOL(trace_asm_parser, false, "verbose logging of asm.js parse failures")
 DEFINE_BOOL(stress_validate_asm, false, "try to validate everything as asm.js")
 
@@ -1296,6 +1296,7 @@ DEFINE_BOOL(trace_opt_verbose, false,
 DEFINE_IMPLICATION(trace_opt_verbose, trace_opt)
 DEFINE_BOOL(trace_opt_stats, false, "trace optimized compilation statistics")
 DEFINE_BOOL(trace_deopt, false, "trace deoptimization")
+DEFINE_BOOL(log_deopt, false, "log deoptimization")
 DEFINE_BOOL(trace_deopt_verbose, false, "extra verbose deoptimization tracing")
 DEFINE_IMPLICATION(trace_deopt_verbose, trace_deopt)
 DEFINE_BOOL(trace_file_names, false,
@@ -1332,6 +1333,10 @@ DEFINE_BOOL(
     trace_side_effect_free_debug_evaluate, false,
     "print debug messages for side-effect-free debug-evaluate for testing")
 DEFINE_BOOL(hard_abort, true, "abort by crashing")
+
+// disassembler
+DEFINE_BOOL(log_colour, ENABLE_LOG_COLOUR,
+            "When logging, try to use coloured output.")
 
 // inspector
 DEFINE_BOOL(expose_inspector_scripts, false,
@@ -1371,9 +1376,11 @@ DEFINE_BOOL(sampling_heap_profiler_suppress_randomness, false,
 DEFINE_BOOL(use_idle_notification, true,
             "Use idle notification to reduce memory footprint.")
 // ic.cc
-DEFINE_BOOL(trace_ic, false,
-            "trace inline cache state transitions for tools/ic-processor")
-DEFINE_IMPLICATION(trace_ic, log_code)
+DEFINE_BOOL(log_ic, false,
+            "Log inline cache state transitions for tools/ic-processor")
+DEFINE_BOOL(trace_ic, false, "See --log-ic")
+DEFINE_IMPLICATION(trace_ic, log_ic)
+DEFINE_IMPLICATION(log_ic, log_code)
 DEFINE_GENERIC_IMPLICATION(
     trace_ic, TracingFlags::ic_stats.store(
                   v8::tracing::TracingCategoryObserver::ENABLED_BY_NATIVE))
@@ -1392,9 +1399,9 @@ DEFINE_BOOL(thin_strings, true, "Enable ThinString support")
 DEFINE_BOOL(trace_prototype_users, false,
             "Trace updates to prototype user tracking")
 DEFINE_BOOL(trace_for_in_enumerate, false, "Trace for-in enumerate slow-paths")
-DEFINE_BOOL(trace_maps, false, "trace map creation")
-DEFINE_BOOL(trace_maps_details, true, "also log map details")
-DEFINE_IMPLICATION(trace_maps, log_code)
+DEFINE_BOOL(log_maps, false, "Log map creation")
+DEFINE_BOOL(log_maps_details, true, "Also log map details")
+DEFINE_IMPLICATION(log_maps, log_code)
 
 // parser.cc
 DEFINE_BOOL(allow_natives_syntax, false, "allow natives syntax")
@@ -1406,6 +1413,7 @@ DEFINE_IMPLICATION(allow_natives_for_differential_fuzzing, fuzzing)
 DEFINE_BOOL(parse_only, false, "only parse the sources")
 
 // simulator-arm.cc, simulator-arm64.cc and simulator-mips.cc
+#ifdef USE_SIMULATOR
 DEFINE_BOOL(trace_sim, false, "Trace simulator execution")
 DEFINE_BOOL(debug_sim, false, "Enable debugging the simulator")
 DEFINE_BOOL(check_icache, false,
@@ -1423,10 +1431,9 @@ DEFINE_INT(sim_stack_alignment, 8,
 DEFINE_INT(sim_stack_size, 2 * MB / KB,
            "Stack size of the ARM64, MIPS, MIPS64 and PPC64 simulator "
            "in kBytes (default is 2 MB)")
-DEFINE_BOOL(log_colour, ENABLE_LOG_COLOUR,
-            "When logging, try to use coloured output.")
 DEFINE_BOOL(trace_sim_messages, false,
             "Trace simulator debug messages. Implied by --trace-sim.")
+#endif  // USE_SIMULATOR
 
 #if defined V8_TARGET_ARCH_ARM64
 // pointer-auth-arm64.cc
@@ -1716,6 +1723,10 @@ DEFINE_BOOL(trace_wasm_gdb_remote, false, "trace Webassembly GDB-remote server")
 //
 // Logging and profiling flags
 //
+// Logging flag dependencies are are also set separately in
+// V8::InitializeOncePerProcessImpl. Please add your flag to the log_all_flags
+// list in v8.cc to properly set FLAG_log and automatically enable it with
+// --log-all.
 #undef FLAG
 #define FLAG FLAG_FULL
 
@@ -1728,6 +1739,7 @@ DEFINE_BOOL(logfile_per_isolate, true, "Separate log files for each isolate.")
 DEFINE_BOOL(log, false,
             "Minimal logging (no API, code, GC, suspect, or handles samples).")
 DEFINE_BOOL(log_all, false, "Log all events to the log file.")
+
 DEFINE_BOOL(log_api, false, "Log API events to the log file.")
 DEFINE_BOOL(log_code, false,
             "Log code events to the log file without profiling.")
@@ -1740,14 +1752,6 @@ DEFINE_BOOL(log_source_code, false, "Log source code.")
 DEFINE_BOOL(log_function_events, false,
             "Log function events "
             "(parse, compile, execute) separately.")
-
-DEFINE_IMPLICATION(log_all, log_api)
-DEFINE_IMPLICATION(log_all, log_code)
-DEFINE_IMPLICATION(log_all, log_code_disassemble)
-DEFINE_IMPLICATION(log_all, log_suspect)
-DEFINE_IMPLICATION(log_all, log_handles)
-DEFINE_IMPLICATION(log_all, log_internal_timer_events)
-DEFINE_IMPLICATION(log_all, log_function_events)
 
 DEFINE_BOOL(detailed_line_info, false,
             "Always generate detailed line information for CPU profiling.")

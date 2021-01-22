@@ -3349,6 +3349,11 @@ Node* WasmGraphBuilder::BuildChangeInt32ToIntPtr(Node* value) {
                                       : value;
 }
 
+Node* WasmGraphBuilder::BuildChangeIntPtrToInt64(Node* value) {
+  return mcgraph()->machine()->Is32() ? gasm_->ChangeInt32ToInt64(value)
+                                      : value;
+}
+
 Node* WasmGraphBuilder::BuildChangeInt32ToSmi(Node* value) {
   // With pointer compression, only the lower 32 bits are used.
   return COMPRESS_POINTERS_BOOL
@@ -3622,9 +3627,9 @@ Node* WasmGraphBuilder::CurrentMemoryPages() {
   Node* mem_size = instance_cache_->mem_size;
   DCHECK_NOT_NULL(mem_size);
   Node* result =
-      graph()->NewNode(mcgraph()->machine()->WordShr(), mem_size,
-                       mcgraph()->Int32Constant(wasm::kWasmPageSizeLog2));
-  result = BuildTruncateIntPtrToInt32(result);
+      gasm_->WordShr(mem_size, gasm_->Int32Constant(wasm::kWasmPageSizeLog2));
+  result = env_->module->is_memory64 ? BuildChangeIntPtrToInt64(result)
+                                     : BuildTruncateIntPtrToInt32(result);
   return result;
 }
 
@@ -8063,6 +8068,7 @@ class LinkageLocationAllocator {
 
   void SetStackOffset(int offset) { allocator_.SetStackOffset(offset); }
   int NumStackSlots() const { return allocator_.NumStackSlots(); }
+  void EndSlotArea() { allocator_.EndSlotArea(); }
 
  private:
   wasm::LinkageAllocator allocator_;
@@ -8101,6 +8107,10 @@ CallDescriptor* GetWasmCallDescriptor(
     auto l = params.Next(param);
     locations.AddParamAt(i + param_offset, l);
   }
+
+  // End the untagged area, so tagged slots come after.
+  params.EndSlotArea();
+
   for (size_t i = 0; i < parameter_count; i++) {
     MachineRepresentation param = fsig->GetParam(i).machine_representation();
     // Skip untagged parameters.

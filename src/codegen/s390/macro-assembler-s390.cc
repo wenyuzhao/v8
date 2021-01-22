@@ -1762,6 +1762,18 @@ void MacroAssembler::CompareInstanceType(Register map, Register type_reg,
   CmpS64(type_reg, Operand(type));
 }
 
+void MacroAssembler::CompareInstanceTypeRange(Register map, Register type_reg,
+                                              InstanceType lower_limit,
+                                              InstanceType higher_limit) {
+  DCHECK_LT(lower_limit, higher_limit);
+  UseScratchRegisterScope temps(this);
+  Register scratch = temps.Acquire();
+  LoadU16(type_reg, FieldMemOperand(map, Map::kInstanceTypeOffset));
+  mov(scratch, type_reg);
+  slgfi(scratch, Operand(lower_limit));
+  CmpU64(scratch, Operand(higher_limit - lower_limit));
+}
+
 void MacroAssembler::CompareRoot(Register obj, RootIndex index) {
   int32_t offset = RootRegisterOffsetForRootIndex(index);
 #ifdef V8_TARGET_BIG_ENDIAN
@@ -2004,9 +2016,11 @@ void MacroAssembler::AssertFunction(Register object) {
     TestIfSmi(object);
     Check(ne, AbortReason::kOperandIsASmiAndNotAFunction, cr0);
     push(object);
-    CompareObjectType(object, object, object, JS_FUNCTION_TYPE);
+    LoadMap(object, object);
+    CompareInstanceTypeRange(object, object, FIRST_JS_FUNCTION_TYPE,
+                             LAST_JS_FUNCTION_TYPE);
     pop(object);
-    Check(eq, AbortReason::kOperandIsNotAFunction);
+    Check(le, AbortReason::kOperandIsNotAFunction);
   }
 }
 
@@ -3425,19 +3439,9 @@ void TurboAssembler::StoreU64(Register src, const MemOperand& mem,
     DCHECK(scratch != no_reg);
     DCHECK(scratch != r0);
     mov(scratch, Operand(mem.offset()));
-#if V8_TARGET_ARCH_S390X
     stg(src, MemOperand(mem.rb(), scratch));
-#else
-    st(src, MemOperand(mem.rb(), scratch));
-#endif
   } else {
-#if V8_TARGET_ARCH_S390X
     stg(src, mem);
-#else
-    // StoreU32 will try to generate ST if offset fits, otherwise
-    // it'll generate STY.
-    StoreU32(src, mem);
-#endif
   }
 }
 
@@ -3450,11 +3454,7 @@ void TurboAssembler::StoreU64(const MemOperand& mem, const Operand& opnd,
   // Try to use MVGHI/MVHI
   if (CpuFeatures::IsSupported(GENERAL_INSTR_EXT) && is_uint12(mem.offset()) &&
       mem.getIndexRegister() == r0 && is_int16(opnd.immediate())) {
-#if V8_TARGET_ARCH_S390X
     mvghi(mem, opnd);
-#else
-    mvhi(mem, opnd);
-#endif
   } else {
     mov(scratch, opnd);
     StoreU64(scratch, mem);
@@ -3701,6 +3701,70 @@ void TurboAssembler::LoadF32LE(DoubleRegister dst, const MemOperand& opnd,
   ldgr(dst, scratch);
 }
 
+void TurboAssembler::StoreU64LE(Register src, const MemOperand& mem,
+                                Register scratch) {
+  if (!is_int20(mem.offset())) {
+    DCHECK(scratch != no_reg);
+    DCHECK(scratch != r0);
+    mov(scratch, Operand(mem.offset()));
+    strvg(src, MemOperand(mem.rb(), scratch));
+  } else {
+    strvg(src, mem);
+  }
+}
+
+void TurboAssembler::StoreU32LE(Register src, const MemOperand& mem,
+                                Register scratch) {
+  if (!is_int20(mem.offset())) {
+    DCHECK(scratch != no_reg);
+    DCHECK(scratch != r0);
+    mov(scratch, Operand(mem.offset()));
+    strv(src, MemOperand(mem.rb(), scratch));
+  } else {
+    strv(src, mem);
+  }
+}
+
+void TurboAssembler::StoreU16LE(Register src, const MemOperand& mem,
+                                Register scratch) {
+  if (!is_int20(mem.offset())) {
+    DCHECK(scratch != no_reg);
+    DCHECK(scratch != r0);
+    mov(scratch, Operand(mem.offset()));
+    strvh(src, MemOperand(mem.rb(), scratch));
+  } else {
+    strvh(src, mem);
+  }
+}
+
+void TurboAssembler::StoreF64LE(DoubleRegister src, const MemOperand& opnd,
+                                Register scratch) {
+  DCHECK(!is_int20(mem.offset()));
+  lgdr(scratch, src);
+  strvg(scratch, opnd);
+}
+
+void TurboAssembler::StoreF32LE(DoubleRegister src, const MemOperand& opnd,
+                                Register scratch) {
+  DCHECK(!is_int20(mem.offset()));
+  lgdr(scratch, src);
+  ShiftRightU64(scratch, scratch, Operand(32));
+  strv(scratch, opnd);
+}
+
+void TurboAssembler::StoreV128LE(Simd128Register src, const MemOperand& mem,
+                                 Register scratch1, Register scratch2) {
+  if (CpuFeatures::IsSupported(VECTOR_ENHANCE_FACILITY_2)) {
+    vstbr(src, mem, Condition(4));
+  } else {
+    vlgv(scratch1, src, MemOperand(r0, 1), Condition(3));
+    vlgv(scratch2, src, MemOperand(r0, 0), Condition(3));
+    strvg(scratch1, mem);
+    strvg(scratch2,
+          MemOperand(mem.rx(), mem.rb(), mem.offset() + kSystemPointerSize));
+  }
+}
+
 #else
 void TurboAssembler::LoadU64LE(Register dst, const MemOperand& mem,
                                Register scratch) {
@@ -3741,6 +3805,36 @@ void TurboAssembler::LoadF32LE(DoubleRegister dst, const MemOperand& opnd,
                                Register scratch) {
   USE(scratch);
   LoadF32(dst, opnd);
+}
+
+void TurboAssembler::StoreU64LE(Register src, const MemOperand& mem,
+                                Register scratch) {
+  StoreU64(src, mem, scratch);
+}
+
+void TurboAssembler::StoreU32LE(Register src, const MemOperand& mem,
+                                Register scratch) {
+  StoreU32(src, mem, scratch);
+}
+
+void TurboAssembler::StoreU16LE(Register src, const MemOperand& mem,
+                                Register scratch) {
+  StoreU16(src, mem, scratch);
+}
+
+void TurboAssembler::StoreF64LE(DoubleRegister src, const MemOperand& opnd,
+                                Register scratch) {
+  StoreF64(src, opnd);
+}
+
+void TurboAssembler::StoreF32LE(DoubleRegister src, const MemOperand& opnd,
+                                Register scratch) {
+  StoreF32(src, opnd);
+}
+
+void TurboAssembler::StoreV128LE(Simd128Register src, const MemOperand& mem,
+                                 Register scratch1, Register scratch2) {
+  StoreV128(src, mem, scratch1);
 }
 
 #endif

@@ -136,6 +136,7 @@
   'regress/regress-1122': [PASS, SLOW],
   'regress/regress-605470': [PASS, SLOW],
   'regress/regress-655573': [PASS, SLOW],
+  'regress/regress-1034322': [PASS, SLOW, NO_VARIANTS, ['mode != release', SKIP]],
   'regress/regress-1200351': [PASS, SLOW],
   'regress/regress-crbug-808192': [PASS, SLOW, NO_VARIANTS, ['arch not in (ia32, x64)', SKIP]],
   'regress/regress-crbug-918301': [PASS, SLOW, NO_VARIANTS, ['mode != release or dcheck_always_on', SKIP], ['(arch == arm or arch == arm64) and simulator_run', SKIP], ['tsan', SKIP]],
@@ -845,10 +846,6 @@
   # module, which causes a data-race if the native module is shared between
   # isolates.
   'wasm/lazy-compilation': [SKIP],
-
-  # Tier down/up Wasm NativeModule in debugging is non-deterministic with
-  # multiple isolates (https://crbug.com/v8/10099).
-  'wasm/tier-down-to-liftoff': [SKIP],
 
   # Tier down/up Wasm functions is non-deterministic with
   # multiple isolates, as dynamic tiering relies on a array shared

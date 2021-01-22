@@ -82,7 +82,6 @@ namespace internal {
 
 #define FOR_EACH_INTRINSIC_CLASSES(F, I)    \
   F(DefineClass, -1 /* >= 3 */, 1)          \
-  F(HomeObjectSymbol, 0, 1)                 \
   F(LoadFromSuper, 3, 1)                    \
   F(LoadKeyedFromSuper, 3, 1)               \
   F(StoreKeyedToSuper, 4, 1)                \
@@ -548,9 +547,9 @@ namespace internal {
   F(UnblockConcurrentRecompilation, 0, 1)     \
   F(WasmGetNumberOfInstances, 1, 1)           \
   F(WasmNumCodeSpaces, 1, 1)                  \
-  F(WasmTierDownModule, 1, 1)                 \
+  F(WasmTierDown, 0, 1)                       \
+  F(WasmTierUp, 0, 1)                         \
   F(WasmTierUpFunction, 2, 1)                 \
-  F(WasmTierUpModule, 1, 1)                   \
   F(WasmTraceEnter, 0, 1)                     \
   F(WasmTraceExit, 1, 1)                      \
   F(WasmTraceMemory, 1, 1)                    \

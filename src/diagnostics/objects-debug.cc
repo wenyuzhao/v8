@@ -182,7 +182,6 @@ void HeapObject::HeapObjectVerify(Isolate* isolate) {
     case NUMBER_DICTIONARY_TYPE:
     case SIMPLE_NUMBER_DICTIONARY_TYPE:
     case EPHEMERON_HASH_TABLE_TYPE:
-    case SCOPE_INFO_TYPE:
     case SCRIPT_CONTEXT_TABLE_TYPE:
       FixedArray::cast(*this).FixedArrayVerify(isolate);
       break;
@@ -581,6 +580,20 @@ void Context::ContextVerify(Isolate* isolate) {
   }
 }
 
+void ScopeInfo::ScopeInfoVerify(Isolate* isolate) {
+  TorqueGeneratedClassVerifiers::ScopeInfoVerify(*this, isolate);
+
+  // Make sure that the FixedArray-style length matches the length that we would
+  // compute based on the Torque indexed fields.
+  CHECK_EQ(FixedArray::SizeFor(length()), AllocatedSize());
+
+  // Code that treats ScopeInfo like a FixedArray expects all values to be
+  // tagged.
+  for (int i = 0; i < length(); ++i) {
+    Object::VerifyPointer(isolate, get(isolate, i));
+  }
+}
+
 void NativeContext::NativeContextVerify(Isolate* isolate) {
   ContextVerify(isolate);
   CHECK_EQ(length(), NativeContext::NATIVE_CONTEXT_SLOTS);
@@ -859,8 +872,8 @@ void SharedFunctionInfo::SharedFunctionInfoVerify(ReadOnlyRoots roots) {
     CHECK(feedback_metadata().IsFeedbackMetadata());
   }
 
-  int expected_map_index = Context::FunctionMapIndex(
-      language_mode(), kind(), HasSharedName(), needs_home_object());
+  int expected_map_index =
+      Context::FunctionMapIndex(language_mode(), kind(), HasSharedName());
   CHECK_EQ(expected_map_index, function_map_index());
 
   if (!scope_info().IsEmpty()) {

@@ -288,7 +288,7 @@ declare_args() {
 
   # If enabled then macro definitions that are used in externally visible
   # header files are placed in a separate header file v8-gn.h.
-  v8_generate_external_defines_header = false
+  v8_generate_external_defines_header = true
 
   # Enable map packing & unpacking (sets -dV8_MAP_PACKING).
   v8_enable_map_packing = true
@@ -1206,6 +1206,7 @@ action("postmortem-metadata") {
     "src/objects/primitive-heap-object.h",
     "src/objects/primitive-heap-object-inl.h",
     "src/objects/scope-info.h",
+    "src/objects/scope-info-inl.h",
     "src/objects/script.h",
     "src/objects/script-inl.h",
     "src/objects/shared-function-info.cc",
@@ -2532,6 +2533,8 @@ v8_source_set("v8_base_without_compiler") {
     "src/builtins/constants-table-builder.cc",
     "src/builtins/constants-table-builder.h",
     "src/builtins/profile-data-reader.h",
+    "src/codegen/aligned-slot-allocator.cc",
+    "src/codegen/aligned-slot-allocator.h",
     "src/codegen/assembler-arch.h",
     "src/codegen/assembler-inl.h",
     "src/codegen/assembler.cc",
@@ -2644,8 +2647,19 @@ v8_source_set("v8_base_without_compiler") {
     "src/debug/liveedit.h",
     "src/deoptimizer/deoptimize-reason.cc",
     "src/deoptimizer/deoptimize-reason.h",
+    "src/deoptimizer/deoptimized-frame-info.cc",
+    "src/deoptimizer/deoptimized-frame-info.h",
     "src/deoptimizer/deoptimizer.cc",
     "src/deoptimizer/deoptimizer.h",
+    "src/deoptimizer/frame-description.h",
+    "src/deoptimizer/materialized-object-store.cc",
+    "src/deoptimizer/materialized-object-store.h",
+    "src/deoptimizer/translated-state.cc",
+    "src/deoptimizer/translated-state.h",
+    "src/deoptimizer/translation-array.cc",
+    "src/deoptimizer/translation-array.h",
+    "src/deoptimizer/translations.cc",
+    "src/deoptimizer/translations.h",
     "src/diagnostics/basic-block-profiler.cc",
     "src/diagnostics/basic-block-profiler.h",
     "src/diagnostics/code-tracer.h",
@@ -3198,6 +3212,7 @@ v8_source_set("v8_base_without_compiler") {
     "src/objects/prototype-info.h",
     "src/objects/prototype.h",
     "src/objects/regexp-match-info.h",
+    "src/objects/scope-info-inl.h",
     "src/objects/scope-info.cc",
     "src/objects/scope-info.h",
     "src/objects/script-inl.h",
@@ -4396,6 +4411,9 @@ v8_component("v8_libbase") {
 
   if (is_tsan && !build_with_chromium) {
     data += [ "tools/sanitizers/tsan_suppressions.txt" ]
+
+    # llvm-symbolizer uses libstdc++ from the clang package.
+    data += [ "//third_party/llvm-build/Release+Asserts/lib/libstdc++.so.6" ]
   }
 
   # TODO(jochen): Add support for qnx, freebsd, openbsd, netbsd, and solaris.

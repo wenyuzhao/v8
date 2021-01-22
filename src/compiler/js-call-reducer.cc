@@ -2049,13 +2049,11 @@ struct PromiseCtorFrameStateParams {
 
 // Remnant of old-style JSCallReducer code. Could be ported to graph assembler,
 // but probably not worth the effort.
-FrameState CreateArtificialFrameState(Node* node, Node* outer_frame_state,
-                                      int parameter_count, BailoutId bailout_id,
-                                      FrameStateType frame_state_type,
-                                      const SharedFunctionInfoRef& shared,
-                                      Node* context,
-                                      CommonOperatorBuilder* common,
-                                      Graph* graph) {
+FrameState CreateArtificialFrameState(
+    Node* node, Node* outer_frame_state, int parameter_count,
+    BytecodeOffset bailout_id, FrameStateType frame_state_type,
+    const SharedFunctionInfoRef& shared, Node* context,
+    CommonOperatorBuilder* common, Graph* graph) {
   const FrameStateFunctionInfo* state_info =
       common->CreateFrameStateFunctionInfo(
           frame_state_type, parameter_count + 1, 0, shared.object());
@@ -2089,7 +2087,7 @@ FrameState PromiseConstructorFrameState(
   DCHECK_EQ(1, params.shared.internal_formal_parameter_count());
   return CreateArtificialFrameState(
       params.node_ptr, params.outer_frame_state, 1,
-      BailoutId::ConstructStubInvoke(), FrameStateType::kConstructStub,
+      BytecodeOffset::ConstructStubInvoke(), FrameStateType::kConstructStub,
       params.shared, params.context, common, graph);
 }
 
@@ -3463,6 +3461,11 @@ Reduction JSCallReducer::ReduceCallWasmFunction(
     return NoChange();
   }
 
+  // TODO(paolosev@microsoft.com): Enable inlining for calls in try/catch.
+  if (NodeProperties::IsExceptionalCall(node)) {
+    return NoChange();
+  }
+
   const wasm::FunctionSig* wasm_signature = shared.wasm_function_signature();
   if (!CanInlineJSToWasmCall(wasm_signature)) {
     return NoChange();
@@ -3876,13 +3879,13 @@ Reduction JSCallReducer::ReduceCallOrConstructWithArrayLikeOrSpread(
   // we can only optimize this in case the {node} was already inlined into
   // some other function (and same for the {arguments_list}).
   CreateArgumentsType const type = CreateArgumentsTypeOf(arguments_list->op());
-  Node* frame_state = NodeProperties::GetFrameStateInput(arguments_list);
-  int start_index = 0;
+  FrameState frame_state =
+      FrameState{NodeProperties::GetFrameStateInput(arguments_list)};
 
   int formal_parameter_count;
   {
     Handle<SharedFunctionInfo> shared;
-    if (!FrameStateInfoOf(frame_state->op()).shared_info().ToHandle(&shared)) {
+    if (!frame_state.frame_state_info().shared_info().ToHandle(&shared)) {
       return NoChange();
     }
     formal_parameter_count = SharedFunctionInfoRef(broker(), shared)
@@ -3900,8 +3903,6 @@ Reduction JSCallReducer::ReduceCallOrConstructWithArrayLikeOrSpread(
         return NoChange();
       }
     }
-  } else if (type == CreateArgumentsType::kRestParameter) {
-    start_index = formal_parameter_count;
   }
 
   // TODO(jgruber,v8:8888): Attempt to remove this restriction. The reason it
@@ -3918,13 +3919,19 @@ Reduction JSCallReducer::ReduceCallOrConstructWithArrayLikeOrSpread(
   // Remove the {arguments_list} input from the {node}.
   node->RemoveInput(arraylike_or_spread_index);
 
+  // The index of the first relevant parameter. Only non-zero when looking at
+  // rest parameters, in which case it is set to the index of the first rest
+  // parameter.
+  const int start_index = (type == CreateArgumentsType::kRestParameter)
+                              ? formal_parameter_count
+                              : 0;
+
   // After removing the arraylike or spread object, the argument count is:
   int argc =
       arraylike_or_spread_index - JSCallOrConstructNode::FirstArgumentIndex();
   // Check if are spreading to inlined arguments or to the arguments of
   // the outermost function.
-  Node* outer_state = frame_state->InputAt(kFrameStateOuterStateInput);
-  if (outer_state->opcode() != IrOpcode::kFrameState) {
+  if (!frame_state.has_outer_frame_state()) {
     Operator const* op;
     if (IsCallWithArrayLikeOrSpread(node)) {
       static constexpr int kTargetAndReceiver = 2;
@@ -3939,40 +3946,22 @@ Reduction JSCallReducer::ReduceCallOrConstructWithArrayLikeOrSpread(
     NodeProperties::ChangeOp(node, op);
     return Changed(node);
   }
+  FrameState outer_state = frame_state.outer_frame_state();
   // Get to the actual frame state from which to extract the arguments;
   // we can only optimize this in case the {node} was already inlined into
   // some other function (and same for the {arg_array}).
-  FrameStateInfo outer_info = FrameStateInfoOf(outer_state->op());
+  FrameStateInfo outer_info = outer_state.frame_state_info();
   if (outer_info.type() == FrameStateType::kArgumentsAdaptor) {
     // Need to take the parameters from the arguments adaptor.
     frame_state = outer_state;
   }
   // Add the actual parameters to the {node}, skipping the receiver.
-  const int argument_count =
-      FrameStateInfoOf(frame_state->op()).parameter_count() -
-      1;  // Minus receiver.
-  if (start_index < argument_count) {
-    Node* const parameters = frame_state->InputAt(kFrameStateParametersInput);
-    StateValuesAccess parameters_access(parameters);
-    auto parameters_it = ++parameters_access.begin();  // Skip the receiver.
-    for (int i = 0; i < start_index; i++) {
-      // A non-zero start_index implies that there are rest arguments. Skip
-      // them.
-      ++parameters_it;
-    }
-    for (int i = start_index; i < argument_count; ++i, ++parameters_it) {
-      Node* parameter_node = parameters_it.node();
-      DCHECK_NOT_NULL(parameter_node);
-      node->InsertInput(graph()->zone(),
-                        JSCallOrConstructNode::ArgumentIndex(argc++),
-                        parameter_node);
-    }
-    // TODO(jgruber): Currently, each use-site does the awkward dance above,
-    // iterating based on the FrameStateInfo's parameter count minus one, and
-    // manually advancing the iterator past the receiver. Consider wrapping all
-    // this in an understandable iterator s.t. one only needs to iterate from
-    // the beginning until done().
-    DCHECK(parameters_it.done());
+  StateValuesAccess parameters_access(frame_state.parameters());
+  for (auto it = parameters_access.begin_without_receiver_and_skip(start_index);
+       !it.done(); ++it) {
+    DCHECK_NOT_NULL(it.node());
+    node->InsertInput(graph()->zone(),
+                      JSCallOrConstructNode::ArgumentIndex(argc++), it.node());
   }
 
   if (IsCallWithArrayLikeOrSpread(node)) {
@@ -5350,7 +5339,7 @@ Reduction JSCallReducer::ReduceArrayPrototypePop(Node* node) {
     Node* efalse = effect;
     Node* vfalse;
     {
-      // TODO(tebbi): We should trim the backing store if the capacity is too
+      // TODO(turbofan): We should trim the backing store if the capacity is too
       // big, as implemented in elements.cc:ElementsAccessorBase::SetLengthImpl.
 
       // Load the elements backing store from the {receiver}.
@@ -6740,7 +6729,7 @@ Reduction JSCallReducer::ReduceTypedArrayConstructor(
   // Insert a construct stub frame into the chain of frame states. This will
   // reconstruct the proper frame when deoptimizing within the constructor.
   frame_state = CreateArtificialFrameState(
-      node, frame_state, arity, BailoutId::ConstructStubInvoke(),
+      node, frame_state, arity, BytecodeOffset::ConstructStubInvoke(),
       FrameStateType::kConstructStub, shared, context, common(), graph());
 
   // This continuation just returns the newly created JSTypedArray. We
