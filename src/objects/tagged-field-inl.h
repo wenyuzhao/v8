@@ -113,7 +113,7 @@ T TaggedField<T, kFieldOffset>::Relaxed_Load(IsolateRoot isolate,
 // static
 template <typename T, int kFieldOffset>
 T TaggedField<T, kFieldOffset>::Relaxed_Load_Map_Word(IsolateRoot isolate,
-                                                       HeapObject host) {
+                                                      HeapObject host) {
   AtomicTagged_t value = AsAtomicTagged::Relaxed_Load(location(host, 0));
   return T(tagged_to_full(isolate, value));
 }
@@ -121,7 +121,7 @@ T TaggedField<T, kFieldOffset>::Relaxed_Load_Map_Word(IsolateRoot isolate,
 // static
 template <typename T, int kFieldOffset>
 void TaggedField<T, kFieldOffset>::Relaxed_Store_Map_Word(HeapObject host,
-                                                         T value) {
+                                                          T value) {
   AsAtomicTagged::Relaxed_Store(location(host), full_to_tagged(value.ptr()));
 }
 
@@ -178,7 +178,7 @@ void TaggedField<T, kFieldOffset>::Release_Store(HeapObject host, T value) {
 // static
 template <typename T, int kFieldOffset>
 void TaggedField<T, kFieldOffset>::Release_Store_Map_Word(HeapObject host,
-                                                         T value) {
+                                                          T value) {
   Address ptr = value.ptr();
   AsAtomicTagged::Release_Store(location(host), full_to_tagged(ptr));
 }

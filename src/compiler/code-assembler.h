@@ -772,7 +772,9 @@ class V8_EXPORT_PRIVATE CodeAssembler {
 #endif
 
   // Load a value from the root array.
-  // If map packing is enabled, LoadRoot for a root map returns the unpacked map word (i.e., the map). Use LoadRootMapWord to obtain the packed map word instead.
+  // If map packing is enabled, LoadRoot for a root map returns the unpacked map
+  // word (i.e., the map). Use LoadRootMapWord to obtain the packed map word
+  // instead.
   TNode<Object> LoadRoot(RootIndex root_index);
   TNode<AnyTaggedT> LoadRootMapWord(RootIndex root_index);
 

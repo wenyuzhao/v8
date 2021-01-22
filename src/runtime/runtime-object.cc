@@ -101,14 +101,18 @@ namespace {
 // map. Otherwise, the filler map word is the same as the filler map.
 inline void ClearField(Isolate* isolate, JSObject object, FieldIndex index) {
   if (index.is_inobject()) {
-    MapWord filler_map_word = ReadOnlyRoots(isolate).one_pointer_filler_map_word();
+    MapWord filler_map_word =
+        ReadOnlyRoots(isolate).one_pointer_filler_map_word();
 #ifndef V8_MAP_PACKING
-    DCHECK_EQ(filler_map_word.ToMap(), ReadOnlyRoots(isolate).one_pointer_filler_map());
+    DCHECK_EQ(filler_map_word.ToMap(),
+              ReadOnlyRoots(isolate).one_pointer_filler_map());
 #endif
     int offset = index.offset();
     TaggedField<MapWord>::Release_Store(object, offset, filler_map_word);
   } else {
-    object.property_array().set(index.outobject_array_index(), ReadOnlyRoots(isolate).one_pointer_filler_map());
+    object.property_array().set(
+        index.outobject_array_index(),
+        ReadOnlyRoots(isolate).one_pointer_filler_map());
   }
 }
 

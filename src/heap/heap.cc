@@ -4142,8 +4142,7 @@ class SlotVerifyingVisitor : public ObjectVisitor {
                      ObjectSlot end) override {
 #ifdef DEBUG
     for (ObjectSlot slot = start; slot < end; ++slot) {
-      DCHECK(!MapWord::IsPacked((*slot).ptr()) ||
-             !HasWeakHeapObjectTag(*slot));
+      DCHECK(!MapWord::IsPacked((*slot).ptr()) || !HasWeakHeapObjectTag(*slot));
     }
 #endif  // DEBUG
     VisitPointers(host, MaybeObjectSlot(start), MaybeObjectSlot(end));

@@ -106,9 +106,7 @@ class MarkingVerifier : public ObjectVisitor, public RootVisitor {
     VerifyRootPointers(start, end);
   }
 
-  void VisitMapPointer(HeapObject object) override {
-    VerifyMap(object.map());
-  }
+  void VisitMapPointer(HeapObject object) override { VerifyMap(object.map()); }
 
   void VerifyRoots();
   void VerifyMarkingOnPage(const Page* page, Address start, Address end);
@@ -278,9 +276,7 @@ class EvacuationVerifier : public ObjectVisitor, public RootVisitor {
     VerifyRootPointers(start, end);
   }
 
-  void VisitMapPointer(HeapObject object) override {
-    VerifyMap(object.map());
-  }
+  void VisitMapPointer(HeapObject object) override { VerifyMap(object.map()); }
 
  protected:
   explicit EvacuationVerifier(Heap* heap) : heap_(heap) {}

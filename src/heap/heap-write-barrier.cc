@@ -67,7 +67,9 @@ int WriteBarrier::MarkingFromCode(Address raw_host, Address raw_slot) {
 #ifdef V8_MAP_PACKING
   if (slot.address() == host.address()) {
     // Clear metadata bits and fix object tag.
-    value = (value & ~Internals::kMapWordMetadataMask & ~Internals::kMapWordXorMask) | (uint64_t)kHeapObjectTag;
+    value = (value & ~Internals::kMapWordMetadataMask &
+             ~Internals::kMapWordXorMask) |
+            (uint64_t)kHeapObjectTag;
   }
 #endif
   WriteBarrier::Marking(host, slot, MaybeObject(value));
