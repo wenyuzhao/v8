@@ -342,7 +342,7 @@ TEST(GetObjectProperties) {
   // Start by getting the object's map and the map's descriptor array.
   uintptr_t map_ptr = ReadProp<i::Tagged_t>(*props, "map");
 #if V8_MAP_PACKING
-    map_ptr = reinterpret_cast<i::MapWord*>(&map_ptr)->ToMap().ptr();
+  map_ptr = reinterpret_cast<i::MapWord*>(&map_ptr)->ToMap().ptr();
 #endif
   props = d::GetObjectProperties(map_ptr, &ReadMemory, heap_addresses);
   props = d::GetObjectProperties(
