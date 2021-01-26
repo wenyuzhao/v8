@@ -1090,8 +1090,6 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
         isolate_root_bias());
   }
 
-  THREAD_LOCAL_TOP_ADDRESS(Address, thread_in_wasm_flag_address)
-
   MaterializedObjectStore* materialized_object_store() {
     return materialized_object_store_;
   }
@@ -1525,10 +1523,23 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
 
   void ClearKeptObjects();
 
+  // While deprecating v8::HostImportModuleDynamicallyCallback in v8.h we still
+  // need to support the version of the API that uses it, but we can't directly
+  // reference the deprecated version because of the enusing build warnings. So,
+  // we declare this matching type for temporary internal use.
+  // TODO(v8:10958) Delete this declaration and all references to it once
+  // v8::HostImportModuleDynamicallyCallback is removed.
+  typedef MaybeLocal<Promise> (*DeprecatedHostImportModuleDynamicallyCallback)(
+      v8::Local<v8::Context> context, v8::Local<v8::ScriptOrModule> referrer,
+      v8::Local<v8::String> specifier);
+
   void SetHostImportModuleDynamicallyCallback(
-      HostImportModuleDynamicallyCallback callback);
+      DeprecatedHostImportModuleDynamicallyCallback callback);
+  void SetHostImportModuleDynamicallyCallback(
+      HostImportModuleDynamicallyWithImportAssertionsCallback callback);
   MaybeHandle<JSPromise> RunHostImportModuleDynamicallyCallback(
-      Handle<Script> referrer, Handle<Object> specifier);
+      Handle<Script> referrer, Handle<Object> specifier,
+      MaybeHandle<Object> maybe_import_assertions_argument);
 
   void SetHostInitializeImportMetaObjectCallback(
       HostInitializeImportMetaObjectCallback callback);
@@ -1593,14 +1604,6 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
 
   void set_allow_atomics_wait(bool set) { allow_atomics_wait_ = set; }
   bool allow_atomics_wait() { return allow_atomics_wait_; }
-
-  void set_supported_import_assertions(
-      const std::vector<std::string>& supported_import_assertions) {
-    supported_import_assertions_ = supported_import_assertions;
-  }
-  const std::vector<std::string>& supported_import_assertions() const {
-    return supported_import_assertions_;
-  }
 
   // Register a finalizer to be called at isolate teardown.
   void RegisterManagedPtrDestructor(ManagedPtrDestructor* finalizer);
@@ -1833,9 +1836,21 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   v8::Isolate::AtomicsWaitCallback atomics_wait_callback_ = nullptr;
   void* atomics_wait_callback_data_ = nullptr;
   PromiseHook promise_hook_ = nullptr;
-  HostImportModuleDynamicallyCallback host_import_module_dynamically_callback_ =
-      nullptr;
-  std::vector<std::string> supported_import_assertions_;
+  DeprecatedHostImportModuleDynamicallyCallback
+      host_import_module_dynamically_callback_ = nullptr;
+  HostImportModuleDynamicallyWithImportAssertionsCallback
+      host_import_module_dynamically_with_import_assertions_callback_ = nullptr;
+
+  // Helper function for RunHostImportModuleDynamicallyCallback.
+  // Unpacks import assertions, if present, from the second argument to dynamic
+  // import() and returns them in a FixedArray, sorted by code point order of
+  // the keys, in the form [key1, value1, key2, value2, ...]. Returns an empty
+  // MaybeHandle if an error was thrown.  In this case, the host callback should
+  // not be called and instead the caller should use the pending exception to
+  // reject the import() call's Promise.
+  MaybeHandle<FixedArray> GetImportAssertionsFromArgument(
+      MaybeHandle<Object> maybe_import_assertions_argument);
+
   HostInitializeImportMetaObjectCallback
       host_initialize_import_meta_object_callback_ = nullptr;
   base::Mutex rail_mutex_;

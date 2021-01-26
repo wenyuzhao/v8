@@ -7,6 +7,7 @@
 #include "src/base/overflowing-math.h"
 #include "src/codegen/assembler.h"
 #include "src/codegen/cpu-features.h"
+#include "src/codegen/external-reference.h"
 #include "src/codegen/macro-assembler.h"
 #include "src/codegen/optimized-compilation-info.h"
 #include "src/codegen/x64/assembler-x64.h"
@@ -364,8 +365,7 @@ class WasmProtectedInstructionTrap final : public WasmOutOfLineTrap {
 void EmitOOLTrapIfNeeded(Zone* zone, CodeGenerator* codegen,
                          InstructionCode opcode, Instruction* instr,
                          int pc) {
-  const MemoryAccessMode access_mode =
-      static_cast<MemoryAccessMode>(MiscField::decode(opcode));
+  const MemoryAccessMode access_mode = AccessModeField::decode(opcode);
   if (access_mode == kMemoryAccessProtected) {
     zone->New<WasmProtectedInstructionTrap>(codegen, pc, instr);
   }
@@ -374,8 +374,7 @@ void EmitOOLTrapIfNeeded(Zone* zone, CodeGenerator* codegen,
 void EmitWordLoadPoisoningIfNeeded(CodeGenerator* codegen,
                                    InstructionCode opcode, Instruction* instr,
                                    X64OperandConverter const& i) {
-  const MemoryAccessMode access_mode =
-      static_cast<MemoryAccessMode>(MiscField::decode(opcode));
+  const MemoryAccessMode access_mode = AccessModeField::decode(opcode);
   if (access_mode == kMemoryAccessPoisoned) {
     Register value = i.OutputRegister();
     codegen->tasm()->andq(value, kSpeculationPoisonRegister);
@@ -2125,8 +2124,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     case kX64Movsd: {
       EmitOOLTrapIfNeeded(zone(), this, opcode, instr, __ pc_offset());
       if (instr->HasOutput()) {
-        const MemoryAccessMode access_mode =
-            static_cast<MemoryAccessMode>(MiscField::decode(opcode));
+        const MemoryAccessMode access_mode = AccessModeField::decode(opcode);
         if (access_mode == kMemoryAccessPoisoned) {
           // If we have to poison the loaded value, we load into a general
           // purpose register first, mask it with the poison, and move the
@@ -2478,6 +2476,104 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
         __ Mulpd(tmp, i.InputSimd128Register(1));
         __ Subpd(i.OutputSimd128Register(), tmp);
       }
+      break;
+    }
+    case kX64F64x2ConvertLowI32x4S: {
+      __ Cvtdq2pd(i.OutputSimd128Register(), i.InputSimd128Register(0));
+      break;
+    }
+    case kX64F64x2ConvertLowI32x4U: {
+      XMMRegister dst = i.OutputSimd128Register();
+      // dst = [ src_low, 0x43300000, src_high, 0x4330000 ];
+      // 0x43300000'00000000 is a special double where the significand bits
+      // precisely represents all uint32 numbers.
+      __ Unpcklps(
+          dst, __ ExternalReferenceAsOperand(
+                   ExternalReference::
+                       address_of_wasm_f64x2_convert_low_i32x4_u_int_mask()));
+      __ Subpd(dst,
+               __ ExternalReferenceAsOperand(
+                   ExternalReference::address_of_wasm_double_2_power_52()));
+      break;
+    }
+    case kX64F64x2PromoteLowF32x4: {
+      __ Cvtps2pd(i.OutputSimd128Register(), i.InputSimd128Register(0));
+      break;
+    }
+    case kX64F32x4DemoteF64x2Zero: {
+      __ Cvtpd2ps(i.OutputSimd128Register(), i.InputSimd128Register(0));
+      break;
+    }
+    case kX64I32x4TruncSatF64x2SZero: {
+      XMMRegister dst = i.OutputSimd128Register();
+      XMMRegister src = i.InputSimd128Register(0);
+      if (CpuFeatures::IsSupported(AVX)) {
+        CpuFeatureScope avx_scope(tasm(), AVX);
+        DCHECK_NE(dst, src);
+        // dst = 0 if src == NaN, else all ones.
+        __ vcmpeqpd(dst, src, src);
+        // dst = 0 if src == NaN, else INT32_MAX as double.
+        __ vandpd(
+            dst, dst,
+            __ ExternalReferenceAsOperand(
+                ExternalReference::address_of_wasm_int32_max_as_double()));
+        // dst = 0 if src == NaN, src is saturated to INT32_MAX as double.
+        __ vminpd(dst, src, dst);
+        // Values > INT32_MAX already saturated, values < INT32_MIN raises an
+        // exception, which is masked and returns 0x80000000.
+        __ vcvttpd2dq(dst, dst);
+      } else {
+        DCHECK_EQ(dst, src);
+        __ Move(kScratchDoubleReg, src);
+        __ cmpeqpd(kScratchDoubleReg, src);
+        __ andps(kScratchDoubleReg,
+                 __ ExternalReferenceAsOperand(
+                     ExternalReference::address_of_wasm_int32_max_as_double()));
+        __ minpd(dst, kScratchDoubleReg);
+        __ cvttpd2dq(dst, dst);
+      }
+      break;
+    }
+    case kX64I32x4TruncSatF64x2UZero: {
+      XMMRegister dst = i.OutputSimd128Register();
+      XMMRegister src = i.InputSimd128Register(0);
+
+      if (CpuFeatures::IsSupported(AVX)) {
+        CpuFeatureScope avx_scope(tasm(), AVX);
+        __ vxorpd(kScratchDoubleReg, kScratchDoubleReg, kScratchDoubleReg);
+        // Saturate to 0.
+        __ vmaxpd(dst, src, kScratchDoubleReg);
+        // Saturate to UINT32_MAX.
+        __ vminpd(
+            dst, dst,
+            __ ExternalReferenceAsOperand(
+                ExternalReference::address_of_wasm_uint32_max_as_double()));
+        // Truncate.
+        __ vroundpd(dst, dst, kRoundToZero);
+        // Add to special double where significant bits == uint32.
+        __ vaddpd(dst, dst,
+                  __ ExternalReferenceAsOperand(
+                      ExternalReference::address_of_wasm_double_2_power_52()));
+        // Extract low 32 bits of each double's significand, zero top lanes.
+        // dst = [dst[0], dst[2], 0, 0]
+        __ vshufps(dst, dst, kScratchDoubleReg, 0x88);
+        break;
+      } else {
+        DCHECK_EQ(dst, src);
+        __ xorps(kScratchDoubleReg, kScratchDoubleReg);
+        __ maxpd(dst, kScratchDoubleReg);
+        __ minpd(
+            dst,
+            __ ExternalReferenceAsOperand(
+                ExternalReference::address_of_wasm_uint32_max_as_double()));
+        __ roundpd(dst, dst, kRoundToZero);
+        __ addpd(dst,
+                 __ ExternalReferenceAsOperand(
+                     ExternalReference::address_of_wasm_double_2_power_52()));
+        __ shufps(dst, kScratchDoubleReg, 0x88);
+        break;
+      }
+
       break;
     }
     case kX64F32x4Splat: {
@@ -3901,12 +3997,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       size_t index = 0;
       Operand operand = i.MemoryOperand(&index);
       uint8_t lane = i.InputUint8(index + 1);
-      if (lane == 0) {
-        __ Movss(operand, i.InputSimd128Register(index));
-      } else {
-        DCHECK_GE(3, lane);
-        __ Extractps(operand, i.InputSimd128Register(index), lane);
-      }
+      __ S128Store32Lane(operand, i.InputSimd128Register(index), lane);
       break;
     }
     case kX64S128Store64Lane: {
@@ -3914,12 +4005,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       size_t index = 0;
       Operand operand = i.MemoryOperand(&index);
       uint8_t lane = i.InputUint8(index + 1);
-      if (lane == 0) {
-        __ Movlps(operand, i.InputSimd128Register(index));
-      } else {
-        DCHECK_EQ(1, lane);
-        __ Movhps(operand, i.InputSimd128Register(index));
-      }
+      __ S128Store64Lane(operand, i.InputSimd128Register(index), lane);
       break;
     }
     case kX64Shufps: {

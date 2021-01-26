@@ -265,9 +265,9 @@ namespace internal {
   F(CreateObjectLiteralWithoutAllocationSite, 2, 1) \
   F(CreateRegExpLiteral, 4, 1)
 
-#define FOR_EACH_INTRINSIC_MODULE(F, I) \
-  F(DynamicImportCall, 2, 1)            \
-  I(GetImportMetaObject, 0, 1)          \
+#define FOR_EACH_INTRINSIC_MODULE(F, I)    \
+  F(DynamicImportCall, -1 /* [2, 3] */, 1) \
+  I(GetImportMetaObject, 0, 1)             \
   F(GetModuleNamespace, 1, 1)
 
 #define FOR_EACH_INTRINSIC_NUMBERS(F, I) \
@@ -385,6 +385,7 @@ namespace internal {
 
 #define FOR_EACH_INTRINSIC_REGEXP(F, I)             \
   I(IsRegExp, 1, 1)                                 \
+  F(RegExpBuildIndices, 3, 1)                       \
   F(RegExpExec, 4, 1)                               \
   F(RegExpExperimentalOneshotExec, 4, 1)            \
   F(RegExpExecMultiple, 4, 1)                       \

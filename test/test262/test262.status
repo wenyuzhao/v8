@@ -576,6 +576,14 @@
   # http://crbug/v8/10905
   'language/identifier-resolution/assign-to-global-undefined': [FAIL],
 
+  # https://bugs.chromium.org/p/chromium/issues/detail?id=1159764
+  'built-ins/Array/prototype/at/*': [FAIL],
+  'built-ins/String/prototype/at/*': [FAIL],
+  'built-ins/TypedArray/prototype/at/*': [FAIL],
+
+  # Temporarily disabled until upstream tests are changed to use /d
+  'built-ins/RegExp/match-indices/*': [FAIL],
+
   ######################## NEEDS INVESTIGATION ###########################
 
   # https://bugs.chromium.org/p/v8/issues/detail?id=7833

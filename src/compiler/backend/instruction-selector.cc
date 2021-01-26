@@ -951,18 +951,12 @@ void InstructionSelector::InitializeCallBuffer(Node* call, CallBuffer* buffer,
   bool call_use_fixed_target_reg = (flags & kCallFixedTargetRegister) != 0;
   switch (buffer->descriptor->kind()) {
     case CallDescriptor::kCallCodeObject:
-      // TODO(jgruber, v8:7449): The below is a hack to support tail-calls from
-      // JS-linkage callers with a register code target. The problem is that the
-      // code target register may be clobbered before the final jmp by
-      // AssemblePopArgumentsAdaptorFrame. As a more permanent fix we could
-      // entirely remove support for tail-calls from JS-linkage callers.
       buffer->instruction_args.push_back(
           (call_code_immediate && callee->opcode() == IrOpcode::kHeapConstant)
               ? g.UseImmediate(callee)
               : call_use_fixed_target_reg
                     ? g.UseFixed(callee, kJavaScriptCallCodeStartRegister)
-                    : is_tail_call ? g.UseUniqueRegister(callee)
-                                   : g.UseRegister(callee));
+                    : g.UseRegister(callee));
       break;
     case CallDescriptor::kCallAddress:
       buffer->instruction_args.push_back(
@@ -1946,6 +1940,12 @@ void InstructionSelector::VisitNode(Node* node) {
       return MarkAsSimd128(node), VisitF64x2Trunc(node);
     case IrOpcode::kF64x2NearestInt:
       return MarkAsSimd128(node), VisitF64x2NearestInt(node);
+    case IrOpcode::kF64x2ConvertLowI32x4S:
+      return MarkAsSimd128(node), VisitF64x2ConvertLowI32x4S(node);
+    case IrOpcode::kF64x2ConvertLowI32x4U:
+      return MarkAsSimd128(node), VisitF64x2ConvertLowI32x4U(node);
+    case IrOpcode::kF64x2PromoteLowF32x4:
+      return MarkAsSimd128(node), VisitF64x2PromoteLowF32x4(node);
     case IrOpcode::kF32x4Splat:
       return MarkAsSimd128(node), VisitF32x4Splat(node);
     case IrOpcode::kF32x4ExtractLane:
@@ -2004,6 +2004,8 @@ void InstructionSelector::VisitNode(Node* node) {
       return MarkAsSimd128(node), VisitF32x4Trunc(node);
     case IrOpcode::kF32x4NearestInt:
       return MarkAsSimd128(node), VisitF32x4NearestInt(node);
+    case IrOpcode::kF32x4DemoteF64x2Zero:
+      return MarkAsSimd128(node), VisitF32x4DemoteF64x2Zero(node);
     case IrOpcode::kI64x2Splat:
       return MarkAsSimd128(node), VisitI64x2Splat(node);
     case IrOpcode::kI64x2SplatI32Pair:
@@ -2124,6 +2126,10 @@ void InstructionSelector::VisitNode(Node* node) {
       return MarkAsSimd128(node), VisitI32x4ExtAddPairwiseI16x8S(node);
     case IrOpcode::kI32x4ExtAddPairwiseI16x8U:
       return MarkAsSimd128(node), VisitI32x4ExtAddPairwiseI16x8U(node);
+    case IrOpcode::kI32x4TruncSatF64x2SZero:
+      return MarkAsSimd128(node), VisitI32x4TruncSatF64x2SZero(node);
+    case IrOpcode::kI32x4TruncSatF64x2UZero:
+      return MarkAsSimd128(node), VisitI32x4TruncSatF64x2UZero(node);
     case IrOpcode::kI16x8Splat:
       return MarkAsSimd128(node), VisitI16x8Splat(node);
     case IrOpcode::kI16x8ExtractLaneU:
@@ -2798,6 +2804,27 @@ void InstructionSelector::VisitI64x2SignSelect(Node* node) { UNIMPLEMENTED(); }
 #endif  // !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_IA32 && !V8_TARGET_ARCH_ARM64
         // && !V8_TARGET_ARCH_ARM
 
+#if !V8_TARGET_ARCH_X64
+void InstructionSelector::VisitF64x2ConvertLowI32x4S(Node* node) {
+  UNIMPLEMENTED();
+}
+void InstructionSelector::VisitF64x2ConvertLowI32x4U(Node* node) {
+  UNIMPLEMENTED();
+}
+void InstructionSelector::VisitF64x2PromoteLowF32x4(Node* node) {
+  UNIMPLEMENTED();
+}
+void InstructionSelector::VisitF32x4DemoteF64x2Zero(Node* node) {
+  UNIMPLEMENTED();
+}
+void InstructionSelector::VisitI32x4TruncSatF64x2SZero(Node* node) {
+  UNIMPLEMENTED();
+}
+void InstructionSelector::VisitI32x4TruncSatF64x2UZero(Node* node) {
+  UNIMPLEMENTED();
+}
+#endif  //! V8_TARGET_ARCH_X64
+
 void InstructionSelector::VisitFinishRegion(Node* node) { EmitIdentity(node); }
 
 void InstructionSelector::VisitParameter(Node* node) {
@@ -3299,15 +3326,6 @@ FrameStateDescriptor* GetFrameStateDescriptorInternal(Zone* zone,
   if (state.has_outer_frame_state()) {
     outer_state =
         GetFrameStateDescriptorInternal(zone, state.outer_frame_state());
-  }
-
-  if (state_info.type() == FrameStateType::kJSToWasmBuiltinContinuation) {
-    auto function_info = static_cast<const JSToWasmFrameStateFunctionInfo*>(
-        state_info.function_info());
-    return zone->New<JSToWasmFrameStateDescriptor>(
-        zone, state_info.type(), state_info.bailout_id(),
-        state_info.state_combine(), parameters, locals, stack,
-        state_info.shared_info(), outer_state, function_info->signature());
   }
 
   return zone->New<FrameStateDescriptor>(

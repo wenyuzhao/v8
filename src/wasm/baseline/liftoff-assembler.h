@@ -561,15 +561,19 @@ class LiftoffAssembler : public TurboAssembler {
   inline void LoadFixedArrayLengthAsInt32(LiftoffRegister dst, Register array,
                                           LiftoffRegList pinned) {
     int offset = FixedArray::kLengthOffset - kHeapObjectTag;
+    LoadTaggedSignedAsInt32(dst, array, offset, pinned);
+  }
+  inline void LoadTaggedSignedAsInt32(LiftoffRegister dst, Register src_addr,
+                                      int32_t offset, LiftoffRegList pinned) {
     if (SmiValuesAre32Bits()) {
 #if V8_TARGET_LITTLE_ENDIAN
       DCHECK_EQ(kSmiShiftSize + kSmiTagSize, 4 * kBitsPerByte);
       offset += 4;
 #endif
-      Load(dst, array, no_reg, offset, LoadType::kI32Load, pinned);
+      Load(dst, src_addr, no_reg, offset, LoadType::kI32Load, pinned);
     } else {
       DCHECK(SmiValuesAre31Bits());
-      Load(dst, array, no_reg, offset, LoadType::kI32Load, pinned);
+      Load(dst, src_addr, no_reg, offset, LoadType::kI32Load, pinned);
       emit_i32_sari(dst.gp(), dst.gp(), kSmiTagSize);
     }
   }
@@ -875,6 +879,9 @@ class LiftoffAssembler : public TurboAssembler {
   inline void LoadLane(LiftoffRegister dst, LiftoffRegister src, Register addr,
                        Register offset_reg, uintptr_t offset_imm, LoadType type,
                        uint8_t lane, uint32_t* protected_load_pc);
+  inline void StoreLane(Register dst, Register offset, uintptr_t offset_imm,
+                        LiftoffRegister src, StoreType type, uint8_t lane,
+                        uint32_t* protected_store_pc);
   inline void emit_i8x16_shuffle(LiftoffRegister dst, LiftoffRegister lhs,
                                  LiftoffRegister rhs, const uint8_t shuffle[16],
                                  bool is_swizzle);

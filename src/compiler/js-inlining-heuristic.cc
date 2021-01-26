@@ -111,12 +111,9 @@ JSInliningHeuristic::Candidate JSInliningHeuristic::CollectFunctions(
   if (m.IsCheckClosure()) {
     DCHECK(!out.functions[0].has_value());
     FeedbackCellRef feedback_cell(broker(), FeedbackCellOf(m.op()));
-    SharedFunctionInfoRef shared_info =
-        feedback_cell.shared_function_info().value();
+    SharedFunctionInfoRef shared_info = *feedback_cell.shared_function_info();
     out.shared_info = shared_info;
-    if (feedback_cell.value().IsFeedbackVector() &&
-        CanConsiderForInlining(broker(), shared_info,
-                               feedback_cell.value().AsFeedbackVector())) {
+    if (CanConsiderForInlining(broker(), shared_info, *feedback_cell.value())) {
       out.bytecode[0] = shared_info.GetBytecodeArray();
     }
     out.num_functions = 1;
@@ -129,9 +126,8 @@ JSInliningHeuristic::Candidate JSInliningHeuristic::CollectFunctions(
     FeedbackCellRef feedback_cell = n.GetFeedbackCellRefChecked(broker());
     SharedFunctionInfoRef shared_info(broker(), p.shared_info());
     out.shared_info = shared_info;
-    if (feedback_cell.value().IsFeedbackVector() &&
-        CanConsiderForInlining(broker(), shared_info,
-                               feedback_cell.value().AsFeedbackVector())) {
+    if (feedback_cell.value().has_value() &&
+        CanConsiderForInlining(broker(), shared_info, *feedback_cell.value())) {
       out.bytecode[0] = shared_info.GetBytecodeArray();
     }
     out.num_functions = 1;
@@ -142,12 +138,6 @@ JSInliningHeuristic::Candidate JSInliningHeuristic::CollectFunctions(
 }
 
 Reduction JSInliningHeuristic::Reduce(Node* node) {
-  if (mode() == kWasmOnly) {
-    return (node->opcode() == IrOpcode::kJSWasmCall)
-               ? inliner_.ReduceJSWasmCall(node)
-               : NoChange();
-  }
-  DCHECK_EQ(mode(), kJSOnly);
   if (!IrOpcode::IsInlineeOpcode(node->opcode())) return NoChange();
 
   if (total_inlined_bytecode_size_ >= FLAG_max_inlined_bytecode_size_absolute) {
@@ -676,7 +666,6 @@ Reduction JSInliningHeuristic::InlineCandidate(Candidate const& candidate,
                                                bool small_function) {
   int const num_calls = candidate.num_functions;
   Node* const node = candidate.node;
-  DCHECK_NE(node->opcode(), IrOpcode::kJSWasmCall);
   if (num_calls == 1) {
     Reduction const reduction = inliner_.ReduceJSCall(node);
     if (reduction.Changed()) {

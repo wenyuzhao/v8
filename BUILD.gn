@@ -288,7 +288,12 @@ declare_args() {
 
   # If enabled then macro definitions that are used in externally visible
   # header files are placed in a separate header file v8-gn.h.
-  v8_generate_external_defines_header = true
+  v8_generate_external_defines_header = false
+
+  # Include support for WebAssembly. If disabled, the 'WebAssembly' global
+  # will not be available, and embedder APIs to generate WebAssembly modules
+  # will fail.
+  v8_enable_webassembly = true
 
   # Enable map packing & unpacking (sets -dV8_MAP_PACKING).
   v8_enable_map_packing = true
@@ -768,6 +773,9 @@ config("features") {
   }
   if (v8_etw_guid != "") {
     defines += [ "V8_ETW_GUID=\"$v8_etw_guid\"" ]
+  }
+  if (v8_enable_webassembly) {
+    defines += [ "V8_ENABLE_WEBASSEMBLY" ]
   }
 }
 
@@ -2658,8 +2666,7 @@ v8_source_set("v8_base_without_compiler") {
     "src/deoptimizer/translated-state.h",
     "src/deoptimizer/translation-array.cc",
     "src/deoptimizer/translation-array.h",
-    "src/deoptimizer/translations.cc",
-    "src/deoptimizer/translations.h",
+    "src/deoptimizer/translation-opcode.h",
     "src/diagnostics/basic-block-profiler.cc",
     "src/diagnostics/basic-block-profiler.h",
     "src/diagnostics/code-tracer.h",
@@ -3549,7 +3556,6 @@ v8_source_set("v8_base_without_compiler") {
     "src/wasm/streaming-decoder.h",
     "src/wasm/struct-types.h",
     "src/wasm/sync-streaming-decoder.cc",
-    "src/wasm/value-type.cc",
     "src/wasm/value-type.h",
     "src/wasm/wasm-arguments.h",
     "src/wasm/wasm-code-manager.cc",
@@ -4610,6 +4616,7 @@ v8_source_set("cppgc_base") {
     "include/cppgc/macros.h",
     "include/cppgc/member.h",
     "include/cppgc/name-provider.h",
+    "include/cppgc/object-size-trait.h",
     "include/cppgc/persistent.h",
     "include/cppgc/platform.h",
     "include/cppgc/prefinalizer.h",
@@ -4661,9 +4668,11 @@ v8_source_set("cppgc_base") {
     "src/heap/cppgc/marking-visitor.h",
     "src/heap/cppgc/marking-worklists.cc",
     "src/heap/cppgc/marking-worklists.h",
+    "src/heap/cppgc/metric-recorder.h",
     "src/heap/cppgc/name-trait.cc",
     "src/heap/cppgc/object-allocator.cc",
     "src/heap/cppgc/object-allocator.h",
+    "src/heap/cppgc/object-size-trait.cc",
     "src/heap/cppgc/object-start-bitmap.h",
     "src/heap/cppgc/page-memory.cc",
     "src/heap/cppgc/page-memory.h",

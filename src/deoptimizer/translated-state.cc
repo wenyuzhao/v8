@@ -4,10 +4,12 @@
 
 #include "src/deoptimizer/translated-state.h"
 
+#include <iomanip>
+
 #include "src/base/memory.h"
 #include "src/deoptimizer/deoptimizer.h"
 #include "src/deoptimizer/materialized-object-store.h"
-#include "src/deoptimizer/translations.h"
+#include "src/deoptimizer/translation-opcode.h"
 #include "src/diagnostics/disasm.h"
 #include "src/execution/frames.h"
 #include "src/execution/isolate.h"
@@ -25,19 +27,229 @@ using base::Memory;
 using base::ReadUnalignedValue;
 
 namespace internal {
-namespace {
 
-// Decodes the return type of a Wasm function as the integer value of
-// wasm::ValueType::Kind, or -1 if the function returns void.
+void TranslationArrayPrintSingleFrame(std::ostream& os,
+                                      TranslationArray translation_array,
+                                      int translation_index,
+                                      FixedArray literal_array) {
+  DisallowGarbageCollection gc_oh_noes;
+  TranslationArrayIterator iterator(translation_array, translation_index);
+  disasm::NameConverter converter;
 
-base::Optional<wasm::ValueType::Kind> DecodeWasmReturnType(int code) {
-  if (code >= 0) {
-    return {static_cast<wasm::ValueType::Kind>(code)};
+  TranslationOpcode opcode = TranslationOpcodeFromInt(iterator.Next());
+  DCHECK(TranslationOpcode::BEGIN == opcode);
+  int frame_count = iterator.Next();
+  int jsframe_count = iterator.Next();
+  int update_feedback_count = iterator.Next();
+  os << "  " << TranslationOpcodeToString(opcode)
+     << " {frame count=" << frame_count << ", js frame count=" << jsframe_count
+     << ", update_feedback_count=" << update_feedback_count << "}\n";
+
+  while (iterator.HasNext()) {
+    opcode = TranslationOpcodeFromInt(iterator.Next());
+    if (opcode == TranslationOpcode::BEGIN) break;
+
+    os << std::setw(31) << "    " << TranslationOpcodeToString(opcode) << " ";
+
+    switch (opcode) {
+      case TranslationOpcode::BEGIN:
+        UNREACHABLE();
+        break;
+
+      case TranslationOpcode::INTERPRETED_FRAME: {
+        DCHECK_EQ(TranslationOpcodeOperandCount(opcode), 5);
+        int bytecode_offset = iterator.Next();
+        int shared_info_id = iterator.Next();
+        unsigned height = iterator.Next();
+        int return_value_offset = iterator.Next();
+        int return_value_count = iterator.Next();
+        Object shared_info = literal_array.get(shared_info_id);
+        os << "{bytecode_offset=" << bytecode_offset << ", function="
+           << SharedFunctionInfo::cast(shared_info).DebugNameCStr().get()
+           << ", height=" << height << ", retval=@" << return_value_offset
+           << "(#" << return_value_count << ")}";
+        break;
+      }
+
+      case TranslationOpcode::CONSTRUCT_STUB_FRAME: {
+        DCHECK_EQ(TranslationOpcodeOperandCount(opcode), 3);
+        int bailout_id = iterator.Next();
+        int shared_info_id = iterator.Next();
+        Object shared_info = literal_array.get(shared_info_id);
+        unsigned height = iterator.Next();
+        os << "{bailout_id=" << bailout_id << ", function="
+           << SharedFunctionInfo::cast(shared_info).DebugNameCStr().get()
+           << ", height=" << height << "}";
+        break;
+      }
+
+      case TranslationOpcode::BUILTIN_CONTINUATION_FRAME:
+      case TranslationOpcode::JAVA_SCRIPT_BUILTIN_CONTINUATION_FRAME:
+      case TranslationOpcode::
+          JAVA_SCRIPT_BUILTIN_CONTINUATION_WITH_CATCH_FRAME: {
+        DCHECK_EQ(TranslationOpcodeOperandCount(opcode), 3);
+        int bailout_id = iterator.Next();
+        int shared_info_id = iterator.Next();
+        Object shared_info = literal_array.get(shared_info_id);
+        unsigned height = iterator.Next();
+        os << "{bailout_id=" << bailout_id << ", function="
+           << SharedFunctionInfo::cast(shared_info).DebugNameCStr().get()
+           << ", height=" << height << "}";
+        break;
+      }
+
+      case TranslationOpcode::ARGUMENTS_ADAPTOR_FRAME: {
+        DCHECK_EQ(TranslationOpcodeOperandCount(opcode), 2);
+        int shared_info_id = iterator.Next();
+        Object shared_info = literal_array.get(shared_info_id);
+        unsigned height = iterator.Next();
+        os << "{function="
+           << SharedFunctionInfo::cast(shared_info).DebugNameCStr().get()
+           << ", height=" << height << "}";
+        break;
+      }
+
+      case TranslationOpcode::REGISTER: {
+        DCHECK_EQ(TranslationOpcodeOperandCount(opcode), 1);
+        int reg_code = iterator.Next();
+        os << "{input=" << converter.NameOfCPURegister(reg_code) << "}";
+        break;
+      }
+
+      case TranslationOpcode::INT32_REGISTER: {
+        DCHECK_EQ(TranslationOpcodeOperandCount(opcode), 1);
+        int reg_code = iterator.Next();
+        os << "{input=" << converter.NameOfCPURegister(reg_code) << " (int32)}";
+        break;
+      }
+
+      case TranslationOpcode::INT64_REGISTER: {
+        DCHECK_EQ(TranslationOpcodeOperandCount(opcode), 1);
+        int reg_code = iterator.Next();
+        os << "{input=" << converter.NameOfCPURegister(reg_code) << " (int64)}";
+        break;
+      }
+
+      case TranslationOpcode::UINT32_REGISTER: {
+        DCHECK_EQ(TranslationOpcodeOperandCount(opcode), 1);
+        int reg_code = iterator.Next();
+        os << "{input=" << converter.NameOfCPURegister(reg_code)
+           << " (uint32)}";
+        break;
+      }
+
+      case TranslationOpcode::BOOL_REGISTER: {
+        DCHECK_EQ(TranslationOpcodeOperandCount(opcode), 1);
+        int reg_code = iterator.Next();
+        os << "{input=" << converter.NameOfCPURegister(reg_code) << " (bool)}";
+        break;
+      }
+
+      case TranslationOpcode::FLOAT_REGISTER: {
+        DCHECK_EQ(TranslationOpcodeOperandCount(opcode), 1);
+        int reg_code = iterator.Next();
+        os << "{input=" << FloatRegister::from_code(reg_code) << "}";
+        break;
+      }
+
+      case TranslationOpcode::DOUBLE_REGISTER: {
+        DCHECK_EQ(TranslationOpcodeOperandCount(opcode), 1);
+        int reg_code = iterator.Next();
+        os << "{input=" << DoubleRegister::from_code(reg_code) << "}";
+        break;
+      }
+
+      case TranslationOpcode::STACK_SLOT: {
+        DCHECK_EQ(TranslationOpcodeOperandCount(opcode), 1);
+        int input_slot_index = iterator.Next();
+        os << "{input=" << input_slot_index << "}";
+        break;
+      }
+
+      case TranslationOpcode::INT32_STACK_SLOT: {
+        DCHECK_EQ(TranslationOpcodeOperandCount(opcode), 1);
+        int input_slot_index = iterator.Next();
+        os << "{input=" << input_slot_index << " (int32)}";
+        break;
+      }
+
+      case TranslationOpcode::INT64_STACK_SLOT: {
+        DCHECK_EQ(TranslationOpcodeOperandCount(opcode), 1);
+        int input_slot_index = iterator.Next();
+        os << "{input=" << input_slot_index << " (int64)}";
+        break;
+      }
+
+      case TranslationOpcode::UINT32_STACK_SLOT: {
+        DCHECK_EQ(TranslationOpcodeOperandCount(opcode), 1);
+        int input_slot_index = iterator.Next();
+        os << "{input=" << input_slot_index << " (uint32)}";
+        break;
+      }
+
+      case TranslationOpcode::BOOL_STACK_SLOT: {
+        DCHECK_EQ(TranslationOpcodeOperandCount(opcode), 1);
+        int input_slot_index = iterator.Next();
+        os << "{input=" << input_slot_index << " (bool)}";
+        break;
+      }
+
+      case TranslationOpcode::FLOAT_STACK_SLOT:
+      case TranslationOpcode::DOUBLE_STACK_SLOT: {
+        DCHECK_EQ(TranslationOpcodeOperandCount(opcode), 1);
+        int input_slot_index = iterator.Next();
+        os << "{input=" << input_slot_index << "}";
+        break;
+      }
+
+      case TranslationOpcode::LITERAL: {
+        DCHECK_EQ(TranslationOpcodeOperandCount(opcode), 1);
+        int literal_index = iterator.Next();
+        Object literal_value = literal_array.get(literal_index);
+        os << "{literal_id=" << literal_index << " (" << Brief(literal_value)
+           << ")}";
+        break;
+      }
+
+      case TranslationOpcode::DUPLICATED_OBJECT: {
+        DCHECK_EQ(TranslationOpcodeOperandCount(opcode), 1);
+        int object_index = iterator.Next();
+        os << "{object_index=" << object_index << "}";
+        break;
+      }
+
+      case TranslationOpcode::ARGUMENTS_ELEMENTS: {
+        DCHECK_EQ(TranslationOpcodeOperandCount(opcode), 1);
+        CreateArgumentsType arguments_type =
+            static_cast<CreateArgumentsType>(iterator.Next());
+        os << "{arguments_type=" << arguments_type << "}";
+        break;
+      }
+      case TranslationOpcode::ARGUMENTS_LENGTH: {
+        DCHECK_EQ(TranslationOpcodeOperandCount(opcode), 0);
+        os << "{arguments_length}";
+        break;
+      }
+
+      case TranslationOpcode::CAPTURED_OBJECT: {
+        DCHECK_EQ(TranslationOpcodeOperandCount(opcode), 1);
+        int args_length = iterator.Next();
+        os << "{length=" << args_length << "}";
+        break;
+      }
+
+      case TranslationOpcode::UPDATE_FEEDBACK: {
+        DCHECK_EQ(TranslationOpcodeOperandCount(opcode), 2);
+        int literal_index = iterator.Next();
+        FeedbackSlot slot(iterator.Next());
+        os << "{feedback={vector_index=" << literal_index << ", slot=" << slot
+           << "}}";
+        break;
+      }
+    }
+    os << "\n";
   }
-  return {};
 }
-
-}  // namespace
 
 // static
 TranslatedValue TranslatedValue::NewDeferredObject(TranslatedState* container,
@@ -89,14 +301,6 @@ TranslatedValue TranslatedValue::NewInt64(TranslatedState* container,
 }
 
 // static
-TranslatedValue TranslatedValue::NewInt64ToBigInt(TranslatedState* container,
-                                                  int64_t value) {
-  TranslatedValue slot(container, kInt64ToBigInt);
-  slot.int64_value_ = value;
-  return slot;
-}
-
-// static
 TranslatedValue TranslatedValue::NewUInt32(TranslatedState* container,
                                            uint32_t value) {
   TranslatedValue slot(container, kUInt32);
@@ -138,7 +342,7 @@ int32_t TranslatedValue::int32_value() const {
 }
 
 int64_t TranslatedValue::int64_value() const {
-  DCHECK(kInt64 == kind() || kInt64ToBigInt == kind());
+  DCHECK_EQ(kInt64, kind());
   return int64_value_;
 }
 
@@ -199,10 +403,6 @@ Object TranslatedValue::GetRawValue() const {
       }
       break;
     }
-
-    case kInt64ToBigInt:
-      // Return the arguments marker.
-      break;
 
     case kUInt32: {
       bool is_smi = (uint32_value() <= static_cast<uintptr_t>(Smi::kMaxValue));
@@ -293,37 +493,28 @@ Handle<Object> TranslatedValue::GetValue() {
     return container_->InitializeObjectAt(this);
   }
 
-  double number = 0;
-  Handle<HeapObject> heap_object;
+  double number;
   switch (kind()) {
     case TranslatedValue::kInt32:
       number = int32_value();
-      heap_object = isolate()->factory()->NewHeapNumber(number);
       break;
     case TranslatedValue::kInt64:
       number = int64_value();
-      heap_object = isolate()->factory()->NewHeapNumber(number);
-      break;
-    case TranslatedValue::kInt64ToBigInt:
-      heap_object = BigInt::FromInt64(isolate(), int64_value());
       break;
     case TranslatedValue::kUInt32:
       number = uint32_value();
-      heap_object = isolate()->factory()->NewHeapNumber(number);
       break;
     case TranslatedValue::kFloat:
       number = float_value().get_scalar();
-      heap_object = isolate()->factory()->NewHeapNumber(number);
       break;
     case TranslatedValue::kDouble:
       number = double_value().get_scalar();
-      heap_object = isolate()->factory()->NewHeapNumber(number);
       break;
     default:
       UNREACHABLE();
   }
-  DCHECK(!IsSmiDouble(number) || kind() == TranslatedValue::kInt64ToBigInt);
-  set_initialized_storage(heap_object);
+  DCHECK(!IsSmiDouble(number));
+  set_initialized_storage(isolate()->factory()->NewHeapNumber(number));
   return storage_;
 }
 
@@ -417,15 +608,6 @@ TranslatedFrame TranslatedFrame::BuiltinContinuationFrame(
   return frame;
 }
 
-TranslatedFrame TranslatedFrame::JSToWasmBuiltinContinuationFrame(
-    BytecodeOffset bytecode_offset, SharedFunctionInfo shared_info, int height,
-    base::Optional<wasm::ValueType::Kind> return_type) {
-  TranslatedFrame frame(kJSToWasmBuiltinContinuation, shared_info, height);
-  frame.bytecode_offset_ = bytecode_offset;
-  frame.return_type_ = return_type;
-  return frame;
-}
-
 TranslatedFrame TranslatedFrame::JavaScriptBuiltinContinuationFrame(
     BytecodeOffset bytecode_offset, SharedFunctionInfo shared_info,
     int height) {
@@ -472,7 +654,6 @@ int TranslatedFrame::GetValueCount() {
 
     case kConstructStub:
     case kBuiltinContinuation:
-    case kJSToWasmBuiltinContinuation:
     case kJavaScriptBuiltinContinuation:
     case kJavaScriptBuiltinContinuationWithCatch: {
       static constexpr int kTheContext = 1;
@@ -499,10 +680,9 @@ void TranslatedFrame::Handlify() {
 TranslatedFrame TranslatedState::CreateNextTranslatedFrame(
     TranslationArrayIterator* iterator, FixedArray literal_array, Address fp,
     FILE* trace_file) {
-  Translation::Opcode opcode =
-      static_cast<Translation::Opcode>(iterator->Next());
+  TranslationOpcode opcode = TranslationOpcodeFromInt(iterator->Next());
   switch (opcode) {
-    case Translation::INTERPRETED_FRAME: {
+    case TranslationOpcode::INTERPRETED_FRAME: {
       BytecodeOffset bytecode_offset = BytecodeOffset(iterator->Next());
       SharedFunctionInfo shared_info =
           SharedFunctionInfo::cast(literal_array.get(iterator->Next()));
@@ -524,7 +704,7 @@ TranslatedFrame TranslatedState::CreateNextTranslatedFrame(
                                                return_value_count);
     }
 
-    case Translation::ARGUMENTS_ADAPTOR_FRAME: {
+    case TranslationOpcode::ARGUMENTS_ADAPTOR_FRAME: {
       SharedFunctionInfo shared_info =
           SharedFunctionInfo::cast(literal_array.get(iterator->Next()));
       int height = iterator->Next();
@@ -536,7 +716,7 @@ TranslatedFrame TranslatedState::CreateNextTranslatedFrame(
       return TranslatedFrame::ArgumentsAdaptorFrame(shared_info, height);
     }
 
-    case Translation::CONSTRUCT_STUB_FRAME: {
+    case TranslationOpcode::CONSTRUCT_STUB_FRAME: {
       BytecodeOffset bytecode_offset = BytecodeOffset(iterator->Next());
       SharedFunctionInfo shared_info =
           SharedFunctionInfo::cast(literal_array.get(iterator->Next()));
@@ -551,7 +731,7 @@ TranslatedFrame TranslatedState::CreateNextTranslatedFrame(
                                                  height);
     }
 
-    case Translation::BUILTIN_CONTINUATION_FRAME: {
+    case TranslationOpcode::BUILTIN_CONTINUATION_FRAME: {
       BytecodeOffset bytecode_offset = BytecodeOffset(iterator->Next());
       SharedFunctionInfo shared_info =
           SharedFunctionInfo::cast(literal_array.get(iterator->Next()));
@@ -567,27 +747,7 @@ TranslatedFrame TranslatedState::CreateNextTranslatedFrame(
                                                        shared_info, height);
     }
 
-    case Translation::JS_TO_WASM_BUILTIN_CONTINUATION_FRAME: {
-      BytecodeOffset bytecode_offset = BytecodeOffset(iterator->Next());
-      SharedFunctionInfo shared_info =
-          SharedFunctionInfo::cast(literal_array.get(iterator->Next()));
-      int height = iterator->Next();
-      base::Optional<wasm::ValueType::Kind> return_type =
-          DecodeWasmReturnType(iterator->Next());
-      if (trace_file != nullptr) {
-        std::unique_ptr<char[]> name = shared_info.DebugNameCStr();
-        PrintF(trace_file, "  reading JS to Wasm builtin continuation frame %s",
-               name.get());
-        PrintF(trace_file,
-               " => bytecode_offset=%d, height=%d return_type=%d; inputs:\n",
-               bytecode_offset.ToInt(), height,
-               return_type.has_value() ? return_type.value() : -1);
-      }
-      return TranslatedFrame::JSToWasmBuiltinContinuationFrame(
-          bytecode_offset, shared_info, height, return_type);
-    }
-
-    case Translation::JAVA_SCRIPT_BUILTIN_CONTINUATION_FRAME: {
+    case TranslationOpcode::JAVA_SCRIPT_BUILTIN_CONTINUATION_FRAME: {
       BytecodeOffset bytecode_offset = BytecodeOffset(iterator->Next());
       SharedFunctionInfo shared_info =
           SharedFunctionInfo::cast(literal_array.get(iterator->Next()));
@@ -602,7 +762,8 @@ TranslatedFrame TranslatedState::CreateNextTranslatedFrame(
       return TranslatedFrame::JavaScriptBuiltinContinuationFrame(
           bytecode_offset, shared_info, height);
     }
-    case Translation::JAVA_SCRIPT_BUILTIN_CONTINUATION_WITH_CATCH_FRAME: {
+
+    case TranslationOpcode::JAVA_SCRIPT_BUILTIN_CONTINUATION_WITH_CATCH_FRAME: {
       BytecodeOffset bytecode_offset = BytecodeOffset(iterator->Next());
       SharedFunctionInfo shared_info =
           SharedFunctionInfo::cast(literal_array.get(iterator->Next()));
@@ -618,31 +779,30 @@ TranslatedFrame TranslatedState::CreateNextTranslatedFrame(
       return TranslatedFrame::JavaScriptBuiltinContinuationWithCatchFrame(
           bytecode_offset, shared_info, height);
     }
-    case Translation::UPDATE_FEEDBACK:
-    case Translation::BEGIN:
-    case Translation::DUPLICATED_OBJECT:
-    case Translation::ARGUMENTS_ELEMENTS:
-    case Translation::ARGUMENTS_LENGTH:
-    case Translation::CAPTURED_OBJECT:
-    case Translation::REGISTER:
-    case Translation::INT32_REGISTER:
-    case Translation::INT64_REGISTER:
-    case Translation::UINT32_REGISTER:
-    case Translation::BOOL_REGISTER:
-    case Translation::FLOAT_REGISTER:
-    case Translation::DOUBLE_REGISTER:
-    case Translation::STACK_SLOT:
-    case Translation::INT32_STACK_SLOT:
-    case Translation::INT64_STACK_SLOT:
-    case Translation::UINT32_STACK_SLOT:
-    case Translation::BOOL_STACK_SLOT:
-    case Translation::FLOAT_STACK_SLOT:
-    case Translation::DOUBLE_STACK_SLOT:
-    case Translation::LITERAL:
+    case TranslationOpcode::UPDATE_FEEDBACK:
+    case TranslationOpcode::BEGIN:
+    case TranslationOpcode::DUPLICATED_OBJECT:
+    case TranslationOpcode::ARGUMENTS_ELEMENTS:
+    case TranslationOpcode::ARGUMENTS_LENGTH:
+    case TranslationOpcode::CAPTURED_OBJECT:
+    case TranslationOpcode::REGISTER:
+    case TranslationOpcode::INT32_REGISTER:
+    case TranslationOpcode::INT64_REGISTER:
+    case TranslationOpcode::UINT32_REGISTER:
+    case TranslationOpcode::BOOL_REGISTER:
+    case TranslationOpcode::FLOAT_REGISTER:
+    case TranslationOpcode::DOUBLE_REGISTER:
+    case TranslationOpcode::STACK_SLOT:
+    case TranslationOpcode::INT32_STACK_SLOT:
+    case TranslationOpcode::INT64_STACK_SLOT:
+    case TranslationOpcode::UINT32_STACK_SLOT:
+    case TranslationOpcode::BOOL_STACK_SLOT:
+    case TranslationOpcode::FLOAT_STACK_SLOT:
+    case TranslationOpcode::DOUBLE_STACK_SLOT:
+    case TranslationOpcode::LITERAL:
       break;
   }
-  FATAL("We should never get here - unexpected deopt info.");
-  return TranslatedFrame::InvalidFrame();
+  UNREACHABLE();
 }
 
 // static
@@ -720,7 +880,7 @@ void TranslatedState::CreateArgumentsElementsTranslatedValues(
 // Thus we build a temporary structure in malloced space.
 // The TranslatedValue objects created correspond to the static translation
 // instructions from the TranslationArrayIterator, except for
-// Translation::ARGUMENTS_ELEMENTS, where the number and values of the
+// TranslationOpcode::ARGUMENTS_ELEMENTS, where the number and values of the
 // FixedArray elements depend on dynamic information from the optimized frame.
 // Returns the number of expected nested translations from the
 // TranslationArrayIterator.
@@ -733,22 +893,20 @@ int TranslatedState::CreateNextTranslatedValue(
   TranslatedFrame& frame = frames_[frame_index];
   int value_index = static_cast<int>(frame.values_.size());
 
-  Translation::Opcode opcode =
-      static_cast<Translation::Opcode>(iterator->Next());
+  TranslationOpcode opcode = TranslationOpcodeFromInt(iterator->Next());
   switch (opcode) {
-    case Translation::BEGIN:
-    case Translation::INTERPRETED_FRAME:
-    case Translation::ARGUMENTS_ADAPTOR_FRAME:
-    case Translation::CONSTRUCT_STUB_FRAME:
-    case Translation::JAVA_SCRIPT_BUILTIN_CONTINUATION_FRAME:
-    case Translation::JAVA_SCRIPT_BUILTIN_CONTINUATION_WITH_CATCH_FRAME:
-    case Translation::BUILTIN_CONTINUATION_FRAME:
-    case Translation::JS_TO_WASM_BUILTIN_CONTINUATION_FRAME:
-    case Translation::UPDATE_FEEDBACK:
+    case TranslationOpcode::BEGIN:
+    case TranslationOpcode::INTERPRETED_FRAME:
+    case TranslationOpcode::ARGUMENTS_ADAPTOR_FRAME:
+    case TranslationOpcode::CONSTRUCT_STUB_FRAME:
+    case TranslationOpcode::JAVA_SCRIPT_BUILTIN_CONTINUATION_FRAME:
+    case TranslationOpcode::JAVA_SCRIPT_BUILTIN_CONTINUATION_WITH_CATCH_FRAME:
+    case TranslationOpcode::BUILTIN_CONTINUATION_FRAME:
+    case TranslationOpcode::UPDATE_FEEDBACK:
       // Peeled off before getting here.
       break;
 
-    case Translation::DUPLICATED_OBJECT: {
+    case TranslationOpcode::DUPLICATED_OBJECT: {
       int object_id = iterator->Next();
       if (trace_file != nullptr) {
         PrintF(trace_file, "duplicated object #%d", object_id);
@@ -760,7 +918,7 @@ int TranslatedState::CreateNextTranslatedValue(
       return translated_value.GetChildrenCount();
     }
 
-    case Translation::ARGUMENTS_ELEMENTS: {
+    case TranslationOpcode::ARGUMENTS_ELEMENTS: {
       CreateArgumentsType arguments_type =
           static_cast<CreateArgumentsType>(iterator->Next());
       CreateArgumentsElementsTranslatedValues(frame_index, fp, arguments_type,
@@ -768,7 +926,7 @@ int TranslatedState::CreateNextTranslatedValue(
       return 0;
     }
 
-    case Translation::ARGUMENTS_LENGTH: {
+    case TranslationOpcode::ARGUMENTS_LENGTH: {
       if (trace_file != nullptr) {
         PrintF(trace_file, "arguments length field (length = %d)",
                actual_argument_count_);
@@ -777,7 +935,7 @@ int TranslatedState::CreateNextTranslatedValue(
       return 0;
     }
 
-    case Translation::CAPTURED_OBJECT: {
+    case TranslationOpcode::CAPTURED_OBJECT: {
       int field_count = iterator->Next();
       int object_index = static_cast<int>(object_positions_.size());
       if (trace_file != nullptr) {
@@ -791,7 +949,7 @@ int TranslatedState::CreateNextTranslatedValue(
       return translated_value.GetChildrenCount();
     }
 
-    case Translation::REGISTER: {
+    case TranslationOpcode::REGISTER: {
       int input_reg = iterator->Next();
       if (registers == nullptr) {
         TranslatedValue translated_value = TranslatedValue::NewInvalid(this);
@@ -811,7 +969,7 @@ int TranslatedState::CreateNextTranslatedValue(
       return translated_value.GetChildrenCount();
     }
 
-    case Translation::INT32_REGISTER: {
+    case TranslationOpcode::INT32_REGISTER: {
       int input_reg = iterator->Next();
       if (registers == nullptr) {
         TranslatedValue translated_value = TranslatedValue::NewInvalid(this);
@@ -829,7 +987,7 @@ int TranslatedState::CreateNextTranslatedValue(
       return translated_value.GetChildrenCount();
     }
 
-    case Translation::INT64_REGISTER: {
+    case TranslationOpcode::INT64_REGISTER: {
       int input_reg = iterator->Next();
       if (registers == nullptr) {
         TranslatedValue translated_value = TranslatedValue::NewInvalid(this);
@@ -847,7 +1005,7 @@ int TranslatedState::CreateNextTranslatedValue(
       return translated_value.GetChildrenCount();
     }
 
-    case Translation::UINT32_REGISTER: {
+    case TranslationOpcode::UINT32_REGISTER: {
       int input_reg = iterator->Next();
       if (registers == nullptr) {
         TranslatedValue translated_value = TranslatedValue::NewInvalid(this);
@@ -865,7 +1023,7 @@ int TranslatedState::CreateNextTranslatedValue(
       return translated_value.GetChildrenCount();
     }
 
-    case Translation::BOOL_REGISTER: {
+    case TranslationOpcode::BOOL_REGISTER: {
       int input_reg = iterator->Next();
       if (registers == nullptr) {
         TranslatedValue translated_value = TranslatedValue::NewInvalid(this);
@@ -883,7 +1041,7 @@ int TranslatedState::CreateNextTranslatedValue(
       return translated_value.GetChildrenCount();
     }
 
-    case Translation::FLOAT_REGISTER: {
+    case TranslationOpcode::FLOAT_REGISTER: {
       int input_reg = iterator->Next();
       if (registers == nullptr) {
         TranslatedValue translated_value = TranslatedValue::NewInvalid(this);
@@ -900,7 +1058,7 @@ int TranslatedState::CreateNextTranslatedValue(
       return translated_value.GetChildrenCount();
     }
 
-    case Translation::DOUBLE_REGISTER: {
+    case TranslationOpcode::DOUBLE_REGISTER: {
       int input_reg = iterator->Next();
       if (registers == nullptr) {
         TranslatedValue translated_value = TranslatedValue::NewInvalid(this);
@@ -918,7 +1076,7 @@ int TranslatedState::CreateNextTranslatedValue(
       return translated_value.GetChildrenCount();
     }
 
-    case Translation::STACK_SLOT: {
+    case TranslationOpcode::STACK_SLOT: {
       int slot_offset =
           OptimizedFrame::StackSlotOffsetRelativeToFp(iterator->Next());
       intptr_t value = *(reinterpret_cast<intptr_t*>(fp + slot_offset));
@@ -935,7 +1093,7 @@ int TranslatedState::CreateNextTranslatedValue(
       return translated_value.GetChildrenCount();
     }
 
-    case Translation::INT32_STACK_SLOT: {
+    case TranslationOpcode::INT32_STACK_SLOT: {
       int slot_offset =
           OptimizedFrame::StackSlotOffsetRelativeToFp(iterator->Next());
       uint32_t value = GetUInt32Slot(fp, slot_offset);
@@ -949,7 +1107,7 @@ int TranslatedState::CreateNextTranslatedValue(
       return translated_value.GetChildrenCount();
     }
 
-    case Translation::INT64_STACK_SLOT: {
+    case TranslationOpcode::INT64_STACK_SLOT: {
       int slot_offset =
           OptimizedFrame::StackSlotOffsetRelativeToFp(iterator->Next());
       uint64_t value = GetUInt64Slot(fp, slot_offset);
@@ -963,7 +1121,7 @@ int TranslatedState::CreateNextTranslatedValue(
       return translated_value.GetChildrenCount();
     }
 
-    case Translation::UINT32_STACK_SLOT: {
+    case TranslationOpcode::UINT32_STACK_SLOT: {
       int slot_offset =
           OptimizedFrame::StackSlotOffsetRelativeToFp(iterator->Next());
       uint32_t value = GetUInt32Slot(fp, slot_offset);
@@ -977,7 +1135,7 @@ int TranslatedState::CreateNextTranslatedValue(
       return translated_value.GetChildrenCount();
     }
 
-    case Translation::BOOL_STACK_SLOT: {
+    case TranslationOpcode::BOOL_STACK_SLOT: {
       int slot_offset =
           OptimizedFrame::StackSlotOffsetRelativeToFp(iterator->Next());
       uint32_t value = GetUInt32Slot(fp, slot_offset);
@@ -990,7 +1148,7 @@ int TranslatedState::CreateNextTranslatedValue(
       return translated_value.GetChildrenCount();
     }
 
-    case Translation::FLOAT_STACK_SLOT: {
+    case TranslationOpcode::FLOAT_STACK_SLOT: {
       int slot_offset =
           OptimizedFrame::StackSlotOffsetRelativeToFp(iterator->Next());
       Float32 value = GetFloatSlot(fp, slot_offset);
@@ -1003,7 +1161,7 @@ int TranslatedState::CreateNextTranslatedValue(
       return translated_value.GetChildrenCount();
     }
 
-    case Translation::DOUBLE_STACK_SLOT: {
+    case TranslationOpcode::DOUBLE_STACK_SLOT: {
       int slot_offset =
           OptimizedFrame::StackSlotOffsetRelativeToFp(iterator->Next());
       Float64 value = GetDoubleSlot(fp, slot_offset);
@@ -1017,7 +1175,7 @@ int TranslatedState::CreateNextTranslatedValue(
       return translated_value.GetChildrenCount();
     }
 
-    case Translation::LITERAL: {
+    case TranslationOpcode::LITERAL: {
       int literal_index = iterator->Next();
       Object value = literal_array.get(literal_index);
       if (trace_file != nullptr) {
@@ -1074,9 +1232,8 @@ void TranslatedState::Init(Isolate* isolate, Address input_frame_pointer,
   isolate_ = isolate;
 
   // Read out the 'header' translation.
-  Translation::Opcode opcode =
-      static_cast<Translation::Opcode>(iterator->Next());
-  CHECK(opcode == Translation::BEGIN);
+  TranslationOpcode opcode = TranslationOpcodeFromInt(iterator->Next());
+  CHECK(opcode == TranslationOpcode::BEGIN);
 
   int count = iterator->Next();
   frames_.reserve(count);
@@ -1137,8 +1294,8 @@ void TranslatedState::Init(Isolate* isolate, Address input_frame_pointer,
     }
   }
 
-  CHECK(!iterator->HasNext() || static_cast<Translation::Opcode>(
-                                    iterator->Next()) == Translation::BEGIN);
+  CHECK(!iterator->HasNext() ||
+        TranslationOpcodeFromInt(iterator->Next()) == TranslationOpcode::BEGIN);
 }
 
 void TranslatedState::Prepare(Address stack_frame_pointer) {
@@ -1855,7 +2012,8 @@ bool TranslatedState::DoUpdateFeedback() {
 void TranslatedState::ReadUpdateFeedback(TranslationArrayIterator* iterator,
                                          FixedArray literal_array,
                                          FILE* trace_file) {
-  CHECK_EQ(Translation::UPDATE_FEEDBACK, iterator->Next());
+  CHECK_EQ(TranslationOpcode::UPDATE_FEEDBACK,
+           TranslationOpcodeFromInt(iterator->Next()));
   feedback_vector_ = FeedbackVector::cast(literal_array.get(iterator->Next()));
   feedback_slot_ = FeedbackSlot(iterator->Next());
   if (trace_file != nullptr) {

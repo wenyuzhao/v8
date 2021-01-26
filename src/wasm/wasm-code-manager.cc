@@ -1208,6 +1208,9 @@ std::vector<WasmCode*> NativeModule::SnapshotCodeTable() const {
   base::MutexGuard lock(&allocation_mutex_);
   WasmCode** start = code_table_.get();
   WasmCode** end = start + module_->num_declared_functions;
+  for (WasmCode* code : VectorOf(start, end - start)) {
+    if (code) WasmCodeRefScope::AddRef(code);
+  }
   return std::vector<WasmCode*>{start, end};
 }
 
@@ -1912,6 +1915,11 @@ std::vector<std::unique_ptr<WasmCode>> NativeModule::AddCompiledCode(
       code_allocator_.AllocateForCode(this, total_code_space);
   // Lookup the jump tables to use once, then use for all code objects.
   auto jump_tables = FindJumpTablesForRegion(base::AddressRegionOf(code_space));
+  // If we happen to have a {total_code_space} which is bigger than
+  // {kMaxCodeSpaceSize}, we would not find valid jump tables for the whole
+  // region. If this ever happens, we need to handle this case (by splitting the
+  // {results} vector in smaller chunks).
+  CHECK(jump_tables.is_valid());
 
   std::vector<std::unique_ptr<WasmCode>> generated_code;
   generated_code.reserve(results.size());

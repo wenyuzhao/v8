@@ -7,10 +7,11 @@
 
 #include <vector>
 
+#include "src/builtins/builtins.h"
 #include "src/codegen/source-position.h"
 #include "src/deoptimizer/deoptimize-reason.h"
 #include "src/deoptimizer/frame-description.h"
-#include "src/deoptimizer/translations.h"
+#include "src/deoptimizer/translated-state.h"
 #include "src/diagnostics/code-tracer.h"
 #include "src/objects/js-function.h"
 
@@ -162,9 +163,6 @@ class Deoptimizer : public Malloced {
 
   static Builtins::Name TrampolineForBuiltinContinuation(
       BuiltinContinuationMode mode, bool must_handle_result);
-
-  TranslatedValue TranslatedValueForWasmReturnType(
-      base::Optional<wasm::ValueType::Kind> wasm_call_return_type);
 
   void DoComputeBuiltinContinuation(TranslatedFrame* translated_frame,
                                     int frame_index,

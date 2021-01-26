@@ -196,8 +196,7 @@
   V(JSCall)                \
   V(JSCallForwardVarargs)  \
   V(JSCallWithArrayLike)   \
-  V(JSCallWithSpread)      \
-  V(JSWasmCall)
+  V(JSCallWithSpread)
 
 #define JS_CONSTRUCT_OP_LIST(V) \
   V(JSConstructForwardVarargs)  \
@@ -394,7 +393,6 @@
 #define SIMPLIFIED_OTHER_OP_LIST(V)     \
   V(Allocate)                           \
   V(AllocateRaw)                        \
-  V(ArgumentsFrame)                     \
   V(ArgumentsLength)                    \
   V(AssertType)                         \
   V(BooleanNot)                         \
@@ -784,6 +782,9 @@
   V(F64x2Floor)                 \
   V(F64x2Trunc)                 \
   V(F64x2NearestInt)            \
+  V(F64x2ConvertLowI32x4S)      \
+  V(F64x2ConvertLowI32x4U)      \
+  V(F64x2PromoteLowF32x4)       \
   V(F32x4Splat)                 \
   V(F32x4ExtractLane)           \
   V(F32x4ReplaceLane)           \
@@ -815,6 +816,7 @@
   V(F32x4Floor)                 \
   V(F32x4Trunc)                 \
   V(F32x4NearestInt)            \
+  V(F32x4DemoteF64x2Zero)       \
   V(I64x2Splat)                 \
   V(I64x2SplatI32Pair)          \
   V(I64x2ExtractLane)           \
@@ -879,6 +881,8 @@
   V(I32x4SignSelect)            \
   V(I32x4ExtAddPairwiseI16x8S)  \
   V(I32x4ExtAddPairwiseI16x8U)  \
+  V(I32x4TruncSatF64x2SZero)    \
+  V(I32x4TruncSatF64x2UZero)    \
   V(I16x8Splat)                 \
   V(I16x8ExtractLaneU)          \
   V(I16x8ExtractLaneS)          \

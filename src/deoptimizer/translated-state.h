@@ -8,6 +8,7 @@
 #include <stack>
 #include <vector>
 
+#include "src/deoptimizer/translation-array.h"
 #include "src/objects/feedback-vector.h"
 #include "src/objects/heap-object.h"
 #include "src/objects/shared-function-info.h"
@@ -19,7 +20,14 @@ namespace internal {
 
 class RegisterValues;
 class TranslatedState;
-class TranslationArrayIterator;
+
+// TODO(jgruber): This duplicates decoding logic already present in
+// TranslatedState/TranslatedFrame. Deduplicate into one class, e.g. by basing
+// printing off TranslatedFrame.
+void TranslationArrayPrintSingleFrame(std::ostream& os,
+                                      TranslationArray translation_array,
+                                      int translation_index,
+                                      FixedArray literal_array);
 
 // The Translated{Value,Frame,State} class hierarchy are a set of utility
 // functions to work with the combination of translations (built from a
@@ -54,14 +62,12 @@ class TranslatedValue {
  private:
   friend class TranslatedState;
   friend class TranslatedFrame;
-  friend class Deoptimizer;
 
   enum Kind : uint8_t {
     kInvalid,
     kTagged,
     kInt32,
     kInt64,
-    kInt64ToBigInt,
     kUInt32,
     kBoolBit,
     kFloat,
@@ -98,8 +104,6 @@ class TranslatedValue {
   static TranslatedValue NewDouble(TranslatedState* container, Float64 value);
   static TranslatedValue NewInt32(TranslatedState* container, int32_t value);
   static TranslatedValue NewInt64(TranslatedState* container, int64_t value);
-  static TranslatedValue NewInt64ToBigInt(TranslatedState* container,
-                                          int64_t value);
   static TranslatedValue NewUInt32(TranslatedState* container, uint32_t value);
   static TranslatedValue NewBool(TranslatedState* container, uint32_t value);
   static TranslatedValue NewTagged(TranslatedState* container, Object literal);
@@ -167,7 +171,6 @@ class TranslatedFrame {
     kArgumentsAdaptor,
     kConstructStub,
     kBuiltinContinuation,
-    kJSToWasmBuiltinContinuation,
     kJavaScriptBuiltinContinuation,
     kJavaScriptBuiltinContinuationWithCatch,
     kInvalid
@@ -242,15 +245,8 @@ class TranslatedFrame {
   reference front() { return values_.front(); }
   const_reference front() const { return values_.front(); }
 
-  // Only for Kind == kJSToWasmBuiltinContinuation
-  base::Optional<wasm::ValueType::Kind> wasm_call_return_type() const {
-    DCHECK_EQ(kind(), kJSToWasmBuiltinContinuation);
-    return return_type_;
-  }
-
  private:
   friend class TranslatedState;
-  friend class Deoptimizer;
 
   // Constructor static methods.
   static TranslatedFrame InterpretedFrame(BytecodeOffset bytecode_offset,
@@ -266,9 +262,6 @@ class TranslatedFrame {
                                             int height);
   static TranslatedFrame BuiltinContinuationFrame(
       BytecodeOffset bailout_id, SharedFunctionInfo shared_info, int height);
-  static TranslatedFrame JSToWasmBuiltinContinuationFrame(
-      BytecodeOffset bailout_id, SharedFunctionInfo shared_info, int height,
-      base::Optional<wasm::ValueType::Kind> return_type);
   static TranslatedFrame JavaScriptBuiltinContinuationFrame(
       BytecodeOffset bailout_id, SharedFunctionInfo shared_info, int height);
   static TranslatedFrame JavaScriptBuiltinContinuationWithCatchFrame(
@@ -305,9 +298,6 @@ class TranslatedFrame {
   using ValuesContainer = std::deque<TranslatedValue>;
 
   ValuesContainer values_;
-
-  // Only for Kind == kJSToWasmBuiltinContinuation
-  base::Optional<wasm::ValueType::Kind> return_type_;
 };
 
 // Auxiliary class for translating deoptimization values.

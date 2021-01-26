@@ -1564,6 +1564,13 @@ class V8_EXPORT ModuleRequest : public Data {
    * The keys and values are of type v8::String, and the source offsets are of
    * type Int32. Use Module::SourceOffsetToLocation to convert the source
    * offsets to Locations with line/column numbers.
+   *
+   * All assertions present in the module request will be supplied in this
+   * list, regardless of whether they are supported by the host. Per
+   * https://tc39.es/proposal-import-assertions/#sec-hostgetsupportedimportassertions,
+   * hosts are expected to ignore assertions that they do not support (as
+   * opposed to, for example, triggering an error if an unsupported assertion is
+   * present).
    */
   Local<FixedArray> GetImportAssertions() const;
 
@@ -6129,9 +6136,10 @@ class V8_EXPORT RegExp : public Object {
     kUnicode = 1 << 4,
     kDotAll = 1 << 5,
     kLinear = 1 << 6,
+    kHasIndices = 1 << 7,
   };
 
-  static constexpr int kFlagCount = 7;
+  static constexpr int kFlagCount = 8;
 
   /**
    * Creates a regular expression from the given pattern string and
@@ -7428,7 +7436,7 @@ using CallCompletedCallback = void (*)(Isolate*);
  * The specifier is the name of the module that should be imported.
  *
  * The embedder must compile, instantiate, evaluate the Module, and
- * obtain it's namespace object.
+ * obtain its namespace object.
  *
  * The Promise returned from this function is forwarded to userland
  * JavaScript. The embedder must resolve this promise with the module
@@ -7437,9 +7445,43 @@ using CallCompletedCallback = void (*)(Isolate*);
  * fails (e.g. due to stack overflow), the embedder must propagate
  * that exception by returning an empty MaybeLocal.
  */
-using HostImportModuleDynamicallyCallback = MaybeLocal<Promise> (*)(
-    Local<Context> context, Local<ScriptOrModule> referrer,
-    Local<String> specifier);
+using HostImportModuleDynamicallyCallback V8_DEPRECATE_SOON(
+    "Use HostImportModuleDynamicallyWithImportAssertionsCallback instead") =
+    MaybeLocal<Promise> (*)(Local<Context> context,
+                            Local<ScriptOrModule> referrer,
+                            Local<String> specifier);
+
+/**
+ * HostImportModuleDynamicallyWithImportAssertionsCallback is called when we
+ * require the embedder to load a module. This is used as part of the dynamic
+ * import syntax.
+ *
+ * The referrer contains metadata about the script/module that calls
+ * import.
+ *
+ * The specifier is the name of the module that should be imported.
+ *
+ * The import_assertions are import assertions for this request in the form:
+ * [key1, value1, key2, value2, ...] where the keys and values are of type
+ * v8::String. Note, unlike the FixedArray passed to ResolveModuleCallback and
+ * returned from ModuleRequest::GetImportAssertions(), this array does not
+ * contain the source Locations of the assertions.
+ *
+ * The embedder must compile, instantiate, evaluate the Module, and
+ * obtain its namespace object.
+ *
+ * The Promise returned from this function is forwarded to userland
+ * JavaScript. The embedder must resolve this promise with the module
+ * namespace object. In case of an exception, the embedder must reject
+ * this promise with the exception. If the promise creation itself
+ * fails (e.g. due to stack overflow), the embedder must propagate
+ * that exception by returning an empty MaybeLocal.
+ */
+using HostImportModuleDynamicallyWithImportAssertionsCallback =
+    MaybeLocal<Promise> (*)(Local<Context> context,
+                            Local<ScriptOrModule> referrer,
+                            Local<String> specifier,
+                            Local<FixedArray> import_assertions);
 
 /**
  * HostInitializeImportMetaObjectCallback is called the first time import.meta
@@ -8437,18 +8479,9 @@ class V8_EXPORT Isolate {
      */
     std::shared_ptr<CppHeapCreateParams> cpp_heap_params;
 
-    /**
-     * This list is provided by the embedder to indicate which import assertions
-     * they want to handle. Only import assertions whose keys are present in
-     * supported_import_assertions will be included in the import assertions
-     * lists of ModuleRequests that will be passed to the embedder. If
-     * supported_import_assertions is left empty, then the embedder will not
-     * receive any import assertions.
-     *
-     * This corresponds to the list returned by the HostGetSupportedAssertions
-     * host-defined abstract operation:
-     * https://tc39.es/proposal-import-assertions/#sec-hostgetsupportedimportassertions
-     */
+    V8_DEPRECATE_SOON(
+        "Setting this has no effect. Embedders should ignore import assertions "
+        "that they do not use.")
     std::vector<std::string> supported_import_assertions;
   };
 
@@ -8490,7 +8523,11 @@ class V8_EXPORT Isolate {
 
    private:
     OnFailure on_failure_;
-    void* internal_;
+    Isolate* isolate_;
+
+    bool was_execution_allowed_assert_;
+    bool was_execution_allowed_throws_;
+    bool was_execution_allowed_dump_;
   };
 
   /**
@@ -8508,9 +8545,10 @@ class V8_EXPORT Isolate {
         const AllowJavascriptExecutionScope&) = delete;
 
    private:
-    void* internal_throws_;
-    void* internal_assert_;
-    void* internal_dump_;
+    Isolate* isolate_;
+    bool was_execution_allowed_assert_;
+    bool was_execution_allowed_throws_;
+    bool was_execution_allowed_dump_;
   };
 
   /**
@@ -8773,8 +8811,18 @@ class V8_EXPORT Isolate {
    * This specifies the callback called by the upcoming dynamic
    * import() language feature to load modules.
    */
+  V8_DEPRECATE_SOON(
+      "Use the version of SetHostImportModuleDynamicallyCallback that takes a "
+      "HostImportModuleDynamicallyWithImportAssertionsCallback instead")
   void SetHostImportModuleDynamicallyCallback(
       HostImportModuleDynamicallyCallback callback);
+
+  /**
+   * This specifies the callback called by the upcoming dynamic
+   * import() language feature to load modules.
+   */
+  void SetHostImportModuleDynamicallyCallback(
+      HostImportModuleDynamicallyWithImportAssertionsCallback callback);
 
   /**
    * This specifies the callback called by the upcoming import.meta

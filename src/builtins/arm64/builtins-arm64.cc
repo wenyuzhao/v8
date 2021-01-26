@@ -2224,14 +2224,9 @@ void Builtins::Generate_CallOrConstructForwardVarargs(MacroAssembler* masm,
     __ Bind(&new_target_constructor);
   }
 
-  Register args_fp = x5;
   Register len = x6;
-  // TODO(victorgomes): Remove this copy when all the arguments adaptor frame
-  // code is erased.
-  __ Mov(args_fp, fp);
-  __ Ldr(len, MemOperand(fp, StandardFrameConstants::kArgCOffset));
-
   Label stack_done, stack_overflow;
+  __ Ldr(len, MemOperand(fp, StandardFrameConstants::kArgCOffset));
   __ Subs(len, len, start_index);
   __ B(le, &stack_done);
   // Check for stack overflow.
@@ -2241,9 +2236,10 @@ void Builtins::Generate_CallOrConstructForwardVarargs(MacroAssembler* masm,
 
   // Push varargs.
   {
+    Register args_fp = x5;
     Register dst = x13;
     // Point to the fist argument to copy from (skipping receiver).
-    __ Add(args_fp, args_fp,
+    __ Add(args_fp, fp,
            CommonFrameConstants::kFixedFrameSizeAboveFp + kSystemPointerSize);
     __ lsl(start_index, start_index, kSystemPointerSizeLog2);
     __ Add(args_fp, args_fp, start_index);
@@ -2701,7 +2697,7 @@ void Builtins::Generate_WasmCompileLazy(MacroAssembler* masm) {
     constexpr RegList fp_regs =
         Register::ListOf(d0, d1, d2, d3, d4, d5, d6, d7);
     __ PushXRegList(gp_regs);
-    __ PushDRegList(fp_regs);
+    __ PushQRegList(fp_regs);
 
     // Pass instance and function index as explicit arguments to the runtime
     // function.
@@ -2718,7 +2714,7 @@ void Builtins::Generate_WasmCompileLazy(MacroAssembler* masm) {
     __ Mov(x17, kReturnRegister0);
 
     // Restore registers.
-    __ PopDRegList(fp_regs);
+    __ PopQRegList(fp_regs);
     __ PopXRegList(gp_regs);
   }
   // Finally, jump to the entrypoint.

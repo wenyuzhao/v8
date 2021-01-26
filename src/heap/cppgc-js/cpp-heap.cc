@@ -169,11 +169,13 @@ void UnifiedHeapMarker::AddObject(void* object) {
 
 CppHeap::CppHeap(
     v8::Isolate* isolate,
-    const std::vector<std::unique_ptr<cppgc::CustomSpaceBase>>& custom_spaces)
+    const std::vector<std::unique_ptr<cppgc::CustomSpaceBase>>& custom_spaces,
+    std::unique_ptr<cppgc::internal::MetricRecorder> metric_recorder)
     : cppgc::internal::HeapBase(std::make_shared<CppgcPlatformAdapter>(isolate),
                                 custom_spaces,
                                 cppgc::internal::HeapBase::StackSupport::
-                                    kSupportsConservativeStackScan),
+                                    kSupportsConservativeStackScan,
+                                std::move(metric_recorder)),
       isolate_(*reinterpret_cast<Isolate*>(isolate)) {
   if (isolate_.heap_profiler()) {
     isolate_.heap_profiler()->AddBuildEmbedderGraphCallback(
@@ -232,6 +234,14 @@ void CppHeap::TracePrologue(TraceFlags flags) {
 }
 
 bool CppHeap::AdvanceTracing(double deadline_in_ms) {
+  // TODO(chromium:1154636): The kAtomicMark/kIncrementalMark scope below is
+  // needed for recording all cpp marking time. Note that it can lead to double
+  // accounting since this scope is also accounted under an outer v8 scope.
+  // Make sure to only account this scope once.
+  cppgc::internal::StatsCollector::EnabledScope stats_scope(
+      AsBase(), is_in_final_pause_
+                    ? cppgc::internal::StatsCollector::kAtomicMark
+                    : cppgc::internal::StatsCollector::kIncrementalMark);
   v8::base::TimeDelta deadline =
       is_in_final_pause_
           ? v8::base::TimeDelta::Max()

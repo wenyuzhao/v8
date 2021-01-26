@@ -270,8 +270,9 @@ DEFINE_IMPLICATION(harmony_weak_refs_with_cleanup_some, harmony_weak_refs)
 #endif
 
 // Features that are complete (but still behind --harmony/es-staging flag).
-#define HARMONY_STAGED_BASE(V) \
-  V(harmony_top_level_await, "harmony top level await")
+#define HARMONY_STAGED_BASE(V)                          \
+  V(harmony_top_level_await, "harmony top level await") \
+  V(harmony_relative_indexing_methods, "harmony relative indexing methods")
 
 #ifdef V8_INTL_SUPPORT
 #define HARMONY_STAGED(V)               \
@@ -289,8 +290,7 @@ DEFINE_IMPLICATION(harmony_weak_refs_with_cleanup_some, harmony_weak_refs)
   V(harmony_weak_refs, "harmony weak references")                     \
   V(harmony_string_replaceall, "harmony String.prototype.replaceAll") \
   V(harmony_logical_assignment, "harmony logical assignment")         \
-  V(harmony_atomics_waitasync, "harmony Atomics.waitAsync")           \
-  V(harmony_relative_indexing_methods, "harmony relative indexing methods")
+  V(harmony_atomics_waitasync, "harmony Atomics.waitAsync")
 
 #ifdef V8_INTL_SUPPORT
 #define HARMONY_SHIPPING(V) HARMONY_SHIPPING_BASE(V)
@@ -430,7 +430,6 @@ DEFINE_BOOL(future, FUTURE_BOOL,
 DEFINE_WEAK_IMPLICATION(future, write_protect_code_memory)
 DEFINE_WEAK_IMPLICATION(future, finalize_streaming_on_background)
 DEFINE_WEAK_IMPLICATION(future, super_ic)
-DEFINE_WEAK_IMPLICATION(future, turbo_inline_js_wasm_calls)
 
 // Flags for jitless
 DEFINE_BOOL(jitless, V8_LITE_BOOL,
@@ -744,7 +743,6 @@ DEFINE_INT(reuse_opt_code_count, 0,
 DEFINE_BOOL(turbo_dynamic_map_checks, true,
             "use dynamic map checks when generating code for property accesses "
             "if all handlers in an IC are the same for turboprop and NCI")
-DEFINE_BOOL(turbo_inline_js_wasm_calls, false, "inline JS->Wasm calls")
 
 // Native context independent (NCI) code.
 DEFINE_BOOL(turbo_nci, false,
@@ -790,7 +788,11 @@ DEFINE_BOOL(untrusted_code_mitigations, V8_DEFAULT_UNTRUSTED_CODE_MITIGATIONS,
 DEFINE_BOOL(wasm_generic_wrapper, true,
             "allow use of the generic js-to-wasm wrapper instead of "
             "per-signature wrappers")
+#ifdef V8_ENABLE_WEBASSEMBLY
 DEFINE_BOOL(expose_wasm, true, "expose wasm interface to JavaScript")
+#else
+DEFINE_BOOL(expose_wasm, false, "expose wasm interface to JavaScript")
+#endif
 DEFINE_INT(wasm_num_compilation_tasks, 128,
            "maximum number of parallel compilation tasks for wasm")
 DEFINE_DEBUG_BOOL(trace_wasm_native_heap, false,
@@ -1392,7 +1394,7 @@ DEFINE_INT(max_valid_polymorphic_map_count, 4,
 DEFINE_BOOL(native_code_counters, DEBUG_BOOL,
             "generate extra code for manipulating stats counters")
 
-DEFINE_BOOL(super_ic, false, "use an IC for super property loads")
+DEFINE_BOOL(super_ic, true, "use an IC for super property loads")
 
 // objects.cc
 DEFINE_BOOL(thin_strings, true, "Enable ThinString support")

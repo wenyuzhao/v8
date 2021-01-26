@@ -8,12 +8,17 @@
 #include <cmath>
 
 #include "src/base/logging.h"
+#include "src/heap/cppgc/metric-recorder.h"
 
 namespace cppgc {
 namespace internal {
 
 // static
 constexpr size_t StatsCollector::kAllocationThresholdBytes;
+
+StatsCollector::StatsCollector(
+    std::unique_ptr<MetricRecorder> histogram_recorder)
+    : metric_recorder_(std::move(histogram_recorder)) {}
 
 void StatsCollector::RegisterObserver(AllocationObserver* observer) {
   DCHECK_EQ(allocation_observers_.end(),
@@ -88,6 +93,10 @@ void StatsCollector::NotifyMarkingCompleted(size_t marked_bytes) {
   DCHECK_EQ(GarbageCollectionState::kMarking, gc_state_);
   gc_state_ = GarbageCollectionState::kSweeping;
   current_.marked_bytes = marked_bytes;
+  current_.object_size_before_sweep_bytes =
+      previous_.marked_bytes + allocated_bytes_since_end_of_marking_ +
+      allocated_bytes_since_safepoint_ -
+      explicitly_freed_bytes_since_safepoint_;
   allocated_bytes_since_safepoint_ = 0;
   explicitly_freed_bytes_since_safepoint_ = 0;
 
@@ -99,6 +108,7 @@ void StatsCollector::NotifyMarkingCompleted(size_t marked_bytes) {
   // execution of ResetAllocatedObjectSize.
   allocated_bytes_since_end_of_marking_ = 0;
   time_of_last_end_of_marking_ = v8::base::TimeTicks::Now();
+  freed_memory_bytes_since_end_of_marking_ = 0;
 }
 
 double StatsCollector::GetRecentAllocationSpeedInBytesPerMs() const {
@@ -114,6 +124,23 @@ void StatsCollector::NotifySweepingCompleted() {
   gc_state_ = GarbageCollectionState::kNotRunning;
   previous_ = std::move(current_);
   current_ = Event();
+  if (metric_recorder_) {
+    MetricRecorder::CppGCCycleEndMetricSamples event{
+        previous_.scope_data[kAtomicMark].InMilliseconds(),
+        previous_.scope_data[kAtomicWeak].InMilliseconds(),
+        previous_.scope_data[kAtomicCompact].InMilliseconds(),
+        previous_.scope_data[kAtomicSweep].InMilliseconds(),
+        previous_.scope_data[kIncrementalMark].InMilliseconds(),
+        previous_.scope_data[kIncrementalSweep].InMilliseconds(),
+        previous_.concurrent_scope_data[kConcurrentMark],
+        previous_.concurrent_scope_data[kConcurrentSweep],
+        previous_.object_size_before_sweep_bytes /* objects_before */,
+        previous_.marked_bytes /* objects_after */,
+        previous_.object_size_before_sweep_bytes -
+            previous_.marked_bytes /* objects_freed */,
+        freed_memory_bytes_since_end_of_marking_ /* memory_freed */};
+    metric_recorder_->AddMainThreadEvent(event);
+  }
 }
 
 size_t StatsCollector::allocated_object_size() const {
@@ -127,6 +154,30 @@ size_t StatsCollector::allocated_object_size() const {
             0);
   return static_cast<size_t>(static_cast<int64_t>(event.marked_bytes) +
                              allocated_bytes_since_end_of_marking_);
+}
+
+void StatsCollector::NotifyFreedMemory(int64_t size) {
+  freed_memory_bytes_since_end_of_marking_ += size;
+}
+
+void StatsCollector::RecordHistogramSample(ScopeId scope_id_,
+                                           v8::base::TimeDelta time) {
+  switch (scope_id_) {
+    case kIncrementalMark: {
+      MetricRecorder::CppGCIncrementalMarkMetricSample event{
+          time.InMilliseconds()};
+      metric_recorder_->AddMainThreadEvent(event);
+      break;
+    }
+    case kIncrementalSweep: {
+      MetricRecorder::CppGCIncrementalSweepMetricSample event{
+          time.InMilliseconds()};
+      metric_recorder_->AddMainThreadEvent(event);
+      break;
+    }
+    default:
+      break;
+  }
 }
 
 }  // namespace internal

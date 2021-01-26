@@ -31,13 +31,6 @@ class JSRegExp;
 class JSTypedArray;
 class NativeContext;
 class ScriptContextTable;
-template <typename>
-class Signature;
-
-namespace wasm {
-class ValueType;
-struct WasmModule;
-}  // namespace wasm
 
 namespace compiler {
 
@@ -79,6 +72,7 @@ enum class OddballType : uint8_t {
   V(ArrayBoilerplateDescription)                    \
   V(CallHandlerInfo)                                \
   V(Cell)                                           \
+  V(FeedbackCell)                                   \
   V(SharedFunctionInfo)                             \
   V(TemplateObjectDescription)
 
@@ -123,7 +117,6 @@ enum class OddballType : uint8_t {
   V(AllocationSite)                           \
   V(Code)                                     \
   V(DescriptorArray)                          \
-  V(FeedbackCell)                             \
   V(FeedbackVector)                           \
   V(FixedArrayBase)                           \
   V(FunctionTemplateInfo)                     \
@@ -543,6 +536,8 @@ class DescriptorArrayRef : public HeapObjectRef {
   DEFINE_REF_CONSTRUCTOR(DescriptorArray, HeapObjectRef)
 
   Handle<DescriptorArray> object() const;
+
+  PropertyDetails GetPropertyDetails(InternalIndex descriptor_index) const;
 };
 
 class FeedbackCellRef : public HeapObjectRef {
@@ -551,7 +546,7 @@ class FeedbackCellRef : public HeapObjectRef {
 
   Handle<FeedbackCell> object() const;
   base::Optional<SharedFunctionInfoRef> shared_function_info() const;
-  HeapObjectRef value() const;
+  base::Optional<FeedbackVectorRef> value() const;
 };
 
 class FeedbackVectorRef : public HeapObjectRef {
@@ -687,6 +682,8 @@ class V8_EXPORT_PRIVATE MapRef : public HeapObjectRef {
   bool IsUnboxedDoubleField(InternalIndex descriptor_index) const;
   base::Optional<ObjectRef> GetStrongValue(
       InternalIndex descriptor_number) const;
+
+  DescriptorArrayRef instance_descriptors() const;
 
   void SerializeRootMap();
   base::Optional<MapRef> FindRootMap() const;
@@ -841,9 +838,7 @@ class ScopeInfoRef : public HeapObjectRef {
   V(bool, HasBytecodeArray)               \
   V(int, StartPosition)                   \
   V(bool, is_compiled)                    \
-  V(bool, IsUserJavaScript)               \
-  V(const wasm::WasmModule*, wasm_module) \
-  V(const wasm::FunctionSig*, wasm_function_signature)
+  V(bool, IsUserJavaScript)
 
 class V8_EXPORT_PRIVATE SharedFunctionInfoRef : public HeapObjectRef {
  public:

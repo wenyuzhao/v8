@@ -62,6 +62,22 @@ class V8_EXPORT Visitor {
   virtual ~Visitor() = default;
 
   /**
+   * Trace method for raw pointers. Prefer the versions for managed pointers.
+   *
+   * \param member Reference retaining an object.
+   */
+  template <typename T>
+  void Trace(const T* t) {
+    static_assert(sizeof(T), "Pointee type must be fully defined.");
+    static_assert(internal::IsGarbageCollectedOrMixinType<T>::value,
+                  "T must be GarbageCollected or GarbageCollectedMixin type");
+    if (!t) {
+      return;
+    }
+    Visit(t, TraceTrait<T>::GetTraceDescriptor(t));
+  }
+
+  /**
    * Trace method for Member.
    *
    * \param member Member reference retaining an object.
@@ -81,7 +97,7 @@ class V8_EXPORT Visitor {
   template <typename T>
   void Trace(const WeakMember<T>& weak_member) {
     static_assert(sizeof(T), "Pointee type must be fully defined.");
-    static_assert(internal::IsGarbageCollectedType<T>::value,
+    static_assert(internal::IsGarbageCollectedOrMixinType<T>::value,
                   "T must be GarbageCollected or GarbageCollectedMixin type");
     static_assert(!internal::IsAllocatedOnCompactableSpace<T>::value,
                   "Weak references to compactable objects are not allowed");
@@ -261,7 +277,7 @@ class V8_EXPORT Visitor {
     using PointeeType = typename Persistent::PointeeType;
     static_assert(sizeof(PointeeType),
                   "Persistent's pointee type must be fully defined");
-    static_assert(internal::IsGarbageCollectedType<PointeeType>::value,
+    static_assert(internal::IsGarbageCollectedOrMixinType<PointeeType>::value,
                   "Persistent's pointee type must be GarbageCollected or "
                   "GarbageCollectedMixin");
     if (!p.Get()) {
@@ -278,24 +294,13 @@ class V8_EXPORT Visitor {
     using PointeeType = typename WeakPersistent::PointeeType;
     static_assert(sizeof(PointeeType),
                   "Persistent's pointee type must be fully defined");
-    static_assert(internal::IsGarbageCollectedType<PointeeType>::value,
+    static_assert(internal::IsGarbageCollectedOrMixinType<PointeeType>::value,
                   "Persistent's pointee type must be GarbageCollected or "
                   "GarbageCollectedMixin");
     static_assert(!internal::IsAllocatedOnCompactableSpace<PointeeType>::value,
                   "Weak references to compactable objects are not allowed");
     VisitWeakRoot(p.Get(), TraceTrait<PointeeType>::GetTraceDescriptor(p.Get()),
                   &HandleWeak<WeakPersistent>, &p, loc);
-  }
-
-  template <typename T>
-  void Trace(const T* t) {
-    static_assert(sizeof(T), "Pointee type must be fully defined.");
-    static_assert(internal::IsGarbageCollectedType<T>::value,
-                  "T must be GarbageCollected or GarbageCollectedMixin type");
-    if (!t) {
-      return;
-    }
-    Visit(t, TraceTrait<T>::GetTraceDescriptor(t));
   }
 
 #if V8_ENABLE_CHECKS

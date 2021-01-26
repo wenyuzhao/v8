@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <cstdint>
 #if V8_TARGET_ARCH_X64
 
 #include "src/base/bits.h"
@@ -1091,17 +1092,7 @@ void TurboAssembler::Set(Operand dst, intptr_t x) {
 // Smi tagging, untagging and tag detection.
 
 Register TurboAssembler::GetSmiConstant(Smi source) {
-  STATIC_ASSERT(kSmiTag == 0);
-  int value = source.value();
-  if (value == 0) {
-    xorl(kScratchRegister, kScratchRegister);
-    return kScratchRegister;
-  }
-  if (SmiValuesAre32Bits()) {
-    Move(kScratchRegister, source);
-  } else {
-    movl(kScratchRegister, Immediate(source));
-  }
+  Move(kScratchRegister, source);
   return kScratchRegister;
 }
 
@@ -1110,8 +1101,17 @@ void TurboAssembler::Move(Register dst, Smi source) {
   int value = source.value();
   if (value == 0) {
     xorl(dst, dst);
-  } else {
+  } else if (SmiValuesAre32Bits() || value < 0) {
     Move(dst, source.ptr(), RelocInfo::NONE);
+  } else {
+    uint32_t uvalue = static_cast<uint32_t>(source.ptr());
+    if (uvalue <= 0xFF) {
+      // Emit shorter instructions for small Smis
+      xorl(dst, dst);
+      movb(dst, Immediate(uvalue));
+    } else {
+      movl(dst, Immediate(uvalue));
+    }
   }
 }
 
@@ -2233,6 +2233,26 @@ void TurboAssembler::I16x8Q15MulRSatS(XMMRegister dst, XMMRegister src1,
   Pmulhrsw(dst, src1, src2);
   Pcmpeqw(kScratchDoubleReg, dst);
   Pxor(dst, kScratchDoubleReg);
+}
+
+void TurboAssembler::S128Store32Lane(Operand dst, XMMRegister src,
+                                     uint8_t laneidx) {
+  if (laneidx == 0) {
+    Movss(dst, src);
+  } else {
+    DCHECK_GE(3, laneidx);
+    Extractps(dst, src, laneidx);
+  }
+}
+
+void TurboAssembler::S128Store64Lane(Operand dst, XMMRegister src,
+                                     uint8_t laneidx) {
+  if (laneidx == 0) {
+    Movlps(dst, src);
+  } else {
+    DCHECK_EQ(1, laneidx);
+    Movhps(dst, src);
+  }
 }
 
 void TurboAssembler::Abspd(XMMRegister dst) {

@@ -7032,6 +7032,7 @@ REGEXP_FLAG_ASSERT_EQ(kIgnoreCase);
 REGEXP_FLAG_ASSERT_EQ(kMultiline);
 REGEXP_FLAG_ASSERT_EQ(kSticky);
 REGEXP_FLAG_ASSERT_EQ(kUnicode);
+REGEXP_FLAG_ASSERT_EQ(kHasIndices);
 REGEXP_FLAG_ASSERT_EQ(kLinear);
 #undef REGEXP_FLAG_ASSERT_EQ
 
@@ -8567,9 +8568,6 @@ void Isolate::Initialize(Isolate* isolate,
   i_isolate->set_api_external_references(params.external_references);
   i_isolate->set_allow_atomics_wait(params.allow_atomics_wait);
 
-  i_isolate->set_supported_import_assertions(
-      params.supported_import_assertions);
-
   i_isolate->heap()->ConfigureHeap(params.constraints);
   if (params.cpp_heap_params) {
     i_isolate->heap()->ConfigureCppHeap(params.cpp_heap_params);
@@ -8655,7 +8653,13 @@ void Isolate::SetAbortOnUncaughtExceptionCallback(
 }
 
 void Isolate::SetHostImportModuleDynamicallyCallback(
-    HostImportModuleDynamicallyCallback callback) {
+    i::Isolate::DeprecatedHostImportModuleDynamicallyCallback callback) {
+  i::Isolate* isolate = reinterpret_cast<i::Isolate*>(this);
+  isolate->SetHostImportModuleDynamicallyCallback(callback);
+}
+
+void Isolate::SetHostImportModuleDynamicallyCallback(
+    HostImportModuleDynamicallyWithImportAssertionsCallback callback) {
   i::Isolate* isolate = reinterpret_cast<i::Isolate*>(this);
   isolate->SetHostImportModuleDynamicallyCallback(callback);
 }
@@ -8674,21 +8678,20 @@ void Isolate::SetPrepareStackTraceCallback(PrepareStackTraceCallback callback) {
 Isolate::DisallowJavascriptExecutionScope::DisallowJavascriptExecutionScope(
     Isolate* isolate,
     Isolate::DisallowJavascriptExecutionScope::OnFailure on_failure)
-    : on_failure_(on_failure) {
+    : on_failure_(on_failure), isolate_(isolate) {
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
   switch (on_failure_) {
     case CRASH_ON_FAILURE:
-      internal_ = reinterpret_cast<void*>(
-          new i::DisallowJavascriptExecution(i_isolate));
+      i::DisallowJavascriptExecution::Open(i_isolate,
+                                           &was_execution_allowed_assert_);
       break;
     case THROW_ON_FAILURE:
-      DCHECK_EQ(THROW_ON_FAILURE, on_failure);
-      internal_ =
-          reinterpret_cast<void*>(new i::ThrowOnJavascriptExecution(i_isolate));
+      i::ThrowOnJavascriptExecution::Open(i_isolate,
+                                          &was_execution_allowed_throws_);
       break;
     case DUMP_ON_FAILURE:
-      internal_ =
-          reinterpret_cast<void*>(new i::DumpOnJavascriptExecution(i_isolate));
+      i::DumpOnJavascriptExecution::Open(i_isolate,
+                                         &was_execution_allowed_dump_);
       break;
     default:
       UNREACHABLE();
@@ -8696,15 +8699,19 @@ Isolate::DisallowJavascriptExecutionScope::DisallowJavascriptExecutionScope(
 }
 
 Isolate::DisallowJavascriptExecutionScope::~DisallowJavascriptExecutionScope() {
+  i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate_);
   switch (on_failure_) {
     case CRASH_ON_FAILURE:
-      delete reinterpret_cast<i::DisallowJavascriptExecution*>(internal_);
+      i::DisallowJavascriptExecution::Close(i_isolate,
+                                            was_execution_allowed_assert_);
       break;
     case THROW_ON_FAILURE:
-      delete reinterpret_cast<i::ThrowOnJavascriptExecution*>(internal_);
+      i::ThrowOnJavascriptExecution::Close(i_isolate,
+                                           was_execution_allowed_throws_);
       break;
     case DUMP_ON_FAILURE:
-      delete reinterpret_cast<i::DumpOnJavascriptExecution*>(internal_);
+      i::DumpOnJavascriptExecution::Close(i_isolate,
+                                          was_execution_allowed_dump_);
       break;
     default:
       UNREACHABLE();
@@ -8712,20 +8719,21 @@ Isolate::DisallowJavascriptExecutionScope::~DisallowJavascriptExecutionScope() {
 }
 
 Isolate::AllowJavascriptExecutionScope::AllowJavascriptExecutionScope(
-    Isolate* isolate) {
+    Isolate* isolate)
+    : isolate_(isolate) {
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
-  internal_assert_ =
-      reinterpret_cast<void*>(new i::AllowJavascriptExecution(i_isolate));
-  internal_throws_ =
-      reinterpret_cast<void*>(new i::NoThrowOnJavascriptExecution(i_isolate));
-  internal_dump_ =
-      reinterpret_cast<void*>(new i::NoDumpOnJavascriptExecution(i_isolate));
+  i::AllowJavascriptExecution::Open(i_isolate, &was_execution_allowed_assert_);
+  i::NoThrowOnJavascriptExecution::Open(i_isolate,
+                                        &was_execution_allowed_throws_);
+  i::NoDumpOnJavascriptExecution::Open(i_isolate, &was_execution_allowed_dump_);
 }
 
 Isolate::AllowJavascriptExecutionScope::~AllowJavascriptExecutionScope() {
-  delete reinterpret_cast<i::AllowJavascriptExecution*>(internal_assert_);
-  delete reinterpret_cast<i::NoThrowOnJavascriptExecution*>(internal_throws_);
-  delete reinterpret_cast<i::NoDumpOnJavascriptExecution*>(internal_dump_);
+  i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate_);
+  i::AllowJavascriptExecution::Close(i_isolate, was_execution_allowed_assert_);
+  i::NoThrowOnJavascriptExecution::Close(i_isolate,
+                                         was_execution_allowed_throws_);
+  i::NoDumpOnJavascriptExecution::Close(i_isolate, was_execution_allowed_dump_);
 }
 
 Isolate::SuppressMicrotaskExecutionScope::SuppressMicrotaskExecutionScope(
@@ -10823,6 +10831,9 @@ const CpuProfileNode* CpuProfile::GetSample(int index) const {
   return reinterpret_cast<const CpuProfileNode*>(profile->sample(index).node);
 }
 
+const int CpuProfileNode::kNoLineNumberInfo;
+const int CpuProfileNode::kNoColumnNumberInfo;
+
 int64_t CpuProfile::GetSampleTimestamp(int index) const {
   const i::CpuProfile* profile = reinterpret_cast<const i::CpuProfile*>(this);
   return profile->sample(index).timestamp.since_origin().InMicroseconds();
@@ -11312,12 +11323,9 @@ RegisterState::RegisterState()
     : pc(nullptr), sp(nullptr), fp(nullptr), lr(nullptr) {}
 RegisterState::~RegisterState() = default;
 
-RegisterState::RegisterState(const RegisterState& other) V8_NOEXCEPT {
-  *this = other;
-}
+RegisterState::RegisterState(const RegisterState& other) { *this = other; }
 
-RegisterState& RegisterState::operator=(const RegisterState& other)
-    V8_NOEXCEPT {
+RegisterState& RegisterState::operator=(const RegisterState& other) {
   if (&other != this) {
     pc = other.pc;
     sp = other.sp;
