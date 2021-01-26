@@ -229,8 +229,10 @@ TEST(GetObjectProperties) {
   {
     heap_addresses.read_only_space_first_page = 0;
     uintptr_t map_ptr = props->properties[0]->address;
-    uintptr_t map_map_ptr =
-        (*reinterpret_cast<MapWord*>(map_ptr)).ToMap().ptr();
+    uintptr_t map_map_ptr = *reinterpret_cast<i::Tagged_t*>(map_ptr);
+#if V8_MAP_PACKING
+    map_map_ptr = reinterpret_cast<i::MapWord*>(&map_map_ptr)->ToMap().ptr();
+#endif
     uintptr_t map_address =
         d::GetObjectProperties(map_map_ptr, &ReadMemory, heap_addresses)
             ->properties[0]
@@ -338,9 +340,11 @@ TEST(GetObjectProperties) {
   // Verify the result for a heap object field which is itself a struct: the
   // "descriptors" field on a DescriptorArray.
   // Start by getting the object's map and the map's descriptor array.
-  props =
-      d::GetObjectProperties(ReadProp<i::MapWord>(*props, "map").ToMap().ptr(),
-                             &ReadMemory, heap_addresses);
+  uintptr_t map_ptr = ReadProp<i::Tagged_t>(*props, "map");
+#if V8_MAP_PACKING
+    map_ptr = reinterpret_cast<i::MapWord*>(&map_ptr)->ToMap().ptr();
+#endif
+  props = d::GetObjectProperties(map_ptr, &ReadMemory, heap_addresses);
   props = d::GetObjectProperties(
       ReadProp<i::Tagged_t>(*props, "instance_descriptors"), &ReadMemory,
       heap_addresses);
