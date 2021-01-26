@@ -536,13 +536,13 @@ TNode<Map> GraphAssembler::UnpackMapWord(Node* map_word) {
   map_word = BitcastTaggedToWordForTagAndSmiBits(map_word);
   // TODO(wenyuzhao): Clear header metadata.
   Node* map = WordXor(map_word, IntPtrConstant(Internals::kMapWordXorMask));
-  return TNode<Map>::UncheckedCast(BitcastWordToTagged(map));
+  return TNode<Map>::UncheckedCast(BitcastWordToTaggedSigned(map));
 }
 
 Node* GraphAssembler::PackMapWord(TNode<Map> map) {
   Node* map_word = BitcastTaggedToWordForTagAndSmiBits(map);
   Node* packed = WordXor(map_word, IntPtrConstant(Internals::kMapWordXorMask));
-  return packed;
+  return BitcastWordToTaggedSigned(packed);
 }
 #endif
 
