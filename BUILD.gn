@@ -296,7 +296,7 @@ declare_args() {
   v8_enable_webassembly = true
 
   # Enable map packing & unpacking (sets -dV8_MAP_PACKING).
-  v8_enable_map_packing = true
+  v8_enable_map_packing = false
 }
 
 # Derived defaults.
