@@ -1700,8 +1700,8 @@ Node* JSCreateLowering::AllocateFastLiteral(Node* effect, Node* control,
   int const boilerplate_length = boilerplate_map.GetInObjectProperties();
   for (int index = static_cast<int>(inobject_fields.size());
        index < boilerplate_length; ++index) {
-    FieldAccess access =
-        AccessBuilder::ForJSObjectInObjectProperty(boilerplate_map, index);
+    FieldAccess access = AccessBuilder::ForJSObjectInObjectProperty(
+        boilerplate_map, index, MachineType::Pointer());
     Node* value = jsgraph()->Constant(ReadOnlyRoots(jsgraph()->isolate())
                                           .one_pointer_filler_map_word()
                                           .ptr());
