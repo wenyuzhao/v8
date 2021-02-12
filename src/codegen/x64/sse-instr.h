@@ -135,8 +135,7 @@
   V(subsd, F2, 0F, 5C)              \
   V(minsd, F2, 0F, 5D)              \
   V(divsd, F2, 0F, 5E)              \
-  V(maxsd, F2, 0F, 5F)              \
-  V(cvtdq2pd, F3, 0F, E6)
+  V(maxsd, F2, 0F, 5F)
 
 #define SSSE3_INSTRUCTION_LIST(V) \
   V(pshufb, 66, 0F, 38, 00)       \
@@ -172,9 +171,11 @@
 #define SSE4_UNOP_INSTRUCTION_LIST(V) \
   V(ptest, 66, 0F, 38, 17)            \
   V(pmovsxbw, 66, 0F, 38, 20)         \
+  V(pmovsxbd, 66, 0F, 38, 21)         \
   V(pmovsxwd, 66, 0F, 38, 23)         \
   V(pmovsxdq, 66, 0F, 38, 25)         \
   V(pmovzxbw, 66, 0F, 38, 30)         \
+  V(pmovzxbd, 66, 0F, 38, 31)         \
   V(pmovzxwd, 66, 0F, 38, 33)         \
   V(pmovzxdq, 66, 0F, 38, 35)
 

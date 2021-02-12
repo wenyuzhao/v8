@@ -9,7 +9,9 @@
 #include <numeric>
 
 #include "include/cppgc/allocation.h"
+#include "include/cppgc/heap-consistency.h"
 #include "include/cppgc/persistent.h"
+#include "include/cppgc/prefinalizer.h"
 #include "src/heap/cppgc/globals.h"
 #include "test/unittests/heap/cppgc/tests.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -95,7 +97,7 @@ TEST_F(GCHeapTest, ObjectPayloadSize) {
   Heap::From(GetHeap())->CollectGarbage(
       GarbageCollector::Config::ConservativeAtomicConfig());
 
-  Heap::NoGCScope no_gc_scope(*Heap::From(GetHeap()));
+  subtle::NoGarbageCollectionScope no_gc(*Heap::From(GetHeap()));
 
   for (size_t k = 0; k < kNumberOfObjectsPerArena; ++k) {
     MakeGarbageCollected<GCed<kObjectSizes[0]>>(GetAllocationHandle());
@@ -154,6 +156,96 @@ TEST_F(GCHeapTest, AllocatedSizeDependOnAdditionalBytes) {
             HeapObjectHeader::FromPayload(object_with_bytes).GetSize());
   EXPECT_LT(HeapObjectHeader::FromPayload(object_with_bytes).GetSize(),
             HeapObjectHeader::FromPayload(object_with_more_bytes).GetSize());
+}
+
+TEST_F(GCHeapTest, Epoch) {
+  const size_t epoch_before = internal::Heap::From(GetHeap())->epoch();
+  PreciseGC();
+  const size_t epoch_after_gc = internal::Heap::From(GetHeap())->epoch();
+  EXPECT_EQ(epoch_after_gc, epoch_before + 1);
+}
+
+TEST_F(GCHeapTest, NoGarbageCollectionScope) {
+  const size_t epoch_before = internal::Heap::From(GetHeap())->epoch();
+  {
+    subtle::NoGarbageCollectionScope scope(GetHeap()->GetHeapHandle());
+    PreciseGC();
+  }
+  const size_t epoch_after_gc = internal::Heap::From(GetHeap())->epoch();
+  EXPECT_EQ(epoch_after_gc, epoch_before);
+}
+
+TEST_F(GCHeapTest, IsGarbageCollectionAllowed) {
+  EXPECT_TRUE(
+      subtle::DisallowGarbageCollectionScope::IsGarbageCollectionAllowed(
+          GetHeap()->GetHeapHandle()));
+  {
+    subtle::DisallowGarbageCollectionScope disallow_gc(*Heap::From(GetHeap()));
+    EXPECT_FALSE(
+        subtle::DisallowGarbageCollectionScope::IsGarbageCollectionAllowed(
+            GetHeap()->GetHeapHandle()));
+  }
+}
+
+TEST_F(GCHeapTest, IsMarking) {
+  GarbageCollector::Config config = GarbageCollector::Config::
+      PreciseIncrementalMarkingConcurrentSweepingConfig();
+  auto* heap = Heap::From(GetHeap());
+  EXPECT_FALSE(subtle::HeapState::IsMarking(*heap));
+  heap->StartIncrementalGarbageCollection(config);
+  EXPECT_TRUE(subtle::HeapState::IsMarking(*heap));
+  heap->FinalizeIncrementalGarbageCollectionIfRunning(config);
+  EXPECT_FALSE(subtle::HeapState::IsMarking(*heap));
+  heap->AsBase().sweeper().FinishIfRunning();
+  EXPECT_FALSE(subtle::HeapState::IsMarking(*heap));
+}
+
+TEST_F(GCHeapTest, IsSweeping) {
+  GarbageCollector::Config config = GarbageCollector::Config::
+      PreciseIncrementalMarkingConcurrentSweepingConfig();
+  auto* heap = Heap::From(GetHeap());
+  EXPECT_FALSE(subtle::HeapState::IsSweeping(*heap));
+  heap->StartIncrementalGarbageCollection(config);
+  EXPECT_FALSE(subtle::HeapState::IsSweeping(*heap));
+  heap->FinalizeIncrementalGarbageCollectionIfRunning(config);
+  EXPECT_TRUE(subtle::HeapState::IsSweeping(*heap));
+  heap->AsBase().sweeper().FinishIfRunning();
+  EXPECT_FALSE(subtle::HeapState::IsSweeping(*heap));
+}
+
+namespace {
+
+class ExpectAtomicPause final : public GarbageCollected<ExpectAtomicPause> {
+  CPPGC_USING_PRE_FINALIZER(ExpectAtomicPause, PreFinalizer);
+
+ public:
+  explicit ExpectAtomicPause(HeapHandle& handle) : handle_(handle) {}
+  ~ExpectAtomicPause() {
+    EXPECT_TRUE(subtle::HeapState::IsInAtomicPause(handle_));
+  }
+  void PreFinalizer() {
+    EXPECT_TRUE(subtle::HeapState::IsInAtomicPause(handle_));
+  }
+  void Trace(Visitor*) const {}
+
+ private:
+  HeapHandle& handle_;
+};
+
+}  // namespace
+
+TEST_F(GCHeapTest, IsInAtomicPause) {
+  GarbageCollector::Config config =
+      GarbageCollector::Config::PreciseIncrementalConfig();
+  auto* heap = Heap::From(GetHeap());
+  MakeGarbageCollected<ExpectAtomicPause>(heap->object_allocator(), *heap);
+  EXPECT_FALSE(subtle::HeapState::IsInAtomicPause(*heap));
+  heap->StartIncrementalGarbageCollection(config);
+  EXPECT_FALSE(subtle::HeapState::IsInAtomicPause(*heap));
+  heap->FinalizeIncrementalGarbageCollectionIfRunning(config);
+  EXPECT_FALSE(subtle::HeapState::IsInAtomicPause(*heap));
+  heap->AsBase().sweeper().FinishIfRunning();
+  EXPECT_FALSE(subtle::HeapState::IsInAtomicPause(*heap));
 }
 
 TEST_F(GCHeapTest, TerminateEmptyHeap) { Heap::From(GetHeap())->Terminate(); }

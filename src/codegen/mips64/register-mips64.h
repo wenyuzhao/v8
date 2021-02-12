@@ -203,7 +203,12 @@ int ToNumber(Register reg);
 
 Register ToRegister(int num);
 
-constexpr bool kPadArguments = false;
+// Returns the number of padding slots needed for stack pointer alignment.
+constexpr int ArgumentPaddingSlots(int argument_count) {
+  // No argument padding required.
+  return 0;
+}
+
 constexpr bool kSimpleFPAliasing = true;
 constexpr bool kSimdMaskRegisters = false;
 
@@ -368,7 +373,7 @@ constexpr Register kReturnRegister2 = a0;
 constexpr Register kJSFunctionRegister = a1;
 constexpr Register kContextRegister = s7;
 constexpr Register kAllocateSizeRegister = a0;
-constexpr Register kSpeculationPoisonRegister = t3;
+constexpr Register kSpeculationPoisonRegister = a7;
 constexpr Register kInterpreterAccumulatorRegister = v0;
 constexpr Register kInterpreterBytecodeOffsetRegister = t0;
 constexpr Register kInterpreterBytecodeArrayRegister = t1;

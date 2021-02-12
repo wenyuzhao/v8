@@ -161,7 +161,7 @@ class V8_EXPORT_PRIVATE JSHeapBroker {
   // Gets data only if we have it. However, thin wrappers will be created for
   // smis, read-only objects and never-serialized objects.
   ObjectData* TryGetOrCreateData(
-      Handle<Object>, bool crash_on_error,
+      Handle<Object>, bool crash_on_error = false,
       ObjectRef::BackgroundSerialization background_serialization =
           ObjectRef::BackgroundSerialization::kDisallowed);
 
@@ -463,8 +463,6 @@ class OffHeapBytecodeArray final : public interpreter::AbstractBytecodeArray {
 
   int length() const override;
   int parameter_count() const override;
-  uint8_t get(int index) const override;
-  void set(int index, uint8_t value) override;
   Address GetFirstBytecodeAddress() const override;
   Handle<Object> GetConstantAtIndex(int index, Isolate* isolate) const override;
   bool IsConstantAtIndexSmi(int index) const override;

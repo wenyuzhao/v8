@@ -368,6 +368,12 @@ void Generate_JSEntryVariant(MacroAssembler* masm, StackFrame::Type type,
       IsolateAddressId::kCEntryFPAddress, masm->isolate());
   __ push(__ ExternalReferenceAsOperand(c_entry_fp, edi));
 
+  // Clear c_entry_fp, now we've pushed its previous value to the stack.
+  // If the c_entry_fp is not already zero and we don't clear it, the
+  // SafeStackFrameIterator will assume we are executing C++ and miss the JS
+  // frames on top.
+  __ mov(__ ExternalReferenceAsOperand(c_entry_fp, edi), Immediate(0));
+
   // Store the context address in the previously-reserved slot.
   ExternalReference context_address = ExternalReference::Create(
       IsolateAddressId::kContextAddress, masm->isolate());
@@ -874,13 +880,13 @@ static void AdvanceBytecodeOffsetOrReturn(MacroAssembler* masm,
 
   // Load the next bytecode and update table to the wide scaled table.
   __ add(bytecode_size_table,
-         Immediate(kIntSize * interpreter::Bytecodes::kBytecodeCount));
+         Immediate(kByteSize * interpreter::Bytecodes::kBytecodeCount));
   __ jmp(&process_bytecode, Label::kNear);
 
   __ bind(&extra_wide);
   // Update table to the extra wide scaled table.
   __ add(bytecode_size_table,
-         Immediate(2 * kIntSize * interpreter::Bytecodes::kBytecodeCount));
+         Immediate(2 * kByteSize * interpreter::Bytecodes::kBytecodeCount));
 
   __ bind(&process_bytecode);
 
@@ -906,8 +912,9 @@ static void AdvanceBytecodeOffsetOrReturn(MacroAssembler* masm,
 
   __ bind(&not_jump_loop);
   // Otherwise, load the size of the current bytecode and advance the offset.
-  __ add(bytecode_offset,
-         Operand(bytecode_size_table, bytecode, times_int_size, 0));
+  __ movzx_b(bytecode_size_table,
+             Operand(bytecode_size_table, bytecode, times_1, 0));
+  __ add(bytecode_offset, bytecode_size_table);
 
   __ bind(&end);
 }
@@ -2534,7 +2541,7 @@ void Builtins::Generate_WasmCompileLazy(MacroAssembler* masm) {
     HardAbortScope hard_abort(masm);  // Avoid calls to Abort.
     FrameScope scope(masm, StackFrame::WASM_COMPILE_LAZY);
 
-    // Save all parameter registers (see wasm-linkage.cc). They might be
+    // Save all parameter registers (see wasm-linkage.h). They might be
     // overwritten in the runtime call below. We don't have any callee-saved
     // registers in wasm, so no need to store anything else.
     static_assert(WasmCompileLazyFrameConstants::kNumberOfSavedGpParamRegs ==
@@ -2757,6 +2764,11 @@ void Builtins::Generate_CEntry(MacroAssembler* masm, int result_size,
   __ j(zero, &skip, Label::kNear);
   __ mov(Operand(ebp, StandardFrameConstants::kContextOffset), esi);
   __ bind(&skip);
+
+  // Clear c_entry_fp, like we do in `LeaveExitFrame`.
+  ExternalReference c_entry_fp_address = ExternalReference::Create(
+      IsolateAddressId::kCEntryFPAddress, masm->isolate());
+  __ mov(__ ExternalReferenceAsOperand(c_entry_fp_address, esi), Immediate(0));
 
   // Compute the handler entry address and jump to it.
   __ mov(edi, __ ExternalReferenceAsOperand(pending_handler_entrypoint_address,

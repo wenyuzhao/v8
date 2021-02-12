@@ -206,6 +206,7 @@ namespace compiler {
   V(X64F32x4DemoteF64x2Zero)              \
   V(X64I64x2Splat)                        \
   V(X64I64x2ExtractLane)                  \
+  V(X64I64x2Abs)                          \
   V(X64I64x2Neg)                          \
   V(X64I64x2BitMask)                      \
   V(X64I64x2Shl)                          \
@@ -214,6 +215,9 @@ namespace compiler {
   V(X64I64x2Sub)                          \
   V(X64I64x2Mul)                          \
   V(X64I64x2Eq)                           \
+  V(X64I64x2GtS)                          \
+  V(X64I64x2GeS)                          \
+  V(X64I64x2Ne)                           \
   V(X64I64x2ShrU)                         \
   V(X64I64x2SignSelect)                   \
   V(X64I64x2ExtMulLowI32x4S)              \
@@ -262,6 +266,8 @@ namespace compiler {
   V(X64I32x4ExtAddPairwiseI16x8U)         \
   V(X64I32x4TruncSatF64x2SZero)           \
   V(X64I32x4TruncSatF64x2UZero)           \
+  V(X64I32x4WidenI8x16S)                  \
+  V(X64I32x4WidenI8x16U)                  \
   V(X64I16x8Splat)                        \
   V(X64I16x8ExtractLaneS)                 \
   V(X64I16x8SConvertI8x16Low)             \
@@ -389,11 +395,10 @@ namespace compiler {
   V(X64S8x8Reverse)                       \
   V(X64S8x4Reverse)                       \
   V(X64S8x2Reverse)                       \
-  V(X64V32x4AnyTrue)                      \
+  V(X64V128AnyTrue)                       \
+  V(X64V64x2AllTrue)                      \
   V(X64V32x4AllTrue)                      \
-  V(X64V16x8AnyTrue)                      \
   V(X64V16x8AllTrue)                      \
-  V(X64V8x16AnyTrue)                      \
   V(X64V8x16AllTrue)                      \
   V(X64Prefetch)                          \
   V(X64PrefetchNta)                       \

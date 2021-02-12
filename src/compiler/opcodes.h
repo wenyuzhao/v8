@@ -196,7 +196,8 @@
   V(JSCall)                \
   V(JSCallForwardVarargs)  \
   V(JSCallWithArrayLike)   \
-  V(JSCallWithSpread)
+  V(JSCallWithSpread)      \
+  V(JSWasmCall)
 
 #define JS_CONSTRUCT_OP_LIST(V) \
   V(JSConstructForwardVarargs)  \
@@ -822,6 +823,7 @@
   V(I64x2ExtractLane)           \
   V(I64x2ReplaceLane)           \
   V(I64x2ReplaceLaneI32Pair)    \
+  V(I64x2Abs)                   \
   V(I64x2Neg)                   \
   V(I64x2SConvertI32x4Low)      \
   V(I64x2SConvertI32x4High)     \
@@ -834,6 +836,9 @@
   V(I64x2Sub)                   \
   V(I64x2Mul)                   \
   V(I64x2Eq)                    \
+  V(I64x2Ne)                    \
+  V(I64x2GtS)                   \
+  V(I64x2GeS)                   \
   V(I64x2ShrU)                  \
   V(I64x2ExtMulLowI32x4S)       \
   V(I64x2ExtMulHighI32x4S)      \
@@ -883,6 +888,8 @@
   V(I32x4ExtAddPairwiseI16x8U)  \
   V(I32x4TruncSatF64x2SZero)    \
   V(I32x4TruncSatF64x2UZero)    \
+  V(I32x4WidenI8x16S)           \
+  V(I32x4WidenI8x16U)           \
   V(I16x8Splat)                 \
   V(I16x8ExtractLaneU)          \
   V(I16x8ExtractLaneS)          \
@@ -978,11 +985,10 @@
   V(S128AndNot)                 \
   V(I8x16Swizzle)               \
   V(I8x16Shuffle)               \
-  V(V32x4AnyTrue)               \
+  V(V128AnyTrue)                \
+  V(V64x2AllTrue)               \
   V(V32x4AllTrue)               \
-  V(V16x8AnyTrue)               \
   V(V16x8AllTrue)               \
-  V(V8x16AnyTrue)               \
   V(V8x16AllTrue)               \
   V(LoadTransform)              \
   V(PrefetchTemporal)           \

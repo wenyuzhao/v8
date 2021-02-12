@@ -162,7 +162,6 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   AVX_OP(Addss, addss)
   AVX_OP(Addsd, addsd)
   AVX_OP(Mulsd, mulsd)
-  AVX_OP(Unpcklps, unpcklps)
   AVX_OP(Andps, andps)
   AVX_OP(Andnps, andnps)
   AVX_OP(Andpd, andpd)
@@ -285,9 +284,11 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   AVX_OP_SSE4_1(Pblendw, pblendw)
   AVX_OP_SSE4_1(Ptest, ptest)
   AVX_OP_SSE4_1(Pmovsxbw, pmovsxbw)
+  AVX_OP_SSE4_1(Pmovsxbd, pmovsxbd)
   AVX_OP_SSE4_1(Pmovsxwd, pmovsxwd)
   AVX_OP_SSE4_1(Pmovsxdq, pmovsxdq)
   AVX_OP_SSE4_1(Pmovzxbw, pmovzxbw)
+  AVX_OP_SSE4_1(Pmovzxbd, pmovzxbd)
   AVX_OP_SSE4_1(Pmovzxwd, pmovzxwd)
   AVX_OP_SSE4_1(Pmovzxdq, pmovzxdq)
   AVX_OP_SSE4_1(Pextrb, pextrb)
@@ -359,6 +360,7 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
                      Label::Distance condition_met_distance = Label::kFar);
 
   void Movapd(XMMRegister dst, XMMRegister src);
+  void Movdqa(XMMRegister dst, Operand src);
   void Movdqa(XMMRegister dst, XMMRegister src);
 
   template <typename Dst, typename Src>
@@ -538,9 +540,12 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   void DebugBreak() override;
 
   // Supports both AVX (dst != src1) and SSE (checks that dst == src1).
+  void Pmaddwd(XMMRegister dst, XMMRegister src1, Operand src2);
   void Pmaddwd(XMMRegister dst, XMMRegister src1, XMMRegister src2);
+  void Pmaddubsw(XMMRegister dst, XMMRegister src1, Operand src2);
   void Pmaddubsw(XMMRegister dst, XMMRegister src1, XMMRegister src2);
 
+  void Unpcklps(XMMRegister dst, XMMRegister src1, Operand src2);
   // Shufps that will mov src1 into dst if AVX is not supported.
   void Shufps(XMMRegister dst, XMMRegister src1, XMMRegister src2, byte imm8);
 
@@ -577,6 +582,7 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
 
   // Supports both SSE and AVX. Move src1 to dst if they are not equal on SSE.
   void Pshufb(XMMRegister dst, XMMRegister src1, XMMRegister src2);
+  void Pshufb(XMMRegister dst, XMMRegister src1, Operand src2);
   void Pmulhrsw(XMMRegister dst, XMMRegister src1, XMMRegister src2);
 
   // These Wasm SIMD ops do not have direct lowerings on x64. These
@@ -605,6 +611,12 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
 
   void S128Store32Lane(Operand dst, XMMRegister src, uint8_t laneidx);
   void S128Store64Lane(Operand dst, XMMRegister src, uint8_t laneidx);
+
+  void I8x16Popcnt(XMMRegister dst, XMMRegister src, XMMRegister tmp);
+
+  void F64x2ConvertLowI32x4U(XMMRegister dst, XMMRegister src);
+  void I32x4TruncSatF64x2SZero(XMMRegister dst, XMMRegister src);
+  void I32x4TruncSatF64x2UZero(XMMRegister dst, XMMRegister src);
 
   void Abspd(XMMRegister dst);
   void Negpd(XMMRegister dst);
@@ -655,7 +667,11 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   void AllocateStackSpace(int bytes);
 #else
   void AllocateStackSpace(Register bytes) { subq(rsp, bytes); }
-  void AllocateStackSpace(int bytes) { subq(rsp, Immediate(bytes)); }
+  void AllocateStackSpace(int bytes) {
+    DCHECK_GE(bytes, 0);
+    if (bytes == 0) return;
+    subq(rsp, Immediate(bytes));
+  }
 #endif
 
   // Removes current frame and its arguments from the stack preserving the

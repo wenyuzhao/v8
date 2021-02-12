@@ -250,6 +250,7 @@ class EffectControlLinearizer {
   Node* CallBuiltin(Builtins::Name builtin, Operator::Properties properties,
                     Args...);
 
+  Node* ChangeBitToTagged(Node* value);
   Node* ChangeInt32ToSmi(Node* value);
   // In pointer compression, we smi-corrupt. This means the upper bits of a Smi
   // are not important. ChangeTaggedInt32ToSmi has a known tagged int32 as input
@@ -258,11 +259,13 @@ class EffectControlLinearizer {
   // In non pointer compression, it behaves like ChangeInt32ToSmi.
   Node* ChangeTaggedInt32ToSmi(Node* value);
   Node* ChangeInt32ToIntPtr(Node* value);
+  Node* ChangeInt32ToTagged(Node* value);
   Node* ChangeInt64ToSmi(Node* value);
   Node* ChangeIntPtrToInt32(Node* value);
   Node* ChangeIntPtrToSmi(Node* value);
   Node* ChangeUint32ToUintPtr(Node* value);
   Node* ChangeUint32ToSmi(Node* value);
+  Node* ChangeUint32ToTagged(Node* value);
   Node* ChangeSmiToIntPtr(Node* value);
   Node* ChangeSmiToInt32(Node* value);
   Node* ChangeSmiToInt64(Node* value);
@@ -1434,7 +1437,10 @@ Node* EffectControlLinearizer::LowerChangeFloat64ToTaggedPointer(Node* node) {
 
 Node* EffectControlLinearizer::LowerChangeBitToTagged(Node* node) {
   Node* value = node->InputAt(0);
+  return ChangeBitToTagged(value);
+}
 
+Node* EffectControlLinearizer::ChangeBitToTagged(Node* value) {
   auto if_true = __ MakeLabel();
   auto done = __ MakeLabel(MachineRepresentation::kTagged);
 
@@ -1455,7 +1461,10 @@ Node* EffectControlLinearizer::LowerChangeInt31ToTaggedSigned(Node* node) {
 
 Node* EffectControlLinearizer::LowerChangeInt32ToTagged(Node* node) {
   Node* value = node->InputAt(0);
+  return ChangeInt32ToTagged(value);
+}
 
+Node* EffectControlLinearizer::ChangeInt32ToTagged(Node* value) {
   if (SmiValuesAre32Bits()) {
     return ChangeInt32ToSmi(value);
   }
@@ -1501,7 +1510,10 @@ Node* EffectControlLinearizer::LowerChangeInt64ToTagged(Node* node) {
 
 Node* EffectControlLinearizer::LowerChangeUint32ToTagged(Node* node) {
   Node* value = node->InputAt(0);
+  return ChangeUint32ToTagged(value);
+}
 
+Node* EffectControlLinearizer::ChangeUint32ToTagged(Node* value) {
   auto if_not_in_smi_range = __ MakeDeferredLabel();
   auto done = __ MakeLabel(MachineRepresentation::kTagged);
 
@@ -4960,7 +4972,6 @@ void EffectControlLinearizer::LowerStoreMessage(Node* node) {
   __ StoreField(AccessBuilder::ForExternalIntPtr(), offset, object_pattern);
 }
 
-// TODO(mslekova): Avoid code duplication with simplified lowering.
 static MachineType MachineTypeFor(CTypeInfo::Type type) {
   switch (type) {
     case CTypeInfo::Type::kVoid:
@@ -5022,7 +5033,7 @@ Node* EffectControlLinearizer::LowerFastApiCall(Node* node) {
   }
 
   MachineSignature::Builder builder(
-      graph()->zone(), 1, c_arg_count + FastApiCallNode::kHasOptionsInputCount);
+      graph()->zone(), 1, c_arg_count + (c_signature->HasOptions() ? 1 : 0));
   MachineType return_type = MachineTypeFor(c_signature->ReturnInfo().GetType());
   builder.AddReturn(return_type);
   for (int i = 0; i < c_arg_count; ++i) {
@@ -5030,7 +5041,9 @@ Node* EffectControlLinearizer::LowerFastApiCall(Node* node) {
         MachineTypeFor(c_signature->ArgumentInfo(i).GetType());
     builder.AddParam(machine_type);
   }
-  builder.AddParam(MachineType::Pointer());  // fast_api_call_stack_slot_
+  if (c_signature->HasOptions()) {
+    builder.AddParam(MachineType::Pointer());  // fast_api_call_stack_slot_
+  }
 
   CallDescriptor* call_descriptor =
       Linkage::GetSimplifiedCDescriptor(graph()->zone(), builder.Build());
@@ -5045,7 +5058,7 @@ Node* EffectControlLinearizer::LowerFastApiCall(Node* node) {
            target_address, 0, n.target());
 
   Node** const inputs = graph()->zone()->NewArray<Node*>(
-      c_arg_count + FastApiCallNode::kFastCallExtraInputCount);
+      c_arg_count + n.FastCallExtraInputCount());
   inputs[0] = n.target();
   for (int i = FastApiCallNode::kFastTargetInputCount;
        i < c_arg_count + FastApiCallNode::kFastTargetInputCount; ++i) {
@@ -5057,66 +5070,87 @@ Node* EffectControlLinearizer::LowerFastApiCall(Node* node) {
       inputs[i] = NodeProperties::GetValueInput(node, i);
     }
   }
-  inputs[c_arg_count + 1] = fast_api_call_stack_slot_;
+  if (c_signature->HasOptions()) {
+    inputs[c_arg_count + 1] = fast_api_call_stack_slot_;
+    inputs[c_arg_count + 2] = __ effect();
+    inputs[c_arg_count + 3] = __ control();
+  } else {
+    inputs[c_arg_count + 1] = __ effect();
+    inputs[c_arg_count + 2] = __ control();
+  }
 
-  inputs[c_arg_count + 2] = __ effect();
-  inputs[c_arg_count + 3] = __ control();
-
-  __ Call(call_descriptor,
-          c_arg_count + FastApiCallNode::kFastCallExtraInputCount, inputs);
+  Node* c_call_result = __ Call(
+      call_descriptor, c_arg_count + n.FastCallExtraInputCount(), inputs);
 
   __ Store(StoreRepresentation(MachineType::PointerRepresentation(),
                                kNoWriteBarrier),
            target_address, 0, __ IntPtrConstant(0));
 
-  if (c_signature->HasOptions()) {
-    // Generate the load from `fast_api_call_stack_slot_`.
-    Node* load = __ Load(
-        MachineType::Int32(), fast_api_call_stack_slot_,
-        static_cast<int>(offsetof(v8::FastApiCallbackOptions, fallback)));
-
-    TNode<Boolean> cond = TNode<Boolean>::UncheckedCast(
-        __ Word32Equal(load, __ Int32Constant(0)));
-    // Hint to true.
-    auto if_success = __ MakeLabel();
-    auto if_error = __ MakeDeferredLabel();
-    auto merge = __ MakeLabel(MachineRepresentation::kTagged);
-    __ Branch(cond, &if_success, &if_error);
-
-    // Generate fast call.
-    __ Bind(&if_success);
-    Node* then_result = [&]() { return __ UndefinedConstant(); }();
-    __ Goto(&merge, then_result);
-
-    // Generate direct slow call.
-    __ Bind(&if_error);
-    Node* else_result = [&]() {
-      Node** const slow_inputs = graph()->zone()->NewArray<Node*>(
-          n.SlowCallArgumentCount() +
-          FastApiCallNode::kEffectAndControlInputCount);
-
-      int fast_call_params =
-          c_arg_count + FastApiCallNode::kFastTargetInputCount;
-      CHECK_EQ(value_input_count - fast_call_params, n.SlowCallArgumentCount());
-      int index = 0;
-      for (; index < n.SlowCallArgumentCount(); ++index) {
-        slow_inputs[index] = n.SlowCallArgument(index);
-      }
-
-      slow_inputs[index] = __ effect();
-      slow_inputs[index + 1] = __ control();
-      Node* slow_call = __ Call(
-          params.descriptor(),
-          index + FastApiCallNode::kEffectAndControlInputCount, slow_inputs);
-      return slow_call;
-    }();
-    __ Goto(&merge, else_result);
-
-    __ Bind(&merge);
-    return merge.PhiAt(0);
+  Node* fast_call_result;
+  switch (c_signature->ReturnInfo().GetType()) {
+    case CTypeInfo::Type::kVoid:
+      fast_call_result = __ UndefinedConstant();
+      break;
+    case CTypeInfo::Type::kBool:
+      static_assert(sizeof(bool) == 1, "unsupported bool size");
+      fast_call_result = ChangeBitToTagged(
+          __ Word32And(c_call_result, __ Int32Constant(0xFF)));
+      break;
+    case CTypeInfo::Type::kInt32:
+      fast_call_result = ChangeInt32ToTagged(c_call_result);
+      break;
+    case CTypeInfo::Type::kUint32:
+      fast_call_result = ChangeUint32ToTagged(c_call_result);
+      break;
+    case CTypeInfo::Type::kInt64:
+    case CTypeInfo::Type::kUint64:
+    case CTypeInfo::Type::kFloat32:
+    case CTypeInfo::Type::kFloat64:
+    case CTypeInfo::Type::kV8Value:
+      UNREACHABLE();
   }
 
-  return __ UndefinedConstant();
+  if (!c_signature->HasOptions()) return fast_call_result;
+
+  // Generate the load from `fast_api_call_stack_slot_`.
+  Node* load =
+      __ Load(MachineType::Int32(), fast_api_call_stack_slot_,
+              static_cast<int>(offsetof(v8::FastApiCallbackOptions, fallback)));
+
+  Node* is_zero = __ Word32Equal(load, __ Int32Constant(0));
+  // Hint to true.
+  auto if_success = __ MakeLabel();
+  auto if_error = __ MakeDeferredLabel();
+  auto merge = __ MakeLabel(MachineRepresentation::kTagged);
+  __ Branch(is_zero, &if_success, &if_error);
+
+  __ Bind(&if_success);
+  __ Goto(&merge, fast_call_result);
+
+  // Generate direct slow call.
+  __ Bind(&if_error);
+  {
+    Node** const slow_inputs = graph()->zone()->NewArray<Node*>(
+        n.SlowCallArgumentCount() +
+        FastApiCallNode::kEffectAndControlInputCount);
+
+    int fast_call_params = c_arg_count + FastApiCallNode::kFastTargetInputCount;
+    CHECK_EQ(value_input_count - fast_call_params, n.SlowCallArgumentCount());
+    int index = 0;
+    for (; index < n.SlowCallArgumentCount(); ++index) {
+      slow_inputs[index] = n.SlowCallArgument(index);
+    }
+
+    slow_inputs[index] = __ effect();
+    slow_inputs[index + 1] = __ control();
+    Node* slow_call_result = __ Call(
+        params.descriptor(),
+        index + FastApiCallNode::kEffectAndControlInputCount, slow_inputs);
+    __ Goto(&merge, slow_call_result);
+  }
+
+  __ Bind(&merge);
+  return merge.PhiAt(0);
 }
 
 Node* EffectControlLinearizer::LowerLoadFieldByIndex(Node* node) {
@@ -5186,13 +5220,8 @@ Node* EffectControlLinearizer::LowerLoadFieldByIndex(Node* node) {
       Node* offset =
           __ IntAdd(__ WordShl(index, __ IntPtrConstant(kTaggedSizeLog2)),
                     __ IntPtrConstant(JSObject::kHeaderSize - kHeapObjectTag));
-      if (FLAG_unbox_double_fields) {
-        Node* result = __ Load(MachineType::Float64(), object, offset);
-        __ Goto(&done_double, result);
-      } else {
-        Node* field = __ Load(MachineType::AnyTagged(), object, offset);
-        __ Goto(&loaded_field, field);
-      }
+      Node* field = __ Load(MachineType::AnyTagged(), object, offset);
+      __ Goto(&loaded_field, field);
     }
 
     __ Bind(&if_outofobject);

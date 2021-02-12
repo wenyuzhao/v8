@@ -589,9 +589,9 @@ class V8_EXPORT_PRIVATE Scope : public NON_EXPORTED_BASE(ZoneObject) {
     return deserialized_scope_uses_external_cache_;
   }
 
-  bool NeedsHomeObject() const {
-    return is_home_object_scope() &&
-           (needs_home_object_ || inner_scope_calls_eval_);
+  bool needs_home_object() const {
+    DCHECK(is_home_object_scope());
+    return needs_home_object_;
   }
 
   void set_needs_home_object() {
@@ -861,19 +861,13 @@ class V8_EXPORT_PRIVATE DeclarationScope : public Scope {
     DCHECK(IsConciseMethod(function_kind()) ||
            IsAccessorFunction(function_kind()) ||
            IsClassConstructor(function_kind()));
-    scope_uses_super_property_ = true;
+    uses_super_property_ = true;
     Scope* home_object_scope = GetHomeObjectScope();
     DCHECK_NOT_NULL(home_object_scope);
     home_object_scope->set_needs_home_object();
   }
 
-  // Does this scope access "super" property (super.foo).
-  bool UsesSuper() const {
-    return scope_uses_super_property_ ||
-           (inner_scope_calls_eval_ && (IsConciseMethod(function_kind()) ||
-                                        IsAccessorFunction(function_kind()) ||
-                                        IsClassConstructor(function_kind())));
-  }
+  bool uses_super_property() const { return uses_super_property_; }
 
   bool is_arrow_scope() const {
     return is_function_scope() && IsArrowFunction(function_kind_);
@@ -1256,7 +1250,7 @@ class V8_EXPORT_PRIVATE DeclarationScope : public Scope {
   // This scope has a parameter called "arguments".
   bool has_arguments_parameter_ : 1;
   // This scope uses "super" property ('super.foo').
-  bool scope_uses_super_property_ : 1;
+  bool uses_super_property_ : 1;
   bool should_eager_compile_ : 1;
   // Set to true after we have finished lazy parsing the scope.
   bool was_lazily_parsed_ : 1;
@@ -1335,6 +1329,14 @@ void Scope::RecordEvalCall() {
   calls_eval_ = true;
   GetDeclarationScope()->RecordDeclarationScopeEvalCall();
   RecordInnerScopeEvalCall();
+  // The eval contents might access "super" (if it's inside a function that
+  // binds super).
+  DeclarationScope* receiver_scope = GetReceiverScope();
+  DCHECK(!receiver_scope->is_arrow_scope());
+  FunctionKind function_kind = receiver_scope->function_kind();
+  if (BindsSuper(function_kind)) {
+    receiver_scope->RecordSuperPropertyUsage();
+  }
 }
 
 Scope::Snapshot::Snapshot(Scope* scope)

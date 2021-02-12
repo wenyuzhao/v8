@@ -611,6 +611,20 @@ void TurboAssembler::MultiPushDoubles(RegList dregs, Register location) {
   }
 }
 
+void TurboAssembler::MultiPushV128(RegList dregs, Register location) {
+  int16_t num_to_push = base::bits::CountPopulation(dregs);
+  int16_t stack_offset = num_to_push * kSimd128Size;
+
+  SubS64(location, location, Operand(stack_offset));
+  for (int16_t i = Simd128Register::kNumRegisters - 1; i >= 0; i--) {
+    if ((dregs & (1 << i)) != 0) {
+      Simd128Register dreg = Simd128Register::from_code(i);
+      stack_offset -= kSimd128Size;
+      StoreV128(dreg, MemOperand(location, stack_offset), r0);
+    }
+  }
+}
+
 void TurboAssembler::MultiPopDoubles(RegList dregs, Register location) {
   int16_t stack_offset = 0;
 
@@ -619,6 +633,19 @@ void TurboAssembler::MultiPopDoubles(RegList dregs, Register location) {
       DoubleRegister dreg = DoubleRegister::from_code(i);
       LoadF64(dreg, MemOperand(location, stack_offset));
       stack_offset += kDoubleSize;
+    }
+  }
+  AddS64(location, location, Operand(stack_offset));
+}
+
+void TurboAssembler::MultiPopV128(RegList dregs, Register location) {
+  int16_t stack_offset = 0;
+
+  for (int16_t i = 0; i < Simd128Register::kNumRegisters; i++) {
+    if ((dregs & (1 << i)) != 0) {
+      Simd128Register dreg = Simd128Register::from_code(i);
+      LoadV128(dreg, MemOperand(location, stack_offset), r0);
+      stack_offset += kSimd128Size;
     }
   }
   AddS64(location, location, Operand(stack_offset));
@@ -2625,6 +2652,10 @@ void TurboAssembler::AddS64(Register dst, const Operand& opnd) {
     agfi(dst, opnd);
 }
 
+void TurboAssembler::AddS32(Register dst, Register src, int32_t opnd) {
+  AddS32(dst, src, Operand(opnd));
+}
+
 // Add 32-bit (Register dst = Register src + Immediate opnd)
 void TurboAssembler::AddS32(Register dst, Register src, const Operand& opnd) {
   if (dst != src) {
@@ -2635,6 +2666,10 @@ void TurboAssembler::AddS32(Register dst, Register src, const Operand& opnd) {
     lr(dst, src);
   }
   AddS32(dst, opnd);
+}
+
+void TurboAssembler::AddS64(Register dst, Register src, int32_t opnd) {
+  AddS64(dst, src, Operand(opnd));
 }
 
 // Add Pointer Size (Register dst = Register src + Immediate opnd)
@@ -2796,9 +2831,17 @@ void TurboAssembler::SubS64(Register dst, const Operand& imm) {
   AddS64(dst, Operand(-(imm.immediate())));
 }
 
+void TurboAssembler::SubS32(Register dst, Register src, int32_t imm) {
+  SubS32(dst, src, Operand(imm));
+}
+
 // Subtract 32-bit (Register dst = Register src - Immediate opnd)
 void TurboAssembler::SubS32(Register dst, Register src, const Operand& imm) {
   AddS32(dst, src, Operand(-(imm.immediate())));
+}
+
+void TurboAssembler::SubS64(Register dst, Register src, int32_t imm) {
+  SubS64(dst, src, Operand(imm));
 }
 
 // Subtract Pointer Sized (Register dst = Register src - Immediate opnd)
@@ -3937,6 +3980,112 @@ void TurboAssembler::StoreV128(Simd128Register src, const MemOperand& mem,
   }
 }
 
+void TurboAssembler::AddF32(DoubleRegister dst, DoubleRegister lhs,
+                            DoubleRegister rhs) {
+  if (dst == lhs) {
+    aebr(dst, rhs);
+  } else if (dst == rhs) {
+    aebr(dst, lhs);
+  } else {
+    ler(dst, lhs);
+    aebr(dst, rhs);
+  }
+}
+
+void TurboAssembler::SubF32(DoubleRegister dst, DoubleRegister lhs,
+                            DoubleRegister rhs) {
+  if (dst == lhs) {
+    sebr(dst, rhs);
+  } else if (dst == rhs) {
+    sebr(dst, lhs);
+    lcebr(dst, dst);
+  } else {
+    ler(dst, lhs);
+    sebr(dst, rhs);
+  }
+}
+
+void TurboAssembler::MulF32(DoubleRegister dst, DoubleRegister lhs,
+                            DoubleRegister rhs) {
+  if (dst == lhs) {
+    meebr(dst, rhs);
+  } else if (dst == rhs) {
+    meebr(dst, lhs);
+  } else {
+    ler(dst, lhs);
+    meebr(dst, rhs);
+  }
+}
+
+void TurboAssembler::DivF32(DoubleRegister dst, DoubleRegister lhs,
+                            DoubleRegister rhs) {
+  if (dst == lhs) {
+    debr(dst, rhs);
+  } else if (dst == rhs) {
+    lay(sp, MemOperand(sp, -kSystemPointerSize));
+    StoreF32(dst, MemOperand(sp));
+    ler(dst, lhs);
+    deb(dst, MemOperand(sp));
+    la(sp, MemOperand(sp, kSystemPointerSize));
+  } else {
+    ler(dst, lhs);
+    debr(dst, rhs);
+  }
+}
+
+void TurboAssembler::AddF64(DoubleRegister dst, DoubleRegister lhs,
+                            DoubleRegister rhs) {
+  if (dst == lhs) {
+    adbr(dst, rhs);
+  } else if (dst == rhs) {
+    adbr(dst, lhs);
+  } else {
+    ldr(dst, lhs);
+    adbr(dst, rhs);
+  }
+}
+
+void TurboAssembler::SubF64(DoubleRegister dst, DoubleRegister lhs,
+                            DoubleRegister rhs) {
+  if (dst == lhs) {
+    sdbr(dst, rhs);
+  } else if (dst == rhs) {
+    sdbr(dst, lhs);
+    lcdbr(dst, dst);
+  } else {
+    ldr(dst, lhs);
+    sdbr(dst, rhs);
+  }
+}
+
+void TurboAssembler::MulF64(DoubleRegister dst, DoubleRegister lhs,
+                            DoubleRegister rhs) {
+  if (dst == lhs) {
+    mdbr(dst, rhs);
+  } else if (dst == rhs) {
+    mdbr(dst, lhs);
+  } else {
+    ldr(dst, lhs);
+    mdbr(dst, rhs);
+  }
+}
+
+void TurboAssembler::DivF64(DoubleRegister dst, DoubleRegister lhs,
+                            DoubleRegister rhs) {
+  if (dst == lhs) {
+    ddbr(dst, rhs);
+  } else if (dst == rhs) {
+    lay(sp, MemOperand(sp, -kSystemPointerSize));
+    StoreF64(dst, MemOperand(sp));
+    ldr(dst, lhs);
+    ddb(dst, MemOperand(sp));
+    la(sp, MemOperand(sp, kSystemPointerSize));
+  } else {
+    ldr(dst, lhs);
+    ddbr(dst, rhs);
+  }
+}
+
 void TurboAssembler::AddFloat32(DoubleRegister dst, const MemOperand& opnd,
                                 DoubleRegister scratch) {
   if (is_uint12(opnd.offset())) {
@@ -4547,6 +4696,62 @@ void TurboAssembler::CallForDeoptimization(Builtins::Name target, int,
 
 void TurboAssembler::Trap() { stop(); }
 void TurboAssembler::DebugBreak() { stop(); }
+
+void TurboAssembler::CountLeadingZerosU32(Register dst, Register src,
+                                          Register scratch_pair) {
+  llgfr(dst, src);
+  flogr(scratch_pair,
+        dst);  // will modify a register pair scratch and scratch + 1
+  AddS32(dst, scratch_pair, Operand(-32));
+}
+
+void TurboAssembler::CountLeadingZerosU64(Register dst, Register src,
+                                          Register scratch_pair) {
+  flogr(scratch_pair,
+        src);  // will modify a register pair scratch and scratch + 1
+  mov(dst, scratch_pair);
+}
+
+void TurboAssembler::CountTrailingZerosU32(Register dst, Register src,
+                                           Register scratch_pair) {
+  Register scratch0 = scratch_pair;
+  Register scratch1 = Register::from_code(scratch_pair.code() + 1);
+  DCHECK(!AreAliased(dst, scratch0, scratch1));
+  DCHECK(!AreAliased(src, scratch0, scratch1));
+
+  Label done;
+  // Check if src is all zeros.
+  ltr(scratch1, src);
+  mov(dst, Operand(32));
+  beq(&done);
+  llgfr(scratch1, scratch1);
+  lcgr(scratch0, scratch1);
+  ngr(scratch1, scratch0);
+  flogr(scratch0, scratch1);
+  mov(dst, Operand(63));
+  SubS64(dst, scratch0);
+  bind(&done);
+}
+
+void TurboAssembler::CountTrailingZerosU64(Register dst, Register src,
+                                           Register scratch_pair) {
+  Register scratch0 = scratch_pair;
+  Register scratch1 = Register::from_code(scratch_pair.code() + 1);
+  DCHECK(!AreAliased(dst, scratch0, scratch1));
+  DCHECK(!AreAliased(src, scratch0, scratch1));
+
+  Label done;
+  // Check if src is all zeros.
+  ltgr(scratch1, src);
+  mov(dst, Operand(64));
+  beq(&done);
+  lcgr(scratch0, scratch1);
+  ngr(scratch0, scratch1);
+  flogr(scratch0, scratch0);
+  mov(dst, Operand(63));
+  SubS64(dst, scratch0);
+  bind(&done);
+}
 
 }  // namespace internal
 }  // namespace v8

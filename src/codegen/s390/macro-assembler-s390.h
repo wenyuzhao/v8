@@ -147,6 +147,9 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   void MultiPushDoubles(RegList dregs, Register location = sp);
   void MultiPopDoubles(RegList dregs, Register location = sp);
 
+  void MultiPushV128(RegList dregs, Register location = sp);
+  void MultiPopV128(RegList dregs, Register location = sp);
+
   // Calculate how much stack space (in bytes) are required to store caller
   // registers excluding those specified in the arguments.
   int RequiredStackSizeForCallerSaved(SaveFPRegsMode fp_mode,
@@ -181,6 +184,8 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   void AddS64(Register dst, const Operand& imm);
   void AddS32(Register dst, Register src, const Operand& imm);
   void AddS64(Register dst, Register src, const Operand& imm);
+  void AddS32(Register dst, Register src, int32_t imm);
+  void AddS64(Register dst, Register src, int32_t imm);
 
   // Add (Register - Register)
   void AddS32(Register dst, Register src);
@@ -212,6 +217,8 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   void SubS64(Register dst, const Operand& imm);
   void SubS32(Register dst, Register src, const Operand& imm);
   void SubS64(Register dst, Register src, const Operand& imm);
+  void SubS32(Register dst, Register src, int32_t imm);
+  void SubS64(Register dst, Register src, int32_t imm);
 
   // Subtract (Register - Register)
   void SubS32(Register dst, Register src);
@@ -387,6 +394,16 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   void StoreF32LE(DoubleRegister src, const MemOperand& opnd, Register scratch);
   void StoreV128LE(Simd128Register src, const MemOperand& mem,
                    Register scratch1, Register scratch2);
+
+  void AddF32(DoubleRegister dst, DoubleRegister lhs, DoubleRegister rhs);
+  void SubF32(DoubleRegister dst, DoubleRegister lhs, DoubleRegister rhs);
+  void MulF32(DoubleRegister dst, DoubleRegister lhs, DoubleRegister rhs);
+  void DivF32(DoubleRegister dst, DoubleRegister lhs, DoubleRegister rhs);
+
+  void AddF64(DoubleRegister dst, DoubleRegister lhs, DoubleRegister rhs);
+  void SubF64(DoubleRegister dst, DoubleRegister lhs, DoubleRegister rhs);
+  void MulF64(DoubleRegister dst, DoubleRegister lhs, DoubleRegister rhs);
+  void DivF64(DoubleRegister dst, DoubleRegister lhs, DoubleRegister rhs);
 
   void AddFloat32(DoubleRegister dst, const MemOperand& opnd,
                   DoubleRegister scratch);
@@ -1009,6 +1026,16 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   void DecompressTaggedPointer(Register destination, Register source);
   void DecompressAnyTagged(Register destination, MemOperand field_operand);
   void DecompressAnyTagged(Register destination, Register source);
+
+  // CountLeadingZeros will corrupt the scratch register pair (eg. r0:r1)
+  void CountLeadingZerosU32(Register dst, Register src,
+                            Register scratch_pair = r0);
+  void CountLeadingZerosU64(Register dst, Register src,
+                            Register scratch_pair = r0);
+  void CountTrailingZerosU32(Register dst, Register src,
+                             Register scratch_pair = r0);
+  void CountTrailingZerosU64(Register dst, Register src,
+                             Register scratch_pair = r0);
 
  private:
   static const int kSmiShift = kSmiTagSize + kSmiShiftSize;

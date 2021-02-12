@@ -1308,16 +1308,15 @@ Handle<Foreign> Factory::NewForeign(Address addr) {
 }
 
 Handle<WasmTypeInfo> Factory::NewWasmTypeInfo(Address type_address,
-                                              Handle<Map> parent) {
+                                              Handle<Map> opt_parent) {
   Handle<ArrayList> subtypes = ArrayList::New(isolate(), 0);
   Handle<FixedArray> supertypes;
-  if (parent->IsWasmStructMap() || parent->IsWasmArrayMap()) {
-    supertypes = CopyFixedArrayAndGrow(
-        handle(parent->wasm_type_info().supertypes(), isolate()), 1);
-    supertypes->set(supertypes->length() - 1, *parent);
+  if (opt_parent.is_null()) {
+    supertypes = NewUninitializedFixedArray(0);
   } else {
-    supertypes = NewUninitializedFixedArray(1);
-    supertypes->set(0, *parent);
+    supertypes = CopyFixedArrayAndGrow(
+        handle(opt_parent->wasm_type_info().supertypes(), isolate()), 1);
+    supertypes->set(supertypes->length() - 1, *opt_parent);
   }
   Map map = *wasm_type_info_map();
   HeapObject result = AllocateRawWithImmortalMap(map.instance_size(),
@@ -1325,7 +1324,6 @@ Handle<WasmTypeInfo> Factory::NewWasmTypeInfo(Address type_address,
   Handle<WasmTypeInfo> info(WasmTypeInfo::cast(result), isolate());
   info->AllocateExternalPointerEntries(isolate());
   info->set_foreign_address(isolate(), type_address);
-  info->set_parent(*parent);
   info->set_supertypes(*supertypes);
   info->set_subtypes(*subtypes);
   return info;
@@ -1445,7 +1443,7 @@ Map Factory::InitializeMap(Map map, InstanceType type, int instance_size,
                            int inobject_properties) {
   map.set_instance_type(type);
   map.set_prototype(*null_value(), SKIP_WRITE_BARRIER);
-  map.set_constructor_or_backpointer(*null_value(), SKIP_WRITE_BARRIER);
+  map.set_constructor_or_back_pointer(*null_value(), SKIP_WRITE_BARRIER);
   map.set_instance_size(instance_size);
   if (map.IsJSObjectMap()) {
     DCHECK(!ReadOnlyHeap::Contains(map));
@@ -1463,12 +1461,7 @@ Map Factory::InitializeMap(Map map, InstanceType type, int instance_size,
   map.set_raw_transitions(MaybeObject::FromSmi(Smi::zero()));
   map.SetInObjectUnusedPropertyFields(inobject_properties);
   map.SetInstanceDescriptors(isolate(), *empty_descriptor_array(), 0);
-  if (FLAG_unbox_double_fields) {
-    map.set_layout_descriptor(LayoutDescriptor::FastPointerLayout(),
-                              kReleaseStore);
-  }
-  // Must be called only after |instance_type|, |instance_size| and
-  // |layout_descriptor| are set.
+  // Must be called only after |instance_type| and |instance_size| are set.
   map.set_visitor_id(Map::GetVisitorId(map));
   map.set_bit_field(0);
   map.set_bit_field2(Map::Bits2::NewTargetIsBaseBit::encode(true));
@@ -2333,13 +2326,14 @@ Handle<SourceTextModule> Factory::NewSourceTextModule(
   module->set_requested_modules(*requested_modules);
   module->set_status(Module::kUninstantiated);
   module->set_exception(roots.the_hole_value());
+  module->set_top_level_capability(roots.undefined_value());
   module->set_import_meta(roots.the_hole_value());
   module->set_dfs_index(-1);
   module->set_dfs_ancestor_index(-1);
-  module->set_top_level_capability(roots.undefined_value());
   module->set_flags(0);
   module->set_async(IsAsyncModule(sfi->kind()));
   module->set_async_evaluating(false);
+  module->set_cycle_root(roots.the_hole_value());
   module->set_async_parent_modules(*async_parent_modules);
   module->set_pending_async_dependencies(0);
   return module;
@@ -2362,6 +2356,7 @@ Handle<SyntheticModule> Factory::NewSyntheticModule(
   module->set_module_namespace(roots.undefined_value());
   module->set_status(Module::kUninstantiated);
   module->set_exception(roots.the_hole_value());
+  module->set_top_level_capability(roots.undefined_value());
   module->set_name(*module_name);
   module->set_export_names(*export_names);
   module->set_exports(*exports);
@@ -2937,94 +2932,8 @@ Handle<StackTraceFrame> Factory::NewStackTraceFrame(
       NewStruct(STACK_TRACE_FRAME_TYPE, AllocationType::kYoung));
   frame->set_frame_array(*frame_array);
   frame->set_frame_index(index);
-  frame->set_frame_info(*undefined_value());
 
   return frame;
-}
-
-Handle<StackFrameInfo> Factory::NewStackFrameInfo(
-    Handle<FrameArray> frame_array, int index) {
-  FrameArrayIterator it(isolate(), frame_array, index);
-  DCHECK(it.HasFrame());
-
-  const bool is_wasm = frame_array->IsAnyWasmFrame(index);
-  StackFrameBase* frame = it.Frame();
-
-  int line = frame->GetLineNumber();
-  int column = frame->GetColumnNumber();
-  int wasm_function_index = frame->GetWasmFunctionIndex();
-
-  const int script_id = frame->GetScriptId();
-
-  Handle<Object> script_name = frame->GetFileName();
-  Handle<Object> script_or_url = frame->GetScriptNameOrSourceUrl();
-
-  // TODO(szuend): Adjust this, once it is decided what name to use in both
-  //               "simple" and "detailed" stack traces. This code is for
-  //               backwards compatibility to fullfill test expectations.
-  Handle<PrimitiveHeapObject> function_name = frame->GetFunctionName();
-  bool is_user_java_script = false;
-  if (!is_wasm) {
-    Handle<Object> function = frame->GetFunction();
-    if (function->IsJSFunction()) {
-      Handle<JSFunction> fun = Handle<JSFunction>::cast(function);
-
-      is_user_java_script = fun->shared().IsUserJavaScript();
-    }
-  }
-
-  Handle<PrimitiveHeapObject> method_name = undefined_value();
-  Handle<PrimitiveHeapObject> type_name = undefined_value();
-  Handle<PrimitiveHeapObject> eval_origin = frame->GetEvalOrigin();
-  Handle<PrimitiveHeapObject> wasm_module_name = frame->GetWasmModuleName();
-  Handle<HeapObject> wasm_instance = frame->GetWasmInstance();
-
-  // MethodName and TypeName are expensive to look up, so they are only
-  // included when they are strictly needed by the stack trace
-  // serialization code.
-  // Note: The {is_method_call} predicate needs to be kept in sync with
-  //       the corresponding predicate in the stack trace serialization code
-  //       in stack-frame-info.cc.
-  const bool is_toplevel = frame->IsToplevel();
-  const bool is_constructor = frame->IsConstructor();
-  const bool is_method_call = !(is_toplevel || is_constructor);
-  if (is_method_call) {
-    method_name = frame->GetMethodName();
-    type_name = frame->GetTypeName();
-  }
-
-  Handle<StackFrameInfo> info = Handle<StackFrameInfo>::cast(
-      NewStruct(STACK_FRAME_INFO_TYPE, AllocationType::kYoung));
-
-  DisallowGarbageCollection no_gc;
-
-  info->set_flag(0);
-  info->set_is_wasm(is_wasm);
-  info->set_is_asmjs_wasm(frame_array->IsAsmJsWasmFrame(index));
-  info->set_is_user_java_script(is_user_java_script);
-  info->set_line_number(line);
-  info->set_column_number(column);
-  info->set_wasm_function_index(wasm_function_index);
-  info->set_script_id(script_id);
-
-  info->set_script_name(*script_name);
-  info->set_script_name_or_source_url(*script_or_url);
-  info->set_function_name(*function_name);
-  info->set_method_name(*method_name);
-  info->set_type_name(*type_name);
-  info->set_eval_origin(*eval_origin);
-  info->set_wasm_module_name(*wasm_module_name);
-  info->set_wasm_instance(*wasm_instance);
-
-  info->set_is_eval(frame->IsEval());
-  info->set_is_constructor(is_constructor);
-  info->set_is_toplevel(is_toplevel);
-  info->set_is_async(frame->IsAsync());
-  info->set_is_promise_all(frame->IsPromiseAll());
-  info->set_is_promise_any(frame->IsPromiseAny());
-  info->set_promise_combinator_index(frame->GetPromiseIndex());
-
-  return info;
 }
 
 Handle<JSObject> Factory::NewArgumentsObject(Handle<JSFunction> callee,

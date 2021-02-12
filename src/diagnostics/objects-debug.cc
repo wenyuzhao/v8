@@ -5,6 +5,7 @@
 #include "src/codegen/assembler-inl.h"
 #include "src/common/globals.h"
 #include "src/date/date.h"
+#include "src/debug/debug-wasm-objects-inl.h"
 #include "src/diagnostics/disasm.h"
 #include "src/diagnostics/disassembler.h"
 #include "src/heap/combined-heap.h"
@@ -30,7 +31,6 @@
 #include "src/objects/hash-table-inl.h"
 #include "src/objects/instance-type.h"
 #include "src/objects/js-array-inl.h"
-#include "src/objects/layout-descriptor.h"
 #include "src/objects/objects-inl.h"
 #include "src/objects/objects.h"
 #include "src/roots/roots.h"
@@ -68,6 +68,7 @@
 #include "src/objects/property-descriptor-object-inl.h"
 #include "src/objects/stack-frame-info-inl.h"
 #include "src/objects/struct-inl.h"
+#include "src/objects/swiss-name-dictionary-inl.h"
 #include "src/objects/synthetic-module-inl.h"
 #include "src/objects/template-objects-inl.h"
 #include "src/objects/torque-defined-classes-inl.h"
@@ -227,6 +228,9 @@ void HeapObject::HeapObjectVerify(Isolate* isolate) {
       break;
     case WASM_INSTANCE_OBJECT_TYPE:
       WasmInstanceObject::cast(*this).WasmInstanceObjectVerify(isolate);
+      break;
+    case WASM_VALUE_OBJECT_TYPE:
+      WasmValueObject::cast(*this).WasmValueObjectVerify(isolate);
       break;
     case JS_SET_KEY_VALUE_ITERATOR_TYPE:
     case JS_SET_VALUE_ITERATOR_TYPE:
@@ -393,10 +397,6 @@ void JSObject::JSObjectVerify(Isolate* isolate) {
         DCHECK_EQ(kData, details.kind());
         Representation r = details.representation();
         FieldIndex index = FieldIndex::ForDescriptor(map(), i);
-        if (IsUnboxedDoubleField(index)) {
-          DCHECK(r.IsDouble());
-          continue;
-        }
         if (COMPRESS_POINTERS_BOOL && index.is_inobject()) {
           VerifyObjectField(isolate, index.offset());
         }
@@ -487,8 +487,6 @@ void Map::MapVerify(Isolate* isolate) {
       TransitionsAccessor(isolate, *this, &no_gc).IsSortedNoDuplicates());
   SLOW_DCHECK(TransitionsAccessor(isolate, *this, &no_gc)
                   .IsConsistentWithBackPointers());
-  SLOW_DCHECK(!FLAG_unbox_double_fields ||
-              layout_descriptor(kAcquireLoad).IsConsistentWithMap(*this));
   // Only JSFunction maps have has_prototype_slot() bit set and constructible
   // JSFunction objects must have prototype slot.
   CHECK_IMPLIES(has_prototype_slot(),
@@ -1250,6 +1248,11 @@ void SmallOrderedNameDictionary::SmallOrderedNameDictionaryVerify(
   }
 }
 
+void SwissNameDictionary::SwissNameDictionaryVerify(Isolate* isolate) {
+  // TODO(v8:11388) Here to satisfy compiler, implemented in follow-up CL.
+  UNREACHABLE();
+}
+
 void JSRegExp::JSRegExpVerify(Isolate* isolate) {
   TorqueGeneratedClassVerifiers::JSRegExpVerify(*this, isolate);
   switch (TypeTag()) {
@@ -1411,6 +1414,11 @@ void Module::ModuleVerify(Isolate* isolate) {
     CHECK_EQ(JSModuleNamespace::cast(module_namespace()).module(), *this);
   }
 
+  if (!(status() == kErrored || status() == kEvaluating ||
+        status() == kEvaluated)) {
+    CHECK(top_level_capability().IsUndefined());
+  }
+
   CHECK_NE(hash(), 0);
 }
 
@@ -1444,7 +1452,6 @@ void SourceTextModule::SourceTextModuleVerify(Isolate* isolate) {
     } else if (status() == kUninstantiated) {
       CHECK(code().IsSharedFunctionInfo());
     }
-    CHECK(top_level_capability().IsUndefined());
     CHECK(!AsyncParentModuleCount());
     CHECK(!pending_async_dependencies());
     CHECK(!async_evaluating());
@@ -1536,6 +1543,12 @@ void WasmInstanceObject::WasmInstanceObjectVerify(Isolate* isolate) {
        offset += kTaggedSize) {
     VerifyObjectField(isolate, offset);
   }
+}
+
+void WasmValueObject::WasmValueObjectVerify(Isolate* isolate) {
+  JSObjectVerify(isolate);
+  CHECK(IsWasmValueObject());
+  CHECK(type().IsString());
 }
 
 void WasmExportedFunctionData::WasmExportedFunctionDataVerify(

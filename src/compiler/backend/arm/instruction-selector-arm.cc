@@ -641,7 +641,7 @@ void InstructionSelector::VisitLoad(Node* node) {
   }
   if (node->opcode() == IrOpcode::kPoisonedLoad) {
     CHECK_NE(poisoning_level_, PoisoningMitigationLevel::kDontPoison);
-    opcode |= MiscField::encode(kMemoryAccessPoisoned);
+    opcode |= AccessModeField::encode(kMemoryAccessPoisoned);
   }
 
   InstructionOperand output = g.DefineAsRegister(node);
@@ -2598,11 +2598,10 @@ void InstructionSelector::VisitWord32AtomicPairCompareExchange(Node* node) {
   V(I8x16Abs, kArmI8x16Abs)                             \
   V(I8x16Popcnt, kArmVcnt)                              \
   V(S128Not, kArmS128Not)                               \
-  V(V32x4AnyTrue, kArmV32x4AnyTrue)                     \
+  V(V64x2AllTrue, kArmV64x2AllTrue)                     \
   V(V32x4AllTrue, kArmV32x4AllTrue)                     \
-  V(V16x8AnyTrue, kArmV16x8AnyTrue)                     \
   V(V16x8AllTrue, kArmV16x8AllTrue)                     \
-  V(V8x16AnyTrue, kArmV8x16AnyTrue)                     \
+  V(V128AnyTrue, kArmV128AnyTrue)                       \
   V(V8x16AllTrue, kArmV8x16AllTrue)
 
 #define SIMD_SHIFT_OP_LIST(V) \
@@ -2650,6 +2649,7 @@ void InstructionSelector::VisitWord32AtomicPairCompareExchange(Node* node) {
   V(I32x4MaxS, kArmI32x4MaxS)                         \
   V(I32x4Eq, kArmI32x4Eq)                             \
   V(I64x2Eq, kArmI64x2Eq)                             \
+  V(I64x2Ne, kArmI64x2Ne)                             \
   V(I32x4Ne, kArmI32x4Ne)                             \
   V(I32x4GtS, kArmI32x4GtS)                           \
   V(I32x4GeS, kArmI32x4GeS)                           \
@@ -3151,6 +3151,45 @@ void InstructionSelector::VisitTruncateFloat32ToUint32(Node* node) {
   }
 
   Emit(opcode, g.DefineAsRegister(node), g.UseRegister(node->InputAt(0)));
+}
+
+// TODO(v8:9780)
+// These double precision conversion instructions need a low Q register (q0-q7)
+// because the codegen accesses the S registers they overlap with.
+void InstructionSelector::VisitF64x2ConvertLowI32x4S(Node* node) {
+  ArmOperandGenerator g(this);
+  Emit(kArmF64x2ConvertLowI32x4S, g.DefineAsRegister(node),
+       g.UseFixed(node->InputAt(0), q0));
+}
+
+void InstructionSelector::VisitF64x2ConvertLowI32x4U(Node* node) {
+  ArmOperandGenerator g(this);
+  Emit(kArmF64x2ConvertLowI32x4U, g.DefineAsRegister(node),
+       g.UseFixed(node->InputAt(0), q0));
+}
+
+void InstructionSelector::VisitI32x4TruncSatF64x2SZero(Node* node) {
+  ArmOperandGenerator g(this);
+  Emit(kArmI32x4TruncSatF64x2SZero, g.DefineAsFixed(node, q0),
+       g.UseRegister(node->InputAt(0)));
+}
+
+void InstructionSelector::VisitI32x4TruncSatF64x2UZero(Node* node) {
+  ArmOperandGenerator g(this);
+  Emit(kArmI32x4TruncSatF64x2UZero, g.DefineAsFixed(node, q0),
+       g.UseRegister(node->InputAt(0)));
+}
+
+void InstructionSelector::VisitF32x4DemoteF64x2Zero(Node* node) {
+  ArmOperandGenerator g(this);
+  Emit(kArmF32x4DemoteF64x2Zero, g.DefineAsFixed(node, q0),
+       g.UseRegister(node->InputAt(0)));
+}
+
+void InstructionSelector::VisitF64x2PromoteLowF32x4(Node* node) {
+  ArmOperandGenerator g(this);
+  Emit(kArmF64x2PromoteLowF32x4, g.DefineAsRegister(node),
+       g.UseFixed(node->InputAt(0), q0));
 }
 
 // static

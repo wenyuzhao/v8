@@ -366,6 +366,39 @@
 }],  # 'mips_arch_variant == r6'
 
 ##############################################################################
+['arch == riscv64', {
+  # this test is unstable, sometimes fail when running w/ other tests
+  'test-cpu-profiler/CrossScriptInliningCallerLineNumbers2': [SKIP],
+
+  # https://github.com/v8-riscv/v8/issues/297
+  'test-run-wasm-simd/RunWasm_F64x2ExtractLaneWithI64x2_liftoff': [SKIP],
+  'test-run-wasm-simd/RunWasm_I64x2ExtractWithF64x2_liftoff': [SKIP],
+
+  # https://github.com/v8-riscv/v8/issues/290
+  'test-orderedhashtable/SmallOrderedNameDictionaryInsertionMax': [SKIP],
+  'test-orderedhashtable/SmallOrderedNameDictionarySetAndMigrateHash': [SKIP],
+
+  # SIMD not fully implemented yet
+  'test-run-wasm-simd-liftoff/*': [SKIP],
+
+  # Some wasm functionality is not implemented yet
+  'test-run-wasm-atomics64/*': [SKIP],
+  'test-run-wasm-atomics/*': [SKIP],
+  'test-run-wasm-64/*': [SKIP],
+  'test-run-wasm/*': [SKIP],
+}],
+
+##############################################################################
+['arch == riscv64 and simulator_run', {
+
+  # Pass but take too long with the simulator.
+  'test-api/Threading*': [PASS, SLOW],
+  'test-api/ExternalArrays': [PASS, SLOW],
+  'test-heap-profiler/ManyLocalsInSharedContext': [PASS, SLOW],
+
+}],  # 'arch == riscv64 and simulator_run'
+
+##############################################################################
 ['system == android', {
   # Uses too much memory.
   'test-api/NewStringRangeError': [SKIP],
@@ -487,6 +520,7 @@
   'test-jump-table-assembler/*': [SKIP],
   'test-gc/*': [SKIP],
   'test-grow-memory/*': [SKIP],
+  'test-js-to-wasm/*': [SKIP],
   'test-liftoff-inspection/*': [SKIP],
   'test-run-wasm*': [SKIP],
   'test-streaming-compilation/*': [SKIP],
@@ -546,6 +580,7 @@
   'test-run-unwinding-info/*': [SKIP],
   'test-run-variables/*': [SKIP],
   'test-serialize/*': [SKIP],
+  'test-sloppy-equality/*' : [SKIP],
   'test-torque/*': [SKIP],
   'test-unwinder-code-pages/PCIsInV8_LargeCodeObject_CodePagesAPI': [SKIP],
 
@@ -587,6 +622,7 @@
   'test-api/TurboAsmDisablesDetach': [SKIP],
   'test-cpu-profiler/TickLinesOptimized': [SKIP],
   'test-heap/TestOptimizeAfterBytecodeFlushingCandidate': [SKIP],
+  'test-js-to-wasm/*': [SKIP],
   'test-run-wasm-exceptions/RunWasmInterpreter_TryCatchCallDirect': [SKIP],
   'test-run-wasm-exceptions/RunWasmInterpreter_TryCatchCallExternal': [SKIP],
   'test-run-wasm-exceptions/RunWasmInterpreter_TryCatchCallIndirect': [SKIP],
@@ -630,6 +666,7 @@
   'test-cpu-profiler/DetailedSourcePositionAPI_Inlining': [SKIP],
   'serializer-tester/BoundFunctionArguments': [SKIP],
   'serializer-tester/BoundFunctionTarget': [SKIP],
+  'test-js-to-wasm/*': [SKIP],
 }],  # variant == turboprop or variant == turboprop_as_toptier
 
 ##############################################################################
@@ -641,25 +678,5 @@
 ['variant == stress_snapshot', {
   '*': [SKIP],  # only relevant for mjsunit tests.
 }],
-
-################################################################################
-['variant == nci or variant == nci_as_midtier', {
-  # Optimizes and deopts differently than TurboFan.
-  'test-api/FastApiCalls': [SKIP],
-  'test-cpu-profiler/Deopt*': [SKIP],
-  'test-cpu-profiler/DetailedSourcePositionAPI_Inlining': [SKIP],
-  'test-cpu-profiler/DetailedSourcePositionAPI': [SKIP],
-  'test-heap/CellsInOptimizedCodeAreWeak': [SKIP],
-  'test-heap/EnsureAllocationSiteDependentCodesProcessed': [SKIP],
-  'test-heap/NewSpaceObjectsInOptimizedCode': [SKIP],
-  'test-heap/ObjectsInEagerlyDeoptimizedCodeAreWeak': [SKIP],
-  'test-heap/ObjectsInOptimizedCodeAreWeak': [SKIP],
-  'test-heap/OptimizedPretenuring*': [SKIP],
-  'test-heap-profiler/SamplingHeapProfilerPretenuredInlineAllocations': [SKIP],
-  'test-log/LogAll': [SKIP],
-
-  # NCI code currently does not use the feedback vector's optimized code cache.
-  'test-compiler/OptimizedCodeSharing1': [SKIP],
-}],  # variant == nci or variant == nci_as_midtier
 
 ]

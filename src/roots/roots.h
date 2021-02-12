@@ -108,6 +108,7 @@ class Symbol;
   V(Map, small_ordered_hash_set_map, SmallOrderedHashSetMap)                   \
   V(Map, small_ordered_name_dictionary_map, SmallOrderedNameDictionaryMap)     \
   V(Map, source_text_module_map, SourceTextModuleMap)                          \
+  V(Map, swiss_name_dictionary_map, SwissNameDictionaryMap)                    \
   V(Map, synthetic_module_map, SyntheticModuleMap)                             \
   V(Map, wasm_type_info_map, WasmTypeInfoMap)                                  \
   V(Map, weak_fixed_array_map, WeakFixedArrayMap)                              \
@@ -200,11 +201,6 @@ class Symbol;
   /* Maps */                                                                   \
   V(Map, external_map, ExternalMap)                                            \
   V(Map, message_object_map, JSMessageObjectMap)                               \
-  V(Map, wasm_rttcanon_eqref_map, WasmRttEqrefMap)                             \
-  V(Map, wasm_rttcanon_externref_map, WasmRttExternrefMap)                     \
-  V(Map, wasm_rttcanon_funcref_map, WasmRttFuncrefMap)                         \
-  V(Map, wasm_rttcanon_i31ref_map, WasmRttI31refMap)                           \
-  V(Map, wasm_rttcanon_anyref_map, WasmRttAnyrefMap)                           \
   /* Canonical empty values */                                                 \
   V(Script, empty_script, EmptyScript)                                         \
   V(FeedbackCell, many_closures_cell, ManyClosuresCell)                        \

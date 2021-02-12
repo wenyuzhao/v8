@@ -1482,13 +1482,14 @@ MaybeHandle<Object> Object::GetPropertyWithAccessor(LookupIterator* it) {
     return reboxed_result;
   }
 
+  Handle<AccessorPair> accessor_pair = Handle<AccessorPair>::cast(structure);
   // AccessorPair with 'cached' private property.
-  if (it->TryLookupCachedProperty()) {
+  if (it->TryLookupCachedProperty(accessor_pair)) {
     return Object::GetProperty(it);
   }
 
   // Regular accessor.
-  Handle<Object> getter(AccessorPair::cast(*structure).getter(), isolate);
+  Handle<Object> getter(accessor_pair->getter(), isolate);
   if (getter->IsFunctionTemplateInfo()) {
     SaveAndSwitchContext save(isolate, *holder->GetCreationContext());
     return Builtins::InvokeApiFunction(
@@ -2184,11 +2185,6 @@ void ClassPositions::BriefPrintDetails(std::ostream& os) {
   os << " " << start() << ", " << end();
 }
 
-void ArrayBoilerplateDescription::BriefPrintDetails(std::ostream& os) {
-  os << " " << ElementsKindToString(elements_kind()) << ", "
-     << Brief(constant_elements());
-}
-
 void CallableTask::BriefPrintDetails(std::ostream& os) {
   os << " callable=" << Brief(callable());
 }
@@ -2289,6 +2285,10 @@ int HeapObject::SizeFromMap(Map map) const {
   if (instance_type == SMALL_ORDERED_NAME_DICTIONARY_TYPE) {
     return SmallOrderedNameDictionary::SizeFor(
         SmallOrderedNameDictionary::unchecked_cast(*this).Capacity());
+  }
+  if (instance_type == SWISS_NAME_DICTIONARY_TYPE) {
+    return SwissNameDictionary::SizeFor(
+        SwissNameDictionary::unchecked_cast(*this).Capacity());
   }
   if (instance_type == PROPERTY_ARRAY_TYPE) {
     return PropertyArray::SizeFor(
@@ -3535,11 +3535,14 @@ Maybe<bool> JSProxy::SetPrivateSymbol(Isolate* isolate, Handle<JSProxy> proxy,
   if (it.IsFound()) {
     DCHECK_EQ(LookupIterator::DATA, it.state());
     DCHECK_EQ(DONT_ENUM, it.property_attributes());
+    // We are not tracking constness for private symbols added to JSProxy
+    // objects.
+    DCHECK_EQ(PropertyConstness::kMutable, it.property_details().constness());
     it.WriteDataValue(value, false);
     return Just(true);
   }
 
-  PropertyDetails details(kData, DONT_ENUM, PropertyCellType::kNoCell);
+  PropertyDetails details(kData, DONT_ENUM, PropertyConstness::kMutable);
   if (V8_DICT_MODE_PROTOTYPES_BOOL) {
     Handle<OrderedNameDictionary> dict(proxy->property_dictionary_ordered(),
                                        isolate);

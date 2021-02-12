@@ -27,16 +27,26 @@ class InternalizedString;
 class JSBoundFunction;
 class JSDataView;
 class JSGlobalProxy;
-class JSRegExp;
 class JSTypedArray;
 class NativeContext;
 class ScriptContextTable;
+template <typename>
+class Signature;
+
+namespace wasm {
+class ValueType;
+struct WasmModule;
+}  // namespace wasm
 
 namespace compiler {
 
 // Whether we are loading a property or storing to a property.
 // For a store during literal creation, do not walk up the prototype chain.
 enum class AccessMode { kLoad, kStore, kStoreInLiteral, kHas };
+
+inline bool IsAnyStore(AccessMode mode) {
+  return mode == AccessMode::kStore || mode == AccessMode::kStoreInLiteral;
+}
 
 enum class SerializationPolicy { kAssumeSerialized, kSerializeIfNeeded };
 
@@ -73,6 +83,8 @@ enum class OddballType : uint8_t {
   V(CallHandlerInfo)                                \
   V(Cell)                                           \
   V(FeedbackCell)                                   \
+  V(FeedbackVector)                                 \
+  V(RegExpBoilerplateDescription)                   \
   V(SharedFunctionInfo)                             \
   V(TemplateObjectDescription)
 
@@ -99,7 +111,6 @@ enum class OddballType : uint8_t {
   V(JSFunction)                               \
   V(JSGlobalObject)                           \
   V(JSGlobalProxy)                            \
-  V(JSRegExp)                                 \
   V(JSTypedArray)                             \
   /* Subtypes of Context */                   \
   V(NativeContext)                            \
@@ -117,7 +128,6 @@ enum class OddballType : uint8_t {
   V(AllocationSite)                           \
   V(Code)                                     \
   V(DescriptorArray)                          \
-  V(FeedbackVector)                           \
   V(FixedArrayBase)                           \
   V(FunctionTemplateInfo)                     \
   V(JSReceiver)                               \
@@ -313,8 +323,6 @@ class JSObjectRef : public JSReceiverRef {
 
   Handle<JSObject> object() const;
 
-  uint64_t RawFastDoublePropertyAsBitsAt(FieldIndex index) const;
-  double RawFastDoublePropertyAt(FieldIndex index) const;
   ObjectRef RawFastPropertyAt(FieldIndex index) const;
 
   // Return the value of the property identified by the field {index}
@@ -383,24 +391,26 @@ class V8_EXPORT_PRIVATE JSFunctionRef : public JSObjectRef {
   bool serialized_code_and_feedback() const;
 
   // The following are available only after calling SerializeCodeAndFeedback().
+  // TODO(mvstanton): Once we allow inlining of functions we didn't see
+  // during serialization, we do need to ensure that any feedback vector
+  // we read here has been fully initialized (ie, store-ordered into the
+  // cell).
   FeedbackVectorRef feedback_vector() const;
   FeedbackCellRef raw_feedback_cell() const;
   CodeRef code() const;
 };
 
-class JSRegExpRef : public JSObjectRef {
+class RegExpBoilerplateDescriptionRef : public HeapObjectRef {
  public:
-  DEFINE_REF_CONSTRUCTOR(JSRegExp, JSObjectRef)
+  DEFINE_REF_CONSTRUCTOR(RegExpBoilerplateDescription, HeapObjectRef)
 
-  Handle<JSRegExp> object() const;
+  Handle<RegExpBoilerplateDescription> object() const;
 
-  ObjectRef raw_properties_or_hash() const;
-  ObjectRef data() const;
-  ObjectRef source() const;
-  ObjectRef flags() const;
-  ObjectRef last_index() const;
+  void Serialize();
 
-  void SerializeAsRegExpBoilerplate();
+  FixedArrayRef data() const;
+  StringRef source() const;
+  int flags() const;
 };
 
 class HeapNumberRef : public HeapObjectRef {
@@ -538,6 +548,9 @@ class DescriptorArrayRef : public HeapObjectRef {
   Handle<DescriptorArray> object() const;
 
   PropertyDetails GetPropertyDetails(InternalIndex descriptor_index) const;
+  NameRef GetPropertyKey(InternalIndex descriptor_index) const;
+  base::Optional<ObjectRef> GetStrongValue(
+      InternalIndex descriptor_index) const;
 };
 
 class FeedbackCellRef : public HeapObjectRef {
@@ -546,6 +559,11 @@ class FeedbackCellRef : public HeapObjectRef {
 
   Handle<FeedbackCell> object() const;
   base::Optional<SharedFunctionInfoRef> shared_function_info() const;
+
+  // TODO(mvstanton): Once we allow inlining of functions we didn't see
+  // during serialization, we do need to ensure that any feedback vector
+  // we read here has been fully initialized (ie, store-ordered into the
+  // cell).
   base::Optional<FeedbackVectorRef> value() const;
 };
 
@@ -679,7 +697,6 @@ class V8_EXPORT_PRIVATE MapRef : public HeapObjectRef {
   NameRef GetPropertyKey(InternalIndex descriptor_index) const;
   FieldIndex GetFieldIndexFor(InternalIndex descriptor_index) const;
   ObjectRef GetFieldType(InternalIndex descriptor_index) const;
-  bool IsUnboxedDoubleField(InternalIndex descriptor_index) const;
   base::Optional<ObjectRef> GetStrongValue(
       InternalIndex descriptor_number) const;
 
@@ -838,7 +855,9 @@ class ScopeInfoRef : public HeapObjectRef {
   V(bool, HasBytecodeArray)               \
   V(int, StartPosition)                   \
   V(bool, is_compiled)                    \
-  V(bool, IsUserJavaScript)
+  V(bool, IsUserJavaScript)               \
+  V(const wasm::WasmModule*, wasm_module) \
+  V(const wasm::FunctionSig*, wasm_function_signature)
 
 class V8_EXPORT_PRIVATE SharedFunctionInfoRef : public HeapObjectRef {
  public:
@@ -898,6 +917,7 @@ class JSTypedArrayRef : public JSObjectRef {
 
   void Serialize();
   bool serialized() const;
+  bool ShouldHaveBeenSerialized() const;
 
   HeapObjectRef buffer() const;
 };

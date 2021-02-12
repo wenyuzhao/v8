@@ -274,15 +274,34 @@ V8_NOINLINE V8_EXPORT_PRIVATE bool IsSubtypeOfImpl(
     const WasmModule* super_module) {
   DCHECK(subtype != supertype || sub_module != super_module);
 
-  if (!subtype.is_reference_type()) return subtype == supertype;
-
-  if (subtype.is_rtt()) {
-    return subtype.heap_type().is_generic()
-               ? subtype == supertype
-               : (supertype.is_rtt() && subtype.depth() == supertype.depth() &&
-                  supertype.has_index() &&
-                  EquivalentIndices(subtype.ref_index(), supertype.ref_index(),
-                                    sub_module, super_module));
+  switch (subtype.kind()) {
+    case ValueType::kI32:
+    case ValueType::kI64:
+    case ValueType::kF32:
+    case ValueType::kF64:
+    case ValueType::kS128:
+    case ValueType::kI8:
+    case ValueType::kI16:
+    case ValueType::kStmt:
+    case ValueType::kBottom:
+      return subtype == supertype;
+    case ValueType::kRtt:
+      return supertype.kind() == ValueType::kRtt &&
+             EquivalentIndices(subtype.ref_index(), supertype.ref_index(),
+                               sub_module, super_module);
+    case ValueType::kRttWithDepth:
+      return (supertype.kind() == ValueType::kRtt &&
+              ((sub_module == super_module &&
+                subtype.ref_index() == supertype.ref_index()) ||
+               EquivalentIndices(subtype.ref_index(), supertype.ref_index(),
+                                 sub_module, super_module))) ||
+             (supertype.kind() == ValueType::kRttWithDepth &&
+              supertype.depth() == subtype.depth() &&
+              EquivalentIndices(subtype.ref_index(), supertype.ref_index(),
+                                sub_module, super_module));
+    case ValueType::kRef:
+    case ValueType::kOptRef:
+      break;
   }
 
   DCHECK(subtype.is_object_reference_type());
@@ -307,7 +326,8 @@ V8_NOINLINE V8_EXPORT_PRIVATE bool IsSubtypeOfImpl(
     case HeapType::kAny:
       return super_heap == HeapType::kAny;
     case HeapType::kI31:
-      return super_heap == HeapType::kI31 || super_heap == HeapType::kEq ||
+    case HeapType::kData:
+      return super_heap == sub_heap || super_heap == HeapType::kEq ||
              super_heap == HeapType::kAny;
     case HeapType::kBottom:
       UNREACHABLE();
@@ -323,6 +343,7 @@ V8_NOINLINE V8_EXPORT_PRIVATE bool IsSubtypeOfImpl(
     case HeapType::kFunc:
       return sub_module->has_signature(sub_index);
     case HeapType::kEq:
+    case HeapType::kData:
       return !sub_module->has_signature(sub_index);
     case HeapType::kExtern:
     case HeapType::kI31:

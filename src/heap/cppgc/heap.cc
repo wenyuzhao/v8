@@ -4,6 +4,7 @@
 
 #include "src/heap/cppgc/heap.h"
 
+#include "include/cppgc/heap-consistency.h"
 #include "src/heap/base/stack.h"
 #include "src/heap/cppgc/garbage-collector.h"
 #include "src/heap/cppgc/gc-invoker.h"
@@ -101,7 +102,7 @@ Heap::Heap(std::shared_ptr<cppgc::Platform> platform,
 }
 
 Heap::~Heap() {
-  NoGCScope no_gc(*this);
+  subtle::NoGarbageCollectionScope no_gc(*this);
   // Finish already running GC if any, but don't finalize live objects.
   sweeper_.FinishIfRunning();
 }
@@ -170,30 +171,36 @@ void Heap::StartGarbageCollection(Config config) {
 void Heap::FinalizeGarbageCollection(Config::StackState stack_state) {
   DCHECK(IsMarking());
   DCHECK(!in_no_gc_scope());
+  CHECK(!in_disallow_gc_scope());
   config_.stack_state = stack_state;
+  if (override_stack_state_) {
+    config_.stack_state = *override_stack_state_;
+  }
+  in_atomic_pause_ = true;
   {
     // This guards atomic pause marking, meaning that no internal method or
     // external callbacks are allowed to allocate new objects.
-    ObjectAllocator::NoAllocationScope no_allocation_scope_(object_allocator_);
-    marker_->FinishMarking(stack_state);
-  }
-  {
-    // Pre finalizers are forbidden from allocating objects.
-    ObjectAllocator::NoAllocationScope no_allocation_scope_(object_allocator_);
-    prefinalizer_handler_->InvokePreFinalizers();
+    cppgc::subtle::DisallowGarbageCollectionScope no_gc_scope(*this);
+    marker_->FinishMarking(config_.stack_state);
   }
   marker_.reset();
+  {
+    // Pre finalizers are forbidden from allocating objects.
+    cppgc::subtle::DisallowGarbageCollectionScope no_gc_scope(*this);
+    prefinalizer_handler_->InvokePreFinalizers();
+  }
   // TODO(chromium:1056170): replace build flag with dedicated flag.
 #if DEBUG
   MarkingVerifier verifier(*this);
-  verifier.Run(stack_state);
+  verifier.Run(config_.stack_state);
 #endif
 
-  NoGCScope no_gc(*this);
+  subtle::NoGarbageCollectionScope no_gc(*this);
   const Sweeper::SweepingConfig sweeping_config{
       config_.sweeping_type,
       Sweeper::SweepingConfig::CompactableSpaceHandling::kSweep};
   sweeper_.Start(sweeping_config);
+  in_atomic_pause_ = false;
   sweeper_.NotifyDoneIfNeeded();
 }
 

@@ -176,6 +176,11 @@ inline bool IsStatic(FunctionKind kind) {
   }
 }
 
+inline bool BindsSuper(FunctionKind kind) {
+  return IsConciseMethod(kind) || IsAccessorFunction(kind) ||
+         IsClassConstructor(kind);
+}
+
 inline const char* FunctionKind2String(FunctionKind kind) {
   switch (kind) {
     case FunctionKind::kNormalFunction:

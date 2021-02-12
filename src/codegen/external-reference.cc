@@ -84,6 +84,36 @@ constexpr struct alignas(16) {
 constexpr struct alignas(16) {
   uint64_t a;
   uint64_t b;
+} wasm_i8x16_splat_0x01 = {uint64_t{0x01010101'01010101},
+                           uint64_t{0x01010101'01010101}};
+
+constexpr struct alignas(16) {
+  uint64_t a;
+  uint64_t b;
+} wasm_i8x16_splat_0x0f = {uint64_t{0x0F0F0F0F'0F0F0F0F},
+                           uint64_t{0x0F0F0F0F'0F0F0F0F}};
+
+constexpr struct alignas(16) {
+  uint64_t a;
+  uint64_t b;
+} wasm_i8x16_splat_0x33 = {uint64_t{0x33333333'33333333},
+                           uint64_t{0x33333333'33333333}};
+
+constexpr struct alignas(16) {
+  uint64_t a;
+  uint64_t b;
+} wasm_i8x16_splat_0x55 = {uint64_t{0x55555555'55555555},
+                           uint64_t{0x55555555'55555555}};
+
+constexpr struct alignas(16) {
+  uint64_t a;
+  uint64_t b;
+} wasm_i16x8_splat_0x0001 = {uint64_t{0x00010001'00010001},
+                             uint64_t{0x00010001'00010001}};
+
+constexpr struct alignas(16) {
+  uint64_t a;
+  uint64_t b;
 } wasm_f64x2_convert_low_i32x4_u_int_mask = {uint64_t{0x4330000043300000},
                                              uint64_t{0x4330000043300000}};
 
@@ -104,6 +134,43 @@ constexpr struct alignas(16) {
   uint64_t b;
 } wasm_uint32_max_as_double = {uint64_t{0x41efffffffe00000},
                                uint64_t{0x41efffffffe00000}};
+
+// Helper masks used for i32x4.widen_i8x16_{s,u}.
+constexpr struct alignas(16) {
+  uint64_t a;
+  uint64_t b;
+} i32x4_widen_i8x16_s1_mask = {uint64_t{0x05FFFFFF'04FFFFFF},
+                               uint64_t{0x07FFFFFF'06FFFFFF}};
+
+constexpr struct alignas(16) {
+  uint64_t a;
+  uint64_t b;
+} i32x4_widen_i8x16_s2_mask = {uint64_t{0x09FFFFFF'08FFFFFF},
+                               uint64_t{0x0BFFFFFF'0AFFFFFF}};
+
+constexpr struct alignas(16) {
+  uint64_t a;
+  uint64_t b;
+} i32x4_widen_i8x16_s3_mask = {uint64_t{0x0DFFFFFF'0CFFFFFF},
+                               uint64_t{0x0FFFFFFF'0EFFFFFF}};
+
+constexpr struct alignas(16) {
+  uint64_t a;
+  uint64_t b;
+} i32x4_widen_i8x16_u1_mask = {uint64_t{0xFFFFFF05'FFFFFF04},
+                               uint64_t{0xFFFFFF07'FFFFFF06}};
+
+constexpr struct alignas(16) {
+  uint64_t a;
+  uint64_t b;
+} i32x4_widen_i8x16_u2_mask = {uint64_t{0xFFFFFF09'FFFFFF08},
+                               uint64_t{0xFFFFFF0B'FFFFFF0A}};
+
+constexpr struct alignas(16) {
+  uint64_t a;
+  uint64_t b;
+} i32x4_widen_i8x16_u3_mask = {uint64_t{0xFFFFFF0D'FFFFFF0C},
+                               uint64_t{0xFFFFFF0F'FFFFFF0E}};
 
 // Implementation of ExternalReference
 
@@ -519,10 +586,35 @@ ExternalReference ExternalReference::address_of_wasm_i8x16_popcnt_mask() {
   return ExternalReference(reinterpret_cast<Address>(&wasm_i8x16_popcnt_mask));
 }
 
+ExternalReference ExternalReference::address_of_wasm_i8x16_splat_0x01() {
+  return ExternalReference(reinterpret_cast<Address>(&wasm_i8x16_splat_0x01));
+}
+
+ExternalReference ExternalReference::address_of_wasm_i8x16_splat_0x0f() {
+  return ExternalReference(reinterpret_cast<Address>(&wasm_i8x16_splat_0x0f));
+}
+
+ExternalReference ExternalReference::address_of_wasm_i8x16_splat_0x33() {
+  return ExternalReference(reinterpret_cast<Address>(&wasm_i8x16_splat_0x33));
+}
+
+ExternalReference ExternalReference::address_of_wasm_i8x16_splat_0x55() {
+  return ExternalReference(reinterpret_cast<Address>(&wasm_i8x16_splat_0x55));
+}
+
+ExternalReference ExternalReference::address_of_wasm_i16x8_splat_0x0001() {
+  return ExternalReference(reinterpret_cast<Address>(&wasm_i16x8_splat_0x0001));
+}
+
 ExternalReference
 ExternalReference::address_of_wasm_f64x2_convert_low_i32x4_u_int_mask() {
   return ExternalReference(
       reinterpret_cast<Address>(&wasm_f64x2_convert_low_i32x4_u_int_mask));
+}
+
+ExternalReference ExternalReference::supports_wasm_simd_128_address() {
+  return ExternalReference(
+      reinterpret_cast<Address>(&CpuFeatures::supports_wasm_simd_128_));
 }
 
 ExternalReference ExternalReference::address_of_wasm_double_2_power_52() {
@@ -539,9 +631,44 @@ ExternalReference ExternalReference::address_of_wasm_uint32_max_as_double() {
       reinterpret_cast<Address>(&wasm_uint32_max_as_double));
 }
 
+ExternalReference ExternalReference::address_of_i32x4_widen_i8x16_s1_mask() {
+  return ExternalReference(
+      reinterpret_cast<Address>(&i32x4_widen_i8x16_s1_mask));
+}
+
+ExternalReference ExternalReference::address_of_i32x4_widen_i8x16_s2_mask() {
+  return ExternalReference(
+      reinterpret_cast<Address>(&i32x4_widen_i8x16_s2_mask));
+}
+
+ExternalReference ExternalReference::address_of_i32x4_widen_i8x16_s3_mask() {
+  return ExternalReference(
+      reinterpret_cast<Address>(&i32x4_widen_i8x16_s3_mask));
+}
+
+ExternalReference ExternalReference::address_of_i32x4_widen_i8x16_u1_mask() {
+  return ExternalReference(
+      reinterpret_cast<Address>(&i32x4_widen_i8x16_u1_mask));
+}
+
+ExternalReference ExternalReference::address_of_i32x4_widen_i8x16_u2_mask() {
+  return ExternalReference(
+      reinterpret_cast<Address>(&i32x4_widen_i8x16_u2_mask));
+}
+
+ExternalReference ExternalReference::address_of_i32x4_widen_i8x16_u3_mask() {
+  return ExternalReference(
+      reinterpret_cast<Address>(&i32x4_widen_i8x16_u3_mask));
+}
+
 ExternalReference
 ExternalReference::address_of_enable_experimental_regexp_engine() {
   return ExternalReference(&FLAG_enable_experimental_regexp_engine);
+}
+
+ExternalReference ExternalReference::thread_in_wasm_flag_address_address(
+    Isolate* isolate) {
+  return ExternalReference(isolate->thread_in_wasm_flag_address_address());
 }
 
 ExternalReference ExternalReference::is_profiling_address(Isolate* isolate) {
@@ -578,6 +705,8 @@ ExternalReference ExternalReference::invoke_accessor_getter_callback() {
 #define re_stack_check_func RegExpMacroAssemblerMIPS::CheckStackGuardState
 #elif V8_TARGET_ARCH_S390
 #define re_stack_check_func RegExpMacroAssemblerS390::CheckStackGuardState
+#elif V8_TARGET_ARCH_RISCV64
+#define re_stack_check_func RegExpMacroAssemblerRISCV::CheckStackGuardState
 #else
 UNREACHABLE();
 #endif

@@ -34,7 +34,6 @@ class JSPromise;
 class JSProxy;
 class JSProxyRevocableResult;
 class KeyAccumulator;
-class LayoutDescriptor;
 class LookupIterator;
 class FieldType;
 class Module;
@@ -71,7 +70,6 @@ template <typename T>
 class ZoneForwardList;
 
 #define OBJECT_TYPE_LIST(V) \
-  V(LayoutDescriptor)       \
   V(Primitive)              \
   V(Number)                 \
   V(Numeric)
@@ -207,6 +205,7 @@ class ZoneForwardList;
   V(StringSet)                                 \
   V(StringWrapper)                             \
   V(Struct)                                    \
+  V(SwissNameDictionary)                       \
   V(Symbol)                                    \
   V(SymbolWrapper)                             \
   V(SyntheticModule)                           \
@@ -226,6 +225,7 @@ class ZoneForwardList;
   V(WasmStruct)                                \
   V(WasmTypeInfo)                              \
   V(WasmTableObject)                           \
+  V(WasmValueObject)                           \
   V(WeakFixedArray)                            \
   V(WeakArrayList)                             \
   V(WeakCell)                                  \

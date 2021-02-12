@@ -710,11 +710,7 @@ class FrameArrayBuilder {
     Handle<JSFunction> function = summary.function();
     if (IsStrictFrame(function)) flags |= FrameArray::kIsStrict;
     if (is_constructor) flags |= FrameArray::kIsConstructor;
-
-    Handle<FixedArray> parameters = isolate_->factory()->empty_fixed_array();
-    if (V8_UNLIKELY(FLAG_detailed_error_stack_trace)) {
-      parameters = summary.parameters();
-    }
+    Handle<FixedArray> parameters = summary.parameters();
 
     elements_ = FrameArray::AppendJSFrame(
         elements_, TheHoleToUndefined(isolate_, summary.receiver()), function,
@@ -893,6 +889,8 @@ bool GetStackTraceLimit(Isolate* isolate, int* result) {
 
 bool NoExtension(const v8::FunctionCallbackInfo<v8::Value>&) { return false; }
 
+namespace {
+
 bool IsBuiltinFunction(Isolate* isolate, HeapObject object,
                        Builtins::Name builtin_index) {
   if (!object.IsJSFunction()) return false;
@@ -1012,8 +1010,6 @@ void CaptureAsyncStackTrace(Isolate* isolate, Handle<JSPromise> promise,
     }
   }
 }
-
-namespace {
 
 struct CaptureStackTraceOptions {
   int limit;
@@ -2613,6 +2609,14 @@ bool Isolate::IsWasmSimdEnabled(Handle<Context> context) {
   return FLAG_experimental_wasm_simd;
 }
 
+bool Isolate::AreWasmExceptionsEnabled(Handle<Context> context) {
+  if (wasm_exceptions_enabled_callback()) {
+    v8::Local<v8::Context> api_context = v8::Utils::ToLocal(context);
+    return wasm_exceptions_enabled_callback()(api_context);
+  }
+  return FLAG_experimental_wasm_eh;
+}
+
 Handle<Context> Isolate::GetIncumbentContext() {
   JavaScriptFrameIterator it(this);
 
@@ -3979,11 +3983,6 @@ void Isolate::UpdateNoElementsProtectorOnSetElement(Handle<JSObject> object) {
   Protectors::InvalidateNoElements(this);
 }
 
-bool Isolate::IsAnyInitialArrayPrototype(Handle<JSArray> array) {
-  DisallowGarbageCollection no_gc;
-  return IsInAnyContext(*array, Context::INITIAL_ARRAY_PROTOTYPE_INDEX);
-}
-
 static base::RandomNumberGenerator* ensure_rng_exists(
     base::RandomNumberGenerator** rng, int seed) {
   if (*rng == nullptr) {
@@ -4157,9 +4156,9 @@ MaybeHandle<JSPromise> Isolate::RunHostImportModuleDynamicallyCallback(
     MaybeHandle<Object> maybe_import_assertions_argument) {
   v8::Local<v8::Context> api_context =
       v8::Utils::ToLocal(Handle<Context>(native_context()));
-  DCHECK_EQ(host_import_module_dynamically_callback_ != nullptr,
-            host_import_module_dynamically_with_import_assertions_callback_ ==
-                nullptr);
+  DCHECK(host_import_module_dynamically_callback_ == nullptr ||
+         host_import_module_dynamically_with_import_assertions_callback_ ==
+             nullptr);
 
   if (host_import_module_dynamically_callback_ == nullptr &&
       host_import_module_dynamically_with_import_assertions_callback_ ==
@@ -4262,15 +4261,11 @@ MaybeHandle<FixedArray> Isolate::GetImportAssertionsFromArgument(
                               GetKeysConversion::kConvertToString)
           .ToHandleChecked();
 
-  // Assertions passed to the host must be sorted by the code point order of the
-  // key of each entry.
-  auto stringCompare = [this](Handle<String> lhs, Handle<String> rhs) {
-    return String::Compare(this, lhs, rhs) == ComparisonResult::kLessThan;
-  };
-  std::map<Handle<String>, Handle<String>, decltype(stringCompare)>
-      sorted_assertions(stringCompare);
-
-  // Collect the assertions in the sorted map.
+  // The assertions will be passed to the host in the form: [key1,
+  // value1, key2, value2, ...].
+  constexpr size_t kAssertionEntrySizeForDynamicImport = 2;
+  import_assertions_array = factory()->NewFixedArray(static_cast<int>(
+      assertion_keys->length() * kAssertionEntrySizeForDynamicImport));
   for (int i = 0; i < assertion_keys->length(); i++) {
     Handle<String> assertion_key(String::cast(assertion_keys->get(i)), this);
     Handle<Object> assertion_value;
@@ -4288,25 +4283,10 @@ MaybeHandle<FixedArray> Isolate::GetImportAssertionsFromArgument(
       return MaybeHandle<FixedArray>();
     }
 
-    auto insertion_result = sorted_assertions.insert(
-        std::make_pair(assertion_key, Handle<String>::cast(assertion_value)));
-
-    // Duplicate keys are not expected here.
-    CHECK(insertion_result.second);
-  }
-
-  // Move the assertions from the sorted map to the FixedArray that will be
-  // passed to the host. They will be stored in the array in the form: [key1,
-  // value1, key2, value2, ...].
-  constexpr size_t kAssertionEntrySizeForDynamicImport = 2;
-  import_assertions_array = factory()->NewFixedArray(static_cast<int>(
-      sorted_assertions.size() * kAssertionEntrySizeForDynamicImport));
-  int import_assertions_array_index = 0;
-  for (const auto& pair : sorted_assertions) {
-    import_assertions_array->set(import_assertions_array_index, *(pair.first));
-    import_assertions_array->set(import_assertions_array_index + 1,
-                                 *(pair.second));
-    import_assertions_array_index += kAssertionEntrySizeForDynamicImport;
+    import_assertions_array->set((i * kAssertionEntrySizeForDynamicImport),
+                                 *assertion_key);
+    import_assertions_array->set((i * kAssertionEntrySizeForDynamicImport) + 1,
+                                 *assertion_value);
   }
 
   return import_assertions_array;

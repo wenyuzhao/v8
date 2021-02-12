@@ -10,6 +10,7 @@
 #include "src/heap/cppgc/globals.h"
 #include "src/heap/cppgc/heap-object-header.h"
 #include "src/heap/cppgc/heap-page.h"
+#include "src/heap/cppgc/heap-statistics-collector.h"
 #include "src/heap/cppgc/heap-visitor.h"
 #include "src/heap/cppgc/marker.h"
 #include "src/heap/cppgc/marking-verifier.h"
@@ -85,19 +86,13 @@ size_t HeapBase::ObjectPayloadSize() const {
   return ObjectSizeCounter().GetSize(const_cast<RawHeap*>(&raw_heap()));
 }
 
-HeapBase::NoGCScope::NoGCScope(HeapBase& heap) : heap_(heap) {
-  heap_.no_gc_scope_++;
-}
-
-HeapBase::NoGCScope::~NoGCScope() { heap_.no_gc_scope_--; }
-
 void HeapBase::AdvanceIncrementalGarbageCollectionOnAllocationIfNeeded() {
   if (marker_) marker_->AdvanceMarkingOnAllocation();
 }
 
 void HeapBase::Terminate() {
   DCHECK(!IsMarking());
-  DCHECK(!in_no_gc_scope());
+  CHECK(!in_disallow_gc_scope());
 
   sweeper().FinishIfRunning();
 
@@ -122,6 +117,21 @@ void HeapBase::Terminate() {
   } while (strong_persistent_region_.NodesInUse() > 0);
 
   object_allocator().Terminate();
+  disallow_gc_scope_++;
+}
+
+HeapStatistics HeapBase::CollectStatistics(
+    HeapStatistics::DetailLevel detail_level) {
+  if (detail_level == HeapStatistics::DetailLevel::kBrief) {
+    return {stats_collector_->allocated_memory_size(),
+            stats_collector_->allocated_object_size(),
+            HeapStatistics::DetailLevel::kBrief,
+            {}};
+  }
+
+  sweeper_.FinishIfRunning();
+  object_allocator_.ResetLinearAllocationBuffers();
+  return HeapStatisticsCollector().CollectStatistics(this);
 }
 
 }  // namespace internal

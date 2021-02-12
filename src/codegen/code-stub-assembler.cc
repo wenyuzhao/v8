@@ -8076,12 +8076,21 @@ template <>
 void CodeStubAssembler::InsertEntry<NameDictionary>(
     TNode<NameDictionary> dictionary, TNode<Name> name, TNode<Object> value,
     TNode<IntPtrT> index, TNode<Smi> enum_index) {
+  // This should only be used for adding, not updating existing mappings.
+  CSA_ASSERT(this,
+             Word32Or(TaggedEqual(LoadFixedArrayElement(dictionary, index),
+                                  UndefinedConstant()),
+                      TaggedEqual(LoadFixedArrayElement(dictionary, index),
+                                  TheHoleConstant())));
+
   // Store name and value.
   StoreFixedArrayElement(dictionary, index, name);
   StoreValueByKeyIndex<NameDictionary>(dictionary, index, value);
 
   // Prepare details of the new property.
-  PropertyDetails d(kData, NONE, PropertyCellType::kNoCell);
+  PropertyDetails d(kData, NONE,
+                    PropertyDetails::kConstIfDictConstnessTracking);
+
   enum_index =
       SmiShl(enum_index, PropertyDetails::DictionaryStorageField::kShift);
   // We OR over the actual index below, so we expect the initial value to be 0.
@@ -8830,13 +8839,9 @@ void CodeStubAssembler::LoadPropertyFromFastObject(
       }
       BIND(&if_double);
       {
-        if (FLAG_unbox_double_fields) {
-          var_double_value = LoadObjectField<Float64T>(object, field_offset);
-        } else {
-          TNode<HeapNumber> heap_number =
-              CAST(LoadObjectField(object, field_offset));
-          var_double_value = LoadHeapNumberValue(heap_number);
-        }
+        TNode<HeapNumber> heap_number =
+            CAST(LoadObjectField(object, field_offset));
+        var_double_value = LoadHeapNumberValue(heap_number);
         Goto(&rebox_double);
       }
     }
@@ -9282,7 +9287,7 @@ void CodeStubAssembler::TryPrototypeChainLookup(
     TNode<Object> receiver, TNode<Object> object_arg, TNode<Object> key,
     const LookupPropertyInHolder& lookup_property_in_holder,
     const LookupElementInHolder& lookup_element_in_holder, Label* if_end,
-    Label* if_bailout, Label* if_proxy) {
+    Label* if_bailout, Label* if_proxy, bool handle_private_names) {
   // Ensure receiver is JSReceiver, otherwise bailout.
   GotoIf(TaggedIsSmi(receiver), if_bailout);
   TNode<HeapObject> object = CAST(object_arg);
@@ -9336,6 +9341,11 @@ void CodeStubAssembler::TryPrototypeChainLookup(
       }
 
       BIND(&next_proto);
+
+      if (handle_private_names) {
+        // Private name lookup doesn't walk the prototype chain.
+        GotoIf(IsPrivateSymbol(CAST(key)), if_end);
+      }
 
       TNode<HeapObject> proto = LoadMapPrototype(holder_map);
 
@@ -12415,9 +12425,10 @@ TNode<Oddball> CodeStubAssembler::HasProperty(TNode<Context> context,
                          &return_true, &return_false, next_holder, if_bailout);
       };
 
+  const bool kHandlePrivateNames = mode == HasPropertyLookupMode::kHasProperty;
   TryPrototypeChainLookup(object, object, key, lookup_property_in_holder,
                           lookup_element_in_holder, &return_false,
-                          &call_runtime, &if_proxy);
+                          &call_runtime, &if_proxy, kHandlePrivateNames);
 
   TVARIABLE(Oddball, result);
 

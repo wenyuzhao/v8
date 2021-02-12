@@ -7,6 +7,7 @@
 
 #include "src/common/globals.h"
 #include "src/compiler/node.h"
+#include "src/debug/debug-wasm-objects-inl.h"
 #include "src/diagnostics/disasm.h"
 #include "src/diagnostics/disassembler.h"
 #include "src/heap/heap-inl.h"                // For InOldSpace.
@@ -175,6 +176,9 @@ void HeapObject::HeapObjectPrint(std::ostream& os) {  // NOLINT
     case WASM_INSTANCE_OBJECT_TYPE:
       WasmInstanceObject::cast(*this).WasmInstanceObjectPrint(os);
       break;
+    case WASM_VALUE_OBJECT_TYPE:
+      WasmValueObject::cast(*this).WasmValueObjectPrint(os);
+      break;
     case CODE_TYPE:
       Code::cast(*this).CodePrint(os);
       break;
@@ -274,11 +278,7 @@ bool JSObject::PrintProperties(std::ostream& os) {  // NOLINT
       switch (details.location()) {
         case kField: {
           FieldIndex field_index = FieldIndex::ForDescriptor(map(), i);
-          if (IsUnboxedDoubleField(field_index)) {
-            os << "<unboxed double> " << RawFastDoublePropertyAt(field_index);
-          } else {
-            os << Brief(RawFastPropertyAt(field_index));
-          }
+          os << Brief(RawFastPropertyAt(field_index));
           break;
         }
         case kDescriptor:
@@ -941,6 +941,11 @@ void OrderedNameDictionary::OrderedNameDictionaryPrint(std::ostream& os) {
   PrintDictionaryContentsFull(os, *this);
 }
 
+void SwissNameDictionary::SwissNameDictionaryPrint(std::ostream& os) {
+  // Here to satisfy compiler, implemented in follow-up CL.
+  UNREACHABLE();
+}
+
 void PropertyArray::PropertyArrayPrint(std::ostream& os) {  // NOLINT
   PrintHeader(os, "PropertyArray");
   os << "\n - length: " << length();
@@ -1468,7 +1473,7 @@ void SharedFunctionInfo::SharedFunctionInfoPrint(std::ostream& os) {  // NOLINT
   os << "\n - language_mode: " << language_mode();
   os << "\n - data: " << Brief(function_data(kAcquireLoad));
   os << "\n - code (from data): ";
-    os << Brief(GetCode());
+  os << Brief(GetCode());
   PrintSourceCode(os);
   // Script files are often large, thus only print their {Brief} representation.
   os << "\n - script: " << Brief(script());
@@ -1663,6 +1668,7 @@ void SourceTextModule::SourceTextModulePrint(std::ostream& os) {  // NOLINT
   os << "\n - origin: " << Brief(script.GetNameOrSourceURL());
   os << "\n - requested_modules: " << Brief(requested_modules());
   os << "\n - import_meta: " << Brief(import_meta());
+  os << "\n - cycle_root: " << Brief(cycle_root());
   os << "\n";
 }
 
@@ -1705,6 +1711,15 @@ void ArrayBoilerplateDescription::ArrayBoilerplateDescriptionPrint(
   os << "\n";
 }
 
+void RegExpBoilerplateDescription::RegExpBoilerplateDescriptionPrint(
+    std::ostream& os) {  // NOLINT
+  PrintHeader(os, "RegExpBoilerplateDescription");
+  os << "\n - data: " << Brief(data());
+  os << "\n - source: " << Brief(source());
+  os << "\n - flags: " << flags();
+  os << "\n";
+}
+
 void AsmWasmData::AsmWasmDataPrint(std::ostream& os) {  // NOLINT
   PrintHeader(os, "AsmWasmData");
   os << "\n - native module: " << Brief(managed_native_module());
@@ -1716,7 +1731,6 @@ void AsmWasmData::AsmWasmDataPrint(std::ostream& os) {  // NOLINT
 void WasmTypeInfo::WasmTypeInfoPrint(std::ostream& os) {  // NOLINT
   PrintHeader(os, "WasmTypeInfo");
   os << "\n - type address: " << reinterpret_cast<void*>(foreign_address());
-  os << "\n - parent: " << Brief(parent());
   os << "\n";
 }
 
@@ -1748,6 +1762,7 @@ void WasmStruct::WasmStructPrint(std::ostream& os) {  // NOLINT
       case wasm::ValueType::kRef:
       case wasm::ValueType::kOptRef:
       case wasm::ValueType::kRtt:
+      case wasm::ValueType::kRttWithDepth:
       case wasm::ValueType::kBottom:
       case wasm::ValueType::kStmt:
         os << "UNIMPLEMENTED";  // TODO(7748): Implement.
@@ -1787,6 +1802,7 @@ void WasmArray::WasmArrayPrint(std::ostream& os) {  // NOLINT
     case wasm::ValueType::kRef:
     case wasm::ValueType::kOptRef:
     case wasm::ValueType::kRtt:
+    case wasm::ValueType::kRttWithDepth:
     case wasm::ValueType::kBottom:
     case wasm::ValueType::kStmt:
       os << "\n   Printing elements of this type is unimplemented, sorry";
@@ -1881,6 +1897,13 @@ void WasmTableObject::WasmTableObjectPrint(std::ostream& os) {  // NOLINT
   os << "\n - maximum_length: " << Brief(maximum_length());
   os << "\n - dispatch_tables: " << Brief(dispatch_tables());
   os << "\n - raw_type: " << raw_type();
+  os << "\n";
+}
+
+void WasmValueObject::WasmValueObjectPrint(std::ostream& os) {  // NOLINT
+  PrintHeader(os, "WasmValueObject");
+  os << "\n - type: " << Brief(type());
+  os << "\n - value: " << Brief(value());
   os << "\n";
 }
 
@@ -2260,64 +2283,7 @@ void ScopeInfo::ScopeInfoPrint(std::ostream& os) {  // NOLINT
 void StackTraceFrame::StackTraceFramePrint(std::ostream& os) {  // NOLINT
   PrintHeader(os, "StackTraceFrame");
   os << "\n - frame_index: " << frame_index();
-  os << "\n - frame_info: " << Brief(frame_info());
-  os << "\n";
-}
-
-void StackFrameInfo::StackFrameInfoPrint(std::ostream& os) {  // NOLINT
-  PrintHeader(os, "StackFrame");
-  os << "\n - line_number: " << line_number();
-  os << "\n - column_number: " << column_number();
-  os << "\n - script_id: " << script_id();
-  os << "\n - script_name: " << Brief(script_name());
-  os << "\n - script_name_or_source_url: "
-     << Brief(script_name_or_source_url());
-  os << "\n - function_name: " << Brief(function_name());
-  os << "\n - is_eval: " << (is_eval() ? "true" : "false");
-  os << "\n - is_constructor: " << (is_constructor() ? "true" : "false");
-  os << "\n";
-}
-
-static void PrintBitMask(std::ostream& os, uint32_t value) {  // NOLINT
-  for (int i = 0; i < 32; i++) {
-    if ((i & 7) == 0) os << " ";
-    os << (((value & 1) == 0) ? "_" : "x");
-    value >>= 1;
-  }
-}
-
-void LayoutDescriptor::Print() {
-  StdoutStream os;
-  this->Print(os);
-  os << std::flush;
-}
-
-void LayoutDescriptor::ShortPrint(std::ostream& os) {
-  if (IsSmi()) {
-    // Print tagged value for easy use with "jld" gdb macro.
-    os << reinterpret_cast<void*>(ptr());
-  } else {
-    os << Brief(*this);
-  }
-}
-
-void LayoutDescriptor::Print(std::ostream& os) {  // NOLINT
-  os << "Layout descriptor: ";
-  if (IsFastPointerLayout()) {
-    os << "<all tagged>";
-  } else if (IsSmi()) {
-    os << "fast";
-    PrintBitMask(os, static_cast<uint32_t>(Smi::ToInt(*this)));
-  } else if (IsOddball() && IsUninitialized()) {
-    os << "<uninitialized>";
-  } else {
-    os << "slow";
-    int num_words = number_of_layout_words();
-    for (int i = 0; i < num_words; i++) {
-      if (i > 0) os << " |";
-      PrintBitMask(os, get_layout_word(i));
-    }
-  }
+  os << "\n - frame_array: " << Brief(frame_array());
   os << "\n";
 }
 
@@ -2484,10 +2450,6 @@ void Map::MapPrint(std::ostream& os) {  // NOLINT
   os << "\n - instance descriptors " << (owns_descriptors() ? "(own) " : "")
      << "#" << NumberOfOwnDescriptors() << ": "
      << Brief(instance_descriptors(kRelaxedLoad));
-  if (FLAG_unbox_double_fields) {
-    os << "\n - layout descriptor: ";
-    layout_descriptor(kAcquireLoad).ShortPrint(os);
-  }
 
   // Read-only maps can't have transitions, which is fortunate because we need
   // the isolate to iterate over the transitions.
@@ -2743,12 +2705,12 @@ V8_EXPORT_PRIVATE extern void _v8_internal_Print_Code(void* object) {
   }
 
   if (!isolate->heap()->InSpaceSlow(address, i::CODE_SPACE) &&
-      !isolate->heap()->InSpaceSlow(address, i::LO_SPACE) &&
+      !isolate->heap()->InSpaceSlow(address, i::CODE_LO_SPACE) &&
       !i::InstructionStream::PcIsOffHeap(isolate, address) &&
       !i::ReadOnlyHeap::Contains(address)) {
     i::PrintF(
-        "%p is not within the current isolate's large object, code, read_only "
-        "or embedded spaces\n",
+        "%p is not within the current isolate's code, read_only or embedded "
+        "spaces\n",
         object);
     return;
   }
@@ -2764,16 +2726,6 @@ V8_EXPORT_PRIVATE extern void _v8_internal_Print_Code(void* object) {
 #else   // ENABLE_DISASSEMBLER
   code.Print();
 #endif  // ENABLE_DISASSEMBLER
-}
-
-V8_EXPORT_PRIVATE extern void _v8_internal_Print_LayoutDescriptor(
-    void* object) {
-  i::Object o(GetObjectFromRaw(object));
-  if (!o.IsLayoutDescriptor()) {
-    printf("Please provide a layout descriptor\n");
-  } else {
-    i::LayoutDescriptor::cast(o).Print();
-  }
 }
 
 V8_EXPORT_PRIVATE extern void _v8_internal_Print_StackTrace() {

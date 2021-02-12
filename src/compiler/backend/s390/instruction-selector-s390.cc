@@ -703,7 +703,7 @@ void InstructionSelector::VisitLoad(Node* node) {
   opcode |= AddressingModeField::encode(mode);
   if (node->opcode() == IrOpcode::kPoisonedLoad) {
     CHECK_NE(poisoning_level_, PoisoningMitigationLevel::kDontPoison);
-    opcode |= MiscField::encode(kMemoryAccessPoisoned);
+    opcode |= AccessModeField::encode(kMemoryAccessPoisoned);
   }
   Emit(opcode, 1, outputs, input_count, inputs);
 }
@@ -2428,6 +2428,7 @@ void InstructionSelector::VisitWord64AtomicStore(Node* node) {
   V(I64x2ExtMulLowI32x4U)  \
   V(I64x2ExtMulHighI32x4U) \
   V(I16x8Q15MulRSatS)      \
+  V(I64x2Ne)               \
   V(I32x4Add)              \
   V(I32x4AddHoriz)         \
   V(I32x4Sub)              \
@@ -2497,42 +2498,50 @@ void InstructionSelector::VisitWord64AtomicStore(Node* node) {
   V(S128Xor)               \
   V(S128AndNot)
 
-#define SIMD_UNOP_LIST(V)   \
-  V(F64x2Abs)               \
-  V(F64x2Neg)               \
-  V(F64x2Sqrt)              \
-  V(F64x2Ceil)              \
-  V(F64x2Floor)             \
-  V(F64x2Trunc)             \
-  V(F64x2NearestInt)        \
-  V(F32x4Abs)               \
-  V(F32x4Neg)               \
-  V(F32x4RecipApprox)       \
-  V(F32x4RecipSqrtApprox)   \
-  V(F32x4Sqrt)              \
-  V(F32x4Ceil)              \
-  V(F32x4Floor)             \
-  V(F32x4Trunc)             \
-  V(F32x4NearestInt)        \
-  V(I64x2Neg)               \
-  V(I64x2SConvertI32x4Low)  \
-  V(I64x2SConvertI32x4High) \
-  V(I64x2UConvertI32x4Low)  \
-  V(I64x2UConvertI32x4High) \
-  V(I32x4Neg)               \
-  V(I32x4Abs)               \
-  V(I32x4SConvertI16x8Low)  \
-  V(I32x4SConvertI16x8High) \
-  V(I32x4UConvertI16x8Low)  \
-  V(I32x4UConvertI16x8High) \
-  V(I16x8Neg)               \
-  V(I16x8Abs)               \
-  V(I16x8SConvertI8x16Low)  \
-  V(I16x8SConvertI8x16High) \
-  V(I16x8UConvertI8x16Low)  \
-  V(I16x8UConvertI8x16High) \
-  V(I8x16Neg)               \
-  V(I8x16Abs)               \
+#define SIMD_UNOP_LIST(V)    \
+  V(F64x2Abs)                \
+  V(F64x2Neg)                \
+  V(F64x2Sqrt)               \
+  V(F64x2Ceil)               \
+  V(F64x2Floor)              \
+  V(F64x2Trunc)              \
+  V(F64x2NearestInt)         \
+  V(F64x2ConvertLowI32x4S)   \
+  V(F64x2ConvertLowI32x4U)   \
+  V(F64x2PromoteLowF32x4)    \
+  V(F32x4Abs)                \
+  V(F32x4Neg)                \
+  V(F32x4RecipApprox)        \
+  V(F32x4RecipSqrtApprox)    \
+  V(F32x4Sqrt)               \
+  V(F32x4Ceil)               \
+  V(F32x4Floor)              \
+  V(F32x4Trunc)              \
+  V(F32x4NearestInt)         \
+  V(F32x4DemoteF64x2Zero)    \
+  V(I64x2Neg)                \
+  V(I64x2SConvertI32x4Low)   \
+  V(I64x2SConvertI32x4High)  \
+  V(I64x2UConvertI32x4Low)   \
+  V(I64x2UConvertI32x4High)  \
+  V(I32x4Neg)                \
+  V(I32x4Abs)                \
+  V(I32x4SConvertI16x8Low)   \
+  V(I32x4SConvertI16x8High)  \
+  V(I32x4UConvertI16x8Low)   \
+  V(I32x4UConvertI16x8High)  \
+  V(I32x4TruncSatF64x2SZero) \
+  V(I32x4TruncSatF64x2UZero) \
+  V(I16x8Neg)                \
+  V(I16x8Abs)                \
+  V(I16x8SConvertI8x16Low)   \
+  V(I16x8SConvertI8x16High)  \
+  V(I16x8UConvertI8x16Low)   \
+  V(I16x8UConvertI8x16High)  \
+  V(I8x16Neg)                \
+  V(I8x16Abs)                \
+  V(I8x16Popcnt)             \
+  V(V64x2AllTrue)            \
   V(S128Not)
 
 #define SIMD_SHIFT_LIST(V) \
@@ -2550,9 +2559,7 @@ void InstructionSelector::VisitWord64AtomicStore(Node* node) {
   V(I8x16ShrU)
 
 #define SIMD_BOOL_LIST(V) \
-  V(V32x4AnyTrue)         \
-  V(V16x8AnyTrue)         \
-  V(V8x16AnyTrue)         \
+  V(V128AnyTrue)          \
   V(V32x4AllTrue)         \
   V(V16x8AllTrue)         \
   V(V8x16AllTrue)
@@ -2704,7 +2711,6 @@ void InstructionSelector::VisitI8x16Shuffle(Node* node) {
   S390OperandGenerator g(this);
   Node* input0 = node->InputAt(0);
   Node* input1 = node->InputAt(1);
-#ifdef V8_TARGET_BIG_ENDIAN
   // Remap the shuffle indices to match IBM lane numbering.
   int max_index = 15;
   int total_lane_count = 2 * kSimd128Size;
@@ -2716,7 +2722,6 @@ void InstructionSelector::VisitI8x16Shuffle(Node* node) {
                                : total_lane_count - current_index + max_index);
   }
   shuffle_p = &shuffle_remapped[0];
-#endif
   Emit(kS390_I8x16Shuffle, g.DefineAsRegister(node),
        g.UseUniqueRegister(input0), g.UseUniqueRegister(input1),
        g.UseImmediate(wasm::SimdShuffle::Pack4Lanes(shuffle_p)),
@@ -2798,9 +2803,19 @@ void InstructionSelector::EmitPrepareResults(
   }
 }
 
+void InstructionSelector::VisitLoadLane(Node* node) {
+  // We should never reach here, see http://crrev.com/c/2577820
+  UNIMPLEMENTED();
+}
+
 void InstructionSelector::VisitLoadTransform(Node* node) {
   // We should never reach here, see http://crrev.com/c/2050811
   UNREACHABLE();
+}
+
+void InstructionSelector::VisitStoreLane(Node* node) {
+  // We should never reach here, see http://crrev.com/c/2577820
+  UNIMPLEMENTED();
 }
 
 void InstructionSelector::VisitTruncateFloat32ToInt32(Node* node) {

@@ -299,7 +299,7 @@ void DeclarationScope::SetDefaults() {
   is_asm_module_ = false;
   force_eager_compilation_ = false;
   has_arguments_parameter_ = false;
-  scope_uses_super_property_ = false;
+  uses_super_property_ = false;
   has_checked_syntax_ = false;
   has_this_reference_ = false;
   has_this_declaration_ =
@@ -1432,6 +1432,16 @@ DeclarationScope* Scope::GetReceiverScope() {
 Scope* Scope::GetHomeObjectScope() {
   Scope* scope = this;
   while (scope != nullptr && !scope->is_home_object_scope()) {
+    if (scope->is_function_scope()) {
+      FunctionKind function_kind = scope->AsDeclarationScope()->function_kind();
+      // "super" in arrow functions binds outside the arrow function. But if we
+      // find a function which doesn't bind "super" (is not a method etc.) and
+      // not an arrow function, we know "super" here doesn't bind anywhere and
+      // we can return nullptr.
+      if (!IsArrowFunction(function_kind) && !BindsSuper(function_kind)) {
+        return nullptr;
+      }
+    }
     if (scope->private_name_lookup_skips_outer_class()) {
       DCHECK(scope->outer_scope()->is_class_scope());
       scope = scope->outer_scope()->outer_scope();

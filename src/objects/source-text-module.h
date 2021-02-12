@@ -83,6 +83,9 @@ class SourceTextModule
                                           Handle<SourceTextModule> module,
                                           Handle<SourceTextModule> parent);
 
+  // Get the non-hole cycle root. Only valid when status >= kEvaluated.
+  inline Handle<SourceTextModule> GetCycleRoot(Isolate* isolate) const;
+
   // Returns a SourceTextModule, the
   // ith parent in depth first traversal order of a given async child.
   inline Handle<SourceTextModule> GetAsyncParentModule(Isolate* isolate,
@@ -105,10 +108,6 @@ class SourceTextModule
   // Whether or not this module is async and evaluating or currently evaluating
   // an async child.
   DECL_BOOLEAN_ACCESSORS(async_evaluating)
-
-  // The top level promise capability of this module. Will only be defined
-  // for cycle roots.
-  DECL_ACCESSORS(top_level_capability, HeapObject)
 
   // The parent modules of a given async dependency, use async_parent_modules()
   // to retrieve the ArrayList representation.
@@ -168,10 +167,6 @@ class SourceTextModule
   static V8_WARN_UNUSED_RESULT bool MaybeTransitionComponent(
       Isolate* isolate, Handle<SourceTextModule> module,
       ZoneForwardList<Handle<SourceTextModule>>* stack, Status new_status);
-
-  // Implementation of spec GetAsyncCycleRoot.
-  static V8_WARN_UNUSED_RESULT Handle<SourceTextModule> GetAsyncCycleRoot(
-      Isolate* isolate, Handle<SourceTextModule> module);
 
   // Implementation of spec ExecuteModule is broken up into
   // InnerExecuteAsyncModule for asynchronous modules and ExecuteModule

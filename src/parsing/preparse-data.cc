@@ -306,7 +306,7 @@ bool PreparseDataBuilder::SaveDataForSkippableFunction(
 
   uint8_t language_and_super =
       LanguageField::encode(function_scope->language_mode()) |
-      UsesSuperField::encode(function_scope->UsesSuper());
+      UsesSuperField::encode(function_scope->uses_super_property());
   byte_data_.WriteQuarter(language_and_super);
   return has_data;
 }

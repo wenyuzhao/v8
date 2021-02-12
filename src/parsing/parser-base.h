@@ -2709,7 +2709,7 @@ typename ParserBase<Impl>::ExpressionT ParserBase<Impl>::ParseObjectLiteral() {
   }
 
   Variable* home_object = nullptr;
-  if (block_scope->NeedsHomeObject()) {
+  if (block_scope->needs_home_object()) {
     home_object = block_scope->DeclareHomeObjectVariable(ast_value_factory());
     block_scope->set_end_position(end_position());
   } else {
@@ -3144,7 +3144,20 @@ template <typename Impl>
 typename ParserBase<Impl>::ExpressionT ParserBase<Impl>::ParseBinaryExpression(
     int prec) {
   DCHECK_GE(prec, 4);
-  ExpressionT x = ParseUnaryExpression();
+  ExpressionT x;
+  // "#foo in ShiftExpression" needs to be parsed separately, since private
+  // identifiers are not valid PrimaryExpressions.
+  if (V8_UNLIKELY(FLAG_harmony_private_brand_checks &&
+                  peek() == Token::PRIVATE_NAME)) {
+    x = ParsePropertyOrPrivatePropertyName();
+    if (peek() != Token::IN) {
+      ReportUnexpectedToken(peek());
+      return impl()->FailureExpression();
+    }
+  } else {
+    x = ParseUnaryExpression();
+  }
+
   int prec1 = Token::Precedence(peek(), accept_IN_);
   if (prec1 >= prec) {
     return ParseBinaryContinuation(x, prec, prec1);
@@ -4679,7 +4692,7 @@ typename ParserBase<Impl>::ExpressionT ParserBase<Impl>::ParseClassLiteral(
         ast_value_factory(), IsStaticFlag::kNotStatic, kNoSourcePosition);
   }
 
-  if (class_scope->NeedsHomeObject()) {
+  if (class_scope->needs_home_object()) {
     class_info.home_object_variable =
         class_scope->DeclareHomeObjectVariable(ast_value_factory());
     class_info.static_home_object_variable =
@@ -5928,12 +5941,18 @@ typename ParserBase<Impl>::StatementT ParserBase<Impl>::ParseForStatement(
       ExpressionParsingScope parsing_scope(impl());
       AcceptINScope scope(this, false);
       expression = ParseExpressionCoverGrammar();
+      // `for (async of` is disallowed but `for (async.x of` is allowed, so
+      // check if the token is ASYNC after parsing the expression.
+      bool expression_is_async = scanner()->current_token() == Token::ASYNC;
       // Initializer is reference followed by in/of.
       lhs_end_pos = end_position();
       is_for_each = CheckInOrOf(&for_info.mode);
       if (is_for_each) {
-        if (starts_with_let && for_info.mode == ForEachStatement::ITERATE) {
-          impl()->ReportMessageAt(next_loc, MessageTemplate::kForOfLet);
+        if ((starts_with_let || expression_is_async) &&
+            for_info.mode == ForEachStatement::ITERATE) {
+          impl()->ReportMessageAt(next_loc, starts_with_let
+                                                ? MessageTemplate::kForOfLet
+                                                : MessageTemplate::kForOfAsync);
           return impl()->NullStatement();
         }
         if (expression->IsPattern()) {

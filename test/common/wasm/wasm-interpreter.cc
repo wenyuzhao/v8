@@ -451,19 +451,6 @@ int_type ExecuteConvert(float_type a, TrapReason* trap) {
   return 0;
 }
 
-template <typename int_type, typename float_type>
-int_type ExecuteConvertSaturate(float_type a) {
-  TrapReason base_trap = kTrapCount;
-  int32_t val = ExecuteConvert<int_type>(a, &base_trap);
-  if (base_trap == kTrapCount) {
-    return val;
-  }
-  return std::isnan(a) ? 0
-                       : (a < static_cast<float_type>(0.0)
-                              ? std::numeric_limits<int_type>::min()
-                              : std::numeric_limits<int_type>::max());
-}
-
 template <typename dst_type, typename src_type, void (*fn)(Address)>
 dst_type CallExternalIntToFloatFunction(src_type input) {
   uint8_t data[std::max(sizeof(dst_type), sizeof(src_type))];
@@ -491,31 +478,9 @@ int64_t ExecuteI64SConvertF32(float a, TrapReason* trap) {
                                         float32_to_int64_wrapper>(a, trap);
 }
 
-int64_t ExecuteI64SConvertSatF32(float a) {
-  TrapReason base_trap = kTrapCount;
-  int64_t val = ExecuteI64SConvertF32(a, &base_trap);
-  if (base_trap == kTrapCount) {
-    return val;
-  }
-  return std::isnan(a) ? 0
-                       : (a < 0.0 ? std::numeric_limits<int64_t>::min()
-                                  : std::numeric_limits<int64_t>::max());
-}
-
 int64_t ExecuteI64SConvertF64(double a, TrapReason* trap) {
   return CallExternalFloatToIntFunction<int64_t, double,
                                         float64_to_int64_wrapper>(a, trap);
-}
-
-int64_t ExecuteI64SConvertSatF64(double a) {
-  TrapReason base_trap = kTrapCount;
-  int64_t val = ExecuteI64SConvertF64(a, &base_trap);
-  if (base_trap == kTrapCount) {
-    return val;
-  }
-  return std::isnan(a) ? 0
-                       : (a < 0.0 ? std::numeric_limits<int64_t>::min()
-                                  : std::numeric_limits<int64_t>::max());
 }
 
 uint64_t ExecuteI64UConvertF32(float a, TrapReason* trap) {
@@ -523,31 +488,9 @@ uint64_t ExecuteI64UConvertF32(float a, TrapReason* trap) {
                                         float32_to_uint64_wrapper>(a, trap);
 }
 
-uint64_t ExecuteI64UConvertSatF32(float a) {
-  TrapReason base_trap = kTrapCount;
-  uint64_t val = ExecuteI64UConvertF32(a, &base_trap);
-  if (base_trap == kTrapCount) {
-    return val;
-  }
-  return std::isnan(a) ? 0
-                       : (a < 0.0 ? std::numeric_limits<uint64_t>::min()
-                                  : std::numeric_limits<uint64_t>::max());
-}
-
 uint64_t ExecuteI64UConvertF64(double a, TrapReason* trap) {
   return CallExternalFloatToIntFunction<uint64_t, double,
                                         float64_to_uint64_wrapper>(a, trap);
-}
-
-uint64_t ExecuteI64UConvertSatF64(double a) {
-  TrapReason base_trap = kTrapCount;
-  int64_t val = ExecuteI64UConvertF64(a, &base_trap);
-  if (base_trap == kTrapCount) {
-    return val;
-  }
-  return std::isnan(a) ? 0
-                       : (a < 0.0 ? std::numeric_limits<uint64_t>::min()
-                                  : std::numeric_limits<uint64_t>::max());
 }
 
 int64_t ExecuteI64SConvertI32(int32_t a, TrapReason* trap) {
@@ -651,7 +594,10 @@ class SideTable : public ZoneObject {
       friend Zone;
 
       explicit CLabel(Zone* zone, int32_t target_stack_height, uint32_t arity)
-          : target_stack_height(target_stack_height), arity(arity), refs(zone) {
+          : catch_targets(zone),
+            target_stack_height(target_stack_height),
+            arity(arity),
+            refs(zone) {
         DCHECK_LE(0, target_stack_height);
       }
 
@@ -661,6 +607,7 @@ class SideTable : public ZoneObject {
         const int32_t stack_height;
       };
       const byte* target = nullptr;
+      ZoneVector<std::pair<int, const byte*>> catch_targets;
       int32_t target_stack_height;
       // Arity when branching to this label.
       const uint32_t arity;
@@ -676,6 +623,10 @@ class SideTable : public ZoneObject {
         target = pc;
       }
 
+      void Bind(const byte* pc, int exception_index) {
+        catch_targets.emplace_back(exception_index, pc);
+      }
+
       // Reference this label from the given location.
       void Ref(const byte* from_pc, int32_t stack_height) {
         // Target being bound before a reference means this is a loop.
@@ -684,19 +635,40 @@ class SideTable : public ZoneObject {
       }
 
       void Finish(ControlTransferMap* map, const byte* start) {
-        DCHECK_NOT_NULL(target);
+        DCHECK_EQ(!!target, catch_targets.empty());
         for (auto ref : refs) {
           size_t offset = static_cast<size_t>(ref.from_pc - start);
-          auto pcdiff = static_cast<pcdiff_t>(target - ref.from_pc);
           DCHECK_GE(ref.stack_height, target_stack_height);
           spdiff_t spdiff =
               static_cast<spdiff_t>(ref.stack_height - target_stack_height);
-          TRACE("control transfer @%zu: Δpc %d, stack %u->%u = -%u\n", offset,
-                pcdiff, ref.stack_height, target_stack_height, spdiff);
-          ControlTransferEntry& entry = (*map)[offset];
-          entry.pc_diff = pcdiff;
-          entry.sp_diff = spdiff;
-          entry.target_arity = arity;
+          if (target) {
+            auto pcdiff = static_cast<pcdiff_t>(target - ref.from_pc);
+            TRACE("control transfer @%zu: Δpc %d, stack %u->%u = -%u\n", offset,
+                  pcdiff, ref.stack_height, target_stack_height, spdiff);
+            ControlTransferEntry& entry = (map->map)[offset];
+            entry.pc_diff = pcdiff;
+            entry.sp_diff = spdiff;
+            entry.target_arity = arity;
+          } else {
+            Zone* zone = map->catch_map.get_allocator().zone();
+            auto p = map->catch_map.emplace(
+                offset, ZoneVector<CatchControlTransferEntry>(zone));
+            auto& catch_entries = p.first->second;
+            for (auto& p : catch_targets) {
+              auto pcdiff = static_cast<pcdiff_t>(p.second - ref.from_pc);
+              TRACE(
+                  "control transfer @%zu: Δpc %d, stack %u->%u, exn: %d = "
+                  "-%u\n",
+                  offset, pcdiff, ref.stack_height, target_stack_height,
+                  p.first, spdiff);
+              CatchControlTransferEntry entry;
+              entry.pc_diff = pcdiff;
+              entry.sp_diff = spdiff;
+              entry.target_arity = arity;
+              entry.exception_index = p.first;
+              catch_entries.emplace_back(entry);
+            }
+          }
         }
       }
     };
@@ -838,6 +810,7 @@ class SideTable : public ZoneObject {
           break;
         }
         case kExprElse: {
+          // TODO(thibaudm): implement catch_all.
           Control* c = &control_stack.back();
           copy_unreachable();
           TRACE("control @%u: Else\n", i.pc_offset());
@@ -864,7 +837,7 @@ class SideTable : public ZoneObject {
           CLabel* end_label = CLabel::New(&control_transfer_zone, stack_height,
                                           imm.out_arity());
           CLabel* catch_label =
-              CLabel::New(&control_transfer_zone, stack_height, kCatchInArity);
+              CLabel::New(&control_transfer_zone, stack_height, 0);
           control_stack.emplace_back(i.pc(), end_label, catch_label,
                                      imm.out_arity());
           exception_stack.push_back(control_stack.size() - 1);
@@ -872,21 +845,28 @@ class SideTable : public ZoneObject {
           break;
         }
         case kExprCatch: {
-          DCHECK_EQ(control_stack.size() - 1, exception_stack.back());
+          if (!exception_stack.empty() &&
+              exception_stack.back() == control_stack.size() - 1) {
+            // Only pop the exception stack once when we enter the first catch.
+            exception_stack.pop_back();
+          }
+          ExceptionIndexImmediate<Decoder::kNoValidation> imm(&i, i.pc() + 1);
           Control* c = &control_stack.back();
-          exception_stack.pop_back();
           copy_unreachable();
           TRACE("control @%u: Catch\n", i.pc_offset());
           if (!unreachable) {
             c->end_label->Ref(i.pc(), stack_height);
           }
+
           DCHECK_NOT_NULL(c->else_label);
-          c->else_label->Bind(i.pc() + 1);
-          c->else_label->Finish(&map_, code->start);
-          c->else_label = nullptr;
+          c->else_label->Bind(i.pc() + imm.length + 1, imm.index);
+
           DCHECK_IMPLIES(!unreachable,
                          stack_height >= c->end_label->target_stack_height);
-          stack_height = c->end_label->target_stack_height + kCatchInArity;
+          const FunctionSig* exception_sig = module->exceptions[imm.index].sig;
+          int catch_in_arity =
+              static_cast<int>(exception_sig->parameter_count());
+          stack_height = c->end_label->target_stack_height + catch_in_arity;
           break;
         }
         case kExprEnd: {
@@ -895,7 +875,12 @@ class SideTable : public ZoneObject {
           // Only loops have bound labels.
           DCHECK_IMPLIES(c->end_label->target, *c->pc == kExprLoop);
           if (!c->end_label->target) {
-            if (c->else_label) c->else_label->Bind(i.pc());
+            if (c->else_label) {
+              if (*c->pc == kExprIf) {
+                // Bind else label for one-armed if.
+                c->else_label->Bind(i.pc());
+              }
+            }
             c->end_label->Bind(i.pc() + 1);
           }
           c->Finish(&map_, code->start);
@@ -946,13 +931,18 @@ class SideTable : public ZoneObject {
   }
 
   bool HasEntryAt(pc_t from) {
-    auto result = map_.find(from);
-    return result != map_.end();
+    auto result = map_.map.find(from);
+    return result != map_.map.end();
+  }
+
+  bool HasCatchEntryAt(pc_t from) {
+    auto result = map_.catch_map.find(from);
+    return result != map_.catch_map.end();
   }
 
   ControlTransferEntry& Lookup(pc_t from) {
-    auto result = map_.find(from);
-    DCHECK(result != map_.end());
+    auto result = map_.map.find(from);
+    DCHECK(result != map_.map.end());
     return result->second;
   }
 };
@@ -1179,14 +1169,19 @@ class WasmInterpreterInternals {
     while (!frames_.empty()) {
       Frame& frame = frames_.back();
       InterpreterCode* code = frame.code;
-      if (catchable && code->side_table->HasEntryAt(frame.pc)) {
+      if (catchable && code->side_table->HasCatchEntryAt(frame.pc)) {
         TRACE("----- HANDLE -----\n");
-        Push(WasmValue(handle(isolate->pending_exception(), isolate)));
-        isolate->clear_pending_exception();
-        frame.pc += JumpToHandlerDelta(code, frame.pc);
-        TRACE("  => handler #%zu (#%u @%zu)\n", frames_.size() - 1,
-              code->function->func_index, frame.pc);
-        return WasmInterpreter::HANDLED;
+        Handle<Object> exception =
+            handle(isolate->pending_exception(), isolate);
+        if (JumpToHandlerDelta(code, exception, &frame.pc)) {
+          isolate->clear_pending_exception();
+          TRACE("  => handler #%zu (#%u @%zu)\n", frames_.size() - 1,
+                code->function->func_index, frame.pc);
+          return WasmInterpreter::HANDLED;
+        } else {
+          TRACE("  => no handler #%zu (#%u @%zu)\n", frames_.size() - 1,
+                code->function->func_index, frame.pc);
+        }
       }
       TRACE("  => drop frame #%zu (#%u @%zu)\n", frames_.size() - 1,
             code->function->func_index, frame.pc);
@@ -1313,8 +1308,9 @@ class WasmInterpreterInternals {
           val = WasmValue(isolate_->factory()->null_value());
           break;
         }
-        case ValueType::kRef:
-        case ValueType::kRtt:  // TODO(7748): Implement.
+        case ValueType::kRef:  // TODO(7748): Implement.
+        case ValueType::kRtt:
+        case ValueType::kRttWithDepth:
         case ValueType::kStmt:
         case ValueType::kBottom:
         case ValueType::kI8:
@@ -1345,11 +1341,24 @@ class WasmInterpreterInternals {
     return static_cast<int>(code->side_table->Lookup(pc).pc_diff);
   }
 
-  int JumpToHandlerDelta(InterpreterCode* code, pc_t pc) {
-    ControlTransferEntry& control_transfer_entry = code->side_table->Lookup(pc);
-    DoStackTransfer(control_transfer_entry.sp_diff + kCatchInArity,
-                    control_transfer_entry.target_arity);
-    return control_transfer_entry.pc_diff;
+  bool JumpToHandlerDelta(InterpreterCode* code,
+                          Handle<Object> exception_object, pc_t* pc) {
+    auto it = code->side_table->map_.catch_map.find(*pc);
+    DCHECK_NE(it, code->side_table->map_.catch_map.end());
+    for (auto& entry : it->second) {
+      if (MatchingExceptionTag(exception_object, entry.exception_index)) {
+        const WasmException* exception =
+            &module()->exceptions[entry.exception_index];
+        const FunctionSig* sig = exception->sig;
+        int catch_in_arity = static_cast<int>(sig->parameter_count());
+        DoUnpackException(exception, exception_object);
+        DoStackTransfer(entry.sp_diff + catch_in_arity, catch_in_arity);
+        *pc += entry.pc_diff;
+        return true;
+      }
+    }
+    // TODO(thibaudm): Try rethrowing in the current frame before unwinding.
+    return false;
   }
 
   int DoBreak(InterpreterCode* code, pc_t pc, size_t depth) {
@@ -1634,28 +1643,28 @@ class WasmInterpreterInternals {
                         InterpreterCode* code, pc_t pc, int* const len) {
     switch (opcode) {
       case kExprI32SConvertSatF32:
-        Push(WasmValue(ExecuteConvertSaturate<int32_t>(Pop().to<float>())));
+        Push(WasmValue(base::saturated_cast<int32_t>(Pop().to<float>())));
         return true;
       case kExprI32UConvertSatF32:
-        Push(WasmValue(ExecuteConvertSaturate<uint32_t>(Pop().to<float>())));
+        Push(WasmValue(base::saturated_cast<uint32_t>(Pop().to<float>())));
         return true;
       case kExprI32SConvertSatF64:
-        Push(WasmValue(ExecuteConvertSaturate<int32_t>(Pop().to<double>())));
+        Push(WasmValue(base::saturated_cast<int32_t>(Pop().to<double>())));
         return true;
       case kExprI32UConvertSatF64:
-        Push(WasmValue(ExecuteConvertSaturate<uint32_t>(Pop().to<double>())));
+        Push(WasmValue(base::saturated_cast<uint32_t>(Pop().to<double>())));
         return true;
       case kExprI64SConvertSatF32:
-        Push(WasmValue(ExecuteI64SConvertSatF32(Pop().to<float>())));
+        Push(WasmValue(base::saturated_cast<int64_t>(Pop().to<float>())));
         return true;
       case kExprI64UConvertSatF32:
-        Push(WasmValue(ExecuteI64UConvertSatF32(Pop().to<float>())));
+        Push(WasmValue(base::saturated_cast<uint64_t>(Pop().to<float>())));
         return true;
       case kExprI64SConvertSatF64:
-        Push(WasmValue(ExecuteI64SConvertSatF64(Pop().to<double>())));
+        Push(WasmValue(base::saturated_cast<int64_t>(Pop().to<double>())));
         return true;
       case kExprI64UConvertSatF64:
-        Push(WasmValue(ExecuteI64UConvertSatF64(Pop().to<double>())));
+        Push(WasmValue(base::saturated_cast<uint64_t>(Pop().to<double>())));
         return true;
       case kExprMemoryInit: {
         MemoryInitImmediate<Decoder::kNoValidation> imm(decoder,
@@ -2305,6 +2314,8 @@ class WasmInterpreterInternals {
                 (AixFpOpWorkaround<float, &nearbyintf>(a)))
       UNOP_CASE(I64x2Neg, i64x2, int2, 2, base::NegateWithWraparound(a))
       UNOP_CASE(I32x4Neg, i32x4, int4, 4, base::NegateWithWraparound(a))
+      // Use llabs which will work correctly on both 64-bit and 32-bit.
+      UNOP_CASE(I64x2Abs, i64x2, int2, 2, std::llabs(a))
       UNOP_CASE(I32x4Abs, i32x4, int4, 4, std::abs(a))
       UNOP_CASE(S128Not, i32x4, int4, 4, ~a)
       UNOP_CASE(I16x8Neg, i16x8, int8, 8, base::NegateWithWraparound(a))
@@ -2365,6 +2376,11 @@ class WasmInterpreterInternals {
       CMPOP_CASE(F32x4Lt, f32x4, float4, int4, 4, a < b)
       CMPOP_CASE(F32x4Le, f32x4, float4, int4, 4, a <= b)
       CMPOP_CASE(I64x2Eq, i64x2, int2, int2, 2, a == b)
+      CMPOP_CASE(I64x2Ne, i64x2, int2, int2, 2, a != b)
+      CMPOP_CASE(I64x2LtS, i64x2, int2, int2, 2, a < b)
+      CMPOP_CASE(I64x2GtS, i64x2, int2, int2, 2, a > b)
+      CMPOP_CASE(I64x2LeS, i64x2, int2, int2, 2, a <= b)
+      CMPOP_CASE(I64x2GeS, i64x2, int2, int2, 2, a >= b)
       CMPOP_CASE(I32x4Eq, i32x4, int4, int4, 4, a == b)
       CMPOP_CASE(I32x4Ne, i32x4, int4, int4, 4, a != b)
       CMPOP_CASE(I32x4GtS, i32x4, int4, int4, 4, a > b)
@@ -2568,28 +2584,25 @@ class WasmInterpreterInternals {
         CONVERT_CASE(F64x2PromoteLowF32x4, float4, f32x4, float2, 2, 0, float,
                      static_cast<double>(a))
 #undef CONVERT_CASE
-#define PACK_CASE(op, src_type, name, dst_type, count, ctype, dst_ctype) \
-  case kExpr##op: {                                                      \
-    WasmValue v2 = Pop();                                                \
-    WasmValue v1 = Pop();                                                \
-    src_type s1 = v1.to_s128().to_##name();                              \
-    src_type s2 = v2.to_s128().to_##name();                              \
-    dst_type res;                                                        \
-    int64_t min = std::numeric_limits<ctype>::min();                     \
-    int64_t max = std::numeric_limits<ctype>::max();                     \
-    for (size_t i = 0; i < count; ++i) {                                 \
-      int64_t v = i < count / 2 ? s1.val[LANE(i, s1)]                    \
-                                : s2.val[LANE(i - count / 2, s2)];       \
-      res.val[LANE(i, res)] =                                            \
-          static_cast<dst_ctype>(std::max(min, std::min(max, v)));       \
-    }                                                                    \
-    Push(WasmValue(Simd128(res)));                                       \
-    return true;                                                         \
+#define PACK_CASE(op, src_type, name, dst_type, count, dst_ctype)  \
+  case kExpr##op: {                                                \
+    WasmValue v2 = Pop();                                          \
+    WasmValue v1 = Pop();                                          \
+    src_type s1 = v1.to_s128().to_##name();                        \
+    src_type s2 = v2.to_s128().to_##name();                        \
+    dst_type res;                                                  \
+    for (size_t i = 0; i < count; ++i) {                           \
+      int64_t v = i < count / 2 ? s1.val[LANE(i, s1)]              \
+                                : s2.val[LANE(i - count / 2, s2)]; \
+      res.val[LANE(i, res)] = base::saturated_cast<dst_ctype>(v);  \
+    }                                                              \
+    Push(WasmValue(Simd128(res)));                                 \
+    return true;                                                   \
   }
-        PACK_CASE(I16x8SConvertI32x4, int4, i32x4, int8, 8, int16_t, int16_t)
-        PACK_CASE(I16x8UConvertI32x4, int4, i32x4, int8, 8, uint16_t, int16_t)
-        PACK_CASE(I8x16SConvertI16x8, int8, i16x8, int16, 16, int8_t, int8_t)
-        PACK_CASE(I8x16UConvertI16x8, int8, i16x8, int16, 16, uint8_t, int8_t)
+        PACK_CASE(I16x8SConvertI32x4, int4, i32x4, int8, 8, int16_t)
+        PACK_CASE(I16x8UConvertI32x4, int4, i32x4, int8, 8, uint16_t)
+        PACK_CASE(I8x16SConvertI16x8, int8, i16x8, int16, 16, int8_t)
+        PACK_CASE(I8x16UConvertI16x8, int8, i16x8, int16, 16, uint8_t)
 #undef PACK_CASE
       case kExprS128Select: {
         int4 bool_val = Pop().to_s128().to_i32x4();
@@ -2678,9 +2691,7 @@ class WasmInterpreterInternals {
         Push(WasmValue(Simd128(res)));
         return true;
       }
-      case kExprV32x4AnyTrue:
-      case kExprV16x8AnyTrue:
-      case kExprV8x16AnyTrue: {
+      case kExprV128AnyTrue: {
         int4 s = Pop().to_s128().to_i32x4();
         bool res = s.val[LANE(0, s)] | s.val[LANE(1, s)] | s.val[LANE(2, s)] |
                    s.val[LANE(3, s)];
@@ -2697,6 +2708,7 @@ class WasmInterpreterInternals {
     Push(WasmValue(res));                                 \
     return true;                                          \
   }
+        REDUCTION_CASE(V64x2AllTrue, i64x2, int2, 2, &)
         REDUCTION_CASE(V32x4AllTrue, i32x4, int4, 4, &)
         REDUCTION_CASE(V16x8AllTrue, i16x8, int8, 8, &)
         REDUCTION_CASE(V8x16AllTrue, i8x16, int16, 16, &)
@@ -3082,7 +3094,11 @@ class WasmInterpreterInternals {
               encoded_values->set(encoded_index++, *externref);
               break;
             }
+            case HeapType::kBottom:
+              UNREACHABLE();
             case HeapType::kEq:
+            case HeapType::kData:
+            case HeapType::kI31:
             default:
               // TODO(7748): Implement these.
               UNIMPLEMENTED();
@@ -3091,6 +3107,7 @@ class WasmInterpreterInternals {
           break;
         }
         case ValueType::kRtt:  // TODO(7748): Implement.
+        case ValueType::kRttWithDepth:
         case ValueType::kI8:
         case ValueType::kI16:
         case ValueType::kStmt:
@@ -3208,6 +3225,7 @@ class WasmInterpreterInternals {
           break;
         }
         case ValueType::kRtt:  // TODO(7748): Implement.
+        case ValueType::kRttWithDepth:
         case ValueType::kI8:
         case ValueType::kI16:
         case ValueType::kStmt:
@@ -3289,7 +3307,7 @@ class WasmInterpreterInternals {
           WasmValue cond = Pop();
           bool is_true = cond.to<uint32_t>() != 0;
           if (is_true) {
-            // fall through to the true block.
+            // Fall through to the true block.
             len = 1 + imm.length;
             TRACE("  true => fallthrough\n");
           } else {
@@ -3579,6 +3597,7 @@ class WasmInterpreterInternals {
               break;
             }
             case ValueType::kRtt:  // TODO(7748): Implement.
+            case ValueType::kRttWithDepth:
             case ValueType::kI8:
             case ValueType::kI16:
             case ValueType::kStmt:
@@ -3990,6 +4009,7 @@ class WasmInterpreterInternals {
           break;
         }
         case ValueType::kRtt:
+        case ValueType::kRttWithDepth:
           // TODO(7748): Implement properly.
           PrintF("rtt");
           break;

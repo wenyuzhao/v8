@@ -93,6 +93,7 @@ inline void Load(LiftoffAssembler* assm, LiftoffRegister dst, Operand src,
     case ValueType::kOptRef:
     case ValueType::kRef:
     case ValueType::kRtt:
+    case ValueType::kRttWithDepth:
       assm->movq(dst.gp(), src);
       break;
     case ValueType::kF32:
@@ -190,7 +191,9 @@ void LiftoffAssembler::PrepareTailCall(int num_callee_stack_params,
   popq(rbp);
 }
 
-void LiftoffAssembler::AlignFrameSize() {}
+void LiftoffAssembler::AlignFrameSize() {
+  max_used_spill_offset_ = RoundUp(max_used_spill_offset_, kSystemPointerSize);
+}
 
 void LiftoffAssembler::PatchPrepareStackFrame(int offset) {
   // The frame_size includes the frame marker. The frame marker has already been
@@ -198,7 +201,7 @@ void LiftoffAssembler::PatchPrepareStackFrame(int offset) {
   // anymore.
   int frame_size = GetTotalFrameSize() - kSystemPointerSize;
   // Need to align sp to system pointer size.
-  frame_size = RoundUp(frame_size, kSystemPointerSize);
+  DCHECK_EQ(frame_size, RoundUp(frame_size, kSystemPointerSize));
   // We can't run out of space, just pass anything big enough to not cause the
   // assembler to try to grow the buffer.
   constexpr int kAvailableSpace = 64;
@@ -826,6 +829,7 @@ void LiftoffAssembler::Spill(int offset, LiftoffRegister reg, ValueType type) {
     case ValueType::kOptRef:
     case ValueType::kRef:
     case ValueType::kRtt:
+    case ValueType::kRttWithDepth:
       movq(dst, reg.gp());
       break;
     case ValueType::kF32:
@@ -2041,6 +2045,7 @@ void LiftoffAssembler::emit_cond_jump(LiftoffCondition liftoff_cond,
       case ValueType::kRef:
       case ValueType::kOptRef:
       case ValueType::kRtt:
+      case ValueType::kRttWithDepth:
         DCHECK(liftoff_cond == kEqual || liftoff_cond == kUnequal);
         V8_FALLTHROUGH;
       case ValueType::kI64:
@@ -2314,7 +2319,11 @@ inline void EmitAnyTrue(LiftoffAssembler* assm, LiftoffRegister dst,
 
 template <void (TurboAssembler::*pcmp)(XMMRegister, XMMRegister)>
 inline void EmitAllTrue(LiftoffAssembler* assm, LiftoffRegister dst,
-                        LiftoffRegister src) {
+                        LiftoffRegister src,
+                        base::Optional<CpuFeature> feature = base::nullopt) {
+  base::Optional<CpuFeatureScope> sse_scope;
+  if (feature.has_value()) sse_scope.emplace(assm, *feature);
+
   XMMRegister tmp = kScratchDoubleReg;
   assm->xorq(dst.gp(), dst.gp());
   assm->Pxor(tmp, tmp);
@@ -2465,6 +2474,11 @@ void LiftoffAssembler::emit_i8x16_swizzle(LiftoffRegister dst,
   Pshufd(mask, mask, uint8_t{0x0});
   Paddusb(mask, rhs.fp());
   Pshufb(dst.fp(), lhs.fp(), mask);
+}
+
+void LiftoffAssembler::emit_i8x16_popcnt(LiftoffRegister dst,
+                                         LiftoffRegister src) {
+  I8x16Popcnt(dst.fp(), src.fp(), liftoff::kScratchDoubleReg2);
 }
 
 void LiftoffAssembler::emit_i8x16_splat(LiftoffRegister dst,
@@ -2680,6 +2694,20 @@ void LiftoffAssembler::emit_i32x4_ge_u(LiftoffRegister dst, LiftoffRegister lhs,
   Pcmpeqd(dst.fp(), ref);
 }
 
+void LiftoffAssembler::emit_i64x2_eq(LiftoffRegister dst, LiftoffRegister lhs,
+                                     LiftoffRegister rhs) {
+  liftoff::EmitSimdCommutativeBinOp<&Assembler::vpcmpeqq, &Assembler::pcmpeqq>(
+      this, dst, lhs, rhs, SSE4_1);
+}
+
+void LiftoffAssembler::emit_i64x2_ne(LiftoffRegister dst, LiftoffRegister lhs,
+                                     LiftoffRegister rhs) {
+  liftoff::EmitSimdCommutativeBinOp<&Assembler::vpcmpeqq, &Assembler::pcmpeqq>(
+      this, dst, lhs, rhs, SSE4_1);
+  Pcmpeqq(kScratchDoubleReg, kScratchDoubleReg);
+  Pxor(dst.fp(), kScratchDoubleReg);
+}
+
 void LiftoffAssembler::emit_f32x4_eq(LiftoffRegister dst, LiftoffRegister lhs,
                                      LiftoffRegister rhs) {
   liftoff::EmitSimdCommutativeBinOp<&Assembler::vcmpeqps, &Assembler::cmpeqps>(
@@ -2795,8 +2823,8 @@ void LiftoffAssembler::emit_i8x16_neg(LiftoffRegister dst,
   }
 }
 
-void LiftoffAssembler::emit_v8x16_anytrue(LiftoffRegister dst,
-                                          LiftoffRegister src) {
+void LiftoffAssembler::emit_v128_anytrue(LiftoffRegister dst,
+                                         LiftoffRegister src) {
   liftoff::EmitAnyTrue(this, dst, src);
 }
 
@@ -3039,11 +3067,6 @@ void LiftoffAssembler::emit_i16x8_neg(LiftoffRegister dst,
   }
 }
 
-void LiftoffAssembler::emit_v16x8_anytrue(LiftoffRegister dst,
-                                          LiftoffRegister src) {
-  liftoff::EmitAnyTrue(this, dst, src);
-}
-
 void LiftoffAssembler::emit_v16x8_alltrue(LiftoffRegister dst,
                                           LiftoffRegister src) {
   liftoff::EmitAllTrue<&TurboAssembler::Pcmpeqw>(this, dst, src);
@@ -3214,11 +3237,6 @@ void LiftoffAssembler::emit_i32x4_neg(LiftoffRegister dst,
   }
 }
 
-void LiftoffAssembler::emit_v32x4_anytrue(LiftoffRegister dst,
-                                          LiftoffRegister src) {
-  liftoff::EmitAnyTrue(this, dst, src);
-}
-
 void LiftoffAssembler::emit_v32x4_alltrue(LiftoffRegister dst,
                                           LiftoffRegister src) {
   liftoff::EmitAllTrue<&TurboAssembler::Pcmpeqd>(this, dst, src);
@@ -3383,6 +3401,11 @@ void LiftoffAssembler::emit_i64x2_neg(LiftoffRegister dst,
     psubq(reg, src.fp());
     if (dst.fp() != reg) movapd(dst.fp(), reg);
   }
+}
+
+void LiftoffAssembler::emit_v64x2_alltrue(LiftoffRegister dst,
+                                          LiftoffRegister src) {
+  liftoff::EmitAllTrue<&TurboAssembler::Pcmpeqq>(this, dst, src, SSE4_1);
 }
 
 void LiftoffAssembler::emit_i64x2_shl(LiftoffRegister dst, LiftoffRegister lhs,
@@ -3825,6 +3848,21 @@ void LiftoffAssembler::emit_f64x2_pmax(LiftoffRegister dst, LiftoffRegister lhs,
       this, dst, rhs, lhs);
 }
 
+void LiftoffAssembler::emit_f64x2_convert_low_i32x4_s(LiftoffRegister dst,
+                                                      LiftoffRegister src) {
+  Cvtdq2pd(dst.fp(), src.fp());
+}
+
+void LiftoffAssembler::emit_f64x2_convert_low_i32x4_u(LiftoffRegister dst,
+                                                      LiftoffRegister src) {
+  F64x2ConvertLowI32x4U(dst.fp(), src.fp());
+}
+
+void LiftoffAssembler::emit_f64x2_promote_low_f32x4(LiftoffRegister dst,
+                                                    LiftoffRegister src) {
+  Cvtps2pd(dst.fp(), src.fp());
+}
+
 void LiftoffAssembler::emit_i32x4_sconvert_f32x4(LiftoffRegister dst,
                                                  LiftoffRegister src) {
   // NAN->0
@@ -3908,6 +3946,11 @@ void LiftoffAssembler::emit_f32x4_uconvert_i32x4(LiftoffRegister dst,
   Addps(dst.fp(), kScratchDoubleReg);  // Add hi and lo, may round.
 }
 
+void LiftoffAssembler::emit_f32x4_demote_f64x2_zero(LiftoffRegister dst,
+                                                    LiftoffRegister src) {
+  Cvtpd2ps(dst.fp(), src.fp());
+}
+
 void LiftoffAssembler::emit_i8x16_sconvert_i16x8(LiftoffRegister dst,
                                                  LiftoffRegister lhs,
                                                  LiftoffRegister rhs) {
@@ -3978,6 +4021,16 @@ void LiftoffAssembler::emit_i32x4_uconvert_i16x8_low(LiftoffRegister dst,
 void LiftoffAssembler::emit_i32x4_uconvert_i16x8_high(LiftoffRegister dst,
                                                       LiftoffRegister src) {
   I32x4UConvertI16x8High(dst.fp(), src.fp());
+}
+
+void LiftoffAssembler::emit_i32x4_trunc_sat_f64x2_s_zero(LiftoffRegister dst,
+                                                         LiftoffRegister src) {
+  I32x4TruncSatF64x2SZero(dst.fp(), src.fp());
+}
+
+void LiftoffAssembler::emit_i32x4_trunc_sat_f64x2_u_zero(LiftoffRegister dst,
+                                                         LiftoffRegister src) {
+  I32x4TruncSatF64x2UZero(dst.fp(), src.fp());
 }
 
 void LiftoffAssembler::emit_s128_and_not(LiftoffRegister dst,

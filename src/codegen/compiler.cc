@@ -30,6 +30,7 @@
 #include "src/execution/frames-inl.h"
 #include "src/execution/isolate-inl.h"
 #include "src/execution/isolate.h"
+#include "src/execution/local-isolate.h"
 #include "src/execution/runtime-profiler.h"
 #include "src/execution/vm-state-inl.h"
 #include "src/handles/maybe-handles.h"
@@ -60,35 +61,6 @@ namespace v8 {
 namespace internal {
 
 namespace {
-
-bool IsForNativeContextIndependentCachingOnly(CodeKind kind) {
-  // NCI code is only cached (and not installed on the JSFunction upon
-  // successful compilation), unless the testing-only
-  // FLAG_turbo_nci_as_midtier is enabled.
-  return CodeKindIsNativeContextIndependentJSFunction(kind) &&
-         !FLAG_turbo_nci_as_midtier;
-}
-
-// This predicate is currently needed only because the nci-as-midtier testing
-// configuration is special. A quick summary of compilation configurations:
-//
-// - Turbofan (and currently Turboprop) uses both the optimization marker and
-// the optimized code cache (underneath, the marker and the cache share the same
-// slot on the feedback vector).
-// - Native context independent (NCI) code uses neither the marker nor the
-// cache.
-// - The NCI-as-midtier testing configuration uses the marker, but not the
-// cache.
-//
-// This predicate supports that last case. In the near future, this last case is
-// expected to change s.t. code kinds use the marker iff they use the optimized
-// code cache (details still TBD). In that case, the existing
-// CodeKindIsStoredInOptimizedCodeCache is sufficient and this extra predicate
-// can be removed.
-// TODO(jgruber,rmcilroy,v8:8888): Remove this predicate once that has happened.
-bool UsesOptimizationMarker(CodeKind kind) {
-  return !IsForNativeContextIndependentCachingOnly(kind);
-}
 
 class CompilerTracer : public AllStatic {
  public:
@@ -648,7 +620,8 @@ std::unique_ptr<UnoptimizedCompilationJob>
 ExecuteSingleUnoptimizedCompilationJob(
     ParseInfo* parse_info, FunctionLiteral* literal,
     AccountingAllocator* allocator,
-    std::vector<FunctionLiteral*>* eager_inner_literals) {
+    std::vector<FunctionLiteral*>* eager_inner_literals,
+    LocalIsolate* local_isolate) {
   if (UseAsmWasm(literal, parse_info->flags().is_asm_wasm_broken())) {
     std::unique_ptr<UnoptimizedCompilationJob> asm_job(
         AsmJs::NewCompilationJob(parse_info, literal, allocator));
@@ -663,7 +636,7 @@ ExecuteSingleUnoptimizedCompilationJob(
   }
   std::unique_ptr<UnoptimizedCompilationJob> job(
       interpreter::Interpreter::NewCompilationJob(
-          parse_info, literal, allocator, eager_inner_literals));
+          parse_info, literal, allocator, eager_inner_literals, local_isolate));
 
   if (job->ExecuteJob() != CompilationJob::SUCCEEDED) {
     // Compilation failed, return null.
@@ -678,9 +651,13 @@ bool RecursivelyExecuteUnoptimizedCompilationJobs(
     AccountingAllocator* allocator,
     UnoptimizedCompilationJobList* function_jobs) {
   std::vector<FunctionLiteral*> eager_inner_literals;
+
+  // We need to pass nullptr here because we are on the background
+  // thread but don't have a LocalIsolate.
+  DCHECK_NULL(LocalHeap::Current());
   std::unique_ptr<UnoptimizedCompilationJob> job =
       ExecuteSingleUnoptimizedCompilationJob(parse_info, literal, allocator,
-                                             &eager_inner_literals);
+                                             &eager_inner_literals, nullptr);
 
   if (!job) return false;
 
@@ -719,7 +696,9 @@ bool IterativelyExecuteAndFinalizeUnoptimizedCompilationJobs(
 
     std::unique_ptr<UnoptimizedCompilationJob> job =
         ExecuteSingleUnoptimizedCompilationJob(parse_info, literal, allocator,
-                                               &functions_to_compile);
+                                               &functions_to_compile,
+                                               isolate->AsLocalIsolate());
+
     if (!job) return false;
 
     UpdateSharedFunctionFlagsAfterCompilation(literal, *shared_info);
@@ -745,8 +724,8 @@ bool IterativelyExecuteAndFinalizeUnoptimizedCompilationJobs(
         DCHECK((!std::is_same<LocalIsolate, Isolate>::value));
         DCHECK_NOT_NULL(jobs_to_retry_finalization_on_main_thread);
 
-        // Clear the literal and ParseInfo to prevent further attempts to access
-        // them.
+        // Clear the literal and ParseInfo to prevent further attempts to
+        // access them.
         job->compilation_info()->ClearLiteral();
         job->ClearParseInfo();
         jobs_to_retry_finalization_on_main_thread->emplace_back(
@@ -867,7 +846,8 @@ V8_WARN_UNUSED_RESULT MaybeHandle<Code> GetCodeFromOptimizedCodeCache(
 }
 
 void ClearOptimizedCodeCache(OptimizedCompilationInfo* compilation_info) {
-  DCHECK(UsesOptimizationMarker(compilation_info->code_kind()));
+  DCHECK(!CodeKindIsNativeContextIndependentJSFunction(
+      compilation_info->code_kind()));
   Handle<JSFunction> function = compilation_info->closure();
   if (compilation_info->osr_offset().IsNone()) {
     Handle<FeedbackVector> vector =
@@ -879,12 +859,7 @@ void ClearOptimizedCodeCache(OptimizedCompilationInfo* compilation_info) {
 void InsertCodeIntoOptimizedCodeCache(
     OptimizedCompilationInfo* compilation_info) {
   const CodeKind kind = compilation_info->code_kind();
-  if (!CodeKindIsStoredInOptimizedCodeCache(kind)) {
-    if (UsesOptimizationMarker(kind)) {
-      ClearOptimizedCodeCache(compilation_info);
-    }
-    return;
-  }
+  if (!CodeKindIsStoredInOptimizedCodeCache(kind)) return;
 
   if (compilation_info->function_context_specializing()) {
     // Function context specialization folds-in the function context, so no
@@ -1076,10 +1051,10 @@ MaybeHandle<Code> GetOptimizedCode(
 
   // Make sure we clear the optimization marker on the function so that we
   // don't try to re-optimize.
-  // If compiling for NCI caching only (which does not use the optimization
-  // marker), don't touch the marker to avoid interfering with Turbofan
-  // compilation.
-  if (UsesOptimizationMarker(code_kind) && function->HasOptimizationMarker()) {
+  // If compiling for NCI (which does not use the optimization marker), don't
+  // touch the marker to avoid interfering with Turbofan compilation.
+  if (!CodeKindIsNativeContextIndependentJSFunction(code_kind) &&
+      function->HasOptimizationMarker()) {
     function->ClearOptimizationMarker();
   }
 
@@ -1123,8 +1098,6 @@ MaybeHandle<Code> GetOptimizedCode(
   // contexts).
   if (CodeKindIsNativeContextIndependentJSFunction(code_kind)) {
     DCHECK(osr_offset.IsNone());
-    DCHECK(FLAG_turbo_nci_as_midtier || !FLAG_turbo_nci_delayed_codegen ||
-           shared->has_optimized_at_least_once());
 
     Handle<Code> cached_code;
     if (GetCodeFromCompilationCache(isolate, shared).ToHandle(&cached_code)) {
@@ -1588,36 +1561,38 @@ void BackgroundCompileTask::Run() {
   } else {
     DCHECK(info_->flags().is_toplevel());
 
-    LocalIsolate isolate(isolate_for_local_isolate_, ThreadKind::kBackground);
-    UnparkedScope unparked_scope(isolate.heap());
-    LocalHandleScope handle_scope(&isolate);
+    {
+      LocalIsolate isolate(isolate_for_local_isolate_, ThreadKind::kBackground);
+      UnparkedScope unparked_scope(&isolate);
+      LocalHandleScope handle_scope(&isolate);
 
-    info_->ast_value_factory()->Internalize(&isolate);
+      info_->ast_value_factory()->Internalize(&isolate);
 
-    // We don't have the script source, origin, or details yet, so use default
-    // values for them. These will be fixed up during the main-thread merge.
-    Handle<Script> script = info_->CreateScript(
-        &isolate, isolate.factory()->empty_string(), kNullMaybeHandle,
-        ScriptOriginOptions(false, false, false, info_->flags().is_module()));
+      // We don't have the script source, origin, or details yet, so use default
+      // values for them. These will be fixed up during the main-thread merge.
+      Handle<Script> script = info_->CreateScript(
+          &isolate, isolate.factory()->empty_string(), kNullMaybeHandle,
+          ScriptOriginOptions(false, false, false, info_->flags().is_module()));
 
-    parser_->HandleSourceURLComments(&isolate, script);
+      parser_->HandleSourceURLComments(&isolate, script);
 
-    MaybeHandle<SharedFunctionInfo> maybe_result;
-    if (info_->literal() != nullptr) {
-      maybe_result = CompileAndFinalizeOnBackgroundThread(
-          info_.get(), compile_state_.allocator(), script, &isolate,
-          &finalize_unoptimized_compilation_data_,
-          &jobs_to_retry_finalization_on_main_thread_, &is_compiled_scope_);
-    } else {
-      DCHECK(compile_state_.pending_error_handler()->has_pending_error());
-      PreparePendingException(&isolate, info_.get());
+      MaybeHandle<SharedFunctionInfo> maybe_result;
+      if (info_->literal() != nullptr) {
+        maybe_result = CompileAndFinalizeOnBackgroundThread(
+            info_.get(), compile_state_.allocator(), script, &isolate,
+            &finalize_unoptimized_compilation_data_,
+            &jobs_to_retry_finalization_on_main_thread_, &is_compiled_scope_);
+      } else {
+        DCHECK(compile_state_.pending_error_handler()->has_pending_error());
+        PreparePendingException(&isolate, info_.get());
+      }
+
+      outer_function_sfi_ =
+          isolate.heap()->NewPersistentMaybeHandle(maybe_result);
+      script_ = isolate.heap()->NewPersistentHandle(script);
+
+      persistent_handles_ = isolate.heap()->DetachPersistentHandles();
     }
-
-    outer_function_sfi_ =
-        isolate.heap()->NewPersistentMaybeHandle(maybe_result);
-    script_ = isolate.heap()->NewPersistentHandle(script);
-
-    persistent_handles_ = isolate.heap()->DetachPersistentHandles();
 
     {
       TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("v8.compile"),
@@ -1718,7 +1693,8 @@ bool Compiler::CollectSourcePositions(Isolate* isolate,
   std::unique_ptr<UnoptimizedCompilationJob> job;
   {
     job = interpreter::Interpreter::NewSourcePositionCollectionJob(
-        &parse_info, parse_info.literal(), bytecode, isolate->allocator());
+        &parse_info, parse_info.literal(), bytecode, isolate->allocator(),
+        isolate->main_thread_local_isolate());
 
     if (!job || job->ExecuteJob() != CompilationJob::SUCCEEDED ||
         job->FinalizeJob(shared_info, isolate) != CompilationJob::SUCCEEDED) {
@@ -1845,8 +1821,13 @@ bool Compiler::Compile(Handle<JSFunction> function, ClearExceptionFlag flag,
   DCHECK(is_compiled_scope->is_compiled());
   Handle<Code> code = handle(shared_info->GetCode(), isolate);
 
-  // Initialize the feedback cell for this JSFunction.
-  JSFunction::InitializeFeedbackCell(function, is_compiled_scope);
+  // Initialize the feedback cell for this JSFunction and reset the interrupt
+  // budget for feedback vector allocation even if there is a closure feedback
+  // cell array. We are re-compiling when we have a closure feedback cell array
+  // which means we are compiling after a bytecode flush.
+  // TODO(verwaest/mythria): Investigate if allocating feedback vector
+  // immediately after a flush would be better.
+  JSFunction::InitializeFeedbackCell(function, is_compiled_scope, true);
 
   // Optimize now if --always-opt is enabled.
   if (FLAG_always_opt && !function->shared().HasAsmWasmData()) {
@@ -1924,24 +1905,25 @@ bool Compiler::CompileOptimized(Handle<JSFunction> function,
 
   Handle<Code> code;
   if (!GetOptimizedCode(function, mode, code_kind).ToHandle(&code)) {
-    // Optimization failed, get unoptimized code. Unoptimized code must exist
-    // already if we are optimizing.
+    // Optimization failed, get the existing code. We could have optimized code
+    // from a lower tier here. Unoptimized code must exist already if we are
+    // optimizing.
     DCHECK(!isolate->has_pending_exception());
     DCHECK(function->shared().is_compiled());
     DCHECK(function->shared().IsInterpreted());
-    code = BUILTIN_CODE(isolate, InterpreterEntryTrampoline);
+    code = ContinuationForConcurrentOptimization(isolate, function);
   }
 
-  if (!IsForNativeContextIndependentCachingOnly(code_kind)) {
+  if (!CodeKindIsNativeContextIndependentJSFunction(code_kind)) {
     function->set_code(*code);
   }
 
   // Check postconditions on success.
   DCHECK(!isolate->has_pending_exception());
   DCHECK(function->shared().is_compiled());
-  DCHECK(IsForNativeContextIndependentCachingOnly(code_kind) ||
+  DCHECK(CodeKindIsNativeContextIndependentJSFunction(code_kind) ||
          function->is_compiled());
-  if (UsesOptimizationMarker(code_kind)) {
+  if (!CodeKindIsNativeContextIndependentJSFunction(code_kind)) {
     DCHECK_IMPLIES(function->HasOptimizationMarker(),
                    function->IsInOptimizationQueue());
     DCHECK_IMPLIES(function->HasOptimizationMarker(),
@@ -2060,7 +2042,9 @@ MaybeHandle<JSFunction> Compiler::GetFunctionFromEval(
       result = Factory::JSFunctionBuilder{isolate, shared_info, context}
                    .set_allocation_type(AllocationType::kYoung)
                    .Build();
-      JSFunction::InitializeFeedbackCell(result, &is_compiled_scope);
+      // TODO(mythria): I don't think we need this here. PostInstantiation
+      // already initializes feedback cell.
+      JSFunction::InitializeFeedbackCell(result, &is_compiled_scope, true);
       if (allow_eval_cache) {
         // Make sure to cache this result.
         Handle<FeedbackCell> new_feedback_cell(result->raw_feedback_cell(),
@@ -2073,7 +2057,9 @@ MaybeHandle<JSFunction> Compiler::GetFunctionFromEval(
     result = Factory::JSFunctionBuilder{isolate, shared_info, context}
                  .set_allocation_type(AllocationType::kYoung)
                  .Build();
-    JSFunction::InitializeFeedbackCell(result, &is_compiled_scope);
+    // TODO(mythria): I don't think we need this here. PostInstantiation
+    // already initializes feedback cell.
+    JSFunction::InitializeFeedbackCell(result, &is_compiled_scope, true);
     if (allow_eval_cache) {
       // Add the SharedFunctionInfo and the LiteralsArray to the eval cache if
       // we didn't retrieve from there.
@@ -3035,7 +3021,7 @@ MaybeHandle<Code> Compiler::GetOptimizedCodeForOSR(Handle<JSFunction> function,
   DCHECK(!osr_offset.IsNone());
   DCHECK_NOT_NULL(osr_frame);
   return GetOptimizedCode(function, ConcurrencyMode::kNotConcurrent,
-                          CodeKindForTopTier(), osr_offset, osr_frame);
+                          CodeKindForOSR(), osr_offset, osr_frame);
 }
 
 // static
@@ -3056,7 +3042,7 @@ bool Compiler::FinalizeOptimizedCompilationJob(OptimizedCompilationJob* job,
 
   CodeKind code_kind = compilation_info->code_kind();
   const bool should_install_code_on_function =
-      !IsForNativeContextIndependentCachingOnly(code_kind);
+      !CodeKindIsNativeContextIndependentJSFunction(code_kind);
   if (should_install_code_on_function) {
     // Reset profiler ticks, function is no longer considered hot.
     compilation_info->closure()->feedback_vector().set_profiler_ticks(0);
@@ -3091,7 +3077,7 @@ bool Compiler::FinalizeOptimizedCompilationJob(OptimizedCompilationJob* job,
   CompilerTracer::TraceAbortedJob(isolate, compilation_info);
   compilation_info->closure()->set_code(shared->GetCode());
   // Clear the InOptimizationQueue marker, if it exists.
-  if (UsesOptimizationMarker(code_kind) &&
+  if (!CodeKindIsNativeContextIndependentJSFunction(code_kind) &&
       compilation_info->closure()->IsInOptimizationQueue()) {
     compilation_info->closure()->ClearOptimizationMarker();
   }
@@ -3107,7 +3093,9 @@ void Compiler::PostInstantiation(Handle<JSFunction> function) {
   // If code is compiled to bytecode (i.e., isn't asm.js), then allocate a
   // feedback and check for optimized code.
   if (is_compiled_scope.is_compiled() && shared->HasBytecodeArray()) {
-    JSFunction::InitializeFeedbackCell(function, &is_compiled_scope);
+    // Don't reset budget if there is a closure feedback cell array already. We
+    // are just creating a new closure that shares the same feedback cell.
+    JSFunction::InitializeFeedbackCell(function, &is_compiled_scope, false);
 
     if (function->has_feedback_vector()) {
       // Evict any deoptimized code on feedback vector. We need to do this after

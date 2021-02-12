@@ -21,6 +21,7 @@
 #include "src/objects/promise.h"
 #include "src/objects/shared-function-info.h"
 #include "src/objects/smi.h"
+#include "src/objects/swiss-name-dictionary.h"
 #include "src/objects/tagged-index.h"
 #include "src/roots/roots.h"
 #include "torque-generated/exported-macros-assembler.h"
@@ -188,6 +189,7 @@ enum class PrimitiveType { kBoolean, kNumber, kString, kSymbol };
   V(regexp_to_string, regexp_to_string, RegexpToString)                      \
   V(resolve_string, resolve_string, ResolveString)                           \
   V(return_string, return_string, ReturnString)                              \
+  V(search_symbol, search_symbol, SearchSymbol)                              \
   V(species_symbol, species_symbol, SpeciesSymbol)                           \
   V(StaleRegister, stale_register, StaleRegister)                            \
   V(StoreHandler0Map, store_handler0_map, StoreHandler0Map)                  \
@@ -3150,7 +3152,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
       TNode<Object> receiver, TNode<Object> object, TNode<Object> key,
       const LookupPropertyInHolder& lookup_property_in_holder,
       const LookupElementInHolder& lookup_element_in_holder, Label* if_end,
-      Label* if_bailout, Label* if_proxy);
+      Label* if_bailout, Label* if_proxy, bool handle_private_names = false);
 
   // Instanceof helpers.
   // Returns true if {object} has {prototype} somewhere in it's prototype

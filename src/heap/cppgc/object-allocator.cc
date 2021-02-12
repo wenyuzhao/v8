@@ -119,7 +119,7 @@ void* ObjectAllocator::OutOfLineAllocateImpl(NormalPageSpace* space,
   DCHECK_EQ(0, size & kAllocationMask);
   DCHECK_LE(kFreeListEntrySize, size);
   // Out-of-line allocation allows for checking this is all situations.
-  CHECK(is_allocation_allowed());
+  CHECK(!in_disallow_gc_scope());
 
   // 1. If this allocation is big enough, allocate a large object.
   if (size >= kLargeObjectSizeThreshold) {
@@ -136,14 +136,15 @@ void* ObjectAllocator::OutOfLineAllocateImpl(NormalPageSpace* space,
 
   // 3. Lazily sweep pages of this heap until we find a freed area for
   // this allocation or we finish sweeping all pages of this heap.
-  // {
-  //   StatsCollector::EnabledScope stats_scope(
-  //       *space->raw_heap()->heap(), StatsCollector::kSweepOnAllocation);
-  //   // TODO(chromium:1056170): Add lazy sweep.
-  // }
+  Sweeper& sweeper = raw_heap_->heap()->sweeper();
+  if (sweeper.SweepForAllocationIfRunning(space, size)) {
+    void* result = AllocateFromFreeList(space, size, gcinfo);
+    DCHECK_NOT_NULL(result);
+    return result;
+  }
 
   // 4. Complete sweeping.
-  raw_heap_->heap()->sweeper().FinishIfRunning();
+  sweeper.FinishIfRunning();
 
   // 5. Add a new page to this heap.
   auto* new_page = NormalPage::Create(page_backend_, space);
@@ -193,18 +194,10 @@ void ObjectAllocator::ResetLinearAllocationBuffers() {
 
 void ObjectAllocator::Terminate() {
   ResetLinearAllocationBuffers();
-  // OutOfLineAllocateImpl checks is_allocation_allowed() unconditionally.
-  no_allocation_scope_++;
 }
 
-ObjectAllocator::NoAllocationScope::NoAllocationScope(
-    ObjectAllocator& allocator)
-    : allocator_(allocator) {
-  allocator.no_allocation_scope_++;
-}
-
-ObjectAllocator::NoAllocationScope::~NoAllocationScope() {
-  allocator_.no_allocation_scope_--;
+bool ObjectAllocator::in_disallow_gc_scope() const {
+  return raw_heap_->heap()->in_disallow_gc_scope();
 }
 
 }  // namespace internal

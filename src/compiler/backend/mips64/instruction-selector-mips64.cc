@@ -397,36 +397,11 @@ InstructionOperand EmitAddBeforeS128LoadStore(InstructionSelector* selector,
   return addr_reg;
 }
 
-// Helper struct for load lane and store lane to indicate what memory size
-// to be encoded in the opcode, and the new lane index.
-struct LoadStoreLaneParams {
-  MSASize sz;
-  uint8_t laneidx;
-  LoadStoreLaneParams(uint8_t laneidx, MSASize sz, int lanes)
-      : sz(sz), laneidx(laneidx % lanes) {}
-};
-
-LoadStoreLaneParams GetLoadStoreLaneParams(MachineRepresentation rep,
-                                           uint8_t laneidx) {
-  switch (rep) {
-    case MachineRepresentation::kWord8:
-      return LoadStoreLaneParams(laneidx, MSA_B, 16);
-    case MachineRepresentation::kWord16:
-      return LoadStoreLaneParams(laneidx, MSA_H, 8);
-    case MachineRepresentation::kWord32:
-      return LoadStoreLaneParams(laneidx, MSA_W, 4);
-    case MachineRepresentation::kWord64:
-      return LoadStoreLaneParams(laneidx, MSA_D, 2);
-    default:
-      break;
-  }
-  UNREACHABLE();
-}
 }  // namespace
 
 void InstructionSelector::VisitStoreLane(Node* node) {
   StoreLaneParameters params = StoreLaneParametersOf(node->op());
-  LoadStoreLaneParams f = GetLoadStoreLaneParams(params.rep, params.laneidx);
+  LoadStoreLaneParams f(params.rep, params.laneidx);
   InstructionCode opcode = kMips64S128StoreLane;
   opcode |= MiscField::encode(f.sz);
 
@@ -443,8 +418,7 @@ void InstructionSelector::VisitStoreLane(Node* node) {
 
 void InstructionSelector::VisitLoadLane(Node* node) {
   LoadLaneParameters params = LoadLaneParametersOf(node->op());
-  LoadStoreLaneParams f =
-      GetLoadStoreLaneParams(params.rep.representation(), params.laneidx);
+  LoadStoreLaneParams f(params.rep.representation(), params.laneidx);
   InstructionCode opcode = kMips64S128LoadLane;
   opcode |= MiscField::encode(f.sz);
 
@@ -540,7 +514,7 @@ void InstructionSelector::VisitLoad(Node* node) {
   }
   if (node->opcode() == IrOpcode::kPoisonedLoad) {
     CHECK_NE(poisoning_level_, PoisoningMitigationLevel::kDontPoison);
-    opcode |= MiscField::encode(kMemoryAccessPoisoned);
+    opcode |= AccessModeField::encode(kMemoryAccessPoisoned);
   }
 
   EmitLoad(this, node, opcode);
@@ -2917,14 +2891,13 @@ void InstructionSelector::VisitInt64AbsWithOverflow(Node* node) {
   V(I16x8BitMask, kMips64I16x8BitMask)                     \
   V(I8x16Neg, kMips64I8x16Neg)                             \
   V(I8x16Abs, kMips64I8x16Abs)                             \
+  V(I8x16Popcnt, kMips64I8x16Popcnt)                       \
   V(I8x16BitMask, kMips64I8x16BitMask)                     \
   V(S128Not, kMips64S128Not)                               \
-  V(V32x4AnyTrue, kMips64V32x4AnyTrue)                     \
   V(V32x4AllTrue, kMips64V32x4AllTrue)                     \
-  V(V16x8AnyTrue, kMips64V16x8AnyTrue)                     \
   V(V16x8AllTrue, kMips64V16x8AllTrue)                     \
-  V(V8x16AnyTrue, kMips64V8x16AnyTrue)                     \
-  V(V8x16AllTrue, kMips64V8x16AllTrue)
+  V(V8x16AllTrue, kMips64V8x16AllTrue)                     \
+  V(V128AnyTrue, kMips64V128AnyTrue)
 
 #define SIMD_SHIFT_OP_LIST(V) \
   V(I64x2Shl)                 \

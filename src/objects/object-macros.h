@@ -48,9 +48,13 @@
     return GetIsolateFromWritableObject(*this);                            \
   }
 
+#define DECL_PRIMITIVE_GETTER(name, type) inline type name() const;
+
+#define DECL_PRIMITIVE_SETTER(name, type) inline void set_##name(type value);
+
 #define DECL_PRIMITIVE_ACCESSORS(name, type) \
-  inline type name() const;                  \
-  inline void set_##name(type value);
+  DECL_PRIMITIVE_GETTER(name, type)          \
+  DECL_PRIMITIVE_SETTER(name, type)
 
 #define DECL_SYNCHRONIZED_PRIMITIVE_ACCESSORS(name, type) \
   inline type synchronized_##name() const;                \
@@ -490,6 +494,15 @@
 #define RELAXED_READ_INT8_FIELD(p, offset) \
   static_cast<int8_t>(base::Relaxed_Load(  \
       reinterpret_cast<const base::Atomic8*>(FIELD_ADDR(p, offset))))
+
+#define RELAXED_READ_UINT16_FIELD(p, offset) \
+  static_cast<uint16_t>(base::Relaxed_Load(  \
+      reinterpret_cast<const base::Atomic16*>(FIELD_ADDR(p, offset))))
+
+#define RELAXED_WRITE_UINT16_FIELD(p, offset, value)            \
+  base::Relaxed_Store(                                          \
+      reinterpret_cast<base::Atomic16*>(FIELD_ADDR(p, offset)), \
+      static_cast<base::Atomic16>(value));
 
 #define RELAXED_READ_INT16_FIELD(p, offset) \
   static_cast<int16_t>(base::Relaxed_Load(  \

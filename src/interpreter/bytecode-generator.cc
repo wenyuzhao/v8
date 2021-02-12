@@ -2928,6 +2928,7 @@ void BytecodeGenerator::VisitObjectLiteral(ObjectLiteral* expr) {
         RegisterList args = register_allocator()->NewRegisterList(2);
         builder()->MoveRegister(literal, args[0]);
         builder()->SetExpressionPosition(property->value());
+        object_literal_context_scope.SetEnteredIf(false);
         VisitForRegisterValue(property->value(), args[1]);
         builder()->CallRuntime(Runtime::kInlineCopyDataProperties, args);
         break;
@@ -4206,12 +4207,47 @@ void BytecodeGenerator::VisitCompoundAssignment(CompoundAssignment* expr) {
                              lhs_data.super_property_args().Truncate(3));
       break;
     }
-    case PRIVATE_METHOD:
-    case PRIVATE_GETTER_ONLY:
-    case PRIVATE_SETTER_ONLY:
+    case PRIVATE_METHOD: {
+      // The property access is invalid, but if the brand check fails too, we
+      // need to return the error from the brand check.
+      Property* property = lhs_data.expr()->AsProperty();
+      Register object = VisitForRegisterValue(property->obj());
+      BuildPrivateBrandCheck(property, object,
+                             MessageTemplate::kInvalidPrivateMemberRead);
+      BuildInvalidPropertyAccess(MessageTemplate::kInvalidPrivateMethodWrite,
+                                 lhs_data.expr()->AsProperty());
+      break;
+    }
+    case PRIVATE_GETTER_ONLY: {
+      // The property access is invalid, but if the brand check fails too, we
+      // need to return the error from the brand check.
+      Property* property = lhs_data.expr()->AsProperty();
+      Register object = VisitForRegisterValue(property->obj());
+      BuildPrivateBrandCheck(property, object,
+                             MessageTemplate::kInvalidPrivateMemberRead);
+      BuildInvalidPropertyAccess(MessageTemplate::kInvalidPrivateSetterAccess,
+                                 lhs_data.expr()->AsProperty());
+
+      break;
+    }
+    case PRIVATE_SETTER_ONLY: {
+      // The property access is invalid, but if the brand check fails too, we
+      // need to return the error from the brand check.
+      Property* property = lhs_data.expr()->AsProperty();
+      Register object = VisitForRegisterValue(property->obj());
+      BuildPrivateBrandCheck(property, object,
+                             MessageTemplate::kInvalidPrivateMemberRead);
+      BuildInvalidPropertyAccess(MessageTemplate::kInvalidPrivateGetterAccess,
+                                 lhs_data.expr()->AsProperty());
+      break;
+    }
     case PRIVATE_GETTER_AND_SETTER: {
-      // ({ #foo: name } = obj) is currently syntactically invalid.
-      UNREACHABLE();
+      Property* property = lhs_data.expr()->AsProperty();
+      Register object = VisitForRegisterValue(property->obj());
+      Register key = VisitForRegisterValue(property->key());
+      BuildPrivateBrandCheck(property, object,
+                             MessageTemplate::kInvalidPrivateMemberRead);
+      BuildPrivateGetterAccess(object, key);
       break;
     }
   }
@@ -4756,6 +4792,65 @@ void BytecodeGenerator::BuildPrivateSetterAccess(Register object,
                     feedback_index(feedback_spec()->AddCallICSlot()));
 }
 
+void BytecodeGenerator::BuildPrivateMethodIn(Variable* private_name,
+                                             Expression* object_expression) {
+  DCHECK(IsPrivateMethodOrAccessorVariableMode(private_name->mode()));
+  ClassScope* scope = private_name->scope()->AsClassScope();
+  if (private_name->is_static()) {
+    // For static private methods, "#privatemethod in ..." only returns true for
+    // the class constructor.
+    if (scope->class_variable() == nullptr) {
+      // Can only happen via the debugger. See comment in
+      // BuildPrivateBrandCheck.
+      RegisterAllocationScope register_scope(this);
+      RegisterList args = register_allocator()->NewRegisterList(2);
+      builder()
+          ->LoadLiteral(Smi::FromEnum(
+              MessageTemplate::
+                  kInvalidUnusedPrivateStaticMethodAccessedByDebugger))
+          .StoreAccumulatorInRegister(args[0])
+          .LoadLiteral(private_name->raw_name())
+          .StoreAccumulatorInRegister(args[1])
+          .CallRuntime(Runtime::kNewError, args)
+          .Throw();
+    } else {
+      VisitForAccumulatorValue(object_expression);
+      Register object = register_allocator()->NewRegister();
+      builder()->StoreAccumulatorInRegister(object);
+
+      BytecodeLabel is_object;
+      builder()->JumpIfJSReceiver(&is_object);
+
+      RegisterList args = register_allocator()->NewRegisterList(3);
+      builder()
+          ->StoreAccumulatorInRegister(args[2])
+          .LoadLiteral(Smi::FromEnum(MessageTemplate::kInvalidInOperatorUse))
+          .StoreAccumulatorInRegister(args[0])
+          .LoadLiteral(private_name->raw_name())
+          .StoreAccumulatorInRegister(args[1])
+          .CallRuntime(Runtime::kNewTypeError, args)
+          .Throw();
+
+      builder()->Bind(&is_object);
+      BuildVariableLoadForAccumulatorValue(scope->class_variable(),
+                                           HoleCheckMode::kElided);
+      builder()->CompareReference(object);
+    }
+  } else {
+    BuildVariableLoadForAccumulatorValue(scope->brand(),
+                                         HoleCheckMode::kElided);
+    Register brand = register_allocator()->NewRegister();
+    builder()->StoreAccumulatorInRegister(brand);
+
+    VisitForAccumulatorValue(object_expression);
+    builder()->SetExpressionPosition(object_expression);
+
+    FeedbackSlot slot = feedback_spec()->AddKeyedHasICSlot();
+    builder()->CompareOperation(Token::IN, brand, feedback_index(slot));
+    execution_result()->SetResultIsBoolean();
+  }
+}
+
 void BytecodeGenerator::BuildPrivateBrandCheck(Property* property,
                                                Register object,
                                                MessageTemplate tmpl) {
@@ -5007,8 +5102,9 @@ void BytecodeGenerator::VisitCall(Call* expr) {
       Property* property = chain->expression()->AsProperty();
       BuildOptionalChain([&]() {
         VisitAndPushIntoRegisterList(property->obj(), &args);
-        VisitPropertyLoadForRegister(args.last_register(), property, callee);
+        VisitPropertyLoad(args.last_register(), property);
       });
+      builder()->StoreAccumulatorInRegister(callee);
       break;
     }
     case Call::SUPER_CALL:
@@ -5623,6 +5719,16 @@ void BytecodeGenerator::VisitCompareOperation(CompareOperation* expr) {
     builder()->SetExpressionPosition(expr);
     BuildLiteralCompareNil(expr->op(), BytecodeArrayBuilder::kNullValue);
   } else {
+    if (expr->op() == Token::IN && expr->left()->IsPrivateName()) {
+      DCHECK(FLAG_harmony_private_brand_checks);
+      Variable* var = expr->left()->AsVariableProxy()->var();
+      if (IsPrivateMethodOrAccessorVariableMode(var->mode())) {
+        BuildPrivateMethodIn(var, expr->right());
+        return;
+      }
+      // For private fields, the code below does the right thing.
+    }
+
     Register lhs = VisitForRegisterValue(expr->left());
     VisitForAccumulatorValue(expr->right());
     builder()->SetExpressionPosition(expr);

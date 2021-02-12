@@ -19,6 +19,7 @@
 #include "src/objects/oddball.h"
 #include "src/objects/ordered-hash-table-inl.h"
 #include "src/objects/source-text-module.h"
+#include "src/objects/swiss-name-dictionary-inl.h"
 #include "src/objects/synthetic-module.h"
 #include "src/objects/torque-defined-classes-inl.h"
 #include "src/objects/transitions.h"
@@ -59,16 +60,7 @@ bool BodyDescriptorBase::IsValidJSObjectSlotImpl(Map map, HeapObject obj,
   // embedder field area as tagged slots.
   STATIC_ASSERT(kEmbedderDataSlotSize == kTaggedSize);
 #endif
-  if (!FLAG_unbox_double_fields || map.HasFastPointerLayout()) {
-    return true;
-  } else {
-    DCHECK(FLAG_unbox_double_fields);
-    DCHECK(IsAligned(offset, kSystemPointerSize));
-
-    LayoutDescriptorHelper helper(map);
-    DCHECK(!helper.all_fields_tagged());
-    return helper.IsTagged(offset);
-  }
+  return true;
 }
 
 template <typename ObjectVisitor>
@@ -100,23 +92,7 @@ void BodyDescriptorBase::IterateJSObjectBodyImpl(Map map, HeapObject obj,
   // embedder field area as tagged slots.
   STATIC_ASSERT(kEmbedderDataSlotSize == kTaggedSize);
 #endif
-  if (!FLAG_unbox_double_fields || map.HasFastPointerLayout()) {
-    IteratePointers(obj, start_offset, end_offset, v);
-  } else {
-    DCHECK(FLAG_unbox_double_fields);
-    DCHECK(IsAligned(start_offset, kSystemPointerSize) &&
-           IsAligned(end_offset, kSystemPointerSize));
-
-    LayoutDescriptorHelper helper(map);
-    DCHECK(!helper.all_fields_tagged());
-    for (int offset = start_offset; offset < end_offset;) {
-      int end_of_region_offset;
-      if (helper.IsTagged(offset, end_offset, &end_of_region_offset)) {
-        IteratePointers(obj, offset, end_of_region_offset, v);
-      }
-      offset = end_of_region_offset;
-    }
-  }
+  IteratePointers(obj, start_offset, end_offset, v);
 }
 
 template <typename ObjectVisitor>
@@ -409,6 +385,38 @@ class V8_EXPORT_PRIVATE SmallOrderedHashTable<Derived>::BodyDescriptor final
   }
 };
 
+class V8_EXPORT_PRIVATE SwissNameDictionary::BodyDescriptor final
+    : public BodyDescriptorBase {
+ public:
+  static bool IsValidSlot(Map map, HeapObject obj, int offset) {
+    // Using |unchecked_cast| here and elsewhere in this class because the
+    // Scavenger may be calling us while the map word contains the forwarding
+    // address (a Smi) rather than a map.
+
+    SwissNameDictionary table = SwissNameDictionary::unchecked_cast(obj);
+    STATIC_ASSERT(MetaTablePointerOffset() + kTaggedSize ==
+                  DataTableStartOffset());
+    return offset >= MetaTablePointerOffset() &&
+           (offset < table.DataTableEndOffset(table.Capacity()));
+  }
+
+  template <typename ObjectVisitor>
+  static inline void IterateBody(Map map, HeapObject obj, int object_size,
+                                 ObjectVisitor* v) {
+    SwissNameDictionary table = SwissNameDictionary::unchecked_cast(obj);
+    STATIC_ASSERT(MetaTablePointerOffset() + kTaggedSize ==
+                  DataTableStartOffset());
+    int start_offset = MetaTablePointerOffset();
+    int end_offset = table.DataTableEndOffset(table.Capacity());
+    IteratePointers(obj, start_offset, end_offset, v);
+  }
+
+  static inline int SizeOf(Map map, HeapObject obj) {
+    SwissNameDictionary table = SwissNameDictionary::unchecked_cast(obj);
+    return SwissNameDictionary::SizeFor(table.Capacity());
+  }
+};
+
 class ByteArray::BodyDescriptor final : public BodyDescriptorBase {
  public:
   static bool IsValidSlot(Map map, HeapObject obj, int offset) { return false; }
@@ -569,7 +577,6 @@ class WasmTypeInfo::BodyDescriptor final : public BodyDescriptorBase {
                                  ObjectVisitor* v) {
     Foreign::BodyDescriptor::IterateBody<ObjectVisitor>(map, obj, object_size,
                                                         v);
-    IteratePointer(obj, kParentOffset, v);
     IteratePointer(obj, kSupertypesOffset, v);
     IteratePointer(obj, kSubtypesOffset, v);
   }
@@ -1001,6 +1008,7 @@ ReturnType BodyDescriptorApply(InstanceType type, T1 p1, T2 p2, T3 p3, T4 p4) {
     case WASM_MEMORY_OBJECT_TYPE:
     case WASM_MODULE_OBJECT_TYPE:
     case WASM_TABLE_OBJECT_TYPE:
+    case WASM_VALUE_OBJECT_TYPE:
       return Op::template apply<JSObject::BodyDescriptor>(p1, p2, p3, p4);
     case WASM_INSTANCE_OBJECT_TYPE:
       return Op::template apply<WasmInstanceObject::BodyDescriptor>(p1, p2, p3,
@@ -1056,6 +1064,11 @@ ReturnType BodyDescriptorApply(InstanceType type, T1 p1, T2 p2, T3 p3, T4 p4) {
       return Op::template apply<
           SmallOrderedHashTable<SmallOrderedNameDictionary>::BodyDescriptor>(
           p1, p2, p3, p4);
+
+    case SWISS_NAME_DICTIONARY_TYPE:
+      return Op::template apply<SwissNameDictionary::BodyDescriptor>(p1, p2, p3,
+                                                                     p4);
+
     case CODE_DATA_CONTAINER_TYPE:
       return Op::template apply<CodeDataContainer::BodyDescriptor>(p1, p2, p3,
                                                                    p4);

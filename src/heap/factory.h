@@ -59,7 +59,6 @@ class PromiseResolveThenableJobTask;
 class RegExpMatchInfo;
 class ScriptContextTable;
 class SourceTextModule;
-class StackFrameInfo;
 class StackTraceFrame;
 class StringSet;
 class StoreHandler;
@@ -368,8 +367,6 @@ class V8_EXPORT_PRIVATE Factory : public FactoryBase<Factory> {
   Handle<BreakPoint> NewBreakPoint(int id, Handle<String> condition);
   Handle<StackTraceFrame> NewStackTraceFrame(Handle<FrameArray> frame_array,
                                              int index);
-  Handle<StackFrameInfo> NewStackFrameInfo(Handle<FrameArray> frame_array,
-                                           int index);
 
   // Allocate various microtasks.
   Handle<CallableTask> NewCallableTask(Handle<JSReceiver> callable,
@@ -548,7 +545,7 @@ class V8_EXPORT_PRIVATE Factory : public FactoryBase<Factory> {
   Handle<JSModuleNamespace> NewJSModuleNamespace();
 
   Handle<WasmTypeInfo> NewWasmTypeInfo(Address type_address,
-                                       Handle<Map> parent);
+                                       Handle<Map> opt_parent);
 
   Handle<SourceTextModule> NewSourceTextModule(Handle<SharedFunctionInfo> code);
   Handle<SyntheticModule> NewSyntheticModule(

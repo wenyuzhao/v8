@@ -10,7 +10,7 @@
 #include "src/common/globals.h"
 #include "src/debug/debug-frames.h"
 #include "src/debug/debug-scopes.h"
-#include "src/debug/debug-wasm-support.h"
+#include "src/debug/debug-wasm-objects.h"
 #include "src/debug/debug.h"
 #include "src/execution/frames-inl.h"
 #include "src/execution/isolate-inl.h"
@@ -308,8 +308,6 @@ bool IntrinsicHasNoSideEffect(Runtime::FunctionId id) {
   V(ThrowReferenceError)                      \
   V(ThrowSymbolIteratorInvalid)               \
   /* Strings */                               \
-  V(StringIncludes)                           \
-  V(StringIndexOf)                            \
   V(StringReplaceOneCharWithString)           \
   V(StringSubstring)                          \
   V(StringToNumber)                           \
@@ -351,7 +349,6 @@ bool IntrinsicHasNoSideEffect(Runtime::FunctionId id) {
   V(StringAdd)                                \
   V(StringCharCodeAt)                         \
   V(StringEqual)                              \
-  V(StringIndexOfUnchecked)                   \
   V(StringParseFloat)                         \
   V(StringParseInt)                           \
   V(SymbolDescriptiveString)                  \
@@ -1089,7 +1086,7 @@ void DebugEvaluate::VerifyTransitiveBuiltins(Isolate* isolate) {
   }
   CHECK(!failed);
 #if defined(V8_TARGET_ARCH_PPC) || defined(V8_TARGET_ARCH_PPC64) || \
-    defined(V8_TARGET_ARCH_MIPS64)
+    defined(V8_TARGET_ARCH_MIPS64) || defined(V8_TARGET_ARCH_RISCV64)
   // Isolate-independent builtin calls and jumps do not emit reloc infos
   // on PPC. We try to avoid using PC relative code due to performance
   // issue with especially older hardwares.

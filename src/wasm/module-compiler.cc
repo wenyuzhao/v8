@@ -589,7 +589,7 @@ class CompilationStateImpl {
   void OnFinishedUnits(Vector<WasmCode*>);
   void OnFinishedJSToWasmWrapperUnits(int num);
 
-  void OnCompilationStopped(const WasmFeatures& detected);
+  void OnCompilationStopped(WasmFeatures detected);
   void PublishDetectedFeatures(Isolate*);
   void SchedulePublishCompilationResults(
       std::vector<std::unique_ptr<WasmCode>> unpublished_code);
@@ -627,7 +627,6 @@ class CompilationStateImpl {
 
   CompileMode compile_mode() const { return compile_mode_; }
   Counters* counters() const { return async_counters_.get(); }
-  WasmFeatures* detected_features() { return &detected_features_; }
 
   void SetWireBytesStorage(
       std::shared_ptr<WireBytesStorage> wire_bytes_storage) {
@@ -770,7 +769,8 @@ void UpdateFeatureUseCounts(Isolate* isolate, const WasmFeatures& detected) {
       {kFeature_reftypes, Feature::kWasmRefTypes},
       {kFeature_mv, Feature::kWasmMultiValue},
       {kFeature_simd, Feature::kWasmSimdOpcodes},
-      {kFeature_threads, Feature::kWasmThreadOpcodes}};
+      {kFeature_threads, Feature::kWasmThreadOpcodes},
+      {kFeature_eh, Feature::kWasmExceptionHandling}};
 
   for (auto& feature : kUseCounters) {
     if (detected.contains(feature.first)) isolate->CountUsage(feature.second);
@@ -1121,9 +1121,11 @@ bool CompileLazy(Isolate* isolate, Handle<WasmModuleObject> module_object,
   WasmCompilationUnit baseline_unit{func_index, tiers.baseline_tier,
                                     kNoDebugging};
   CompilationEnv env = native_module->CreateCompilationEnv();
+  WasmFeatures detected_features;
   WasmCompilationResult result = baseline_unit.ExecuteCompilation(
       isolate->wasm_engine(), &env, compilation_state->GetWireBytesStorage(),
-      counters, compilation_state->detected_features());
+      counters, &detected_features);
+  compilation_state->OnCompilationStopped(detected_features);
 
   // During lazy compilation, we can only get compilation errors when
   // {--wasm-lazy-validation} is enabled. Otherwise, the module was fully
@@ -1707,6 +1709,7 @@ void RecompileNativeModule(NativeModule* native_module,
   compilation_state->InitializeRecompilation(
       tiering_state,
       [recompilation_finished_semaphore](CompilationEvent event) {
+        DCHECK_NE(CompilationEvent::kFailedCompilation, event);
         if (event == CompilationEvent::kFinishedRecompilation) {
           recompilation_finished_semaphore->Signal();
         }
@@ -1959,6 +1962,12 @@ void AsyncCompileJob::FinishCompile(bool is_after_cache_hit) {
   }
   // We can only update the feature counts once the entire compile is done.
   compilation_state->PublishDetectedFeatures(isolate_);
+
+  // We might need to recompile the module for debugging, if the debugger was
+  // enabled while streaming compilation was running. Since handling this while
+  // compiling via streaming is tricky, we just tier down now, before publishing
+  // the module.
+  if (native_module_->IsTieredDown()) native_module_->RecompileForTiering();
 
   // Finally, log all generated code (it does not matter if this happens
   // repeatedly in case the script is shared).
@@ -2709,13 +2718,6 @@ void AsyncStreamingProcessor::OnFinishedStream(OwnedVector<uint8_t> bytes) {
   }
   const bool needs_finish = job_->DecrementAndCheckFinisherCount();
   DCHECK_IMPLIES(!has_code_section, needs_finish);
-  // We might need to recompile the module for debugging, if the debugger was
-  // enabled while streaming compilation was running. Since handling this while
-  // compiling via streaming is tricky, we just tier down now, before publishing
-  // the module.
-  if (job_->native_module_->IsTieredDown()) {
-    job_->native_module_->RecompileForTiering();
-  }
   if (needs_finish) {
     const bool failed = job_->native_module_->compilation_state()->failed();
     if (!cache_hit) {
@@ -3216,7 +3218,7 @@ void CompilationStateImpl::TriggerCallbacks(
   }
 }
 
-void CompilationStateImpl::OnCompilationStopped(const WasmFeatures& detected) {
+void CompilationStateImpl::OnCompilationStopped(WasmFeatures detected) {
   base::MutexGuard guard(&mutex_);
   detected_features_.Add(detected);
 }

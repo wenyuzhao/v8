@@ -150,9 +150,7 @@ bool JSFunction::ActiveTierIsMidtierTurboprop() const {
 }
 
 CodeKind JSFunction::NextTier() const {
-  if (V8_UNLIKELY(FLAG_turbo_nci_as_midtier && ActiveTierIsIgnition())) {
-    return CodeKind::NATIVE_CONTEXT_INDEPENDENT;
-  } else if (V8_UNLIKELY(FLAG_turboprop) && ActiveTierIsMidtierTurboprop()) {
+  if (V8_UNLIKELY(FLAG_turboprop) && ActiveTierIsMidtierTurboprop()) {
     return CodeKind::TURBOFAN;
   } else if (V8_UNLIKELY(FLAG_turboprop)) {
     DCHECK(ActiveTierIsIgnition());
@@ -259,18 +257,37 @@ Handle<NativeContext> JSFunction::GetFunctionRealm(
 }
 
 // static
-void JSFunction::EnsureClosureFeedbackCellArray(Handle<JSFunction> function) {
+void JSFunction::EnsureClosureFeedbackCellArray(
+    Handle<JSFunction> function, bool reset_budget_for_feedback_allocation) {
   Isolate* const isolate = function->GetIsolate();
   DCHECK(function->shared().is_compiled());
   DCHECK(function->shared().HasFeedbackMetadata());
-  if (function->has_closure_feedback_cell_array() ||
-      function->has_feedback_vector()) {
-    return;
-  }
   if (function->shared().HasAsmWasmData()) return;
 
   Handle<SharedFunctionInfo> shared(function->shared(), isolate);
   DCHECK(function->shared().HasBytecodeArray());
+
+  bool has_closure_feedback_cell_array =
+      (function->has_closure_feedback_cell_array() ||
+       function->has_feedback_vector());
+  // Initialize the interrupt budget to the feedback vector allocation budget
+  // when initializing the feedback cell for the first time or after a bytecode
+  // flush. We retain the closure feedback cell array on bytecode flush, so
+  // reset_budget_for_feedback_allocation is used to reset the budget in these
+  // cases. When using a fixed allocation budget, we reset it on a bytecode
+  // flush so no additional initialization is required here.
+  if (V8_UNLIKELY(FLAG_feedback_allocation_on_bytecode_size) &&
+      (reset_budget_for_feedback_allocation ||
+       !has_closure_feedback_cell_array)) {
+    int budget = function->shared().GetBytecodeArray(isolate).length() *
+                 FLAG_scale_factor_for_feedback_allocation;
+    function->raw_feedback_cell().set_interrupt_budget(budget);
+  }
+
+  if (has_closure_feedback_cell_array) {
+    return;
+  }
+
   Handle<HeapObject> feedback_cell_array =
       ClosureFeedbackCellArray::New(isolate, shared);
   // Many closure cell is used as a way to specify that there is no
@@ -282,6 +299,8 @@ void JSFunction::EnsureClosureFeedbackCellArray(Handle<JSFunction> function) {
   if (function->raw_feedback_cell() == isolate->heap()->many_closures_cell()) {
     Handle<FeedbackCell> feedback_cell =
         isolate->factory()->NewOneClosureCell(feedback_cell_array);
+    feedback_cell->set_interrupt_budget(
+        function->raw_feedback_cell().interrupt_budget());
     function->set_raw_feedback_cell(*feedback_cell, kReleaseStore);
   } else {
     function->raw_feedback_cell().set_value(*feedback_cell_array,
@@ -301,7 +320,7 @@ void JSFunction::EnsureFeedbackVector(Handle<JSFunction> function,
   Handle<SharedFunctionInfo> shared(function->shared(), isolate);
   DCHECK(function->shared().HasBytecodeArray());
 
-  EnsureClosureFeedbackCellArray(function);
+  EnsureClosureFeedbackCellArray(function, false);
   Handle<ClosureFeedbackCellArray> closure_feedback_cell_array =
       handle(function->closure_feedback_cell_array(), isolate);
   Handle<HeapObject> feedback_vector = FeedbackVector::New(
@@ -316,8 +335,9 @@ void JSFunction::EnsureFeedbackVector(Handle<JSFunction> function,
 }
 
 // static
-void JSFunction::InitializeFeedbackCell(Handle<JSFunction> function,
-                                        IsCompiledScope* is_compiled_scope) {
+void JSFunction::InitializeFeedbackCell(
+    Handle<JSFunction> function, IsCompiledScope* is_compiled_scope,
+    bool reset_budget_for_feedback_allocation) {
   Isolate* const isolate = function->GetIsolate();
 
   if (function->has_feedback_vector()) {
@@ -343,7 +363,8 @@ void JSFunction::InitializeFeedbackCell(Handle<JSFunction> function,
   if (needs_feedback_vector) {
     EnsureFeedbackVector(function, is_compiled_scope);
   } else {
-    EnsureClosureFeedbackCellArray(function);
+    EnsureClosureFeedbackCellArray(function,
+                                   reset_budget_for_feedback_allocation);
   }
 }
 
@@ -575,6 +596,7 @@ bool CanSubclassHaveInobjectProperties(InstanceType instance_type) {
     case WASM_MEMORY_OBJECT_TYPE:
     case WASM_MODULE_OBJECT_TYPE:
     case WASM_TABLE_OBJECT_TYPE:
+    case WASM_VALUE_OBJECT_TYPE:
       return true;
 
     case BIGINT_TYPE:

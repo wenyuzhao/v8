@@ -314,8 +314,7 @@ Condition FlagsConditionToCondition(FlagsCondition condition) {
 void EmitWordLoadPoisoningIfNeeded(CodeGenerator* codegen,
                                    InstructionCode opcode,
                                    ArmOperandConverter const& i) {
-  const MemoryAccessMode access_mode =
-      static_cast<MemoryAccessMode>(MiscField::decode(opcode));
+  const MemoryAccessMode access_mode = AccessModeField::decode(opcode);
   if (access_mode == kMemoryAccessPoisoned) {
     Register value = i.OutputRegister();
     codegen->tasm()->and_(value, value, Operand(kSpeculationPoisonRegister));
@@ -326,8 +325,7 @@ void ComputePoisonedAddressForLoad(CodeGenerator* codegen,
                                    InstructionCode opcode,
                                    ArmOperandConverter const& i,
                                    Register address) {
-  DCHECK_EQ(kMemoryAccessPoisoned,
-            static_cast<MemoryAccessMode>(MiscField::decode(opcode)));
+  DCHECK_EQ(kMemoryAccessPoisoned, AccessModeField::decode(opcode));
   switch (AddressingModeField::decode(opcode)) {
     case kMode_Offset_RI:
       codegen->tasm()->mov(address, i.InputImmediate(1));
@@ -1648,8 +1646,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       DCHECK_EQ(LeaveCC, i.OutputSBit());
       break;
     case kArmVldrF32: {
-      const MemoryAccessMode access_mode =
-          static_cast<MemoryAccessMode>(MiscField::decode(opcode));
+      const MemoryAccessMode access_mode = AccessModeField::decode(opcode);
       if (access_mode == kMemoryAccessPoisoned) {
         UseScratchRegisterScope temps(tasm());
         Register address = temps.Acquire();
@@ -1686,8 +1683,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kArmVldrF64: {
-      const MemoryAccessMode access_mode =
-          static_cast<MemoryAccessMode>(MiscField::decode(opcode));
+      const MemoryAccessMode access_mode = AccessModeField::decode(opcode);
       if (access_mode == kMemoryAccessPoisoned) {
         UseScratchRegisterScope temps(tasm());
         Register address = temps.Acquire();
@@ -1767,48 +1763,31 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     }
     case kArmPush: {
       int stack_decrement = i.InputInt32(0);
-      if (instr->InputAt(1)->IsFPRegister()) {
-        LocationOperand* op = LocationOperand::cast(instr->InputAt(1));
-        switch (op->representation()) {
-          case MachineRepresentation::kFloat32:
-            // 1 slot values are never padded.
-            DCHECK_EQ(stack_decrement, kSystemPointerSize);
-            __ vpush(i.InputFloatRegister(1));
-            frame_access_state()->IncreaseSPDelta(1);
-            break;
-          case MachineRepresentation::kFloat64:
-            // 2 slot values have up to 1 slot of padding.
-            DCHECK_GE(stack_decrement, kDoubleSize);
-            if (stack_decrement > kDoubleSize) {
-              DCHECK_EQ(stack_decrement, kDoubleSize + kSystemPointerSize);
-              __ AllocateStackSpace(kSystemPointerSize);
-            }
-            __ vpush(i.InputDoubleRegister(1));
-            frame_access_state()->IncreaseSPDelta(stack_decrement /
-                                                  kSystemPointerSize);
-            break;
-          case MachineRepresentation::kSimd128: {
-            // 4 slot values have up to 3 slots of padding.
-            DCHECK_GE(stack_decrement, kSimd128Size);
-            if (stack_decrement > kSimd128Size) {
-              int padding = stack_decrement - kSimd128Size;
-              DCHECK_LT(padding, kSimd128Size);
-              __ AllocateStackSpace(padding);
-            }
-            __ vpush(i.InputSimd128Register(1));
-            frame_access_state()->IncreaseSPDelta(stack_decrement /
-                                                  kSystemPointerSize);
-            break;
-          }
-          default:
-            UNREACHABLE();
-            break;
-        }
-      } else {
-        DCHECK_EQ(stack_decrement, kSystemPointerSize);
-        __ push(i.InputRegister(1));
-        frame_access_state()->IncreaseSPDelta(1);
+      int slots = stack_decrement / kSystemPointerSize;
+      LocationOperand* op = LocationOperand::cast(instr->InputAt(1));
+      MachineRepresentation rep = op->representation();
+      int pushed_slots = ElementSizeInPointers(rep);
+      // Slot-sized arguments are never padded but there may be a gap if
+      // the slot allocator reclaimed other padding slots. Adjust the stack
+      // here to skip any gap.
+      if (slots > pushed_slots) {
+        __ AllocateStackSpace((slots - pushed_slots) * kSystemPointerSize);
       }
+      switch (rep) {
+        case MachineRepresentation::kFloat32:
+          __ vpush(i.InputFloatRegister(1));
+          break;
+        case MachineRepresentation::kFloat64:
+          __ vpush(i.InputDoubleRegister(1));
+          break;
+        case MachineRepresentation::kSimd128:
+          __ vpush(i.InputSimd128Register(1));
+          break;
+        default:
+          __ push(i.InputRegister(1));
+          break;
+      }
+      frame_access_state()->IncreaseSPDelta(slots);
       DCHECK_EQ(LeaveCC, i.OutputSBit());
       break;
     }
@@ -2086,6 +2065,27 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ vrintn(dst.high(), src.high());
       break;
     }
+    case kArmF64x2ConvertLowI32x4S: {
+      Simd128Register dst = i.OutputSimd128Register();
+      Simd128Register src = i.InputSimd128Register(0);
+      __ vcvt_f64_s32(dst.low(), SwVfpRegister::from_code(src.code() * 4));
+      __ vcvt_f64_s32(dst.high(), SwVfpRegister::from_code(src.code() * 4 + 1));
+      break;
+    }
+    case kArmF64x2ConvertLowI32x4U: {
+      Simd128Register dst = i.OutputSimd128Register();
+      Simd128Register src = i.InputSimd128Register(0);
+      __ vcvt_f64_u32(dst.low(), SwVfpRegister::from_code(src.code() * 4));
+      __ vcvt_f64_u32(dst.high(), SwVfpRegister::from_code(src.code() * 4 + 1));
+      break;
+    }
+    case kArmF64x2PromoteLowF32x4: {
+      Simd128Register dst = i.OutputSimd128Register();
+      Simd128Register src = i.InputSimd128Register(0);
+      __ vcvt_f64_f32(dst.low(), SwVfpRegister::from_code(src.code() * 4));
+      __ vcvt_f64_f32(dst.high(), SwVfpRegister::from_code(src.code() * 4 + 1));
+      break;
+    }
     case kArmI64x2SplatI32Pair: {
       Simd128Register dst = i.OutputSimd128Register();
       __ vdup(Neon32, dst, i.InputRegister(0));
@@ -2360,6 +2360,14 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ vbsl(dst, rhs, lhs);
       break;
     }
+    case kArmF32x4DemoteF64x2Zero: {
+      Simd128Register dst = i.OutputSimd128Register();
+      Simd128Register src = i.InputSimd128Register(0);
+      __ vcvt_f32_f64(SwVfpRegister::from_code(dst.code() * 4), src.low());
+      __ vcvt_f32_f64(SwVfpRegister::from_code(dst.code() * 4 + 1), src.high());
+      __ vmov(dst.high(), 0);
+      break;
+    }
     case kArmI32x4Splat: {
       __ vdup(Neon32, i.OutputSimd128Register(), i.InputRegister(0));
       break;
@@ -2429,13 +2437,19 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kArmI64x2Eq: {
+      __ I64x2Eq(i.OutputSimd128Register(), i.InputSimd128Register(0),
+                 i.InputSimd128Register(1));
+      break;
+    }
+    case kArmI64x2Ne: {
       Simd128Register dst = i.OutputSimd128Register();
       UseScratchRegisterScope temps(tasm());
-      Simd128Register scratch = temps.AcquireQ();
+      Simd128Register tmp = temps.AcquireQ();
       __ vceq(Neon32, dst, i.InputSimd128Register(0),
               i.InputSimd128Register(1));
-      __ vrev64(Neon32, scratch, dst);
-      __ vand(dst, dst, scratch);
+      __ vrev64(Neon32, tmp, dst);
+      __ vand(dst, dst, tmp);
+      __ vmvn(dst, dst);
       break;
     }
     case kArmI32x4Eq: {
@@ -2530,6 +2544,22 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ vmull(NeonS16, scratch, lhs.high(), rhs.high());
       __ vpadd(Neon32, dst.low(), tmp1.low(), tmp1.high());
       __ vpadd(Neon32, dst.high(), scratch.low(), scratch.high());
+      break;
+    }
+    case kArmI32x4TruncSatF64x2SZero: {
+      Simd128Register dst = i.OutputSimd128Register();
+      Simd128Register src = i.InputSimd128Register(0);
+      __ vcvt_s32_f64(SwVfpRegister::from_code(dst.code() * 4), src.low());
+      __ vcvt_s32_f64(SwVfpRegister::from_code(dst.code() * 4 + 1), src.high());
+      __ vmov(dst.high(), 0);
+      break;
+    }
+    case kArmI32x4TruncSatF64x2UZero: {
+      Simd128Register dst = i.OutputSimd128Register();
+      Simd128Register src = i.InputSimd128Register(0);
+      __ vcvt_u32_f64(SwVfpRegister::from_code(dst.code() * 4), src.low());
+      __ vcvt_u32_f64(SwVfpRegister::from_code(dst.code() * 4 + 1), src.high());
+      __ vmov(dst.high(), 0);
       break;
     }
     case kArmI16x8Splat: {
@@ -3220,9 +3250,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ vrev16(Neon8, i.OutputSimd128Register(), i.InputSimd128Register(0));
       break;
     }
-    case kArmV32x4AnyTrue:
-    case kArmV16x8AnyTrue:
-    case kArmV8x16AnyTrue: {
+    case kArmV128AnyTrue: {
       const QwNeonRegister& src = i.InputSimd128Register(0);
       UseScratchRegisterScope temps(tasm());
       DwVfpRegister scratch = temps.AcquireD();
@@ -3231,6 +3259,31 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ ExtractLane(i.OutputRegister(), scratch, NeonS32, 0);
       __ cmp(i.OutputRegister(), Operand(0));
       __ mov(i.OutputRegister(), Operand(1), LeaveCC, ne);
+      break;
+    }
+    case kArmV64x2AllTrue: {
+      const QwNeonRegister& src = i.InputSimd128Register(0);
+      UseScratchRegisterScope temps(tasm());
+      QwNeonRegister tmp = temps.AcquireQ();
+      Register dst = i.OutputRegister();
+      // src = | a | b | c | d |
+      // tmp = | max(a,b) | max(c,d) | ...
+      __ vpmax(NeonU32, tmp.low(), src.low(), src.high());
+      // tmp = | max(a,b) == 0 | max(c,d) == 0 | ...
+      __ vceq(Neon32, tmp, tmp, 0);
+      // tmp = | max(a,b) == 0 or max(c,d) == 0 | ...
+      __ vpmax(NeonU32, tmp.low(), tmp.low(), tmp.low());
+      // dst = (max(a,b) == 0 || max(c,d) == 0)
+      // dst will either be -1 or 0.
+      __ vmov(NeonS32, dst, tmp.low(), 0);
+      // dst = !dst (-1 -> 0, 0 -> 1)
+      __ add(dst, dst, Operand(1));
+      // This works because:
+      // !dst
+      // = !(max(a,b) == 0 || max(c,d) == 0)
+      // = max(a,b) != 0 && max(c,d) != 0
+      // = (a != 0 || b != 0) && (c != 0 || d != 0)
+      // = defintion of i64x2.all_true.
       break;
     }
     case kArmV32x4AllTrue: {

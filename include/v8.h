@@ -93,7 +93,6 @@ class Utils;
 class Value;
 class WasmMemoryObject;
 class WasmModuleObject;
-struct CppHeapCreateParams;
 template <class K, class V, class T>
 class GlobalValueMap;
 template <class K, class V, class T>
@@ -1725,7 +1724,7 @@ class V8_EXPORT Module : public Data {
   /*
    * Callback defined in the embedder.  This is responsible for setting
    * the module's exported values with calls to SetSyntheticModuleExport().
-   * The callback must return a Value to indicate success (where no
+   * The callback must return a resolved Promise to indicate success (where no
    * exception was thrown) and return an empy MaybeLocal to indicate falure
    * (where an exception was thrown).
    */
@@ -5405,7 +5404,7 @@ class V8_EXPORT ArrayBuffer : public Object {
    * |Allocator::Free| once all ArrayBuffers referencing it are collected by
    * the garbage collector.
    */
-  V8_DEPRECATE_SOON(
+  V8_DEPRECATED(
       "Use the version that takes a BackingStore. "
       "See http://crbug.com/v8/9908.")
   static Local<ArrayBuffer> New(
@@ -5454,7 +5453,7 @@ class V8_EXPORT ArrayBuffer : public Object {
    * Returns true if ArrayBuffer is externalized, that is, does not
    * own its memory block.
    */
-  V8_DEPRECATE_SOON(
+  V8_DEPRECATED(
       "With v8::BackingStore externalized ArrayBuffers are "
       "the same as ordinary ArrayBuffers. See http://crbug.com/v8/9908.")
   bool IsExternal() const;
@@ -5482,8 +5481,7 @@ class V8_EXPORT ArrayBuffer : public Object {
    * deleter, which will call ArrayBuffer::Allocator::Free if the buffer
    * was allocated with ArrayBuffer::Allocator::Allocate.
    */
-  V8_DEPRECATE_SOON(
-      "Use GetBackingStore or Detach. See http://crbug.com/v8/9908.")
+  V8_DEPRECATED("Use GetBackingStore or Detach. See http://crbug.com/v8/9908.")
   Contents Externalize();
 
   /**
@@ -5493,7 +5491,7 @@ class V8_EXPORT ArrayBuffer : public Object {
    * With the new lifetime management of backing stores there is no need for
    * externalizing, so this function exists only to make the transition easier.
    */
-  V8_DEPRECATE_SOON("This will be removed together with IsExternal.")
+  V8_DEPRECATED("This will be removed together with IsExternal.")
   void Externalize(const std::shared_ptr<BackingStore>& backing_store);
 
   /**
@@ -5504,7 +5502,7 @@ class V8_EXPORT ArrayBuffer : public Object {
    * The embedder should make sure to hold a strong reference to the
    * ArrayBuffer while accessing this pointer.
    */
-  V8_DEPRECATE_SOON("Use GetBackingStore. See http://crbug.com/v8/9908.")
+  V8_DEPRECATED("Use GetBackingStore. See http://crbug.com/v8/9908.")
   Contents GetContents();
 
   /**
@@ -5888,7 +5886,7 @@ class V8_EXPORT SharedArrayBuffer : public Object {
    * specified. The memory block will not be reclaimed when a created
    * SharedArrayBuffer is garbage-collected.
    */
-  V8_DEPRECATE_SOON(
+  V8_DEPRECATED(
       "Use the version that takes a BackingStore. "
       "See http://crbug.com/v8/9908.")
   static Local<SharedArrayBuffer> New(
@@ -5948,7 +5946,7 @@ class V8_EXPORT SharedArrayBuffer : public Object {
    * Returns true if SharedArrayBuffer is externalized, that is, does not
    * own its memory block.
    */
-  V8_DEPRECATE_SOON(
+  V8_DEPRECATED(
       "With v8::BackingStore externalized SharedArrayBuffers are the same "
       "as ordinary SharedArrayBuffers. See http://crbug.com/v8/9908.")
   bool IsExternal() const;
@@ -5965,8 +5963,7 @@ class V8_EXPORT SharedArrayBuffer : public Object {
    * v8::Isolate::CreateParams::array_buffer_allocator.
    *
    */
-  V8_DEPRECATE_SOON(
-      "Use GetBackingStore or Detach. See http://crbug.com/v8/9908.")
+  V8_DEPRECATED("Use GetBackingStore or Detach. See http://crbug.com/v8/9908.")
   Contents Externalize();
 
   /**
@@ -5976,7 +5973,7 @@ class V8_EXPORT SharedArrayBuffer : public Object {
    * With the new lifetime management of backing stores there is no need for
    * externalizing, so this function exists only to make the transition easier.
    */
-  V8_DEPRECATE_SOON("This will be removed together with IsExternal.")
+  V8_DEPRECATED("This will be removed together with IsExternal.")
   void Externalize(const std::shared_ptr<BackingStore>& backing_store);
 
   /**
@@ -5991,7 +5988,7 @@ class V8_EXPORT SharedArrayBuffer : public Object {
    * by the allocator specified in
    * v8::Isolate::CreateParams::array_buffer_allocator.
    */
-  V8_DEPRECATE_SOON("Use GetBackingStore. See http://crbug.com/v8/9908.")
+  V8_DEPRECATED("Use GetBackingStore. See http://crbug.com/v8/9908.")
   Contents GetContents();
 
   /**
@@ -7751,6 +7748,9 @@ using WasmLoadSourceMapCallback = Local<String> (*)(Isolate* isolate,
 // --- Callback for checking if WebAssembly Simd is enabled ---
 using WasmSimdEnabledCallback = bool (*)(Local<Context> context);
 
+// --- Callback for checking if WebAssembly exceptions are enabled ---
+using WasmExceptionsEnabledCallback = bool (*)(Local<Context> context);
+
 // --- Garbage Collection Callbacks ---
 
 /**
@@ -8469,17 +8469,7 @@ class V8_EXPORT Isolate {
     int embedder_wrapper_type_index = -1;
     int embedder_wrapper_object_index = -1;
 
-    /**
-     * If parameters are set, V8 creates a managed C++ heap as extension to its
-     * JavaScript heap.
-     *
-     * See v8::Isolate::GetCppHeap() for working with the heap.
-     *
-     * This is an experimental feature and may still change significantly.
-     */
-    std::shared_ptr<CppHeapCreateParams> cpp_heap_params;
-
-    V8_DEPRECATE_SOON(
+    V8_DEPRECATED(
         "Setting this has no effect. Embedders should ignore import assertions "
         "that they do not use.")
     std::vector<std::string> supported_import_assertions;
@@ -8719,6 +8709,7 @@ class V8_EXPORT Isolate {
     kWasmRefTypes = 108,
     kWasmBulkMemory = 109,  // Unused.
     kWasmMultiValue = 110,
+    kWasmExceptionHandling = 111,
 
     // If you add new values here, you'll also need to update Chromium's:
     // web_feature.mojom, use_counter_callback.cc, and enums.xml. V8 changes to
@@ -9099,8 +9090,26 @@ class V8_EXPORT Isolate {
   EmbedderHeapTracer* GetEmbedderHeapTracer();
 
   /**
-   * \returns the C++ heap managed by V8. Only available if the Isolate was
-   *   created with proper CreatePrams::cpp_heap_params option.
+   * Attaches a managed C++ heap as an extension to the JavaScript heap. The
+   * embedder maintains ownership of the CppHeap. At most one C++ heap can be
+   * attached to V8.
+   *
+   * This is an experimental feature and may still change significantly.
+   */
+  void AttachCppHeap(CppHeap*);
+
+  /**
+   * Detaches a managed C++ heap if one was attached using `AttachCppHeap()`.
+   *
+   * This is an experimental feature and may still change significantly.
+   */
+  void DetachCppHeap();
+
+  /**
+   * This is an experimental feature and may still change significantly.
+
+   * \returns the C++ heap managed by V8. Only available if such a heap has been
+   *   attached using `AttachCppHeap()`.
    */
   CppHeap* GetCppHeap() const;
 
@@ -9643,6 +9652,8 @@ class V8_EXPORT Isolate {
   void SetWasmLoadSourceMapCallback(WasmLoadSourceMapCallback callback);
 
   void SetWasmSimdEnabledCallback(WasmSimdEnabledCallback callback);
+
+  void SetWasmExceptionsEnabledCallback(WasmExceptionsEnabledCallback callback);
 
   /**
   * Check if V8 is dead and therefore unusable.  This is the case after

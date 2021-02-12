@@ -162,7 +162,6 @@ void V8::InitializePlatform(v8::Platform* platform) {
   platform_ = platform;
   v8::base::SetPrintStackTrace(platform_->GetStackTracePrinter());
   v8::tracing::TracingCategoryObserver::SetUp();
-  cppgc::InitializeProcess(platform->GetPageAllocator());
 }
 
 void V8::ShutdownPlatform() {
@@ -170,7 +169,6 @@ void V8::ShutdownPlatform() {
   v8::tracing::TracingCategoryObserver::TearDown();
   v8::base::SetPrintStackTrace(nullptr);
   platform_ = nullptr;
-  cppgc::ShutdownProcess();
 }
 
 v8::Platform* V8::GetCurrentPlatform() {

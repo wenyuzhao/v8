@@ -111,6 +111,7 @@ namespace internal {
   F(FunctionFirstExecution, 1, 1)         \
   F(InstantiateAsmJs, 4, 1)               \
   F(NotifyDeoptimized, 0, 1)              \
+  F(ObserveNode, 1, 1)                    \
   F(ResolvePossiblyDirectEval, 6, 1)      \
   F(TryInstallNCICode, 1, 1)
 
@@ -383,16 +384,18 @@ namespace internal {
   F(JSProxyGetTarget, 1, 1)            \
   F(SetPropertyWithReceiver, 4, 1)
 
-#define FOR_EACH_INTRINSIC_REGEXP(F, I)             \
-  I(IsRegExp, 1, 1)                                 \
-  F(RegExpBuildIndices, 3, 1)                       \
-  F(RegExpExec, 4, 1)                               \
-  F(RegExpExperimentalOneshotExec, 4, 1)            \
-  F(RegExpExecMultiple, 4, 1)                       \
-  F(RegExpInitializeAndCompile, 3, 1)               \
-  F(RegExpReplaceRT, 3, 1)                          \
-  F(RegExpSplit, 3, 1)                              \
-  F(StringReplaceNonGlobalRegExpWithFunction, 3, 1) \
+#define FOR_EACH_INTRINSIC_REGEXP(F, I)                          \
+  I(IsRegExp, 1, 1)                                              \
+  F(RegExpBuildIndices, 3, 1)                                    \
+  F(RegExpExec, 4, 1)                                            \
+  F(RegExpExecTreatMatchAtEndAsFailure, 4, 1)                    \
+  F(RegExpExperimentalOneshotExec, 4, 1)                         \
+  F(RegExpExperimentalOneshotExecTreatMatchAtEndAsFailure, 4, 1) \
+  F(RegExpExecMultiple, 4, 1)                                    \
+  F(RegExpInitializeAndCompile, 3, 1)                            \
+  F(RegExpReplaceRT, 3, 1)                                       \
+  F(RegExpSplit, 3, 1)                                           \
+  F(StringReplaceNonGlobalRegExpWithFunction, 3, 1)              \
   F(StringSplit, 3, 1)
 
 #define FOR_EACH_INTRINSIC_SCOPES(F, I)     \
@@ -430,9 +433,6 @@ namespace internal {
   F(StringEscapeQuotes, 1, 1)             \
   F(StringGreaterThan, 2, 1)              \
   F(StringGreaterThanOrEqual, 2, 1)       \
-  F(StringIncludes, 3, 1)                 \
-  F(StringIndexOf, 3, 1)                  \
-  F(StringIndexOfUnchecked, 3, 1)         \
   F(StringLastIndexOf, 2, 1)              \
   F(StringLessThan, 2, 1)                 \
   F(StringLessThanOrEqual, 2, 1)          \
@@ -469,6 +469,8 @@ namespace internal {
   F(DisallowWasmCodegen, 1, 1)                \
   F(DisassembleFunction, 1, 1)                \
   F(DynamicCheckMapsEnabled, 0, 1)            \
+  F(IsTopTierTurboprop, 0, 1)                 \
+  F(IsMidTierTurboprop, 0, 1)                 \
   F(EnableCodeLoggingForTesting, 0, 1)        \
   F(EnsureFeedbackVectorForFunction, 1, 1)    \
   F(FreezeWasmLazyCompilation, 1, 1)          \
@@ -485,6 +487,7 @@ namespace internal {
   F(HasElementsInALargeObjectSpace, 1, 1)     \
   F(HasFastElements, 1, 1)                    \
   F(HasFastProperties, 1, 1)                  \
+  F(HasOwnConstDataProperty, 2, 1)            \
   F(HasFixedBigInt64Elements, 1, 1)           \
   F(HasFixedBigUint64Elements, 1, 1)          \
   F(HasFixedFloat32Elements, 1, 1)            \
@@ -510,6 +513,7 @@ namespace internal {
   F(IsAsmWasmCode, 1, 1)                      \
   F(IsBeingInterpreted, 0, 1)                 \
   F(IsConcurrentRecompilationSupported, 0, 1) \
+  F(IsDictPropertyConstTrackingEnabled, 0, 1) \
   F(IsLiftoffFunction, 1, 1)                  \
   F(IsThreadInWasm, 0, 1)                     \
   F(IsWasmCode, 1, 1)                         \
@@ -523,6 +527,7 @@ namespace internal {
   F(NeverOptimizeFunction, 1, 1)              \
   F(NotifyContextDisposed, 0, 1)              \
   F(OptimizeFunctionOnNextCall, -1, 1)        \
+  F(TierupFunctionOnNextCall, -1, 1)          \
   F(OptimizeOsr, -1, 1)                       \
   F(NewRegExpWithBacktrackLimit, 3, 1)        \
   F(PrepareFunctionForOptimization, -1, 1)    \

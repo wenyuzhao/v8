@@ -9,6 +9,7 @@
 
 #include "cppgc/internal/persistent-node.h"
 #include "cppgc/internal/pointer-policies.h"
+#include "cppgc/sentinel-pointer.h"
 #include "cppgc/source-location.h"
 #include "cppgc/type-traits.h"
 #include "cppgc/visitor.h"
@@ -194,12 +195,30 @@ class BasicPersistent final : public PersistentBase,
     return static_cast<T*>(const_cast<void*>(GetValue()));
   }
 
-  void Clear() { Assign(nullptr); }
+  void Clear() {
+    // Simplified version of `Assign()` to allow calling without a complete type
+    // `T`.
+    if (IsValid()) {
+      WeaknessPolicy::GetPersistentRegion(GetValue()).FreeNode(GetNode());
+      SetNode(nullptr);
+    }
+    SetValue(nullptr);
+  }
 
   T* Release() {
     T* result = Get();
     Clear();
     return result;
+  }
+
+  template <typename U, typename OtherWeaknessPolicy = WeaknessPolicy,
+            typename OtherLocationPolicy = LocationPolicy,
+            typename OtherCheckingPolicy = CheckingPolicy>
+  BasicPersistent<U, OtherWeaknessPolicy, OtherLocationPolicy,
+                  OtherCheckingPolicy>
+  To() const {
+    return BasicPersistent<U, OtherWeaknessPolicy, OtherLocationPolicy,
+                           OtherCheckingPolicy>(static_cast<U*>(Get()));
   }
 
  private:

@@ -962,12 +962,14 @@ void Genesis::CreateIteratorMaps(Handle<JSFunction> empty) {
     Handle<JSFunction> call_async_module_fulfilled =
         SimpleCreateFunction(isolate(), factory()->empty_string(),
                              Builtins::kCallAsyncModuleFulfilled, 1, false);
+    call_async_module_fulfilled->shared().set_native(false);
     native_context()->set_call_async_module_fulfilled(
         *call_async_module_fulfilled);
 
     Handle<JSFunction> call_async_module_rejected =
         SimpleCreateFunction(isolate(), factory()->empty_string(),
                              Builtins::kCallAsyncModuleRejected, 1, false);
+    call_async_module_rejected->shared().set_native(false);
     native_context()->set_call_async_module_rejected(
         *call_async_module_rejected);
   }
@@ -4318,6 +4320,7 @@ EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_regexp_sequence)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_top_level_await)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_logical_assignment)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_import_assertions)
+EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_private_brand_checks)
 
 #ifdef V8_INTL_SUPPORT
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_intl_displaynames_date_types)
@@ -4594,8 +4597,8 @@ bool Genesis::InstallABunchOfRandomThings() {
   native_context()->set_slow_template_instantiations_cache(
       *slow_template_instantiations_cache);
 
-  auto wasm_debug_proxy_maps = isolate()->factory()->empty_fixed_array();
-  native_context()->set_wasm_debug_proxy_maps(*wasm_debug_proxy_maps);
+  auto wasm_debug_maps = isolate()->factory()->empty_fixed_array();
+  native_context()->set_wasm_debug_maps(*wasm_debug_maps);
 
   // Store the map for the %ObjectPrototype% after the natives has been compiled
   // and the Object function has been set up.

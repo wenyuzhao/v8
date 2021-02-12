@@ -366,8 +366,7 @@ bool AddDescriptorsByTemplate(
 
   UpdateProtectors(isolate, receiver, descriptors_template);
 
-  map->InitializeDescriptors(isolate, *descriptors,
-                             LayoutDescriptor::FastPointerLayout());
+  map->InitializeDescriptors(isolate, *descriptors);
   if (elements_dictionary->NumberOfElements() > 0) {
     if (!SubstituteValues<NumberDictionary>(isolate, elements_dictionary,
                                             args)) {
@@ -452,7 +451,8 @@ bool AddDescriptorsByTemplate(
   if (install_name_accessor) {
     PropertyAttributes attribs =
         static_cast<PropertyAttributes>(DONT_ENUM | READ_ONLY);
-    PropertyDetails details(kAccessor, attribs, PropertyCellType::kNoCell);
+    PropertyDetails details(kAccessor, attribs,
+                            PropertyDetails::kConstIfDictConstnessTracking);
     Handle<Dictionary> dict = ToHandle(Dictionary::Add(
         isolate, properties_dictionary, isolate->factory()->name_string(),
         isolate->factory()->function_name_accessor(), details));
@@ -582,8 +582,7 @@ bool InitClassConstructor(
   } else {
     map->set_is_dictionary_map(true);
     map->InitializeDescriptors(isolate,
-                               ReadOnlyRoots(isolate).empty_descriptor_array(),
-                               LayoutDescriptor::FastPointerLayout());
+                               ReadOnlyRoots(isolate).empty_descriptor_array());
     map->set_is_migration_target(false);
     map->set_may_have_interesting_symbols(true);
     map->set_construction_counter(Map::kNoSlackTracking);

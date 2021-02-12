@@ -182,6 +182,7 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kX64F32x4DemoteF64x2Zero:
     case kX64I64x2Splat:
     case kX64I64x2ExtractLane:
+    case kX64I64x2Abs:
     case kX64I64x2Neg:
     case kX64I64x2BitMask:
     case kX64I64x2Shl:
@@ -190,6 +191,9 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kX64I64x2Sub:
     case kX64I64x2Mul:
     case kX64I64x2Eq:
+    case kX64I64x2GtS:
+    case kX64I64x2GeS:
+    case kX64I64x2Ne:
     case kX64I64x2ShrU:
     case kX64I64x2SignSelect:
     case kX64I64x2ExtMulLowI32x4S:
@@ -238,6 +242,8 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kX64I32x4ExtAddPairwiseI16x8U:
     case kX64I32x4TruncSatF64x2SZero:
     case kX64I32x4TruncSatF64x2UZero:
+    case kX64I32x4WidenI8x16S:
+    case kX64I32x4WidenI8x16U:
     case kX64I16x8Splat:
     case kX64I16x8ExtractLaneS:
     case kX64I16x8SConvertI8x16Low:
@@ -317,9 +323,8 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kX64S128Zero:
     case kX64S128AllOnes:
     case kX64S128AndNot:
-    case kX64V32x4AnyTrue:
+    case kX64V64x2AllTrue:
     case kX64V32x4AllTrue:
-    case kX64V16x8AnyTrue:
     case kX64V16x8AllTrue:
     case kX64I8x16Swizzle:
     case kX64I8x16Shuffle:
@@ -351,7 +356,7 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kX64S8x8Reverse:
     case kX64S8x4Reverse:
     case kX64S8x2Reverse:
-    case kX64V8x16AnyTrue:
+    case kX64V128AnyTrue:
     case kX64V8x16AllTrue:
       return (instr->addressing_mode() == kMode_None)
                  ? kNoOpcodeFlags

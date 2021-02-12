@@ -231,7 +231,7 @@ void InstructionSelector::VisitLoad(Node* node) {
 
   if (node->opcode() == IrOpcode::kPoisonedLoad &&
       poisoning_level_ != PoisoningMitigationLevel::kDontPoison) {
-    opcode |= MiscField::encode(kMemoryAccessPoisoned);
+    opcode |= AccessModeField::encode(kMemoryAccessPoisoned);
   }
 
   bool is_atomic = (node->opcode() == IrOpcode::kWord32AtomicLoad ||
@@ -2177,6 +2177,8 @@ void InstructionSelector::VisitInt64AbsWithOverflow(Node* node) {
   V(I64x2Add)              \
   V(I64x2Sub)              \
   V(I64x2Mul)              \
+  V(I64x2Eq)               \
+  V(I64x2Ne)               \
   V(I32x4Add)              \
   V(I32x4AddHoriz)         \
   V(I32x4Sub)              \
@@ -2280,6 +2282,7 @@ void InstructionSelector::VisitInt64AbsWithOverflow(Node* node) {
   V(I16x8SConvertI8x16High) \
   V(I16x8UConvertI8x16Low)  \
   V(I16x8UConvertI8x16High) \
+  V(V64x2AllTrue)           \
   V(S128Not)
 
 #define SIMD_SHIFT_LIST(V) \
@@ -2297,9 +2300,7 @@ void InstructionSelector::VisitInt64AbsWithOverflow(Node* node) {
   V(I8x16ShrU)
 
 #define SIMD_BOOL_LIST(V) \
-  V(V32x4AnyTrue)         \
-  V(V16x8AnyTrue)         \
-  V(V8x16AnyTrue)         \
+  V(V128AnyTrue)          \
   V(V32x4AllTrue)         \
   V(V16x8AllTrue)         \
   V(V8x16AllTrue)
@@ -2503,6 +2504,25 @@ void InstructionSelector::VisitI16x8ExtMulLowI8x16U(Node* node) {
 void InstructionSelector::VisitI16x8ExtMulHighI8x16U(Node* node) {
   UNIMPLEMENTED();
 }
+void InstructionSelector::VisitI8x16Popcnt(Node* node) { UNIMPLEMENTED(); }
+void InstructionSelector::VisitF64x2ConvertLowI32x4S(Node* node) {
+  UNIMPLEMENTED();
+}
+void InstructionSelector::VisitF64x2ConvertLowI32x4U(Node* node) {
+  UNIMPLEMENTED();
+}
+void InstructionSelector::VisitF64x2PromoteLowF32x4(Node* node) {
+  UNIMPLEMENTED();
+}
+void InstructionSelector::VisitF32x4DemoteF64x2Zero(Node* node) {
+  UNIMPLEMENTED();
+}
+void InstructionSelector::VisitI32x4TruncSatF64x2SZero(Node* node) {
+  UNIMPLEMENTED();
+}
+void InstructionSelector::VisitI32x4TruncSatF64x2UZero(Node* node) {
+  UNIMPLEMENTED();
+}
 
 void InstructionSelector::EmitPrepareResults(
     ZoneVector<PushParameter>* results, const CallDescriptor* call_descriptor,
@@ -2527,6 +2547,28 @@ void InstructionSelector::EmitPrepareResults(
            g.UseImmediate(reverse_slot));
     }
   }
+}
+
+void InstructionSelector::VisitLoadLane(Node* node) {
+  LoadLaneParameters params = LoadLaneParametersOf(node->op());
+  InstructionCode opcode = kArchNop;
+  if (params.rep == MachineType::Int8()) {
+    opcode = kPPC_S128Load8Lane;
+  } else if (params.rep == MachineType::Int16()) {
+    opcode = kPPC_S128Load16Lane;
+  } else if (params.rep == MachineType::Int32()) {
+    opcode = kPPC_S128Load32Lane;
+  } else if (params.rep == MachineType::Int64()) {
+    opcode = kPPC_S128Load64Lane;
+  } else {
+    UNREACHABLE();
+  }
+
+  PPCOperandGenerator g(this);
+  Emit(opcode | AddressingModeField::encode(kMode_MRR),
+       g.DefineSameAsFirst(node), g.UseRegister(node->InputAt(2)),
+       g.UseRegister(node->InputAt(0)), g.UseRegister(node->InputAt(1)),
+       g.UseImmediate(params.laneidx));
 }
 
 void InstructionSelector::VisitLoadTransform(Node* node) {
@@ -2578,6 +2620,32 @@ void InstructionSelector::VisitLoadTransform(Node* node) {
   }
   Emit(opcode | AddressingModeField::encode(kMode_MRR),
        g.DefineAsRegister(node), g.UseRegister(base), g.UseRegister(index));
+}
+
+void InstructionSelector::VisitStoreLane(Node* node) {
+  PPCOperandGenerator g(this);
+
+  StoreLaneParameters params = StoreLaneParametersOf(node->op());
+  InstructionCode opcode = kArchNop;
+  if (params.rep == MachineRepresentation::kWord8) {
+    opcode = kPPC_S128Store8Lane;
+  } else if (params.rep == MachineRepresentation::kWord16) {
+    opcode = kPPC_S128Store16Lane;
+  } else if (params.rep == MachineRepresentation::kWord32) {
+    opcode = kPPC_S128Store32Lane;
+  } else if (params.rep == MachineRepresentation::kWord64) {
+    opcode = kPPC_S128Store64Lane;
+  } else {
+    UNREACHABLE();
+  }
+
+  InstructionOperand inputs[4];
+  InstructionOperand value_operand = g.UseRegister(node->InputAt(2));
+  inputs[0] = value_operand;
+  inputs[1] = g.UseRegister(node->InputAt(0));
+  inputs[2] = g.UseRegister(node->InputAt(1));
+  inputs[3] = g.UseImmediate(params.laneidx);
+  Emit(opcode | AddressingModeField::encode(kMode_MRR), 0, nullptr, 4, inputs);
 }
 
 // static

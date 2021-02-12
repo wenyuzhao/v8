@@ -58,6 +58,9 @@ constexpr int GB = MB * 1024;
 #if (V8_TARGET_ARCH_S390 && !V8_HOST_ARCH_S390)
 #define USE_SIMULATOR 1
 #endif
+#if (V8_TARGET_ARCH_RISCV64 && !V8_HOST_ARCH_RISCV64)
+#define USE_SIMULATOR 1
+#endif
 #endif
 
 // Determine whether the architecture uses an embedded constant pool
@@ -96,18 +99,18 @@ STATIC_ASSERT(V8_DEFAULT_STACK_SIZE_KB* KB +
                   kStackLimitSlackForDeoptimizationInBytes <=
               MB);
 
-// Determine whether double field unboxing feature is enabled.
-#if V8_TARGET_ARCH_64_BIT && !defined(V8_COMPRESS_POINTERS)
-#define V8_DOUBLE_FIELDS_UNBOXING false
-#else
-#define V8_DOUBLE_FIELDS_UNBOXING false
-#endif
-
 // Determine whether dict mode prototypes feature is enabled.
 #ifdef V8_DICT_MODE_PROTOTYPES
 #define V8_DICT_MODE_PROTOTYPES_BOOL true
 #else
 #define V8_DICT_MODE_PROTOTYPES_BOOL false
+#endif
+
+// Determine whether dict property constness tracking feature is enabled.
+#ifdef V8_DICT_PROPERTY_CONST_TRACKING
+#define V8_DICT_PROPERTY_CONST_TRACKING_BOOL true
+#else
+#define V8_DICT_PROPERTY_CONST_TRACKING_BOOL false
 #endif
 
 // Determine whether tagged pointers are 8 bytes (used in Torque layouts for
@@ -1690,6 +1693,8 @@ enum class StubCallMode {
 
 constexpr int kFunctionLiteralIdInvalid = -1;
 constexpr int kFunctionLiteralIdTopLevel = 0;
+
+constexpr int kSwissNameDictionaryInitialCapacity = 4;
 
 constexpr int kSmallOrderedHashSetMinCapacity = 4;
 constexpr int kSmallOrderedHashMapMinCapacity = 4;

@@ -378,7 +378,7 @@ void InstructionSelector::VisitLoad(Node* node) {
   }
   if (node->opcode() == IrOpcode::kPoisonedLoad) {
     CHECK_NE(poisoning_level_, PoisoningMitigationLevel::kDontPoison);
-    opcode |= MiscField::encode(kMemoryAccessPoisoned);
+    opcode |= AccessModeField::encode(kMemoryAccessPoisoned);
   }
 
   if (g.CanBeImmediate(index, opcode)) {
@@ -481,6 +481,10 @@ void InstructionSelector::VisitProtectedStore(Node* node) {
   // TODO(eholk)
   UNIMPLEMENTED();
 }
+
+void InstructionSelector::VisitLoadLane(Node* node) { UNIMPLEMENTED(); }
+
+void InstructionSelector::VisitStoreLane(Node* node) { UNIMPLEMENTED(); }
 
 void InstructionSelector::VisitWord32And(Node* node) {
   MipsOperandGenerator g(this);
@@ -2149,14 +2153,13 @@ void InstructionSelector::VisitInt64AbsWithOverflow(Node* node) {
   V(I16x8UConvertI8x16Low, kMipsI16x8UConvertI8x16Low)   \
   V(I16x8UConvertI8x16High, kMipsI16x8UConvertI8x16High) \
   V(I8x16Neg, kMipsI8x16Neg)                             \
+  V(I8x16Popcnt, kMipsI8x16Popcnt)                       \
   V(I8x16BitMask, kMipsI8x16BitMask)                     \
   V(S128Not, kMipsS128Not)                               \
-  V(V32x4AnyTrue, kMipsV32x4AnyTrue)                     \
   V(V32x4AllTrue, kMipsV32x4AllTrue)                     \
-  V(V16x8AnyTrue, kMipsV16x8AnyTrue)                     \
   V(V16x8AllTrue, kMipsV16x8AllTrue)                     \
-  V(V8x16AnyTrue, kMipsV8x16AnyTrue)                     \
-  V(V8x16AllTrue, kMipsV8x16AllTrue)
+  V(V8x16AllTrue, kMipsV8x16AllTrue)                     \
+  V(V128AnyTrue, kMipsV128AnyTrue)
 
 #define SIMD_SHIFT_OP_LIST(V) \
   V(I64x2Shl)                 \

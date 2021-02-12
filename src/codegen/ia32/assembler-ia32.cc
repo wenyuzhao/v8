@@ -153,6 +153,12 @@ void CpuFeatures::ProbeImpl(bool cross_compile) {
   } else if (strcmp(FLAG_mcpu, "atom") == 0) {
     supported_ |= 1u << ATOM;
   }
+
+  // Set a static value on whether Simd is supported.
+  // This variable is only used for certain archs to query SupportWasmSimd128()
+  // at runtime in builtins using an extern ref. Other callers should use
+  // CpuFeatures::SupportWasmSimd128().
+  CpuFeatures::supports_wasm_simd_128_ = CpuFeatures::SupportsWasmSimd128();
 }
 
 void CpuFeatures::PrintTarget() {}
@@ -2171,11 +2177,42 @@ void Assembler::cvtdq2ps(XMMRegister dst, Operand src) {
   emit_sse_operand(dst, src);
 }
 
+void Assembler::cvtdq2pd(XMMRegister dst, XMMRegister src) {
+  EnsureSpace ensure_space(this);
+  EMIT(0xF3);
+  EMIT(0x0F);
+  EMIT(0xE6);
+  emit_sse_operand(dst, src);
+}
+
+void Assembler::cvtps2pd(XMMRegister dst, XMMRegister src) {
+  EnsureSpace ensure_space(this);
+  EMIT(0x0F);
+  EMIT(0x5A);
+  emit_sse_operand(dst, src);
+}
+
+void Assembler::cvtpd2ps(XMMRegister dst, XMMRegister src) {
+  EnsureSpace ensure_space(this);
+  EMIT(0x66);
+  EMIT(0x0F);
+  EMIT(0x5A);
+  emit_sse_operand(dst, src);
+}
+
 void Assembler::cvttps2dq(XMMRegister dst, Operand src) {
   EnsureSpace ensure_space(this);
   EMIT(0xF3);
   EMIT(0x0F);
   EMIT(0x5B);
+  emit_sse_operand(dst, src);
+}
+
+void Assembler::cvttpd2dq(XMMRegister dst, XMMRegister src) {
+  EnsureSpace ensure_space(this);
+  EMIT(0x66);
+  EMIT(0x0F);
+  EMIT(0xE6);
   emit_sse_operand(dst, src);
 }
 

@@ -7,6 +7,7 @@
 #include "src/api/api-arguments-inl.h"
 #include "src/common/globals.h"
 #include "src/date/date.h"
+#include "src/debug/debug-wasm-objects.h"
 #include "src/execution/arguments.h"
 #include "src/execution/frames.h"
 #include "src/execution/isolate.h"
@@ -28,7 +29,6 @@
 #include "src/objects/heap-number.h"
 #include "src/objects/js-array-buffer.h"
 #include "src/objects/js-array-inl.h"
-#include "src/objects/layout-descriptor.h"
 #include "src/objects/lookup.h"
 #include "src/objects/objects-inl.h"
 #ifdef V8_INTL_SUPPORT
@@ -2301,6 +2301,8 @@ int JSObject::GetHeaderSize(InstanceType type,
       return WasmModuleObject::kHeaderSize;
     case WASM_TABLE_OBJECT_TYPE:
       return WasmTableObject::kHeaderSize;
+    case WASM_VALUE_OBJECT_TYPE:
+      return WasmValueObject::kHeaderSize;
     case WASM_EXCEPTION_OBJECT_TYPE:
       return WasmExceptionObject::kHeaderSize;
     default:
@@ -2779,11 +2781,8 @@ void MigrateFastToFast(Isolate* isolate, Handle<JSObject> object,
         FieldIndex::ForDescriptor(isolate, *new_map, new_map->LastAdded());
     if (index.is_inobject() || index.outobject_array_index() <
                                    object->property_array(isolate).length()) {
-      // We still need to allocate HeapNumbers for double fields
-      // if either double field unboxing is disabled or the double field
-      // is in the PropertyArray backing store (where we don't support
-      // double field unboxing).
-      if (index.is_double() && !new_map->IsUnboxedDoubleField(isolate, index)) {
+      // Allocate HeapNumbers for double fields.
+      if (index.is_double()) {
         auto value = isolate->factory()->NewHeapNumberWithHoleNaN();
         object->RawFastPropertyAtPut(index, *value);
       }
@@ -2877,19 +2876,13 @@ void MigrateFastToFast(Isolate* isolate, Handle<JSObject> object,
     } else {
       DCHECK_EQ(kField, old_details.location());
       FieldIndex index = FieldIndex::ForDescriptor(isolate, *old_map, i);
-      if (object->IsUnboxedDoubleField(isolate, index)) {
-        uint64_t old_bits = object->RawFastDoublePropertyAsBitsAt(index);
-        value = isolate->factory()->NewHeapNumberFromBits(old_bits);
-      } else {
-        value = handle(object->RawFastPropertyAt(isolate, index), isolate);
-        if (!old_representation.IsDouble() && representation.IsDouble()) {
-          DCHECK_IMPLIES(old_representation.IsNone(),
-                         value->IsUninitialized(isolate));
-          value = Object::NewStorageFor(isolate, value, representation);
-        } else if (old_representation.IsDouble() &&
-                   !representation.IsDouble()) {
-          value = Object::WrapForRead(isolate, value, old_representation);
-        }
+      value = handle(object->RawFastPropertyAt(isolate, index), isolate);
+      if (!old_representation.IsDouble() && representation.IsDouble()) {
+        DCHECK_IMPLIES(old_representation.IsNone(),
+                       value->IsUninitialized(isolate));
+        value = Object::NewStorageFor(isolate, value, representation);
+      } else if (old_representation.IsDouble() && !representation.IsDouble()) {
+        value = Object::WrapForRead(isolate, value, old_representation);
       }
     }
     DCHECK(!(representation.IsDouble() && value->IsSmi()));
@@ -2934,25 +2927,7 @@ void MigrateFastToFast(Isolate* isolate, Handle<JSObject> object,
   for (int i = 0; i < limit; i++) {
     FieldIndex index = FieldIndex::ForPropertyIndex(*new_map, i);
     Object value = inobject_props->get(isolate, i);
-    // Can't use JSObject::FastPropertyAtPut() because proper map was not set
-    // yet.
-    if (new_map->IsUnboxedDoubleField(isolate, index)) {
-      DCHECK(value.IsHeapNumber(isolate));
-      // Ensure that all bits of the double value are preserved.
-      object->RawFastDoublePropertyAsBitsAtPut(
-          index, HeapNumber::cast(value).value_as_bits());
-      if (i < old_number_of_fields && !old_map->IsUnboxedDoubleField(index)) {
-        // Transition from tagged to untagged slot.
-        MemoryChunk* chunk = MemoryChunk::FromHeapObject(*object);
-        chunk->InvalidateRecordedSlots(*object);
-      } else {
-#ifdef DEBUG
-        heap->VerifyClearedSlot(*object, object->RawField(index.offset()));
-#endif
-      }
-    } else {
-      object->RawFastPropertyAtPut(index, value);
-    }
+    object->RawFastPropertyAtPut(index, value);
   }
 
   object->SetProperties(*array);
@@ -3019,16 +2994,11 @@ void MigrateFastToSlow(Isolate* isolate, Handle<JSObject> object,
     if (details.location() == kField) {
       FieldIndex index = FieldIndex::ForDescriptor(isolate, *map, i);
       if (details.kind() == kData) {
-        if (object->IsUnboxedDoubleField(isolate, index)) {
-          double old_value = object->RawFastDoublePropertyAt(index);
+        value = handle(object->RawFastPropertyAt(isolate, index), isolate);
+        if (details.representation().IsDouble()) {
+          DCHECK(value->IsHeapNumber(isolate));
+          double old_value = Handle<HeapNumber>::cast(value)->value();
           value = isolate->factory()->NewHeapNumber(old_value);
-        } else {
-          value = handle(object->RawFastPropertyAt(isolate, index), isolate);
-          if (details.representation().IsDouble()) {
-            DCHECK(value->IsHeapNumber(isolate));
-            double old_value = Handle<HeapNumber>::cast(value)->value();
-            value = isolate->factory()->NewHeapNumber(old_value);
-          }
         }
       } else {
         DCHECK_EQ(kAccessor, details.kind());
@@ -3040,8 +3010,11 @@ void MigrateFastToSlow(Isolate* isolate, Handle<JSObject> object,
       value = handle(descs->GetStrongValue(isolate, i), isolate);
     }
     DCHECK(!value.is_null());
-    PropertyDetails d(details.kind(), details.attributes(),
-                      PropertyCellType::kNoCell);
+    PropertyConstness constness = V8_DICT_PROPERTY_CONST_TRACKING_BOOL
+                                      ? details.constness()
+                                      : PropertyConstness::kMutable;
+    PropertyDetails d(details.kind(), details.attributes(), constness);
+
     if (V8_DICT_MODE_PROTOTYPES_BOOL) {
       ord_dictionary =
           OrderedNameDictionary::Add(isolate, ord_dictionary, key, value, d)
@@ -3210,42 +3183,32 @@ void JSObject::AllocateStorageForMap(Handle<JSObject> object, Handle<Map> map) {
   // Allocate mutable double boxes if necessary. It is always necessary if we
   // have external properties, but is also necessary if we only have inobject
   // properties but don't unbox double fields.
-  if (!FLAG_unbox_double_fields || external > 0) {
-    Isolate* isolate = object->GetIsolate();
+  Isolate* isolate = object->GetIsolate();
 
-    Handle<DescriptorArray> descriptors(map->instance_descriptors(kRelaxedLoad),
-                                        isolate);
-    Handle<FixedArray> storage;
-    if (!FLAG_unbox_double_fields) {
-      storage = isolate->factory()->NewFixedArray(inobject);
+  Handle<DescriptorArray> descriptors(map->instance_descriptors(kRelaxedLoad),
+                                      isolate);
+  Handle<FixedArray> storage = isolate->factory()->NewFixedArray(inobject);
+
+  Handle<PropertyArray> array = isolate->factory()->NewPropertyArray(external);
+
+  for (InternalIndex i : map->IterateOwnDescriptors()) {
+    PropertyDetails details = descriptors->GetDetails(i);
+    Representation representation = details.representation();
+    if (!representation.IsDouble()) continue;
+    FieldIndex index = FieldIndex::ForDescriptor(*map, i);
+    auto box = isolate->factory()->NewHeapNumberWithHoleNaN();
+    if (index.is_inobject()) {
+      storage->set(index.property_index(), *box);
+    } else {
+      array->set(index.outobject_array_index(), *box);
     }
+  }
 
-    Handle<PropertyArray> array =
-        isolate->factory()->NewPropertyArray(external);
-
-    for (InternalIndex i : map->IterateOwnDescriptors()) {
-      PropertyDetails details = descriptors->GetDetails(i);
-      Representation representation = details.representation();
-      if (!representation.IsDouble()) continue;
-      FieldIndex index = FieldIndex::ForDescriptor(*map, i);
-      if (map->IsUnboxedDoubleField(index)) continue;
-      auto box = isolate->factory()->NewHeapNumberWithHoleNaN();
-      if (index.is_inobject()) {
-        storage->set(index.property_index(), *box);
-      } else {
-        array->set(index.outobject_array_index(), *box);
-      }
-    }
-
-    object->SetProperties(*array);
-
-    if (!FLAG_unbox_double_fields) {
-      for (int i = 0; i < inobject; i++) {
-        FieldIndex index = FieldIndex::ForPropertyIndex(*map, i);
-        Object value = storage->get(i);
-        object->RawFastPropertyAtPut(index, value);
-      }
-    }
+  object->SetProperties(*array);
+  for (int i = 0; i < inobject; i++) {
+    FieldIndex index = FieldIndex::ForPropertyIndex(*map, i);
+    Object value = storage->get(i);
+    object->RawFastPropertyAtPut(index, value);
   }
   object->synchronized_set_map(*map);
 }
@@ -3603,7 +3566,8 @@ void JSObject::MigrateSlowToFast(Handle<JSObject> object,
     }
 
     DCHECK_EQ(kField, details.location());
-    DCHECK_EQ(PropertyConstness::kMutable, details.constness());
+    DCHECK_IMPLIES(!V8_DICT_PROPERTY_CONST_TRACKING_BOOL,
+                   details.constness() == PropertyConstness::kMutable);
 
     Descriptor d;
     if (details.kind() == kData) {
@@ -3612,6 +3576,10 @@ void JSObject::MigrateSlowToFast(Handle<JSObject> object,
       PropertyConstness constness = is_transitionable_elements_kind
                                         ? PropertyConstness::kMutable
                                         : PropertyConstness::kConst;
+      // TODO(v8:11248): Consider always setting constness to kMutable
+      // once all prototypes stay in dictionary mode and we are not interested
+      // in tracking constness for fast mode properties anymore.
+
       d = Descriptor::DataField(
           key, current_offset, details.attributes(), constness,
           // TODO(verwaest): value->OptimalRepresentation();
@@ -3639,11 +3607,8 @@ void JSObject::MigrateSlowToFast(Handle<JSObject> object,
 
   descriptors->Sort();
 
-  Handle<LayoutDescriptor> layout_descriptor = LayoutDescriptor::New(
-      isolate, new_map, descriptors, descriptors->number_of_descriptors());
-
   DisallowGarbageCollection no_gc;
-  new_map->InitializeDescriptors(isolate, *descriptors, *layout_descriptor);
+  new_map->InitializeDescriptors(isolate, *descriptors);
   if (number_of_allocated_fields == 0) {
     new_map->SetInObjectUnusedPropertyFields(unused_property_fields);
   } else {
@@ -4204,11 +4169,6 @@ Handle<Object> JSObject::FastPropertyAt(Handle<JSObject> object,
                                         Representation representation,
                                         FieldIndex index) {
   Isolate* isolate = object->GetIsolate();
-  if (object->IsUnboxedDoubleField(index)) {
-    DCHECK(representation.IsDouble());
-    double value = object->RawFastDoublePropertyAt(index);
-    return isolate->factory()->NewHeapNumber(value);
-  }
   Handle<Object> raw_value(object->RawFastPropertyAt(index), isolate);
   return Object::WrapForRead(isolate, raw_value, representation);
 }
@@ -4379,23 +4339,14 @@ Object JSObject::SlowReverseLookup(Object value) {
       if (details.location() == kField) {
         DCHECK_EQ(kData, details.kind());
         FieldIndex field_index = FieldIndex::ForDescriptor(map(), i);
-        if (IsUnboxedDoubleField(field_index)) {
-          if (value_is_number) {
-            double property = RawFastDoublePropertyAt(field_index);
-            if (property == value.Number()) {
-              return descs.GetKey(i);
-            }
-          }
-        } else {
-          Object property = RawFastPropertyAt(field_index);
-          if (field_index.is_double()) {
-            DCHECK(property.IsHeapNumber());
-            if (value_is_number && property.Number() == value.Number()) {
-              return descs.GetKey(i);
-            }
-          } else if (property == value) {
+        Object property = RawFastPropertyAt(field_index);
+        if (field_index.is_double()) {
+          DCHECK(property.IsHeapNumber());
+          if (value_is_number && property.Number() == value.Number()) {
             return descs.GetKey(i);
           }
+        } else if (property == value) {
+          return descs.GetKey(i);
         }
       } else {
         DCHECK_EQ(kDescriptor, details.location());
@@ -4456,7 +4407,9 @@ static bool PrototypeBenefitsFromNormalization(Handle<JSObject> object) {
   DisallowGarbageCollection no_gc;
   if (!object->HasFastProperties()) return false;
   if (object->IsJSGlobalProxy()) return false;
+  // TODO(v8:11248) make bootstrapper create dict mode prototypes, too?
   if (object->GetIsolate()->bootstrapper()->IsActive()) return false;
+  if (V8_DICT_PROPERTY_CONST_TRACKING_BOOL) return true;
   return !object->map().is_prototype_map() ||
          !object->map().should_be_fast_prototype_map();
 }
@@ -4472,14 +4425,31 @@ void JSObject::OptimizeAsPrototype(Handle<JSObject> object,
                                   "NormalizeAsPrototype");
   }
   if (object->map().is_prototype_map()) {
-    if (object->map().should_be_fast_prototype_map() &&
+    if (!V8_DICT_PROPERTY_CONST_TRACKING_BOOL &&
+        object->map().should_be_fast_prototype_map() &&
         !object->HasFastProperties()) {
       JSObject::MigrateSlowToFast(object, 0, "OptimizeAsPrototype");
     }
   } else {
     Handle<Map> new_map =
         Map::Copy(isolate, handle(object->map(), isolate), "CopyAsPrototype");
+
     JSObject::MigrateToMap(isolate, object, new_map);
+
+    if (V8_DICT_PROPERTY_CONST_TRACKING_BOOL && !object->HasFastProperties()) {
+      Handle<NameDictionary> dict =
+          handle(object->property_dictionary(), isolate);
+      ReadOnlyRoots roots(isolate);
+      for (InternalIndex index : dict->IterateEntries()) {
+        Object k;
+        if (!dict->ToKey(roots, index, &k)) continue;
+
+        PropertyDetails details = dict->DetailsAt(index);
+        details = details.CopyWithConstness(PropertyConstness::kConst);
+        dict->DetailsAtPut(index, details);
+      }
+    }
+
     object->map().set_is_prototype_map(true);
 
     // Replace the pointer to the exact constructor with the Object function
@@ -4495,6 +4465,12 @@ void JSObject::OptimizeAsPrototype(Handle<JSObject> object,
       }
     }
   }
+#ifdef DEBUG
+  bool should_be_dictionary = V8_DICT_PROPERTY_CONST_TRACKING_BOOL &&
+                              enable_setup_mode && !object->IsJSGlobalProxy() &&
+                              !object->GetIsolate()->bootstrapper()->IsActive();
+  DCHECK_IMPLIES(should_be_dictionary, object->map().is_dictionary_map());
+#endif
 }
 
 // static

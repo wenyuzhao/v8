@@ -358,16 +358,49 @@ TNode<JSRegExp> ConstructorBuiltinsAssembler::CreateRegExpLiteral(
       CAST(LoadFeedbackVectorSlot(feedback_vector, slot));
   GotoIfNot(HasBoilerplate(literal_site), &call_runtime);
   {
-    TNode<JSRegExp> boilerplate = CAST(literal_site);
-    int size =
-        JSRegExp::kHeaderSize + JSRegExp::kInObjectFieldCount * kTaggedSize;
-    TNode<HeapObject> copy = Allocate(size);
-    StoreMapNoWriteBarrier(copy, LoadMap(boilerplate));
-    for (int offset = kTaggedSize; offset < size; offset += kTaggedSize) {
-      TNode<Object> value = LoadObjectField(boilerplate, offset);
-      StoreObjectFieldNoWriteBarrier(copy, offset, value);
-    }
-    result = CAST(copy);
+    STATIC_ASSERT(JSRegExp::kDataOffset == JSObject::kHeaderSize);
+    STATIC_ASSERT(JSRegExp::kSourceOffset ==
+                  JSRegExp::kDataOffset + kTaggedSize);
+    STATIC_ASSERT(JSRegExp::kFlagsOffset ==
+                  JSRegExp::kSourceOffset + kTaggedSize);
+    STATIC_ASSERT(JSRegExp::kHeaderSize ==
+                  JSRegExp::kFlagsOffset + kTaggedSize);
+    STATIC_ASSERT(JSRegExp::kLastIndexOffset == JSRegExp::kHeaderSize);
+    DCHECK_EQ(JSRegExp::Size(), JSRegExp::kLastIndexOffset + kTaggedSize);
+
+    TNode<RegExpBoilerplateDescription> boilerplate = CAST(literal_site);
+    TNode<HeapObject> new_object = Allocate(JSRegExp::Size());
+
+    // Initialize Object fields.
+    TNode<JSFunction> regexp_function = CAST(LoadContextElement(
+        LoadNativeContext(context), Context::REGEXP_FUNCTION_INDEX));
+    TNode<Map> initial_map = CAST(LoadObjectField(
+        regexp_function, JSFunction::kPrototypeOrInitialMapOffset));
+    StoreMapNoWriteBarrier(new_object, initial_map);
+    // Initialize JSReceiver fields.
+    StoreObjectFieldRoot(new_object, JSReceiver::kPropertiesOrHashOffset,
+                         RootIndex::kEmptyFixedArray);
+    // Initialize JSObject fields.
+    StoreObjectFieldRoot(new_object, JSObject::kElementsOffset,
+                         RootIndex::kEmptyFixedArray);
+    // Initialize JSRegExp fields.
+    StoreObjectFieldNoWriteBarrier(
+        new_object, JSRegExp::kDataOffset,
+        LoadObjectField(boilerplate,
+                        RegExpBoilerplateDescription::kDataOffset));
+    StoreObjectFieldNoWriteBarrier(
+        new_object, JSRegExp::kSourceOffset,
+        LoadObjectField(boilerplate,
+                        RegExpBoilerplateDescription::kSourceOffset));
+    StoreObjectFieldNoWriteBarrier(
+        new_object, JSRegExp::kFlagsOffset,
+        LoadObjectField(boilerplate,
+                        RegExpBoilerplateDescription::kFlagsOffset));
+    StoreObjectFieldNoWriteBarrier(
+        new_object, JSRegExp::kLastIndexOffset,
+        SmiConstant(JSRegExp::kInitialLastIndexValue));
+
+    result = CAST(new_object);
     Goto(&end);
   }
 
@@ -551,39 +584,26 @@ TNode<HeapObject> ConstructorBuiltinsAssembler::CreateShallowObjectLiteral(
     // Copy over in-object properties.
     Label continue_with_write_barrier(this), done_init(this);
     TVARIABLE(IntPtrT, offset, IntPtrConstant(JSObject::kHeaderSize));
-    // Heap numbers are only mutable on 32-bit platforms.
-    bool may_use_mutable_heap_numbers = !FLAG_unbox_double_fields;
     {
       Comment("Copy in-object properties fast");
       Label continue_fast(this, &offset);
       Branch(IntPtrEqual(offset.value(), instance_size), &done_init,
              &continue_fast);
       BIND(&continue_fast);
-      if (may_use_mutable_heap_numbers) {
-        TNode<Object> field = LoadObjectField(boilerplate, offset.value());
-        Label store_field(this);
-        GotoIf(TaggedIsSmi(field), &store_field);
-        // TODO(leszeks): Read the field descriptor to decide if this heap
-        // number is mutable or not.
-        GotoIf(IsHeapNumber(CAST(field)), &continue_with_write_barrier);
-        Goto(&store_field);
-        BIND(&store_field);
-        StoreObjectFieldNoWriteBarrier(copy, offset.value(), field);
-      } else {
-        // Copy fields as raw data.
-        TNode<TaggedT> field =
-            LoadObjectField<TaggedT>(boilerplate, offset.value());
-        StoreObjectFieldNoWriteBarrier(copy, offset.value(), field);
-      }
+      TNode<Object> field = LoadObjectField(boilerplate, offset.value());
+      Label store_field(this);
+      GotoIf(TaggedIsSmi(field), &store_field);
+      // TODO(leszeks): Read the field descriptor to decide if this heap
+      // number is mutable or not.
+      GotoIf(IsHeapNumber(CAST(field)), &continue_with_write_barrier);
+      Goto(&store_field);
+      BIND(&store_field);
+      StoreObjectFieldNoWriteBarrier(copy, offset.value(), field);
       offset = IntPtrAdd(offset.value(), IntPtrConstant(kTaggedSize));
       Branch(WordNotEqual(offset.value(), instance_size), &continue_fast,
              &done_init);
     }
 
-    if (!may_use_mutable_heap_numbers) {
-      BIND(&done_init);
-      return copy;
-    }
     // Continue initializing the literal after seeing the first sub-object
     // potentially causing allocation. In this case we prepare the new literal
     // by copying all pending fields over from the boilerplate and emit full
@@ -627,7 +647,6 @@ void ConstructorBuiltinsAssembler::CopyMutableHeapNumbersInObject(
     TNode<IntPtrT> end_offset) {
   // Iterate over all object properties of a freshly copied object and
   // duplicate mutable heap numbers.
-  if (FLAG_unbox_double_fields) return;
   Comment("Copy mutable HeapNumber values");
   BuildFastLoop<IntPtrT>(
       start_offset, end_offset,

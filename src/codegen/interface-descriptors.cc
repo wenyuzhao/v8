@@ -299,7 +299,7 @@ void TypeConversionNoContextDescriptor::InitializePlatformSpecific(
   data->InitializePlatformSpecific(arraysize(registers), registers);
 }
 
-void TypeConversionStackParameterDescriptor::InitializePlatformSpecific(
+void SingleParameterOnStackDescriptor::InitializePlatformSpecific(
     CallInterfaceDescriptorData* data) {
   data->InitializePlatformSpecific(0, nullptr);
 }
@@ -403,7 +403,8 @@ void WasmFloat64ToNumberDescriptor::InitializePlatformSpecific(
 }
 #endif  // !V8_TARGET_ARCH_IA32
 
-#if !defined(V8_TARGET_ARCH_MIPS) && !defined(V8_TARGET_ARCH_MIPS64)
+#if !defined(V8_TARGET_ARCH_MIPS) && !defined(V8_TARGET_ARCH_MIPS64) && \
+    !defined(V8_TARGET_ARCH_RISCV64)
 void WasmI32AtomicWait32Descriptor::InitializePlatformSpecific(
     CallInterfaceDescriptorData* data) {
   DefaultInitializePlatformSpecific(data, kParameterCount);

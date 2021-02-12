@@ -18,6 +18,7 @@ namespace internal {
 namespace compiler {
 
 // Forward declarations.
+struct MachineOperatorGlobalCache;
 class Operator;
 
 
@@ -666,6 +667,7 @@ class V8_EXPORT_PRIVATE MachineOperatorBuilder final
   const Operator* I64x2ExtractLane(int32_t);
   const Operator* I64x2ReplaceLane(int32_t);
   const Operator* I64x2ReplaceLaneI32Pair(int32_t);
+  const Operator* I64x2Abs();
   const Operator* I64x2Neg();
   const Operator* I64x2SConvertI32x4Low();
   const Operator* I64x2SConvertI32x4High();
@@ -678,6 +680,9 @@ class V8_EXPORT_PRIVATE MachineOperatorBuilder final
   const Operator* I64x2Sub();
   const Operator* I64x2Mul();
   const Operator* I64x2Eq();
+  const Operator* I64x2Ne();
+  const Operator* I64x2GtS();
+  const Operator* I64x2GeS();
   const Operator* I64x2ShrU();
   const Operator* I64x2ExtMulLowI32x4S();
   const Operator* I64x2ExtMulHighI32x4S();
@@ -725,6 +730,8 @@ class V8_EXPORT_PRIVATE MachineOperatorBuilder final
   const Operator* I32x4ExtAddPairwiseI16x8U();
   const Operator* I32x4TruncSatF64x2SZero();
   const Operator* I32x4TruncSatF64x2UZero();
+  const Operator* I32x4WidenI8x16S(uint8_t laneidx);
+  const Operator* I32x4WidenI8x16U(uint8_t laneidx);
 
   const Operator* I16x8Splat();
   const Operator* I16x8ExtractLaneU(int32_t);
@@ -820,11 +827,10 @@ class V8_EXPORT_PRIVATE MachineOperatorBuilder final
   const Operator* I8x16Swizzle();
   const Operator* I8x16Shuffle(const uint8_t shuffle[16]);
 
-  const Operator* V32x4AnyTrue();
+  const Operator* V128AnyTrue();
+  const Operator* V64x2AllTrue();
   const Operator* V32x4AllTrue();
-  const Operator* V16x8AnyTrue();
   const Operator* V16x8AllTrue();
-  const Operator* V8x16AnyTrue();
   const Operator* V8x16AllTrue();
 
   // load [base + index]
@@ -988,6 +994,7 @@ class V8_EXPORT_PRIVATE MachineOperatorBuilder final
 
  private:
   Zone* zone_;
+  MachineOperatorGlobalCache const& cache_;
   MachineRepresentation const word_;
   Flags const flags_;
   AlignmentRequirements const alignment_requirements_;
