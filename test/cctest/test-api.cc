@@ -17323,35 +17323,37 @@ THREADED_TEST(FunctionGetDebugName) {
   const char* code =
       "var error = false;"
       "function a() { this.x = 1; };"
-      "a.displayName = 'display_a';"
+      "Object.defineProperty(a, 'name', {value: 'display_a'});"
       "var b = (function() {"
       "  var f = function() { this.x = 2; };"
-      "  f.displayName = 'display_b';"
+      "  Object.defineProperty(f, 'name', {value: 'display_b'});"
       "  return f;"
       "})();"
       "var c = function() {};"
-      "c.__defineGetter__('displayName', function() {"
+      "c.__defineGetter__('name', function() {"
       "  error = true;"
       "  throw new Error();"
       "});"
       "function d() {};"
-      "d.__defineGetter__('displayName', function() {"
+      "d.__defineGetter__('name', function() {"
       "  error = true;"
       "  return 'wrong_display_name';"
       "});"
       "function e() {};"
-      "e.displayName = 'wrong_display_name';"
-      "e.__defineSetter__('displayName', function() {"
+      "Object.defineProperty(e, 'name', {value: 'wrong_display_name'});"
+      "e.__defineSetter__('name', function() {"
       "  error = true;"
       "  throw new Error();"
       "});"
       "function f() {};"
-      "f.displayName = { 'foo': 6, toString: function() {"
+      "Object.defineProperty(f, 'name', {value: {foo: 6, toString: function() {"
       "  error = true;"
       "  return 'wrong_display_name';"
-      "}};"
+      "}}});"
       "var g = function() {"
-      "  arguments.callee.displayName = 'set_in_runtime';"
+      "  Object.defineProperty(arguments.callee, 'name', {"
+      "    value: 'set_in_runtime'"
+      "  });"
       "}; g();"
       "var h = function() {};"
       "h.displayName = 'displayName';"
@@ -17378,7 +17380,7 @@ THREADED_TEST(FunctionGetDebugName) {
                              "e", "e",
                              "f", "f",
                              "g", "set_in_runtime",
-                             "h", "displayName",
+                             "h", "function.name",
                              "i", "function.name",
                              "j", "function.name",
                              "k", "foo.bar.baz",
@@ -17390,80 +17392,10 @@ THREADED_TEST(FunctionGetDebugName) {
                   v8::String::NewFromUtf8(isolate, functions[i * 2])
                       .ToLocalChecked())
             .ToLocalChecked());
-    CHECK_EQ(0, strcmp(functions[i * 2 + 1],
-                       *v8::String::Utf8Value(isolate, f->GetDebugName())));
+    std::string expected(functions[i * 2 + 1]);
+    std::string actual = *v8::String::Utf8Value(isolate, f->GetDebugName());
+    CHECK_EQ(expected, actual);
   }
-}
-
-
-THREADED_TEST(FunctionGetDisplayName) {
-  LocalContext env;
-  v8::Isolate* isolate = env->GetIsolate();
-  v8::HandleScope scope(isolate);
-  const char* code = "var error = false;"
-                     "function a() { this.x = 1; };"
-                     "a.displayName = 'display_a';"
-                     "var b = (function() {"
-                     "  var f = function() { this.x = 2; };"
-                     "  f.displayName = 'display_b';"
-                     "  return f;"
-                     "})();"
-                     "var c = function() {};"
-                     "c.__defineGetter__('displayName', function() {"
-                     "  error = true;"
-                     "  throw new Error();"
-                     "});"
-                     "function d() {};"
-                     "d.__defineGetter__('displayName', function() {"
-                     "  error = true;"
-                     "  return 'wrong_display_name';"
-                     "});"
-                     "function e() {};"
-                     "e.displayName = 'wrong_display_name';"
-                     "e.__defineSetter__('displayName', function() {"
-                     "  error = true;"
-                     "  throw new Error();"
-                     "});"
-                     "function f() {};"
-                     "f.displayName = { 'foo': 6, toString: function() {"
-                     "  error = true;"
-                     "  return 'wrong_display_name';"
-                     "}};"
-                     "var g = function() {"
-                     "  arguments.callee.displayName = 'set_in_runtime';"
-                     "}; g();";
-  v8::ScriptOrigin origin = v8::ScriptOrigin(isolate, v8_str("test"), 0, 0);
-  v8::Script::Compile(env.local(), v8_str(code), &origin)
-      .ToLocalChecked()
-      ->Run(env.local())
-      .ToLocalChecked();
-  v8::Local<v8::Value> error =
-      env->Global()->Get(env.local(), v8_str("error")).ToLocalChecked();
-  v8::Local<v8::Function> a = v8::Local<v8::Function>::Cast(
-      env->Global()->Get(env.local(), v8_str("a")).ToLocalChecked());
-  v8::Local<v8::Function> b = v8::Local<v8::Function>::Cast(
-      env->Global()->Get(env.local(), v8_str("b")).ToLocalChecked());
-  v8::Local<v8::Function> c = v8::Local<v8::Function>::Cast(
-      env->Global()->Get(env.local(), v8_str("c")).ToLocalChecked());
-  v8::Local<v8::Function> d = v8::Local<v8::Function>::Cast(
-      env->Global()->Get(env.local(), v8_str("d")).ToLocalChecked());
-  v8::Local<v8::Function> e = v8::Local<v8::Function>::Cast(
-      env->Global()->Get(env.local(), v8_str("e")).ToLocalChecked());
-  v8::Local<v8::Function> f = v8::Local<v8::Function>::Cast(
-      env->Global()->Get(env.local(), v8_str("f")).ToLocalChecked());
-  v8::Local<v8::Function> g = v8::Local<v8::Function>::Cast(
-      env->Global()->Get(env.local(), v8_str("g")).ToLocalChecked());
-  CHECK(!error->BooleanValue(isolate));
-  CHECK_EQ(0, strcmp("display_a",
-                     *v8::String::Utf8Value(isolate, a->GetDisplayName())));
-  CHECK_EQ(0, strcmp("display_b",
-                     *v8::String::Utf8Value(isolate, b->GetDisplayName())));
-  CHECK(c->GetDisplayName()->IsUndefined());
-  CHECK(d->GetDisplayName()->IsUndefined());
-  CHECK(e->GetDisplayName()->IsUndefined());
-  CHECK(f->GetDisplayName()->IsUndefined());
-  CHECK_EQ(0, strcmp("set_in_runtime",
-                     *v8::String::Utf8Value(isolate, g->GetDisplayName())));
 }
 
 

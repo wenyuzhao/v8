@@ -817,6 +817,7 @@ void JSFunction::JSFunctionVerify(Isolate* isolate) {
   TorqueGeneratedClassVerifiers::JSFunctionVerify(*this, isolate);
   CHECK(code().IsCode());
   CHECK(map().is_callable());
+  CHECK_IMPLIES(code().kind() == CodeKind::BASELINE, has_feedback_vector());
   Handle<JSFunction> function(*this, isolate);
   LookupIterator it(isolate, function, isolate->factory()->prototype_string(),
                     LookupIterator::OWN_SKIP_INTERCEPTOR);
@@ -959,11 +960,9 @@ void Oddball::OddballVerify(Isolate* isolate) {
 }
 
 void PropertyCell::PropertyCellVerify(Isolate* isolate) {
-  // TODO(torque): replace with USE_TORQUE_VERIFIER(PropertyCell) once
-  // it supports UniqueName type.
   TorqueGeneratedClassVerifiers::PropertyCellVerify(*this, isolate);
-
   CHECK(name().IsUniqueName());
+  CheckDataIsCompatible(property_details(), value());
 }
 
 void CodeDataContainer::CodeDataContainerVerify(Isolate* isolate) {
@@ -1657,6 +1656,16 @@ void PreparseData::PreparseDataVerify(Isolate* isolate) {
 }
 
 USE_TORQUE_VERIFIER(InterpreterData)
+
+void StackFrameInfo::StackFrameInfoVerify(Isolate* isolate) {
+  TorqueGeneratedClassVerifiers::StackFrameInfoVerify(*this, isolate);
+  CHECK_IMPLIES(IsAsmJsWasm(), IsWasm());
+  CHECK_IMPLIES(IsWasm(), receiver_or_instance().IsWasmInstanceObject());
+  CHECK_IMPLIES(IsWasm(), function().IsSmi());
+  CHECK_IMPLIES(!IsWasm(), function().IsJSFunction());
+  CHECK_IMPLIES(IsAsync(), !IsWasm());
+  CHECK_IMPLIES(IsConstructor(), !IsWasm());
+}
 
 #endif  // VERIFY_HEAP
 

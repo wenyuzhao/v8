@@ -190,6 +190,10 @@ RUNTIME_FUNCTION(Runtime_DeoptimizeFunction) {
 
   if (function->HasAttachedOptimizedCode()) {
     Deoptimizer::DeoptimizeFunction(*function);
+  } else if (function->code().kind() == CodeKind::BASELINE) {
+    // TODO(v8:11429): This should either be in Deoptimizer::DeoptimizeFunction,
+    // or not be considered deoptimization at all.
+    Deoptimizer::DeoptimizeBaseline(function->shared());
   }
 
   return ReadOnlyRoots(isolate).undefined_value();
@@ -208,6 +212,8 @@ RUNTIME_FUNCTION(Runtime_DeoptimizeNow) {
 
   if (function->HasAttachedOptimizedCode()) {
     Deoptimizer::DeoptimizeFunction(*function);
+  } else if (function->code().kind() == CodeKind::BASELINE) {
+    Deoptimizer::DeoptimizeBaseline(function->shared());
   }
 
   return ReadOnlyRoots(isolate).undefined_value();
@@ -502,7 +508,7 @@ RUNTIME_FUNCTION(Runtime_OptimizeOsr) {
   function->MarkForOptimization(ConcurrencyMode::kNotConcurrent);
 
   // Make the profiler arm all back edges in unoptimized code.
-  if (it.frame()->type() == StackFrame::INTERPRETED) {
+  if (it.frame()->IsUnoptimizedJavaScriptFrame()) {
     isolate->runtime_profiler()->AttemptOnStackReplacement(
         InterpretedFrame::cast(it.frame()),
         AbstractCode::kMaxLoopNestingMarker);
@@ -594,6 +600,10 @@ RUNTIME_FUNCTION(Runtime_GetOptimizationStatus) {
     if (function->code().is_turbofanned()) {
       status |= static_cast<int>(OptimizationStatus::kTurboFanned);
     }
+  }
+  // TODO(v8:11429): Clean up code kind predicates to include Baseline.
+  if (function->code().kind() == CodeKind::BASELINE) {
+    status |= static_cast<int>(OptimizationStatus::kBaseline);
   }
   if (function->ActiveTierIsIgnition()) {
     status |= static_cast<int>(OptimizationStatus::kInterpreted);

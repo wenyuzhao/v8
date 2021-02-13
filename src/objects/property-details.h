@@ -108,9 +108,8 @@ class Representation {
   // might cause a map deprecation.
   bool MightCauseMapDeprecation() const {
     // HeapObject to tagged representation change can be done in-place.
-    if (IsTagged() || IsHeapObject()) return false;
     // Boxed double to tagged transition is always done in-place.
-    if (IsDouble()) return false;
+    if (IsTagged() || IsHeapObject() || IsDouble()) return false;
     // None to double and smi to double representation changes require
     // deprecation, because doubles might require box allocation, see
     // CanBeInPlaceChangedTo().
@@ -209,7 +208,7 @@ enum class PropertyCellType {
   kUndefined,     // The PREMONOMORPHIC of property cells.
   kConstant,      // Cell has been assigned only once.
   kConstantType,  // Cell has been assigned only one type.
-  // Value for dictionaries not holding cells, must have value 0:
+  // Value for dictionaries not holding cells, must be 0:
   kNoCell = kMutable,
 };
 
@@ -254,6 +253,14 @@ class PropertyDetails {
   static PropertyDetails Empty(
       PropertyCellType cell_type = PropertyCellType::kNoCell) {
     return PropertyDetails(kData, NONE, cell_type);
+  }
+
+  bool operator==(PropertyDetails const& other) {
+    return value_ == other.value_;
+  }
+
+  bool operator!=(PropertyDetails const& other) {
+    return value_ != other.value_;
   }
 
   int pointer() const { return DescriptorPointer::decode(value_); }

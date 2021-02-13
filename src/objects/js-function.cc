@@ -52,6 +52,13 @@ CodeKinds JSFunction::GetAvailableCodeKinds() const {
     }
   }
 
+  if ((result & CodeKindFlag::BASELINE) == 0) {
+    // The SharedFunctionInfo could have attached baseline code.
+    if (shared().HasBaselineData()) {
+      result |= CodeKindFlag::BASELINE;
+    }
+  }
+
   // Check the optimized code cache.
   if (has_feedback_vector() && feedback_vector().has_optimized_code() &&
       !feedback_vector().optimized_code().marked_for_deoptimization()) {
@@ -91,6 +98,9 @@ bool HighestTierOf(CodeKinds kinds, CodeKind* highest_tier) {
   } else if ((kinds & CodeKindFlag::TURBOPROP) != 0) {
     *highest_tier = CodeKind::TURBOPROP;
     return true;
+  } else if ((kinds & CodeKindFlag::BASELINE) != 0) {
+    *highest_tier = CodeKind::BASELINE;
+    return true;
   } else if ((kinds & CodeKindFlag::NATIVE_CONTEXT_INDEPENDENT) != 0) {
     *highest_tier = CodeKind::NATIVE_CONTEXT_INDEPENDENT;
     return true;
@@ -121,6 +131,7 @@ CodeKind JSFunction::GetActiveTier() const {
   DCHECK(shared().is_compiled());
   HighestTierOf(GetAvailableCodeKinds(), &highest_tier);
   DCHECK(highest_tier == CodeKind::TURBOFAN ||
+         highest_tier == CodeKind::BASELINE ||
          highest_tier == CodeKind::TURBOPROP ||
          highest_tier == CodeKind::NATIVE_CONTEXT_INDEPENDENT ||
          highest_tier == CodeKind::INTERPRETED_FUNCTION);
@@ -135,6 +146,16 @@ bool JSFunction::ActiveTierIsTurbofan() const {
 bool JSFunction::ActiveTierIsNCI() const {
   if (!shared().HasBytecodeArray()) return false;
   return GetActiveTier() == CodeKind::NATIVE_CONTEXT_INDEPENDENT;
+}
+
+bool JSFunction::ActiveTierIsBaseline() const {
+  CodeKind highest_tier;
+  if (!HighestTierOf(GetAvailableCodeKinds(), &highest_tier)) return false;
+  return highest_tier == CodeKind::BASELINE;
+}
+
+bool JSFunction::ActiveTierIsIgnitionOrBaseline() const {
+  return ActiveTierIsIgnition() || ActiveTierIsBaseline();
 }
 
 bool JSFunction::ActiveTierIsToptierTurboprop() const {
@@ -153,7 +174,7 @@ CodeKind JSFunction::NextTier() const {
   if (V8_UNLIKELY(FLAG_turboprop) && ActiveTierIsMidtierTurboprop()) {
     return CodeKind::TURBOFAN;
   } else if (V8_UNLIKELY(FLAG_turboprop)) {
-    DCHECK(ActiveTierIsIgnition());
+    DCHECK(ActiveTierIsIgnitionOrBaseline());
     return CodeKind::TURBOPROP;
   }
   return CodeKind::TURBOFAN;
@@ -791,20 +812,12 @@ void JSFunction::PrintName(FILE* out) {
   PrintF(out, "%s", shared().DebugNameCStr().get());
 }
 
-Handle<String> JSFunction::GetName(Handle<JSFunction> function) {
+Handle<String> JSFunction::GetDebugName(Handle<JSFunction> function) {
   Isolate* isolate = function->GetIsolate();
   Handle<Object> name =
       JSReceiver::GetDataProperty(function, isolate->factory()->name_string());
   if (name->IsString()) return Handle<String>::cast(name);
   return SharedFunctionInfo::DebugName(handle(function->shared(), isolate));
-}
-
-Handle<String> JSFunction::GetDebugName(Handle<JSFunction> function) {
-  Isolate* isolate = function->GetIsolate();
-  Handle<Object> name = JSReceiver::GetDataProperty(
-      function, isolate->factory()->display_name_string());
-  if (name->IsString()) return Handle<String>::cast(name);
-  return JSFunction::GetName(function);
 }
 
 bool JSFunction::SetName(Handle<JSFunction> function, Handle<Name> name,

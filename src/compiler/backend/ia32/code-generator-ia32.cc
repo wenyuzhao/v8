@@ -2153,6 +2153,24 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ Pinsrd(i.OutputSimd128Register(), i.InputOperand(3), lane * 2 + 1);
       break;
     }
+    case kIA32I64x2Abs: {
+      XMMRegister dst = i.OutputSimd128Register();
+      XMMRegister src = i.InputSimd128Register(0);
+      if (CpuFeatures::IsSupported(AVX)) {
+        CpuFeatureScope avx_scope(tasm(), AVX);
+        __ vpxor(dst, dst, dst);
+        __ vpsubq(dst, dst, src);
+        __ vblendvpd(dst, src, dst, src);
+      } else {
+        CpuFeatureScope sse_scope(tasm(), SSE3);
+        DCHECK_EQ(dst, src);
+        __ movshdup(kScratchDoubleReg, src);
+        __ psrad(kScratchDoubleReg, 31);
+        __ xorps(dst, kScratchDoubleReg);
+        __ psubq(dst, kScratchDoubleReg);
+      }
+      break;
+    }
     case kIA32I64x2Neg: {
       XMMRegister dst = i.OutputSimd128Register();
       Operand src = i.InputOperand(0);
@@ -2238,6 +2256,69 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
                  i.InputOperand(1));
       __ Pcmpeqq(kScratchDoubleReg, kScratchDoubleReg, kScratchDoubleReg);
       __ Pxor(i.OutputSimd128Register(), kScratchDoubleReg);
+      break;
+    }
+    case kIA32I64x2GtS: {
+      XMMRegister dst = i.OutputSimd128Register();
+      XMMRegister src0 = i.InputSimd128Register(0);
+      XMMRegister src1 = i.InputSimd128Register(1);
+
+      if (CpuFeatures::IsSupported(AVX)) {
+        CpuFeatureScope avx_scope(tasm(), AVX);
+        __ vpcmpgtq(dst, src0, src1);
+      } else if (CpuFeatures::IsSupported(SSE4_2)) {
+        CpuFeatureScope sse_scope(tasm(), SSE4_2);
+        DCHECK_EQ(dst, src0);
+        __ pcmpgtq(dst, src1);
+      } else {
+        DCHECK_NE(dst, src0);
+        DCHECK_NE(dst, src1);
+        __ movdqa(dst, src1);
+        __ movdqa(kScratchDoubleReg, src0);
+        __ psubq(dst, src0);
+        __ pcmpeqd(kScratchDoubleReg, src1);
+        __ pand(dst, kScratchDoubleReg);
+        __ movdqa(kScratchDoubleReg, src0);
+        __ pcmpgtd(kScratchDoubleReg, src1);
+        __ por(dst, kScratchDoubleReg);
+        __ pshufd(dst, dst, 0xF5);
+      }
+      break;
+    }
+    case kIA32I64x2GeS: {
+      XMMRegister dst = i.OutputSimd128Register();
+      XMMRegister src0 = i.InputSimd128Register(0);
+      XMMRegister src1 = i.InputSimd128Register(1);
+
+      if (CpuFeatures::IsSupported(AVX)) {
+        CpuFeatureScope avx_scope(tasm(), AVX);
+        __ vpcmpgtq(dst, src1, src0);
+        __ vpcmpeqd(kScratchDoubleReg, kScratchDoubleReg, kScratchDoubleReg);
+        __ vpxor(dst, dst, kScratchDoubleReg);
+      } else if (CpuFeatures::IsSupported(SSE4_2)) {
+        CpuFeatureScope sse_scope(tasm(), SSE4_2);
+        DCHECK_NE(dst, src0);
+        if (dst != src1) {
+          __ movdqa(dst, src1);
+        }
+        __ pcmpgtq(dst, src0);
+        __ pcmpeqd(kScratchDoubleReg, kScratchDoubleReg);
+        __ pxor(dst, kScratchDoubleReg);
+      } else {
+        DCHECK_NE(dst, src0);
+        DCHECK_NE(dst, src1);
+        __ movdqa(dst, src0);
+        __ movdqa(kScratchDoubleReg, src1);
+        __ psubq(dst, src1);
+        __ pcmpeqd(kScratchDoubleReg, src0);
+        __ pand(dst, kScratchDoubleReg);
+        __ movdqa(kScratchDoubleReg, src1);
+        __ pcmpgtd(kScratchDoubleReg, src0);
+        __ por(dst, kScratchDoubleReg);
+        __ pshufd(dst, dst, 0xF5);
+        __ pcmpeqd(kScratchDoubleReg, kScratchDoubleReg);
+        __ pxor(dst, kScratchDoubleReg);
+      }
       break;
     }
     case kIA32I64x2SConvertI32x4Low: {

@@ -125,6 +125,7 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kIA32F64x2PromoteLowF32x4:
     case kIA32I64x2SplatI32Pair:
     case kIA32I64x2ReplaceLaneI32Pair:
+    case kIA32I64x2Abs:
     case kIA32I64x2Neg:
     case kIA32I64x2Shl:
     case kIA32I64x2ShrS:
@@ -135,6 +136,8 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kIA32I64x2BitMask:
     case kIA32I64x2Eq:
     case kIA32I64x2Ne:
+    case kIA32I64x2GtS:
+    case kIA32I64x2GeS:
     case kIA32I64x2SignSelect:
     case kIA32I64x2ExtMulLowI32x4S:
     case kIA32I64x2ExtMulHighI32x4S:

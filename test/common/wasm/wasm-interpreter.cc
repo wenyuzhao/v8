@@ -560,6 +560,8 @@ int64_t ExecuteI64ReinterpretF64(WasmValue a) {
 }
 
 constexpr int32_t kCatchInArity = 1;
+constexpr int32_t kCatchAllExceptionIndex = -1;
+constexpr int32_t kImplicitRethrowExceptionIndex = -2;
 
 }  // namespace
 
@@ -810,20 +812,41 @@ class SideTable : public ZoneObject {
           break;
         }
         case kExprElse: {
-          // TODO(thibaudm): implement catch_all.
+          // Alias for catch_all if the current block is a try.
           Control* c = &control_stack.back();
-          copy_unreachable();
-          TRACE("control @%u: Else\n", i.pc_offset());
-          if (!unreachable) {
-            c->end_label->Ref(i.pc(), stack_height);
+          if (*c->pc == kExprIf) {
+            copy_unreachable();
+            TRACE("control @%u: Else\n", i.pc_offset());
+            if (!unreachable) {
+              c->end_label->Ref(i.pc(), stack_height);
+            }
+            DCHECK_NOT_NULL(c->else_label);
+            c->else_label->Bind(i.pc() + 1);
+            c->else_label->Finish(&map_, code->start);
+            stack_height = c->else_label->target_stack_height;
+            c->else_label = nullptr;
+            DCHECK_IMPLIES(!unreachable,
+                           stack_height >= c->end_label->target_stack_height);
+          } else {
+            DCHECK_EQ(*c->pc, kExprTry);
+            if (!exception_stack.empty() &&
+                exception_stack.back() == control_stack.size() - 1) {
+              // Only pop the exception stack if this is the only catch handler.
+              exception_stack.pop_back();
+            }
+            copy_unreachable();
+            TRACE("control @%u: CatchAll\n", i.pc_offset());
+            if (!unreachable) {
+              c->end_label->Ref(i.pc(), stack_height);
+            }
+            DCHECK_NOT_NULL(c->else_label);
+            c->else_label->Bind(i.pc() + 1, kCatchAllExceptionIndex);
+            c->else_label->Finish(&map_, code->start);
+            c->else_label = nullptr;
+            DCHECK_IMPLIES(!unreachable,
+                           stack_height >= c->end_label->target_stack_height);
+            stack_height = c->end_label->target_stack_height;
           }
-          DCHECK_NOT_NULL(c->else_label);
-          c->else_label->Bind(i.pc() + 1);
-          c->else_label->Finish(&map_, code->start);
-          stack_height = c->else_label->target_stack_height;
-          c->else_label = nullptr;
-          DCHECK_IMPLIES(!unreachable,
-                         stack_height >= c->end_label->target_stack_height);
           break;
         }
         case kExprTry: {
@@ -879,6 +902,14 @@ class SideTable : public ZoneObject {
               if (*c->pc == kExprIf) {
                 // Bind else label for one-armed if.
                 c->else_label->Bind(i.pc());
+              } else if (!exception_stack.empty()) {
+                // No catch_all block, prepare for implicit rethrow.
+                DCHECK_EQ(*c->pc, kExprTry);
+                Control* next_try_block =
+                    &control_stack[exception_stack.back()];
+                c->else_label->Bind(i.pc(), kImplicitRethrowExceptionIndex);
+                next_try_block->else_label->Ref(
+                    i.pc(), c->else_label->target_stack_height);
               }
             }
             c->end_label->Bind(i.pc() + 1);
@@ -1346,7 +1377,17 @@ class WasmInterpreterInternals {
     auto it = code->side_table->map_.catch_map.find(*pc);
     DCHECK_NE(it, code->side_table->map_.catch_map.end());
     for (auto& entry : it->second) {
-      if (MatchingExceptionTag(exception_object, entry.exception_index)) {
+      if (entry.exception_index < 0) {
+        ResetStack(StackHeight() - entry.sp_diff);
+        *pc += entry.pc_diff;
+        if (entry.exception_index == kImplicitRethrowExceptionIndex) {
+          // Recursively try to find a handler in the next enclosing try block.
+          return JumpToHandlerDelta(code, exception_object, pc);
+        }
+        DCHECK_EQ(entry.exception_index, kCatchAllExceptionIndex);
+        return true;
+      } else if (MatchingExceptionTag(exception_object,
+                                      entry.exception_index)) {
         const WasmException* exception =
             &module()->exceptions[entry.exception_index];
         const FunctionSig* sig = exception->sig;
@@ -1357,7 +1398,6 @@ class WasmInterpreterInternals {
         return true;
       }
     }
-    // TODO(thibaudm): Try rethrowing in the current frame before unwinding.
     return false;
   }
 

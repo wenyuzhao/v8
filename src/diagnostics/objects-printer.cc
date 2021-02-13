@@ -1520,11 +1520,11 @@ void PropertyCell::PropertyCellPrint(std::ostream& os) {  // NOLINT
   PrintHeader(os, "PropertyCell");
   os << "\n - name: ";
   name().NamePrint(os);
-  os << "\n - value: " << Brief(value());
+  os << "\n - value: " << Brief(value(kAcquireLoad));
   os << "\n - details: ";
-  property_details().PrintAsSlowTo(os, true);
-  PropertyCellType cell_type = property_details().cell_type();
-  os << "\n - cell_type: " << cell_type;
+  PropertyDetails details = property_details(kAcquireLoad);
+  details.PrintAsSlowTo(os, true);
+  os << "\n - cell_type: " << details.cell_type();
   os << "\n";
 }
 
@@ -2280,10 +2280,14 @@ void ScopeInfo::ScopeInfoPrint(std::ostream& os) {  // NOLINT
   os << "\n";
 }
 
-void StackTraceFrame::StackTraceFramePrint(std::ostream& os) {  // NOLINT
-  PrintHeader(os, "StackTraceFrame");
-  os << "\n - frame_index: " << frame_index();
-  os << "\n - frame_array: " << Brief(frame_array());
+void StackFrameInfo::StackFrameInfoPrint(std::ostream& os) {  // NOLINT
+  PrintHeader(os, "StackFrameInfo");
+  os << "\n - receiver_or_instance: " << Brief(receiver_or_instance());
+  os << "\n - function: " << Brief(function());
+  os << "\n - code_object: " << Brief(code_object());
+  os << "\n - offset: " << offset();
+  os << "\n - flags: " << flags();
+  os << "\n - parameters: " << Brief(parameters());
   os << "\n";
 }
 

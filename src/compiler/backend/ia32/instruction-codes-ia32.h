@@ -140,6 +140,7 @@ namespace compiler {
   V(IA32F64x2PromoteLowF32x4)      \
   V(IA32I64x2SplatI32Pair)         \
   V(IA32I64x2ReplaceLaneI32Pair)   \
+  V(IA32I64x2Abs)                  \
   V(IA32I64x2Neg)                  \
   V(IA32I64x2Shl)                  \
   V(IA32I64x2ShrS)                 \
@@ -150,6 +151,8 @@ namespace compiler {
   V(IA32I64x2BitMask)              \
   V(IA32I64x2Eq)                   \
   V(IA32I64x2Ne)                   \
+  V(IA32I64x2GtS)                  \
+  V(IA32I64x2GeS)                  \
   V(IA32I64x2SignSelect)           \
   V(IA32I64x2ExtMulLowI32x4S)      \
   V(IA32I64x2ExtMulHighI32x4S)     \

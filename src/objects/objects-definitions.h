@@ -124,6 +124,7 @@ namespace internal {
   V(_, ASM_WASM_DATA_TYPE, AsmWasmData, asm_wasm_data)                        \
   V(_, ASYNC_GENERATOR_REQUEST_TYPE, AsyncGeneratorRequest,                   \
     async_generator_request)                                                  \
+  V(_, BASELINE_DATA_TYPE, BaselineData, baseline_data)                       \
   V(_, BREAK_POINT_TYPE, BreakPoint, break_point)                             \
   V(_, BREAK_POINT_INFO_TYPE, BreakPointInfo, break_point_info)               \
   V(_, CACHED_TEMPLATE_OBJECT_TYPE, CachedTemplateObject,                     \
@@ -146,7 +147,7 @@ namespace internal {
   V(_, SCRIPT_TYPE, Script, script)                                           \
   V(_, SOURCE_TEXT_MODULE_INFO_ENTRY_TYPE, SourceTextModuleInfoEntry,         \
     module_info_entry)                                                        \
-  V(_, STACK_TRACE_FRAME_TYPE, StackTraceFrame, stack_trace_frame)            \
+  V(_, STACK_FRAME_INFO_TYPE, StackFrameInfo, stack_frame_info)               \
   V(_, TEMPLATE_OBJECT_DESCRIPTION_TYPE, TemplateObjectDescription,           \
     template_object_description)                                              \
   V(_, TUPLE2_TYPE, Tuple2, tuple2)                                           \

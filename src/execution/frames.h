@@ -5,6 +5,7 @@
 #ifndef V8_EXECUTION_FRAMES_H_
 #define V8_EXECUTION_FRAMES_H_
 
+#include "src/base/bounds.h"
 #include "src/codegen/safepoint-table.h"
 #include "src/common/globals.h"
 #include "src/handles/handles.h"
@@ -18,6 +19,7 @@
 //     - JavaScriptFrame (aka StandardFrame)
 //       - InterpretedFrame
 //       - OptimizedFrame
+//       - BaselineFrame
 //     - TypedFrameWithJSLinkage
 //       - BuiltinFrame
 //       - JavaScriptBuiltinContinuationFrame
@@ -93,7 +95,6 @@ class StackHandler {
   V(ENTRY, EntryFrame)                                                    \
   V(CONSTRUCT_ENTRY, ConstructEntryFrame)                                 \
   V(EXIT, ExitFrame)                                                      \
-  V(OPTIMIZED, OptimizedFrame)                                            \
   V(WASM, WasmFrame)                                                      \
   V(WASM_TO_JS, WasmToJsFrame)                                            \
   V(JS_TO_WASM, JsToWasmFrame)                                            \
@@ -102,6 +103,8 @@ class StackHandler {
   V(WASM_EXIT, WasmExitFrame)                                             \
   V(WASM_COMPILE_LAZY, WasmCompileLazyFrame)                              \
   V(INTERPRETED, InterpretedFrame)                                        \
+  V(BASELINE, BaselineFrame)                                              \
+  V(OPTIMIZED, OptimizedFrame)                                            \
   V(STUB, StubFrame)                                                      \
   V(BUILTIN_CONTINUATION, BuiltinContinuationFrame)                       \
   V(JAVA_SCRIPT_BUILTIN_CONTINUATION, JavaScriptBuiltinContinuationFrame) \
@@ -125,6 +128,11 @@ class StackFrame {
     MANUAL
   };
 #undef DECLARE_TYPE
+
+  bool IsUnoptimizedJavaScriptFrame() const {
+    STATIC_ASSERT(BASELINE == INTERPRETED + 1);
+    return base::IsInRange(type(), INTERPRETED, BASELINE);
+  }
 
   // Used to mark the outermost JS entry frame.
   //
@@ -206,7 +214,12 @@ class StackFrame {
   bool is_construct_entry() const { return type() == CONSTRUCT_ENTRY; }
   bool is_exit() const { return type() == EXIT; }
   bool is_optimized() const { return type() == OPTIMIZED; }
-  bool is_interpreted() const { return type() == INTERPRETED; }
+  // TODO(v8:11429): Clean up these predicates, distinguishing interpreted from
+  // baseline frames, and adding a new predicate that covers both.
+  bool is_interpreted() const {
+    return type() == INTERPRETED || type() == BASELINE;
+  }
+  bool is_baseline() const { return type() == BASELINE; }
   bool is_wasm() const { return this->type() == WASM; }
   bool is_wasm_compile_lazy() const { return type() == WASM_COMPILE_LAZY; }
   bool is_wasm_debug_break() const { return type() == WASM_DEBUG_BREAK; }
@@ -225,8 +238,10 @@ class StackFrame {
   bool is_builtin_exit() const { return type() == BUILTIN_EXIT; }
 
   bool is_java_script() const {
-    Type type = this->type();
-    return (type == OPTIMIZED) || (type == INTERPRETED);
+    STATIC_ASSERT(INTERPRETED + 1 == BASELINE);
+    STATIC_ASSERT(BASELINE + 1 == OPTIMIZED);
+    Type t = type();
+    return t >= INTERPRETED && t <= OPTIMIZED;
   }
   bool is_wasm_to_js() const { return type() == WASM_TO_JS; }
   bool is_js_to_wasm() const { return type() == JS_TO_WASM; }
@@ -763,7 +778,7 @@ class BuiltinExitFrame : public ExitFrame {
   inline Object new_target_slot_object() const;
 
   friend class StackFrameIteratorBase;
-  friend class FrameArrayBuilder;
+  friend class StackTraceBuilder;
 };
 
 class StubFrame : public TypedFrame {
@@ -829,7 +844,7 @@ class InterpretedFrame : public JavaScriptFrame {
       int* data, HandlerTable::CatchPrediction* prediction) override;
 
   // Returns the current offset into the bytecode stream.
-  int GetBytecodeOffset() const;
+  virtual int GetBytecodeOffset() const;
 
   // Updates the current offset into the bytecode stream, mainly used for stack
   // unwinding to continue execution at a different bytecode offset.
@@ -860,6 +875,27 @@ class InterpretedFrame : public JavaScriptFrame {
   inline explicit InterpretedFrame(StackFrameIteratorBase* iterator);
 
   Address GetExpressionAddress(int n) const override;
+
+ private:
+  friend class StackFrameIteratorBase;
+};
+
+class BaselineFrame : public InterpretedFrame {
+ public:
+  Type type() const override { return BASELINE; }
+
+  // Returns the current offset into the bytecode stream.
+  int GetBytecodeOffset() const override;
+
+  intptr_t GetPCForBytecodeOffset(int lookup_offset) const;
+
+  static BaselineFrame* cast(StackFrame* frame) {
+    DCHECK(frame->is_baseline());
+    return static_cast<BaselineFrame*>(frame);
+  }
+
+ protected:
+  inline explicit BaselineFrame(StackFrameIteratorBase* iterator);
 
  private:
   friend class StackFrameIteratorBase;
@@ -1168,6 +1204,7 @@ class StackFrameIterator : public StackFrameIteratorBase {
     return frame_;
   }
   V8_EXPORT_PRIVATE void Advance();
+  StackFrame* Reframe();
 
  private:
   // Go back to the first frame.
@@ -1204,6 +1241,7 @@ class V8_EXPORT_PRIVATE StackTraceFrameIterator {
   int FrameFunctionCount() const;
 
   inline CommonFrame* frame() const;
+  inline CommonFrame* Reframe();
 
   inline bool is_javascript() const;
   inline bool is_wasm() const;

@@ -2192,10 +2192,12 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   // (NOTE: not index!), does a hole check if |if_hole| is provided and
   // converts the value so that it becomes ready for storing to array of
   // |to_kind| elements.
-  Node* LoadElementAndPrepareForStore(TNode<FixedArrayBase> array,
-                                      TNode<IntPtrT> offset,
-                                      ElementsKind from_kind,
-                                      ElementsKind to_kind, Label* if_hole);
+  template <typename TResult>
+  TNode<TResult> LoadElementAndPrepareForStore(TNode<FixedArrayBase> array,
+                                               TNode<IntPtrT> offset,
+                                               ElementsKind from_kind,
+                                               ElementsKind to_kind,
+                                               Label* if_hole);
 
   template <typename TIndex>
   TNode<TIndex> CalculateNewElementsCapacity(TNode<TIndex> old_capacity);
@@ -3168,6 +3170,8 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
 
   // Load type feedback vector from the stub caller's frame.
   TNode<FeedbackVector> LoadFeedbackVectorForStub();
+  TNode<FeedbackVector> LoadFeedbackVectorFromBaseline();
+  TNode<Context> LoadContextFromBaseline();
   // Load type feedback vector from the stub caller's frame, skipping an
   // intermediate trampoline frame.
   TNode<FeedbackVector> LoadFeedbackVectorForStubWithTrampoline();
@@ -3187,9 +3191,13 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   TNode<ClosureFeedbackCellArray> LoadClosureFeedbackArray(
       TNode<JSFunction> closure);
 
+  // TODO(v8:11429): Change bool to enum.
+  void MaybeUpdateFeedback(TNode<Smi> feedback,
+                           TNode<HeapObject> maybe_feedback_vector,
+                           TNode<UintPtrT> slot_id, bool guaranteed_feedback);
   // Update the type feedback vector.
   void UpdateFeedback(TNode<Smi> feedback,
-                      TNode<HeapObject> maybe_feedback_vector,
+                      TNode<FeedbackVector> feedback_vector,
                       TNode<UintPtrT> slot_id);
 
   // Report that there was a feedback update, performing any tasks that should
@@ -3339,9 +3347,25 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
                                 TNode<IntPtrT> start_offset,
                                 TNode<IntPtrT> end_offset, RootIndex root);
 
+  // Goto the given |target| if the context chain starting at |context| has any
+  // extensions up to the given |depth|. Returns the Context with the
+  // extensions if there was one, otherwise returns the Context at the given
+  // |depth|.
+  TNode<Context> GotoIfHasContextExtensionUpToDepth(TNode<Context> context,
+                                                    TNode<Uint32T> depth,
+                                                    Label* target);
+
   TNode<Oddball> RelationalComparison(
       Operation op, TNode<Object> left, TNode<Object> right,
-      TNode<Context> context, TVariable<Smi>* var_type_feedback = nullptr);
+      TNode<Context> context, TVariable<Smi>* var_type_feedback = nullptr) {
+    return RelationalComparison(
+        op, left, right, [=]() { return context; }, var_type_feedback);
+  }
+
+  TNode<Oddball> RelationalComparison(
+      Operation op, TNode<Object> left, TNode<Object> right,
+      const LazyNode<Context>& context,
+      TVariable<Smi>* var_type_feedback = nullptr);
 
   void BranchIfNumberRelationalComparison(Operation op, TNode<Number> left,
                                           TNode<Number> right, Label* if_true,
@@ -3393,6 +3417,12 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
 
   TNode<Oddball> Equal(SloppyTNode<Object> lhs, SloppyTNode<Object> rhs,
                        TNode<Context> context,
+                       TVariable<Smi>* var_type_feedback = nullptr) {
+    return Equal(
+        lhs, rhs, [=]() { return context; }, var_type_feedback);
+  }
+  TNode<Oddball> Equal(SloppyTNode<Object> lhs, SloppyTNode<Object> rhs,
+                       const LazyNode<Context>& context,
                        TVariable<Smi>* var_type_feedback = nullptr);
 
   TNode<Oddball> StrictEqual(SloppyTNode<Object> lhs, SloppyTNode<Object> rhs,
@@ -3428,14 +3458,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   void ForInPrepare(TNode<HeapObject> enumerator, TNode<UintPtrT> slot,
                     TNode<HeapObject> maybe_feedback_vector,
                     TNode<FixedArray>* cache_array_out,
-                    TNode<Smi>* cache_length_out);
-  // Returns {cache_array} and {cache_length} in a fixed array of length 2.
-  // TODO(jgruber): Tuple2 would be a slightly better fit as the return type,
-  // but FixedArray has better support and there are no effective drawbacks to
-  // using it instead of Tuple2 in practice.
-  TNode<FixedArray> ForInPrepareForTorque(
-      TNode<HeapObject> enumerator, TNode<UintPtrT> slot,
-      TNode<HeapObject> maybe_feedback_vector);
+                    TNode<Smi>* cache_length_out, bool guaranteed_feedback);
 
   TNode<String> Typeof(SloppyTNode<Object> value);
 
@@ -3811,12 +3834,16 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   // TODO(solanes): This method can go away and simplify into only one version
   // of StoreElement once we have "if constexpr" available to use.
   template <typename TArray, typename TIndex>
-  void StoreElementBigIntOrTypedArray(TNode<TArray> elements, ElementsKind kind,
-                                      TNode<TIndex> index, Node* value);
+  void StoreElementTypedArray(TNode<TArray> elements, ElementsKind kind,
+                              TNode<TIndex> index, Node* value);
 
   template <typename TIndex>
   void StoreElement(TNode<FixedArrayBase> elements, ElementsKind kind,
-                    TNode<TIndex> index, Node* value);
+                    TNode<TIndex> index, TNode<Object> value);
+
+  template <typename TIndex>
+  void StoreElement(TNode<FixedArrayBase> elements, ElementsKind kind,
+                    TNode<TIndex> index, TNode<Float64T> value);
 
   // Converts {input} to a number if {input} is a plain primitve (i.e. String or
   // Oddball) and stores the result in {var_result}. Otherwise, it bails out to

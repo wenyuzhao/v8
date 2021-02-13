@@ -7,6 +7,7 @@
 
 // Clients of this interface shouldn't depend on lots of heap internals.
 // Do not include anything from src/heap here!
+#include "src/baseline/baseline.h"
 #include "src/builtins/builtins.h"
 #include "src/common/globals.h"
 #include "src/execution/messages.h"
@@ -59,7 +60,7 @@ class PromiseResolveThenableJobTask;
 class RegExpMatchInfo;
 class ScriptContextTable;
 class SourceTextModule;
-class StackTraceFrame;
+class StackFrameInfo;
 class StringSet;
 class StoreHandler;
 class SyntheticModule;
@@ -105,6 +106,9 @@ class V8_EXPORT_PRIVATE Factory : public FactoryBase<Factory> {
     return handle(obj, isolate());
   }
 
+  Handle<BaselineData> NewBaselineData(Handle<Code> code,
+                                       Handle<HeapObject> function_data);
+
   Handle<Oddball> NewOddball(Handle<Map> map, const char* to_string,
                              Handle<Object> to_number, const char* type_of,
                              byte kind);
@@ -145,8 +149,6 @@ class V8_EXPORT_PRIVATE Factory : public FactoryBase<Factory> {
 
   // Allocate a new fixed double array with hole values.
   Handle<FixedArrayBase> NewFixedDoubleArrayWithHoles(int size);
-
-  Handle<FrameArray> NewFrameArray(int number_of_frames);
 
   // Allocates a NameDictionary with an internal capacity calculated such that
   // |at_least_space_for| entries can be added without reallocating.
@@ -365,8 +367,12 @@ class V8_EXPORT_PRIVATE Factory : public FactoryBase<Factory> {
 
   Handle<BreakPointInfo> NewBreakPointInfo(int source_position);
   Handle<BreakPoint> NewBreakPoint(int id, Handle<String> condition);
-  Handle<StackTraceFrame> NewStackTraceFrame(Handle<FrameArray> frame_array,
-                                             int index);
+
+  Handle<StackFrameInfo> NewStackFrameInfo(Handle<Object> receiver_or_instance,
+                                           Handle<Object> function,
+                                           Handle<HeapObject> code_object,
+                                           int offset, int flags,
+                                           Handle<FixedArray> parameters);
 
   // Allocate various microtasks.
   Handle<CallableTask> NewCallableTask(Handle<JSReceiver> callable,
@@ -383,7 +389,9 @@ class V8_EXPORT_PRIVATE Factory : public FactoryBase<Factory> {
   Handle<Cell> NewCell(Handle<Object> value);
 
   Handle<PropertyCell> NewPropertyCell(
-      Handle<Name> name, AllocationType allocation = AllocationType::kOld);
+      Handle<Name> name, PropertyDetails details, Handle<Object> value,
+      AllocationType allocation = AllocationType::kOld);
+  Handle<PropertyCell> NewProtector();
 
   Handle<FeedbackCell> NewNoClosuresCell(Handle<HeapObject> value);
   Handle<FeedbackCell> NewOneClosureCell(Handle<HeapObject> value);
@@ -830,6 +838,14 @@ class V8_EXPORT_PRIVATE Factory : public FactoryBase<Factory> {
       return *this;
     }
 
+    CodeBuilder& set_bytecode_offset_table(Handle<ByteArray> table) {
+      DCHECK(!table.is_null());
+      // TODO(v8:11429): Rename this and clean up calls to SourcePositionTable
+      // under Baseline.
+      source_position_table_ = table;
+      return *this;
+    }
+
     CodeBuilder& set_deoptimization_data(
         Handle<DeoptimizationData> deopt_data) {
       DCHECK(!deopt_data.is_null());
@@ -877,6 +893,7 @@ class V8_EXPORT_PRIVATE Factory : public FactoryBase<Factory> {
     int32_t builtin_index_ = Builtins::kNoBuiltinId;
     uint32_t inlined_bytecode_size_ = 0;
     int32_t kind_specific_flags_ = 0;
+    // Contains bytecode offset table for baseline
     Handle<ByteArray> source_position_table_;
     Handle<DeoptimizationData> deoptimization_data_ =
         DeoptimizationData::Empty(isolate_);
