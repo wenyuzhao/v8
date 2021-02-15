@@ -1686,7 +1686,8 @@ Node* JSCreateLowering::AllocateFastLiteral(Node* effect, Node* control,
   for (int index = static_cast<int>(inobject_fields.size());
        index < boilerplate_length; ++index) {
     DCHECK(!V8_MAP_PACKING_BOOL);
-    // TODO(wenyuzhao): Fix incorrect MachineType
+    // TODO(wenyuzhao): Fix incorrect MachineType when V8_MAP_PACKING is
+    // enabled.
     FieldAccess access =
         AccessBuilder::ForJSObjectInObjectProperty(boilerplate_map, index);
     Node* value = jsgraph()->HeapConstant(factory()->one_pointer_filler_map());
