@@ -707,8 +707,8 @@ Node* CodeAssembler::LoadFromObject(MachineType type, TNode<Object> object,
 
 #ifdef V8_MAP_PACKING
 Node* CodeAssembler::PackMapWord(Node* value) {
-  Node* map_word = BitcastTaggedToWordForTagAndSmiBits(value);
-  Node* packed = WordXor(map_word, IntPtrConstant(Internals::kMapWordXorMask));
+  TNode<IntPtrT> map_word = BitcastTaggedToWordForTagAndSmiBits(UncheckedCast<AnyTaggedT>(value));
+  TNode<WordT> packed = WordXor(UncheckedCast<WordT>(map_word), IntPtrConstant(Internals::kMapWordXorMask));
   return BitcastWordToTaggedSigned(packed);
 }
 #endif
