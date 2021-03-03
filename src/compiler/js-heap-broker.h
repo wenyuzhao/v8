@@ -19,7 +19,7 @@
 #include "src/handles/persistent-handles.h"
 #include "src/heap/local-heap.h"
 #include "src/heap/parked-scope.h"
-#include "src/interpreter/bytecode-array-accessor.h"
+#include "src/interpreter/bytecode-array-iterator.h"
 #include "src/objects/code-kind.h"
 #include "src/objects/feedback-vector.h"
 #include "src/objects/function-kind.h"
@@ -251,6 +251,10 @@ class V8_EXPORT_PRIVATE JSHeapBroker {
   bool IsSerializedForCompilation(const SharedFunctionInfoRef& shared,
                                   const FeedbackVectorRef& feedback) const;
 
+  bool IsMainThread() const {
+    return local_isolate() == nullptr || local_isolate()->is_main_thread();
+  }
+
   LocalIsolate* local_isolate() const { return local_isolate_; }
 
   // Return the corresponding canonical persistent handle for {object}. Create
@@ -314,10 +318,6 @@ class V8_EXPORT_PRIVATE JSHeapBroker {
   friend class ObjectRef;
   friend class ObjectData;
   friend class PropertyCellData;
-
-  bool IsMainThread() const {
-    return local_isolate() == nullptr || local_isolate()->is_main_thread();
-  }
 
   // If this returns false, the object is guaranteed to be fully initialized and
   // thus safe to read from a memory safety perspective. The converse does not
@@ -466,21 +466,6 @@ Reduction NoChangeBecauseOfMissingData(JSHeapBroker* broker,
 // Miscellaneous definitions that should be moved elsewhere once concurrent
 // compilation is finished.
 bool CanInlineElementAccess(MapRef const& map);
-
-class OffHeapBytecodeArray final : public interpreter::AbstractBytecodeArray {
- public:
-  explicit OffHeapBytecodeArray(BytecodeArrayRef bytecode_array);
-
-  int length() const override;
-  int parameter_count() const override;
-  Address GetFirstBytecodeAddress() const override;
-  Handle<Object> GetConstantAtIndex(int index, Isolate* isolate) const override;
-  bool IsConstantAtIndexSmi(int index) const override;
-  Smi GetConstantAtIndexAsSmi(int index) const override;
-
- private:
-  BytecodeArrayRef array_;
-};
 
 // Scope that unparks the LocalHeap, if:
 //   a) We have a JSHeapBroker,

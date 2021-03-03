@@ -1327,7 +1327,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       }
       __ bind(&return_location);
       if (linkage()->GetIncomingDescriptor()->IsWasmCapiFunction()) {
-        RecordSafepoint(instr->reference_map(), Safepoint::kNoLazyDeopt);
+        RecordSafepoint(instr->reference_map());
       }
       frame_access_state()->SetFrameAccessToDefault();
       // Ideally, we should decrement SP delta to match the change of stack
@@ -2992,12 +2992,6 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
             Condition(0));
       break;
     }
-    case kS390_I8x16Mul: {
-      __ vml(i.OutputSimd128Register(), i.InputSimd128Register(0),
-             i.InputSimd128Register(1), Condition(0), Condition(0),
-             Condition(0));
-      break;
-    }
     case kS390_I16x8RoundingAverageU: {
       __ vavgl(i.OutputSimd128Register(), i.InputSimd128Register(0),
                i.InputSimd128Register(1), Condition(0), Condition(0),
@@ -3185,6 +3179,19 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ vfche(i.OutputSimd128Register(), i.InputSimd128Register(1),
                i.InputSimd128Register(0), Condition(0), Condition(0),
                Condition(2));
+      break;
+    }
+    case kS390_I64x2GtS: {
+      __ vch(i.OutputSimd128Register(), i.InputSimd128Register(0),
+             i.InputSimd128Register(1), Condition(0), Condition(3));
+      break;
+    }
+    case kS390_I64x2GeS: {
+      // Compute !(B > A) which is equal to A >= B.
+      __ vch(kScratchDoubleReg, i.InputSimd128Register(1),
+             i.InputSimd128Register(0), Condition(0), Condition(3));
+      __ vno(i.OutputSimd128Register(), kScratchDoubleReg, kScratchDoubleReg,
+             Condition(0), Condition(0), Condition(3));
       break;
     }
     case kS390_I32x4GtS: {
@@ -3421,6 +3428,11 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
              Condition(0), Condition(2));
       break;
     }
+    case kS390_I64x2Abs: {
+      __ vlp(i.OutputSimd128Register(), i.InputSimd128Register(0), Condition(0),
+             Condition(0), Condition(3));
+      break;
+    }
     // vector boolean unops
     case kS390_V128AnyTrue: {
       Simd128Register src = i.InputSimd128Register(0);
@@ -3517,59 +3529,39 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
              Condition(0));
       break;
     }
-    // vector conversions
-#define CONVERT_FLOAT_TO_INT32(convert)                             \
-  for (int index = 0; index < 4; index++) {                         \
-    __ vlgv(kScratchReg, kScratchDoubleReg, MemOperand(r0, index),  \
-            Condition(2));                                          \
-    __ MovIntToFloat(tempFPReg1, kScratchReg);                      \
-    __ convert(kScratchReg, tempFPReg1, kRoundToZero);              \
-    __ vlvg(dst, kScratchReg, MemOperand(r0, index), Condition(2)); \
-  }
     case kS390_I32x4SConvertF32x4: {
       Simd128Register src = i.InputSimd128Register(0);
-      Simd128Register dst = i.OutputSimd128Register();
-      Simd128Register tempFPReg1 = i.ToSimd128Register(instr->TempAt(0));
       // NaN to 0
       __ vlr(kScratchDoubleReg, src, Condition(0), Condition(0), Condition(0));
       __ vfce(kScratchDoubleReg, kScratchDoubleReg, kScratchDoubleReg,
               Condition(0), Condition(0), Condition(2));
       __ vn(kScratchDoubleReg, src, kScratchDoubleReg, Condition(0),
             Condition(0), Condition(0));
-      CONVERT_FLOAT_TO_INT32(ConvertFloat32ToInt32)
+      __ vcgd(i.OutputSimd128Register(), kScratchDoubleReg, Condition(5),
+              Condition(0), Condition(2));
       break;
     }
     case kS390_I32x4UConvertF32x4: {
       Simd128Register src = i.InputSimd128Register(0);
-      Simd128Register dst = i.OutputSimd128Register();
-      Simd128Register tempFPReg1 = i.ToSimd128Register(instr->TempAt(0));
       // NaN to 0, negative to 0
       __ vx(kScratchDoubleReg, kScratchDoubleReg, kScratchDoubleReg,
             Condition(0), Condition(0), Condition(0));
       __ vfmax(kScratchDoubleReg, src, kScratchDoubleReg, Condition(1),
                Condition(0), Condition(2));
-      CONVERT_FLOAT_TO_INT32(ConvertFloat32ToUnsignedInt32)
+      __ vclgd(i.OutputSimd128Register(), kScratchDoubleReg, Condition(5),
+               Condition(0), Condition(2));
       break;
     }
-#undef CONVERT_FLOAT_TO_INT32
-#define CONVERT_INT32_TO_FLOAT(convert, double_index)               \
-  Simd128Register src = i.InputSimd128Register(0);                  \
-  Simd128Register dst = i.OutputSimd128Register();                  \
-  for (int index = 0; index < 4; index++) {                         \
-    __ vlgv(kScratchReg, src, MemOperand(r0, index), Condition(2)); \
-    __ convert(kScratchDoubleReg, kScratchReg);                     \
-    __ MovFloatToInt(kScratchReg, kScratchDoubleReg);               \
-    __ vlvg(dst, kScratchReg, MemOperand(r0, index), Condition(2)); \
-  }
     case kS390_F32x4SConvertI32x4: {
-      CONVERT_INT32_TO_FLOAT(ConvertIntToFloat, 0)
+      __ vcdg(i.OutputSimd128Register(), i.InputSimd128Register(0),
+              Condition(4), Condition(0), Condition(2));
       break;
     }
     case kS390_F32x4UConvertI32x4: {
-      CONVERT_INT32_TO_FLOAT(ConvertUnsignedIntToFloat, 0)
+      __ vcdlg(i.OutputSimd128Register(), i.InputSimd128Register(0),
+               Condition(4), Condition(0), Condition(2));
       break;
     }
-#undef CONVERT_INT32_TO_FLOAT
 #define VECTOR_UNPACK(op, mode)                                             \
   __ op(i.OutputSimd128Register(), i.InputSimd128Register(0), Condition(0), \
         Condition(0), Condition(mode));
@@ -4019,33 +4011,6 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
 #undef Q15_MUL_ROAUND
-#define SIGN_SELECT(mode)                                                      \
-  Simd128Register src0 = i.InputSimd128Register(0);                            \
-  Simd128Register src1 = i.InputSimd128Register(1);                            \
-  Simd128Register src2 = i.InputSimd128Register(2);                            \
-  Simd128Register dst = i.OutputSimd128Register();                             \
-  __ vx(kScratchDoubleReg, kScratchDoubleReg, kScratchDoubleReg, Condition(0), \
-        Condition(0), Condition(3));                                           \
-  __ vch(kScratchDoubleReg, kScratchDoubleReg, src2, Condition(0),             \
-         Condition(mode));                                                     \
-  __ vsel(dst, src0, src1, kScratchDoubleReg, Condition(0), Condition(0));
-    case kS390_I8x16SignSelect: {
-      SIGN_SELECT(0)
-      break;
-    }
-    case kS390_I16x8SignSelect: {
-      SIGN_SELECT(1)
-      break;
-    }
-    case kS390_I32x4SignSelect: {
-      SIGN_SELECT(2)
-      break;
-    }
-    case kS390_I64x2SignSelect: {
-      SIGN_SELECT(3)
-      break;
-    }
-#undef SIGN_SELECT
     case kS390_I8x16Popcnt: {
       __ vpopct(i.OutputSimd128Register(), i.InputSimd128Register(0),
                 Condition(0), Condition(0), Condition(0));
@@ -4230,7 +4195,7 @@ void CodeGenerator::AssembleArchTrap(Instruction* instr,
         __ Call(static_cast<Address>(trap_id), RelocInfo::WASM_STUB_CALL);
         ReferenceMap* reference_map =
             gen_->zone()->New<ReferenceMap>(gen_->zone());
-        gen_->RecordSafepoint(reference_map, Safepoint::kNoLazyDeopt);
+        gen_->RecordSafepoint(reference_map);
         if (FLAG_debug_code) {
           __ stop();
         }
@@ -4430,7 +4395,7 @@ void CodeGenerator::AssembleConstructFrame() {
       __ Call(wasm::WasmCode::kWasmStackOverflow, RelocInfo::WASM_STUB_CALL);
       // We come from WebAssembly, there are no references for the GC.
       ReferenceMap* reference_map = zone()->New<ReferenceMap>(zone());
-      RecordSafepoint(reference_map, Safepoint::kNoLazyDeopt);
+      RecordSafepoint(reference_map);
       if (FLAG_debug_code) {
         __ stop();
       }

@@ -405,6 +405,8 @@ class SerializerForBackgroundCompilation {
   SUPPORTED_BYTECODE_LIST(DECLARE_VISIT_BYTECODE)
 #undef DECLARE_VISIT_BYTECODE
 
+  void VisitShortStar(interpreter::Register reg);
+
   Hints& register_hints(interpreter::Register reg);
 
   // Return a vector containing the hints for the given register range (in
@@ -1265,7 +1267,6 @@ Handle<BytecodeArray> SerializerForBackgroundCompilation::bytecode_array()
 
 void SerializerForBackgroundCompilation::TraverseBytecode() {
   bytecode_analysis_.emplace(bytecode_array(), zone(), osr_offset(), false);
-  BytecodeArrayRef(broker(), bytecode_array()).SerializeForCompilation();
 
   BytecodeArrayIterator iterator(bytecode_array());
   HandlerRangeMatcher try_start_matcher(iterator, bytecode_array());
@@ -1311,13 +1312,20 @@ void SerializerForBackgroundCompilation::TraverseBytecode() {
       }
     }
 
-    switch (iterator.current_bytecode()) {
+    interpreter::Bytecode current_bytecode = iterator.current_bytecode();
+    switch (current_bytecode) {
 #define DEFINE_BYTECODE_CASE(name)     \
   case interpreter::Bytecode::k##name: \
     Visit##name(&iterator);            \
     break;
       SUPPORTED_BYTECODE_LIST(DEFINE_BYTECODE_CASE)
 #undef DEFINE_BYTECODE_CASE
+
+#define DEFINE_SHORT_STAR_CASE(Name, ...) case interpreter::Bytecode::k##Name:
+      SHORT_STAR_BYTECODE_LIST(DEFINE_SHORT_STAR_CASE)
+#undef DEFINE_SHORT_STAR_CASE
+      VisitShortStar(interpreter::Register::FromShortStar(current_bytecode));
+      break;
     }
   }
 
@@ -1695,6 +1703,11 @@ void SerializerForBackgroundCompilation::VisitLdar(
 void SerializerForBackgroundCompilation::VisitStar(
     BytecodeArrayIterator* iterator) {
   interpreter::Register reg = iterator->GetRegisterOperand(0);
+  register_hints(reg).Reset(&environment()->accumulator_hints(), zone());
+}
+
+void SerializerForBackgroundCompilation::VisitShortStar(
+    interpreter::Register reg) {
   register_hints(reg).Reset(&environment()->accumulator_hints(), zone());
 }
 
@@ -3309,14 +3322,22 @@ void SerializerForBackgroundCompilation::ProcessElementAccess(
         ObjectRef key_ref(broker(), hint);
         // TODO(neis): Do this for integer-HeapNumbers too?
         if (key_ref.IsSmi() && key_ref.AsSmi() >= 0) {
-          base::Optional<ObjectRef> element =
-              receiver_ref.GetOwnConstantElement(
-                  key_ref.AsSmi(), SerializationPolicy::kSerializeIfNeeded);
-          if (!element.has_value() && receiver_ref.IsJSArray()) {
-            // We didn't find a constant element, but if the receiver is a
-            // cow-array we can exploit the fact that any future write to the
-            // element will replace the whole elements storage.
-            receiver_ref.AsJSArray().GetOwnCowElement(
+          base::Optional<ObjectRef> element;
+          if (receiver_ref.IsJSObject()) {
+            element = receiver_ref.AsJSObject().GetOwnConstantElement(
+                key_ref.AsSmi(), SerializationPolicy::kSerializeIfNeeded);
+            if (!element.has_value() && receiver_ref.IsJSArray()) {
+              // We didn't find a constant element, but if the receiver is a
+              // cow-array we can exploit the fact that any future write to the
+              // element will replace the whole elements storage.
+              JSArrayRef array_ref = receiver_ref.AsJSArray();
+              array_ref.SerializeElements();
+              array_ref.GetOwnCowElement(
+                  array_ref.elements().value(), key_ref.AsSmi(),
+                  SerializationPolicy::kSerializeIfNeeded);
+            }
+          } else if (receiver_ref.IsString()) {
+            element = receiver_ref.AsString().GetCharAsStringOrUndefined(
                 key_ref.AsSmi(), SerializationPolicy::kSerializeIfNeeded);
           }
         }

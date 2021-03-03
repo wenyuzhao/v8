@@ -7,7 +7,6 @@
 #include "src/api/api-arguments-inl.h"
 #include "src/common/globals.h"
 #include "src/date/date.h"
-#include "src/debug/debug-wasm-objects.h"
 #include "src/execution/arguments.h"
 #include "src/execution/frames.h"
 #include "src/execution/isolate.h"
@@ -71,6 +70,10 @@
 #include "src/strings/string-stream.h"
 #include "src/utils/ostreams.h"
 #include "src/wasm/wasm-objects.h"
+
+#if V8_ENABLE_WEBASSEMBLY
+#include "src/debug/debug-wasm-objects.h"
+#endif  // V8_ENABLE_WEBASSEMBLY
 
 namespace v8 {
 namespace internal {
@@ -534,7 +537,7 @@ Handle<String> JSReceiver::GetConstructorName(Handle<JSReceiver> receiver) {
   return GetConstructorHelper(receiver).second;
 }
 
-Handle<NativeContext> JSReceiver::GetCreationContext() {
+MaybeHandle<NativeContext> JSReceiver::GetCreationContext() {
   JSReceiver receiver = *this;
   // Externals are JSObjects with null as a constructor.
   DCHECK(!receiver.IsExternal(GetIsolate()));
@@ -544,20 +547,19 @@ Handle<NativeContext> JSReceiver::GetCreationContext() {
     function = JSFunction::cast(constructor);
   } else if (constructor.IsFunctionTemplateInfo()) {
     // Remote objects don't have a creation context.
-    return Handle<NativeContext>::null();
+    return MaybeHandle<NativeContext>();
   } else if (receiver.IsJSGeneratorObject()) {
     function = JSGeneratorObject::cast(receiver).function();
-  } else {
-    // Functions have null as a constructor,
-    // but any JSFunction knows its context immediately.
-    CHECK(receiver.IsJSFunction());
+  } else if (receiver.IsJSFunction()) {
     function = JSFunction::cast(receiver);
+  } else {
+    return MaybeHandle<NativeContext>();
   }
 
   return function.has_context()
              ? Handle<NativeContext>(function.context().native_context(),
                                      receiver.GetIsolate())
-             : Handle<NativeContext>::null();
+             : MaybeHandle<NativeContext>();
 }
 
 // static
@@ -1696,7 +1698,7 @@ Maybe<bool> JSReceiver::GetOwnPropertyDescriptor(LookupIterator* it,
     Handle<AccessorPair> accessors =
         Handle<AccessorPair>::cast(it->GetAccessors());
     Handle<NativeContext> native_context =
-        it->GetHolder<JSReceiver>()->GetCreationContext();
+        it->GetHolder<JSReceiver>()->GetCreationContext().ToHandleChecked();
     // 6a. Set D.[[Get]] to the value of X's [[Get]] attribute.
     desc->set_get(AccessorPair::GetComponent(isolate, native_context, accessors,
                                              ACCESSOR_GETTER));
@@ -2300,8 +2302,10 @@ int JSObject::GetHeaderSize(InstanceType type,
       return WasmModuleObject::kHeaderSize;
     case WASM_TABLE_OBJECT_TYPE:
       return WasmTableObject::kHeaderSize;
+#if V8_ENABLE_WEBASSEMBLY
     case WASM_VALUE_OBJECT_TYPE:
       return WasmValueObject::kHeaderSize;
+#endif  // V8_ENABLE_WEBASSEMBLY
     case WASM_EXCEPTION_OBJECT_TYPE:
       return WasmExceptionObject::kHeaderSize;
     default:

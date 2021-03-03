@@ -309,12 +309,14 @@ class WasmMemoryObject : public JSObject {
   inline bool has_maximum_pages();
 
   V8_EXPORT_PRIVATE static Handle<WasmMemoryObject> New(
-      Isolate* isolate, MaybeHandle<JSArrayBuffer> buffer, uint32_t maximum);
+      Isolate* isolate, MaybeHandle<JSArrayBuffer> buffer, int maximum);
 
   V8_EXPORT_PRIVATE static MaybeHandle<WasmMemoryObject> New(Isolate* isolate,
-                                                             uint32_t initial,
-                                                             uint32_t maximum,
+                                                             int initial,
+                                                             int maximum,
                                                              SharedFlag shared);
+
+  static constexpr int kNoMaximum = -1;
 
   void update_instances(Isolate* isolate, Handle<JSArrayBuffer> buffer);
 
@@ -339,8 +341,8 @@ class WasmGlobalObject : public JSObject {
   DECL_INT32_ACCESSORS(offset)
   DECL_INT_ACCESSORS(raw_type)
   DECL_PRIMITIVE_ACCESSORS(type, wasm::ValueType)
-  // TODO(7748): Once we improve the encoding of mutability/type, turn this back
-  // into a boolean accessor.
+  // TODO(7748): If we encode mutability in raw_type, turn this into a boolean
+  // accessor.
   DECL_INT_ACCESSORS(is_mutable)
 
   // Dispatched behavior.

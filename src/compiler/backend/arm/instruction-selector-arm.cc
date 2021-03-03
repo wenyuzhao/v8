@@ -108,10 +108,7 @@ void VisitSimdShiftRRR(InstructionSelector* selector, ArchOpcode opcode,
                      g.UseImmediate(node->InputAt(1)));
     }
   } else {
-    InstructionOperand temps[] = {g.TempSimd128Register(), g.TempRegister()};
-    selector->Emit(opcode, g.DefineAsRegister(node),
-                   g.UseUniqueRegister(node->InputAt(0)),
-                   g.UseRegister(node->InputAt(1)), arraysize(temps), temps);
+    VisitRRR(selector, opcode, node);
   }
 }
 
@@ -149,14 +146,6 @@ void VisitRRIR(InstructionSelector* selector, ArchOpcode opcode, Node* node) {
   selector->Emit(opcode, g.DefineAsRegister(node),
                  g.UseRegister(node->InputAt(0)), g.UseImmediate(imm),
                  g.UseUniqueRegister(node->InputAt(1)));
-}
-
-void VisitRRRR(InstructionSelector* selector, InstructionCode opcode,
-               Node* node) {
-  ArmOperandGenerator g(selector);
-  selector->Emit(
-      opcode, g.DefineAsRegister(node), g.UseRegister(node->InputAt(0)),
-      g.UseRegister(node->InputAt(1)), g.UseRegister(node->InputAt(2)));
 }
 
 template <IrOpcode::Value kOpcode, int kImmMin, int kImmMax,
@@ -499,7 +488,7 @@ void VisitPairAtomicBinOp(InstructionSelector* selector, Node* node,
 
 void InstructionSelector::VisitStackSlot(Node* node) {
   StackSlotRepresentation rep = StackSlotRepresentationOf(node->op());
-  int slot = frame_->AllocateSpillSlot(rep.size(), rep.alignment());
+  int slot = frame_->AllocateSpillSlot(rep.size());
   OperandGenerator g(this);
 
   Emit(kArchStackSlot, g.DefineAsRegister(node),
@@ -2576,6 +2565,7 @@ void InstructionSelector::VisitWord32AtomicPairCompareExchange(Node* node) {
   V(F32x4Neg, kArmF32x4Neg)                             \
   V(F32x4RecipApprox, kArmF32x4RecipApprox)             \
   V(F32x4RecipSqrtApprox, kArmF32x4RecipSqrtApprox)     \
+  V(I64x2Abs, kArmI64x2Abs)                             \
   V(I64x2SConvertI32x4Low, kArmI64x2SConvertI32x4Low)   \
   V(I64x2SConvertI32x4High, kArmI64x2SConvertI32x4High) \
   V(I64x2UConvertI32x4Low, kArmI64x2UConvertI32x4Low)   \
@@ -2650,6 +2640,8 @@ void InstructionSelector::VisitWord32AtomicPairCompareExchange(Node* node) {
   V(I32x4Eq, kArmI32x4Eq)                             \
   V(I64x2Eq, kArmI64x2Eq)                             \
   V(I64x2Ne, kArmI64x2Ne)                             \
+  V(I64x2GtS, kArmI64x2GtS)                           \
+  V(I64x2GeS, kArmI64x2GeS)                           \
   V(I32x4Ne, kArmI32x4Ne)                             \
   V(I32x4GtS, kArmI32x4GtS)                           \
   V(I32x4GeS, kArmI32x4GeS)                           \
@@ -2684,7 +2676,6 @@ void InstructionSelector::VisitWord32AtomicPairCompareExchange(Node* node) {
   V(I8x16AddSatS, kArmI8x16AddSatS)                   \
   V(I8x16Sub, kArmI8x16Sub)                           \
   V(I8x16SubSatS, kArmI8x16SubSatS)                   \
-  V(I8x16Mul, kArmI8x16Mul)                           \
   V(I8x16MinS, kArmI8x16MinS)                         \
   V(I8x16MaxS, kArmI8x16MaxS)                         \
   V(I8x16Eq, kArmI8x16Eq)                             \
@@ -2815,8 +2806,7 @@ void InstructionSelector::VisitI64x2Neg(Node* node) {
 
 void InstructionSelector::VisitI64x2Mul(Node* node) {
   ArmOperandGenerator g(this);
-  InstructionOperand temps[] = {g.TempSimd128Register(),
-                                g.TempSimd128Register()};
+  InstructionOperand temps[] = {g.TempSimd128Register()};
   Emit(kArmI64x2Mul, g.DefineAsRegister(node),
        g.UseUniqueRegister(node->InputAt(0)),
        g.UseUniqueRegister(node->InputAt(1)), arraysize(temps), temps);
@@ -3024,8 +3014,7 @@ namespace {
 template <ArchOpcode opcode>
 void VisitBitMask(InstructionSelector* selector, Node* node) {
   ArmOperandGenerator g(selector);
-  InstructionOperand temps[] = {g.TempSimd128Register(),
-                                g.TempSimd128Register()};
+  InstructionOperand temps[] = {g.TempSimd128Register()};
   selector->Emit(opcode, g.DefineAsRegister(node),
                  g.UseRegister(node->InputAt(0)), arraysize(temps), temps);
 }
@@ -3116,18 +3105,6 @@ VISIT_EXTADD_PAIRWISE(I16x8ExtAddPairwiseI8x16U, NeonU8)
 VISIT_EXTADD_PAIRWISE(I32x4ExtAddPairwiseI16x8S, NeonS16)
 VISIT_EXTADD_PAIRWISE(I32x4ExtAddPairwiseI16x8U, NeonU16)
 #undef VISIT_EXTADD_PAIRWISE
-
-#define VISIT_SIGN_SELECT(OPCODE, SIZE)                 \
-  void InstructionSelector::Visit##OPCODE(Node* node) { \
-    InstructionCode opcode = kArmSignSelect;            \
-    opcode |= MiscField::encode(SIZE);                  \
-    VisitRRRR(this, opcode, node);                      \
-  }
-
-VISIT_SIGN_SELECT(I8x16SignSelect, Neon8)
-VISIT_SIGN_SELECT(I16x8SignSelect, Neon16)
-VISIT_SIGN_SELECT(I32x4SignSelect, Neon32)
-VISIT_SIGN_SELECT(I64x2SignSelect, Neon64)
 
 void InstructionSelector::VisitTruncateFloat32ToInt32(Node* node) {
   ArmOperandGenerator g(this);

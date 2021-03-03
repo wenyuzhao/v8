@@ -1982,7 +1982,8 @@ void TurboAssembler::CallCodeObject(Register code_object) {
   Call(code_object);
 }
 
-void TurboAssembler::JumpCodeObject(Register code_object) {
+void TurboAssembler::JumpCodeObject(Register code_object, JumpMode jump_mode) {
+  DCHECK_EQ(JumpMode::kJump, jump_mode);
   LoadCodeObjectEntry(code_object, code_object);
 
   UseScratchRegisterScope temps(this);
@@ -2496,7 +2497,7 @@ void TurboAssembler::EnterFrame(StackFrame::Type type) {
     // sp[1] : type
     // sp[0] : cp
   } else {
-    DCHECK_EQ(type, StackFrame::MANUAL);
+    DCHECK(StackFrame::IsJavaScript(type));
     // Just push a minimal "machine frame", saving the frame pointer and return
     // address, without any markers.
     Push<TurboAssembler::kSignLR>(lr, fp);
@@ -2627,7 +2628,7 @@ void MacroAssembler::LeaveExitFrame(bool restore_doubles,
 }
 
 void MacroAssembler::LoadGlobalProxy(Register dst) {
-  LoadNativeContextSlot(Context::GLOBAL_PROXY_INDEX, dst);
+  LoadNativeContextSlot(dst, Context::GLOBAL_PROXY_INDEX);
 }
 
 void MacroAssembler::LoadWeakValue(Register out, Register in,
@@ -3116,7 +3117,7 @@ void TurboAssembler::Abort(AbortReason reason) {
   TmpList()->set_list(old_tmp_list);
 }
 
-void MacroAssembler::LoadNativeContextSlot(int index, Register dst) {
+void MacroAssembler::LoadNativeContextSlot(Register dst, int index) {
   LoadMap(dst, cp);
   LoadTaggedPointerField(
       dst, FieldMemOperand(

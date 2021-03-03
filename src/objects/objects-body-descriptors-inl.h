@@ -795,7 +795,7 @@ class WasmArray::BodyDescriptor final : public BodyDescriptorBase {
   template <typename ObjectVisitor>
   static inline void IterateBody(Map map, HeapObject obj, int object_size,
                                  ObjectVisitor* v) {
-    if (!WasmArray::GcSafeType(map)->element_type().is_reference_type()) return;
+    if (!WasmArray::GcSafeType(map)->element_type().is_reference()) return;
     IteratePointers(obj, WasmArray::kHeaderSize, object_size, v);
   }
 
@@ -819,7 +819,7 @@ class WasmStruct::BodyDescriptor final : public BodyDescriptorBase {
     WasmStruct wasm_struct = WasmStruct::cast(obj);
     wasm::StructType* type = WasmStruct::GcSafeType(map);
     for (uint32_t i = 0; i < type->field_count(); i++) {
-      if (!type->field(i).is_reference_type()) continue;
+      if (!type->field(i).is_reference()) continue;
       int offset = static_cast<int>(type->field_offset(i));
       v->VisitPointer(wasm_struct, wasm_struct.RawField(offset));
     }
@@ -1008,7 +1008,9 @@ ReturnType BodyDescriptorApply(InstanceType type, T1 p1, T2 p2, T3 p3, T4 p4) {
     case WASM_MEMORY_OBJECT_TYPE:
     case WASM_MODULE_OBJECT_TYPE:
     case WASM_TABLE_OBJECT_TYPE:
+#if V8_ENABLE_WEBASSEMBLY
     case WASM_VALUE_OBJECT_TYPE:
+#endif  // V8_ENABLE_WEBASSEMBLY
       return Op::template apply<JSObject::BodyDescriptor>(p1, p2, p3, p4);
     case WASM_INSTANCE_OBJECT_TYPE:
       return Op::template apply<WasmInstanceObject::BodyDescriptor>(p1, p2, p3,

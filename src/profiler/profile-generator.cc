@@ -134,7 +134,7 @@ CodeEntry* CodeEntry::root_entry() {
 }
 
 uint32_t CodeEntry::GetHash() const {
-  uint32_t hash = ComputeUnseededHash(tag());
+  uint32_t hash = 0;
   if (script_id_ != v8::UnboundScript::kNoScriptId) {
     hash ^= ComputeUnseededHash(static_cast<uint32_t>(script_id_));
     hash ^= ComputeUnseededHash(static_cast<uint32_t>(position_));
@@ -314,7 +314,6 @@ CpuProfileNode::SourceType ProfileNode::source_type() const {
     case CodeEventListener::SCRIPT_TAG:
     case CodeEventListener::LAZY_COMPILE_TAG:
     case CodeEventListener::FUNCTION_TAG:
-    case CodeEventListener::INTERPRETED_FUNCTION_TAG:
       return CpuProfileNode::kScript;
     case CodeEventListener::BUILTIN_TAG:
     case CodeEventListener::HANDLER_TAG:
@@ -540,9 +539,11 @@ using v8::tracing::TracedValue;
 std::atomic<uint32_t> CpuProfile::last_id_;
 
 CpuProfile::CpuProfile(CpuProfiler* profiler, const char* title,
-                       CpuProfilingOptions options)
+                       CpuProfilingOptions options,
+                       std::unique_ptr<DiscardedSamplesDelegate> delegate)
     : title_(title),
       options_(options),
+      delegate_(std::move(delegate)),
       start_time_(base::TimeTicks::HighResolutionNow()),
       top_down_(profiler->isolate()),
       profiler_(profiler),
@@ -589,8 +590,19 @@ void CpuProfile::AddPath(base::TimeTicks timestamp,
       (options_.max_samples() == CpuProfilingOptions::kNoSampleLimit ||
        samples_.size() < options_.max_samples());
 
-  if (should_record_sample)
+  if (should_record_sample) {
     samples_.push_back({top_frame_node, timestamp, src_line});
+  }
+
+  if (!should_record_sample && delegate_ != nullptr) {
+    const auto task_runner = V8::GetCurrentPlatform()->GetForegroundTaskRunner(
+        reinterpret_cast<v8::Isolate*>(profiler_->isolate()));
+
+    task_runner->PostTask(std::make_unique<CpuProfileMaxSamplesCallbackTask>(
+        std::move(delegate_)));
+    // std::move ensures that the delegate_ will be null on the next sample,
+    // so we don't post a task multiple times.
+  }
 
   const int kSamplesFlushCount = 100;
   const int kNodesFlushCount = 10;
@@ -803,7 +815,8 @@ CpuProfilesCollection::CpuProfilesCollection(Isolate* isolate)
     : profiler_(nullptr), current_profiles_semaphore_(1) {}
 
 CpuProfilingStatus CpuProfilesCollection::StartProfiling(
-    const char* title, CpuProfilingOptions options) {
+    const char* title, CpuProfilingOptions options,
+    std::unique_ptr<DiscardedSamplesDelegate> delegate) {
   current_profiles_semaphore_.Wait();
 
   if (static_cast<int>(current_profiles_.size()) >= kMaxSimultaneousProfiles) {
@@ -819,7 +832,9 @@ CpuProfilingStatus CpuProfilesCollection::StartProfiling(
       return CpuProfilingStatus::kAlreadyStarted;
     }
   }
-  current_profiles_.emplace_back(new CpuProfile(profiler_, title, options));
+
+  current_profiles_.emplace_back(
+      new CpuProfile(profiler_, title, options, std::move(delegate)));
   current_profiles_semaphore_.Signal();
   return CpuProfilingStatus::kStarted;
 }

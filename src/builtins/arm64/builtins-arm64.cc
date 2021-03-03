@@ -5,7 +5,6 @@
 #if V8_TARGET_ARCH_ARM64
 
 #include "src/api/api-arguments.h"
-#include "src/baseline/baseline-compiler.h"
 #include "src/codegen/code-factory.h"
 // For interpreter_entry_return_pc_offset. TODO(jkummerow): Drop.
 #include "src/codegen/macro-assembler-inl.h"
@@ -1162,6 +1161,46 @@ static void AdvanceBytecodeOffsetOrReturn(MacroAssembler* masm,
   __ Bind(&end);
 }
 
+// Read off the optimization state in the feedback vector and check if there
+// is optimized code or a optimization marker that needs to be processed.
+static void LoadOptimizationStateAndJumpIfNeedsProcessing(
+    MacroAssembler* masm, Register optimization_state, Register feedback_vector,
+    Label* has_optimized_code_or_marker) {
+  __ RecordComment("[ Check optimization state");
+
+  __ Ldr(optimization_state,
+         FieldMemOperand(feedback_vector, FeedbackVector::kFlagsOffset));
+  __ TestAndBranchIfAnySet(
+      optimization_state,
+      FeedbackVector::kHasOptimizedCodeOrCompileOptimizedMarkerMask,
+      has_optimized_code_or_marker);
+
+  __ RecordComment("]");
+}
+
+static void MaybeOptimizeCodeOrTailCallOptimizedCodeSlot(
+    MacroAssembler* masm, Register optimization_state,
+    Register feedback_vector) {
+  Label maybe_has_optimized_code;
+  // Check if optimized code is available
+  __ TestAndBranchIfAllClear(
+      optimization_state,
+      FeedbackVector::kHasCompileOptimizedOrLogFirstExecutionMarker,
+      &maybe_has_optimized_code);
+
+  Register optimization_marker = optimization_state;
+  __ DecodeField<FeedbackVector::OptimizationMarkerBits>(optimization_marker);
+  MaybeOptimizeCode(masm, feedback_vector, optimization_marker);
+
+  __ bind(&maybe_has_optimized_code);
+  Register optimized_code_entry = x7;
+  __ LoadAnyTaggedField(
+      optimized_code_entry,
+      FieldMemOperand(feedback_vector,
+                      FeedbackVector::kMaybeOptimizedCodeOffset));
+  TailCallOptimizedCodeSlot(masm, optimized_code_entry, x4);
+}
+
 // static
 void Builtins::Generate_BaselineOutOfLinePrologue(MacroAssembler* masm) {
   UseScratchRegisterScope temps(masm);
@@ -1184,20 +1223,11 @@ void Builtins::Generate_BaselineOutOfLinePrologue(MacroAssembler* masm) {
     __ Assert(eq, AbortReason::kExpectedFeedbackVector);
   }
 
-  __ RecordComment("[ Check optimization state");
-
-  // Read off the optimization state in the feedback vector.
-  Register optimization_state = temps.AcquireW();
-  __ Ldr(optimization_state,
-         FieldMemOperand(feedback_vector, FeedbackVector::kFlagsOffset));
-
-  // Check if there is optimized code or a optimization marker that needs to
-  // be processed.
+  // Check for an optimization marker.
   Label has_optimized_code_or_marker;
-  __ TestAndBranchIfAnySet(
-      optimization_state,
-      FeedbackVector::kHasOptimizedCodeOrCompileOptimizedMarkerMask,
-      &has_optimized_code_or_marker);
+  Register optimization_state = temps.AcquireW();
+  LoadOptimizationStateAndJumpIfNeedsProcessing(
+      masm, optimization_state, feedback_vector, &has_optimized_code_or_marker);
 
   // Increment invocation count for the function.
   {
@@ -1244,11 +1274,8 @@ void Builtins::Generate_BaselineOutOfLinePrologue(MacroAssembler* masm) {
 
   __ Push(argc, bytecodeArray);
 
-  // Horrible hack: This should be the bytecode offset, but we calculate that
-  // from the PC, so we cache the feedback vector in there instead.
-  // TODO(v8:11429): Make this less a horrible hack, and more just a frame
-  // difference, by improving the approach distinguishing ignition and baseline
-  // frames.
+  // Baseline code frames store the feedback vector where interpreter would
+  // store the bytecode offset.
   if (__ emit_debug_code()) {
     __ CompareObjectType(feedback_vector, x4, x4, FEEDBACK_VECTOR_TYPE);
     __ Assert(eq, AbortReason::kExpectedFeedbackVector);
@@ -1289,42 +1316,28 @@ void Builtins::Generate_BaselineOutOfLinePrologue(MacroAssembler* masm) {
   // TODO(v8:11429): Document this frame setup better.
   __ Ret();
 
-  __ RecordComment("[ Optimized marker check");
-  // TODO(v8:11429): Share this code with the InterpreterEntryTrampoline.
   __ bind(&has_optimized_code_or_marker);
   {
-    Label maybe_has_optimized_code;
+    __ RecordComment("[ Optimized marker check");
     // Drop the frame created by the baseline call.
     __ Pop<TurboAssembler::kAuthLR>(fp, lr);
-    // Check if optimized code is available
-    __ TestAndBranchIfAllClear(
-        optimization_state,
-        FeedbackVector::kHasCompileOptimizedOrLogFirstExecutionMarker,
-        &maybe_has_optimized_code);
-
-    Register optimization_marker = optimization_state.X();
-    __ DecodeField<FeedbackVector::OptimizationMarkerBits>(optimization_marker);
-    MaybeOptimizeCode(masm, feedback_vector, optimization_marker);
-
-    __ bind(&maybe_has_optimized_code);
-    Register optimized_code_entry = optimization_state.X();
-    __ LoadAnyTaggedField(
-        optimized_code_entry,
-        FieldMemOperand(feedback_vector,
-                        FeedbackVector::kMaybeOptimizedCodeOffset));
-    TailCallOptimizedCodeSlot(masm, optimized_code_entry, x4);
+    MaybeOptimizeCodeOrTailCallOptimizedCodeSlot(masm, optimization_state,
+                                                 feedback_vector);
     __ Trap();
+    __ RecordComment("]");
   }
-  __ RecordComment("]");
 
   __ bind(&call_stack_guard);
   {
+    Register new_target = descriptor.GetRegisterParameter(
+        BaselineOutOfLinePrologueDescriptor::kJavaScriptCallNewTarget);
+
     FrameScope frame_scope(masm, StackFrame::INTERNAL);
     __ RecordComment("[ Stack/interrupt call");
     // Save incoming new target or generator
-    __ Push(padreg, kJavaScriptCallNewTargetRegister);
+    __ Push(padreg, new_target);
     __ CallRuntime(Runtime::kStackGuard);
-    __ Pop(kJavaScriptCallNewTargetRegister, padreg);
+    __ Pop(new_target, padreg);
     __ RecordComment("]");
   }
   __ Ret();
@@ -1383,19 +1396,11 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
   __ Cmp(x7, FEEDBACK_VECTOR_TYPE);
   __ B(ne, &push_stack_frame);
 
-  // Read off the optimized state in the feedback vector, and if there
-  // is optimized code or an optimization marker, call that instead.
-  Register optimization_state = w7;
-  __ Ldr(optimization_state,
-         FieldMemOperand(feedback_vector, FeedbackVector::kFlagsOffset));
-
-  // Check if there is optimized code or a optimization marker that needes to be
-  // processed.
+  // Check for an optimization marker.
   Label has_optimized_code_or_marker;
-  __ TestAndBranchIfAnySet(
-      optimization_state,
-      FeedbackVector::kHasOptimizedCodeOrCompileOptimizedMarkerMask,
-      &has_optimized_code_or_marker);
+  Register optimization_state = w7;
+  LoadOptimizationStateAndJumpIfNeedsProcessing(
+      masm, optimization_state, feedback_vector, &has_optimized_code_or_marker);
 
   Label not_optimized;
   __ bind(&not_optimized);
@@ -1551,27 +1556,8 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
   __ jmp(&after_stack_check_interrupt);
 
   __ bind(&has_optimized_code_or_marker);
-
-  Label maybe_has_optimized_code;
-  // Check if optimized code is available
-  __ TestAndBranchIfAllClear(
-      optimization_state,
-      FeedbackVector::kHasCompileOptimizedOrLogFirstExecutionMarker,
-      &maybe_has_optimized_code);
-
-  Register optimization_marker = optimization_state;
-  __ DecodeField<FeedbackVector::OptimizationMarkerBits>(optimization_marker);
-  MaybeOptimizeCode(masm, feedback_vector, optimization_marker);
-  // Fall through if there's no runnable optimized code.
-  __ jmp(&not_optimized);
-
-  __ bind(&maybe_has_optimized_code);
-  Register optimized_code_entry = x7;
-  __ LoadAnyTaggedField(
-      optimized_code_entry,
-      FieldMemOperand(feedback_vector,
-                      FeedbackVector::kMaybeOptimizedCodeOffset));
-  TailCallOptimizedCodeSlot(masm, optimized_code_entry, x4);
+  MaybeOptimizeCodeOrTailCallOptimizedCodeSlot(masm, optimization_state,
+                                               feedback_vector);
 
   __ bind(&is_baseline);
   {
@@ -1582,26 +1568,18 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
     __ LoadTaggedPointerField(
         feedback_vector, FieldMemOperand(feedback_vector, Cell::kValueOffset));
 
-    Label prepare_for_baseline;
+    Label install_baseline_code;
     // Check if feedback vector is valid. If not, call prepare for baseline to
     // allocate it.
     __ LoadTaggedPointerField(
         x7, FieldMemOperand(feedback_vector, HeapObject::kMapOffset));
     __ Ldrh(x7, FieldMemOperand(x7, Map::kInstanceTypeOffset));
     __ Cmp(x7, FEEDBACK_VECTOR_TYPE);
-    __ B(ne, &prepare_for_baseline);
+    __ B(ne, &install_baseline_code);
 
-    // Read off the optimization state in the feedback vector.
-    // TODO(v8:11429): Is this worth doing here? Baseline code will check it
-    // anyway...
-    __ Ldr(optimization_state,
-           FieldMemOperand(feedback_vector, FeedbackVector::kFlagsOffset));
-
-    // Check if there is optimized code or a optimization marker that needes to
-    // be processed.
-    __ TestAndBranchIfAnySet(
-        optimization_state,
-        FeedbackVector::kHasOptimizedCodeOrCompileOptimizedMarkerMask,
+    // Check for an optimization marker.
+    LoadOptimizationStateAndJumpIfNeedsProcessing(
+        masm, optimization_state, feedback_vector,
         &has_optimized_code_or_marker);
 
     // Load the baseline code into the closure.
@@ -1612,8 +1590,8 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
     ReplaceClosureCodeWithOptimizedCode(masm, x2, closure);
     __ JumpCodeObject(x2);
 
-    __ bind(&prepare_for_baseline);
-    GenerateTailCallToReturnedCode(masm, Runtime::kPrepareForBaseline);
+    __ bind(&install_baseline_code);
+    GenerateTailCallToReturnedCode(masm, Runtime::kInstallBaselineCode);
   }
 
   __ bind(&compile_lazy);
@@ -2793,7 +2771,7 @@ void Builtins::Generate_Call(MacroAssembler* masm, ConvertReceiverMode mode) {
   __ Poke(x1, __ ReceiverOperand(x0));
 
   // Let the "call_as_function_delegate" take care of the rest.
-  __ LoadNativeContextSlot(Context::CALL_AS_FUNCTION_DELEGATE_INDEX, x1);
+  __ LoadNativeContextSlot(x1, Context::CALL_AS_FUNCTION_DELEGATE_INDEX);
   __ Jump(masm->isolate()->builtins()->CallFunction(
               ConvertReceiverMode::kNotNullOrUndefined),
           RelocInfo::CODE_TARGET);
@@ -2911,7 +2889,7 @@ void Builtins::Generate_Construct(MacroAssembler* masm) {
     __ Poke(x1, __ ReceiverOperand(x0));
 
     // Let the "call_as_constructor_delegate" take care of the rest.
-    __ LoadNativeContextSlot(Context::CALL_AS_CONSTRUCTOR_DELEGATE_INDEX, x1);
+    __ LoadNativeContextSlot(x1, Context::CALL_AS_CONSTRUCTOR_DELEGATE_INDEX);
     __ Jump(masm->isolate()->builtins()->CallFunction(),
             RelocInfo::CODE_TARGET);
   }
@@ -3654,7 +3632,7 @@ void Builtins::Generate_DirectCEntry(MacroAssembler* masm) {
   // making the call GC safe. The irregexp backend relies on this.
 
   __ Poke<TurboAssembler::kSignLR>(lr, 0);  // Store the return address.
-  __ Blr(x10);     // Call the C++ function.
+  __ Blr(x10);                              // Call the C++ function.
   __ Peek<TurboAssembler::kAuthLR>(lr, 0);  // Return to calling code.
   __ AssertFPCRState();
   __ Ret();

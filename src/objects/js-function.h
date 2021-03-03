@@ -82,9 +82,13 @@ class JSFunction : public JSFunctionOrBoundFunction {
   // when the function is invoked, e.g. foo() or new foo(). See
   // [[Call]] and [[Construct]] description in ECMA-262, section
   // 8.6.2, page 27.
+  // Release/Acquire accessors are used when storing a newly-created
+  // optimized code object, or when reading from the background thread.
+  // Storing a builtin doesn't require release semantics because these objects
+  // are fully initialized.
   inline Code code() const;
   inline void set_code(Code code);
-  inline void set_code_no_write_barrier(Code code);
+  DECL_RELEASE_ACQUIRE_ACCESSORS(code, Code)
 
   // Get the abstract code associated with the function, which will either be
   // a Code object or a BytecodeArray.
@@ -111,6 +115,7 @@ class JSFunction : public JSFunctionOrBoundFunction {
   V8_EXPORT_PRIVATE bool HasAttachedOptimizedCode() const;
   bool HasAvailableOptimizedCode() const;
 
+  bool HasAttachedCodeKind(CodeKind kind) const;
   bool HasAvailableCodeKind(CodeKind kind) const;
 
   CodeKind GetActiveTier() const;
@@ -152,6 +157,10 @@ class JSFunction : public JSFunctionOrBoundFunction {
 
   // Clears the optimization marker in the function's feedback vector.
   inline void ClearOptimizationMarker();
+
+  // Sets the interrupt budget based on whether the function has a feedback
+  // vector and any optimized code.
+  inline void SetInterruptBudget();
 
   // If slack tracking is active, it computes instance size of the initial map
   // with minimum permissible object slack.  If it is not active, it simply

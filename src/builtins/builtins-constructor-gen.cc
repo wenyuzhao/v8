@@ -37,33 +37,16 @@ void Builtins::Generate_ConstructFunctionForwardVarargs(MacroAssembler* masm) {
       BUILTIN_CODE(masm->isolate(), ConstructFunction));
 }
 
-// TODO(v8:11429): Here and below, consider sharing code with Foo_WithFeedback,
-// or removing the latter entirely.
 TF_BUILTIN(Construct_Baseline, CallOrConstructBuiltinsAssembler) {
   auto target = Parameter<Object>(Descriptor::kTarget);
   auto new_target = Parameter<Object>(Descriptor::kNewTarget);
   auto argc = UncheckedParameter<Int32T>(Descriptor::kActualArgumentsCount);
-  auto slot = UncheckedParameter<Int32T>(Descriptor::kSlot);
+  auto slot = UncheckedParameter<UintPtrT>(Descriptor::kSlot);
 
-  // TODO(v8:11429,verwaest): Only emit context loads where necessary
-  auto context = LoadContextFromBaseline();
-  // TODO(v8:11429,verwaest): Make sure CollectConstructFeedback knows we have a
-  // feedback vector.
-  auto feedback_vector = LoadFeedbackVectorFromBaseline();
-
-  TVARIABLE(AllocationSite, allocation_site);
-  Label if_construct_generic(this), if_construct_array(this);
-  CollectConstructFeedback(context, target, new_target, feedback_vector,
-                           Unsigned(ChangeInt32ToIntPtr(slot)),
-                           &if_construct_generic, &if_construct_array,
-                           &allocation_site);
-
-  BIND(&if_construct_generic);
-  TailCallBuiltin(Builtins::kConstruct, context, target, new_target, argc);
-
-  BIND(&if_construct_array);
-  TailCallBuiltin(Builtins::kArrayConstructorImpl, context, target, new_target,
-                  argc, allocation_site.value());
+  BuildConstruct(
+      target, new_target, argc, [=] { return LoadContextFromBaseline(); },
+      [=] { return LoadFeedbackVectorFromBaseline(); }, slot,
+      UpdateFeedbackMode::kGuaranteedFeedback);
 }
 
 TF_BUILTIN(Construct_WithFeedback, CallOrConstructBuiltinsAssembler) {
@@ -72,21 +55,33 @@ TF_BUILTIN(Construct_WithFeedback, CallOrConstructBuiltinsAssembler) {
   auto argc = UncheckedParameter<Int32T>(Descriptor::kActualArgumentsCount);
   auto context = Parameter<Context>(Descriptor::kContext);
   auto feedback_vector = Parameter<FeedbackVector>(Descriptor::kFeedbackVector);
-  auto slot = UncheckedParameter<Int32T>(Descriptor::kSlot);
+  auto slot = UncheckedParameter<UintPtrT>(Descriptor::kSlot);
 
+  BuildConstruct(
+      target, new_target, argc, [=] { return context; },
+      [=] { return feedback_vector; }, slot,
+      UpdateFeedbackMode::kOptionalFeedback);
+}
+
+void CallOrConstructBuiltinsAssembler::BuildConstruct(
+    TNode<Object> target, TNode<Object> new_target, TNode<Int32T> argc,
+    const LazyNode<Context>& context,
+    const LazyNode<HeapObject>& feedback_vector, TNode<UintPtrT> slot,
+    UpdateFeedbackMode mode) {
   TVARIABLE(AllocationSite, allocation_site);
   Label if_construct_generic(this), if_construct_array(this);
-  CollectConstructFeedback(context, target, new_target, feedback_vector,
-                           Unsigned(ChangeInt32ToIntPtr(slot)),
-                           &if_construct_generic, &if_construct_array,
-                           &allocation_site);
+  TNode<Context> eager_context = context();
+  CollectConstructFeedback(eager_context, target, new_target, feedback_vector(),
+                           slot, mode, &if_construct_generic,
+                           &if_construct_array, &allocation_site);
 
   BIND(&if_construct_generic);
-  TailCallBuiltin(Builtins::kConstruct, context, target, new_target, argc);
+  TailCallBuiltin(Builtins::kConstruct, eager_context, target, new_target,
+                  argc);
 
   BIND(&if_construct_array);
-  TailCallBuiltin(Builtins::kArrayConstructorImpl, context, target, new_target,
-                  argc, allocation_site.value());
+  TailCallBuiltin(Builtins::kArrayConstructorImpl, eager_context, target,
+                  new_target, argc, allocation_site.value());
 }
 
 TF_BUILTIN(ConstructWithArrayLike, CallOrConstructBuiltinsAssembler) {
@@ -104,12 +99,12 @@ TF_BUILTIN(ConstructWithArrayLike_WithFeedback,
   auto arguments_list = Parameter<Object>(Descriptor::kArgumentsList);
   auto context = Parameter<Context>(Descriptor::kContext);
   auto feedback_vector = Parameter<FeedbackVector>(Descriptor::kFeedbackVector);
-  auto slot = UncheckedParameter<Int32T>(Descriptor::kSlot);
+  auto slot = UncheckedParameter<UintPtrT>(Descriptor::kSlot);
 
   TVARIABLE(AllocationSite, allocation_site);
   Label if_construct_generic(this), if_construct_array(this);
-  CollectConstructFeedback(context, target, new_target, feedback_vector,
-                           Unsigned(ChangeInt32ToIntPtr(slot)),
+  CollectConstructFeedback(context, target, new_target, feedback_vector, slot,
+                           UpdateFeedbackMode::kOptionalFeedback,
                            &if_construct_generic, &if_construct_array,
                            &allocation_site);
 
@@ -136,26 +131,12 @@ TF_BUILTIN(ConstructWithSpread_Baseline, CallOrConstructBuiltinsAssembler) {
   auto spread = Parameter<Object>(Descriptor::kSpread);
   auto args_count =
       UncheckedParameter<Int32T>(Descriptor::kActualArgumentsCount);
-  auto slot = UncheckedParameter<Int32T>(Descriptor::kSlot);
-
-  // TODO(v8:11429,verwaest): Only emit context loads where necessary
-  auto context = LoadContextFromBaseline();
-  // TODO(v8:11429,verwaest): Make sure CollectConstructFeedback knows we have a
-  // feedback vector.
-  auto feedback_vector = LoadFeedbackVectorFromBaseline();
-
-  TVARIABLE(AllocationSite, allocation_site);
-  Label if_construct_generic(this), if_construct_array(this);
-  CollectConstructFeedback(context, target, new_target, feedback_vector,
-                           Unsigned(ChangeInt32ToIntPtr(slot)),
-                           &if_construct_generic, &if_construct_array,
-                           &allocation_site);
-
-  BIND(&if_construct_array);
-  Goto(&if_construct_generic);  // Not implemented.
-
-  BIND(&if_construct_generic);
-  CallOrConstructWithSpread(target, new_target, spread, args_count, context);
+  auto slot = UncheckedParameter<UintPtrT>(Descriptor::kSlot);
+  return BuildConstructWithSpread(
+      target, new_target, spread, args_count,
+      [=] { return LoadContextFromBaseline(); },
+      [=] { return LoadFeedbackVectorFromBaseline(); }, slot,
+      UpdateFeedbackMode::kGuaranteedFeedback);
 }
 
 TF_BUILTIN(ConstructWithSpread_WithFeedback, CallOrConstructBuiltinsAssembler) {
@@ -166,12 +147,24 @@ TF_BUILTIN(ConstructWithSpread_WithFeedback, CallOrConstructBuiltinsAssembler) {
       UncheckedParameter<Int32T>(Descriptor::kActualArgumentsCount);
   auto context = Parameter<Context>(Descriptor::kContext);
   auto feedback_vector = Parameter<HeapObject>(Descriptor::kFeedbackVector);
-  auto slot = UncheckedParameter<Int32T>(Descriptor::kSlot);
+  auto slot = UncheckedParameter<UintPtrT>(Descriptor::kSlot);
 
+  return BuildConstructWithSpread(
+      target, new_target, spread, args_count, [=] { return context; },
+      [=] { return feedback_vector; }, slot,
+      UpdateFeedbackMode::kGuaranteedFeedback);
+}
+
+void CallOrConstructBuiltinsAssembler::BuildConstructWithSpread(
+    TNode<Object> target, TNode<Object> new_target, TNode<Object> spread,
+    TNode<Int32T> argc, const LazyNode<Context>& context,
+    const LazyNode<HeapObject>& feedback_vector, TNode<UintPtrT> slot,
+    UpdateFeedbackMode mode) {
   TVARIABLE(AllocationSite, allocation_site);
   Label if_construct_generic(this), if_construct_array(this);
-  CollectConstructFeedback(context, target, new_target, feedback_vector,
-                           Unsigned(ChangeInt32ToIntPtr(slot)),
+  TNode<Context> eager_context = context();
+  CollectConstructFeedback(eager_context, target, new_target, feedback_vector(),
+                           slot, UpdateFeedbackMode::kGuaranteedFeedback,
                            &if_construct_generic, &if_construct_array,
                            &allocation_site);
 
@@ -179,7 +172,7 @@ TF_BUILTIN(ConstructWithSpread_WithFeedback, CallOrConstructBuiltinsAssembler) {
   Goto(&if_construct_generic);  // Not implemented.
 
   BIND(&if_construct_generic);
-  CallOrConstructWithSpread(target, new_target, spread, args_count, context);
+  CallOrConstructWithSpread(target, new_target, spread, argc, eager_context);
 }
 
 using Node = compiler::Node;

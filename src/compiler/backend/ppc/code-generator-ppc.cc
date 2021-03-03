@@ -1045,7 +1045,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       // f5ab7d3.
       if (isWasmCapiFunction) {
         CHECK_EQ(offset, __ SizeOfCodeGeneratedSince(&start_call));
-        RecordSafepoint(instr->reference_map(), Safepoint::kNoLazyDeopt);
+        RecordSafepoint(instr->reference_map());
       }
       frame_access_state()->SetFrameAccessToDefault();
       // Ideally, we should decrement SP delta to match the change of stack
@@ -2501,20 +2501,6 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
                  i.InputSimd128Register(1));
       break;
     }
-    case kPPC_I8x16Mul: {
-      Simd128Register src0 = i.InputSimd128Register(0);
-      Simd128Register src1 = i.InputSimd128Register(1);
-      Simd128Register dst = i.OutputSimd128Register();
-      Simd128Register tempFPReg1 = i.ToSimd128Register(instr->TempAt(0));
-      __ vmuleub(kScratchSimd128Reg, src0, src1);
-      __ vmuloub(i.OutputSimd128Register(), src0, src1);
-      __ xxspltib(tempFPReg1, Operand(8));
-      __ vslh(kScratchSimd128Reg, kScratchSimd128Reg, tempFPReg1);
-      __ vslh(dst, dst, tempFPReg1);
-      __ vsrh(dst, dst, tempFPReg1);
-      __ vor(dst, kScratchSimd128Reg, dst);
-      break;
-    }
     case kPPC_I64x2MinS: {
       __ vminsd(i.OutputSimd128Register(), i.InputSimd128Register(0),
                 i.InputSimd128Register(1));
@@ -3723,31 +3709,6 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
                     i.InputSimd128Register(1), kScratchSimd128Reg);
       break;
     }
-#define SIGN_SELECT(compare_gt)                                        \
-  Simd128Register src0 = i.InputSimd128Register(0);                    \
-  Simd128Register src1 = i.InputSimd128Register(1);                    \
-  Simd128Register src2 = i.InputSimd128Register(2);                    \
-  Simd128Register dst = i.OutputSimd128Register();                     \
-  __ vxor(kScratchSimd128Reg, kScratchSimd128Reg, kScratchSimd128Reg); \
-  __ compare_gt(kScratchSimd128Reg, kScratchSimd128Reg, src2);         \
-  __ vsel(dst, src1, src0, kScratchSimd128Reg);
-    case kPPC_I8x16SignSelect: {
-      SIGN_SELECT(vcmpgtsb)
-      break;
-    }
-    case kPPC_I16x8SignSelect: {
-      SIGN_SELECT(vcmpgtsh)
-      break;
-    }
-    case kPPC_I32x4SignSelect: {
-      SIGN_SELECT(vcmpgtsw)
-      break;
-    }
-    case kPPC_I64x2SignSelect: {
-      SIGN_SELECT(vcmpgtsd)
-      break;
-    }
-#undef SIGN_SELECT
     case kPPC_StoreCompressTagged: {
       ASSEMBLE_STORE_INTEGER(StoreTaggedField, StoreTaggedFieldX);
       break;
@@ -3861,7 +3822,7 @@ void CodeGenerator::AssembleArchTrap(Instruction* instr,
         __ Call(static_cast<Address>(trap_id), RelocInfo::WASM_STUB_CALL);
         ReferenceMap* reference_map =
             gen_->zone()->New<ReferenceMap>(gen_->zone());
-        gen_->RecordSafepoint(reference_map, Safepoint::kNoLazyDeopt);
+        gen_->RecordSafepoint(reference_map);
         if (FLAG_debug_code) {
           __ stop();
         }
@@ -4101,7 +4062,7 @@ void CodeGenerator::AssembleConstructFrame() {
       __ Call(wasm::WasmCode::kWasmStackOverflow, RelocInfo::WASM_STUB_CALL);
       // We come from WebAssembly, there are no references for the GC.
       ReferenceMap* reference_map = zone()->New<ReferenceMap>(zone());
-      RecordSafepoint(reference_map, Safepoint::kNoLazyDeopt);
+      RecordSafepoint(reference_map);
       if (FLAG_debug_code) {
         __ stop();
       }

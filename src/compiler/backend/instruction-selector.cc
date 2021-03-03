@@ -1164,8 +1164,7 @@ void InstructionSelector::VisitBlock(BasicBlock* block) {
     if (!source_positions_) return true;
     SourcePosition source_position = source_positions_->GetSourcePosition(node);
     if (source_position.IsKnown() && IsSourcePositionUsed(node)) {
-      sequence()->SetSourcePosition(instructions_[instruction_start],
-                                    source_position);
+      sequence()->SetSourcePosition(instructions_.back(), source_position);
     }
     return true;
   };
@@ -1173,8 +1172,9 @@ void InstructionSelector::VisitBlock(BasicBlock* block) {
   // Generate code for the block control "top down", but schedule the code
   // "bottom up".
   VisitControl(block);
-  if (!FinishEmittedInstructions(block->control_input(), current_block_end))
+  if (!FinishEmittedInstructions(block->control_input(), current_block_end)) {
     return;
+  }
 
   // Visit code in reverse control flow order, because architecture-specific
   // matching may cover more than one node at a time.
@@ -2058,8 +2058,6 @@ void InstructionSelector::VisitNode(Node* node) {
       return MarkAsSimd128(node), VisitI64x2ExtMulLowI32x4U(node);
     case IrOpcode::kI64x2ExtMulHighI32x4U:
       return MarkAsSimd128(node), VisitI64x2ExtMulHighI32x4U(node);
-    case IrOpcode::kI64x2SignSelect:
-      return MarkAsSimd128(node), VisitI64x2SignSelect(node);
     case IrOpcode::kI32x4Splat:
       return MarkAsSimd128(node), VisitI32x4Splat(node);
     case IrOpcode::kI32x4ExtractLane:
@@ -2128,8 +2126,6 @@ void InstructionSelector::VisitNode(Node* node) {
       return MarkAsSimd128(node), VisitI32x4ExtMulLowI16x8U(node);
     case IrOpcode::kI32x4ExtMulHighI16x8U:
       return MarkAsSimd128(node), VisitI32x4ExtMulHighI16x8U(node);
-    case IrOpcode::kI32x4SignSelect:
-      return MarkAsSimd128(node), VisitI32x4SignSelect(node);
     case IrOpcode::kI32x4ExtAddPairwiseI16x8S:
       return MarkAsSimd128(node), VisitI32x4ExtAddPairwiseI16x8S(node);
     case IrOpcode::kI32x4ExtAddPairwiseI16x8U:
@@ -2138,10 +2134,6 @@ void InstructionSelector::VisitNode(Node* node) {
       return MarkAsSimd128(node), VisitI32x4TruncSatF64x2SZero(node);
     case IrOpcode::kI32x4TruncSatF64x2UZero:
       return MarkAsSimd128(node), VisitI32x4TruncSatF64x2UZero(node);
-    case IrOpcode::kI32x4WidenI8x16S:
-      return MarkAsSimd128(node), VisitI32x4WidenI8x16S(node);
-    case IrOpcode::kI32x4WidenI8x16U:
-      return MarkAsSimd128(node), VisitI32x4WidenI8x16U(node);
     case IrOpcode::kI16x8Splat:
       return MarkAsSimd128(node), VisitI16x8Splat(node);
     case IrOpcode::kI16x8ExtractLaneU:
@@ -2222,8 +2214,6 @@ void InstructionSelector::VisitNode(Node* node) {
       return MarkAsSimd128(node), VisitI16x8ExtMulLowI8x16U(node);
     case IrOpcode::kI16x8ExtMulHighI8x16U:
       return MarkAsSimd128(node), VisitI16x8ExtMulHighI8x16U(node);
-    case IrOpcode::kI16x8SignSelect:
-      return MarkAsSimd128(node), VisitI16x8SignSelect(node);
     case IrOpcode::kI16x8ExtAddPairwiseI8x16S:
       return MarkAsSimd128(node), VisitI16x8ExtAddPairwiseI8x16S(node);
     case IrOpcode::kI16x8ExtAddPairwiseI8x16U:
@@ -2252,8 +2242,6 @@ void InstructionSelector::VisitNode(Node* node) {
       return MarkAsSimd128(node), VisitI8x16Sub(node);
     case IrOpcode::kI8x16SubSatS:
       return MarkAsSimd128(node), VisitI8x16SubSatS(node);
-    case IrOpcode::kI8x16Mul:
-      return MarkAsSimd128(node), VisitI8x16Mul(node);
     case IrOpcode::kI8x16MinS:
       return MarkAsSimd128(node), VisitI8x16MinS(node);
     case IrOpcode::kI8x16MaxS:
@@ -2290,8 +2278,6 @@ void InstructionSelector::VisitNode(Node* node) {
       return MarkAsSimd128(node), VisitI8x16Abs(node);
     case IrOpcode::kI8x16BitMask:
       return MarkAsWord32(node), VisitI8x16BitMask(node);
-    case IrOpcode::kI8x16SignSelect:
-      return MarkAsSimd128(node), VisitI8x16SignSelect(node);
     case IrOpcode::kS128Const:
       return MarkAsSimd128(node), VisitS128Const(node);
     case IrOpcode::kS128Zero:
@@ -2765,51 +2751,6 @@ void InstructionSelector::VisitPrefetchNonTemporal(Node* node) {
   UNIMPLEMENTED();
 }
 #endif  // !V8_TARGET_ARCH_ARM64 && !V8_TARGET_ARCH_X64 || !V8_TARGET_ARCH_IA32
-
-#if !V8_TARGET_ARCH_ARM64 && !V8_TARGET_ARCH_ARM && !V8_TARGET_ARCH_X64 && \
-    !V8_TARGET_ARCH_IA32
-// TODO(v8:11086) Prototype extended pairwise add.
-void InstructionSelector::VisitI32x4ExtAddPairwiseI16x8S(Node* node) {
-  UNIMPLEMENTED();
-}
-void InstructionSelector::VisitI32x4ExtAddPairwiseI16x8U(Node* node) {
-  UNIMPLEMENTED();
-}
-void InstructionSelector::VisitI16x8ExtAddPairwiseI8x16S(Node* node) {
-  UNIMPLEMENTED();
-}
-void InstructionSelector::VisitI16x8ExtAddPairwiseI8x16U(Node* node) {
-  UNIMPLEMENTED();
-}
-#endif  // !V8_TARGET_ARCH_ARM64 && !V8_TARGET_ARCH_ARM && !V8_TARGET_ARCH_X64
-        // && !V8_TARGET_ARCH_IA32
-
-#if !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_IA32 && !V8_TARGET_ARCH_ARM64 && \
-    !V8_TARGET_ARCH_ARM
-// TODO(v8:10983) Prototyping sign select.
-void InstructionSelector::VisitI8x16SignSelect(Node* node) { UNIMPLEMENTED(); }
-void InstructionSelector::VisitI16x8SignSelect(Node* node) { UNIMPLEMENTED(); }
-void InstructionSelector::VisitI32x4SignSelect(Node* node) { UNIMPLEMENTED(); }
-void InstructionSelector::VisitI64x2SignSelect(Node* node) { UNIMPLEMENTED(); }
-#endif  // !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_IA32 && !V8_TARGET_ARCH_ARM64
-        // && !V8_TARGET_ARCH_ARM
-
-#if !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_ARM64
-// TODO(v8:11297) Prototype i32x4.widen_i8x16_u
-void InstructionSelector::VisitI32x4WidenI8x16S(Node* node) { UNIMPLEMENTED(); }
-
-void InstructionSelector::VisitI32x4WidenI8x16U(Node* node) { UNIMPLEMENTED(); }
-#endif  // !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_ARM64
-
-#if !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_ARM64 && !V8_TARGET_ARCH_IA32
-void InstructionSelector::VisitI64x2GtS(Node* node) { UNIMPLEMENTED(); }
-void InstructionSelector::VisitI64x2GeS(Node* node) { UNIMPLEMENTED(); }
-#endif  //! V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_ARM64 && !V8_TARGET_ARCH_IA32
-
-// TODO(v8:11416) Prototyping i64x2.abs.
-#if !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_IA32
-void InstructionSelector::VisitI64x2Abs(Node* node) { UNIMPLEMENTED(); }
-#endif  // !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_IA32
 
 void InstructionSelector::VisitFinishRegion(Node* node) { EmitIdentity(node); }
 
@@ -3306,7 +3247,7 @@ FrameStateDescriptor* GetFrameStateDescriptorInternal(Zone* zone,
   const FrameStateInfo& state_info = FrameStateInfoOf(state->op());
   int parameters = state_info.parameter_count();
   int locals = state_info.local_count();
-  int stack = state_info.type() == FrameStateType::kInterpretedFunction ? 1 : 0;
+  int stack = state_info.type() == FrameStateType::kUnoptimizedFunction ? 1 : 0;
 
   FrameStateDescriptor* outer_state = nullptr;
   if (state.has_outer_frame_state()) {

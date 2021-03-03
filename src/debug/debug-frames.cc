@@ -6,7 +6,6 @@
 
 #include "src/builtins/accessors.h"
 #include "src/execution/frames-inl.h"
-#include "src/wasm/wasm-objects-inl.h"
 
 namespace v8 {
 namespace internal {
@@ -34,7 +33,6 @@ FrameInspector::FrameInspector(CommonFrame* frame, int inlined_frame_index,
       frame->is_java_script() ? javascript_frame() : nullptr;
   DCHECK(js_frame || frame->is_wasm());
   is_optimized_ = frame_->is_optimized();
-  is_interpreted_ = frame_->is_interpreted();
 
   // Calculate the deoptimized frame.
   if (is_optimized_) {

@@ -331,17 +331,15 @@ RUNTIME_FUNCTION(Runtime_BytecodeBudgetInterruptFromBytecode) {
   HandleScope scope(isolate);
   DCHECK_EQ(1, args.length());
   CONVERT_ARG_HANDLE_CHECKED(JSFunction, function, 0);
-  function->raw_feedback_cell().set_interrupt_budget(FLAG_interrupt_budget);
+  function->SetInterruptBudget();
   if (!function->has_feedback_vector()) {
     IsCompiledScope is_compiled_scope(
         function->shared().is_compiled_scope(isolate));
     JSFunction::EnsureFeedbackVector(function, &is_compiled_scope);
-    if (FLAG_sparkplug && !function->shared().HasBaselineData() &&
-        !function->shared().HasBreakInfo()) {
-      // TODO(v8:11429): Expose via Compiler, do set_code there.
-      Handle<SharedFunctionInfo> shared(function->shared(), isolate);
-      Handle<Code> code = CompileWithBaseline(isolate, shared);
-      function->set_code(*code);
+    DCHECK(is_compiled_scope.is_compiled());
+    if (FLAG_sparkplug) {
+      Compiler::CompileBaseline(isolate, function, Compiler::CLEAR_EXCEPTION,
+                                &is_compiled_scope);
     }
     // Also initialize the invocation count here. This is only really needed for
     // OSR. When we OSR functions with lazy feedback allocation we want to have
@@ -364,7 +362,7 @@ RUNTIME_FUNCTION(Runtime_BytecodeBudgetInterruptFromCode) {
 
   DCHECK(feedback_cell->value().IsFeedbackVector());
 
-  feedback_cell->set_interrupt_budget(FLAG_interrupt_budget);
+  FeedbackVector::SetInterruptBudget(*feedback_cell);
 
   SealHandleScope shs(isolate);
   isolate->counters()->runtime_profiler_ticks()->Increment();

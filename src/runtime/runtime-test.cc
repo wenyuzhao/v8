@@ -190,10 +190,6 @@ RUNTIME_FUNCTION(Runtime_DeoptimizeFunction) {
 
   if (function->HasAttachedOptimizedCode()) {
     Deoptimizer::DeoptimizeFunction(*function);
-  } else if (function->code().kind() == CodeKind::BASELINE) {
-    // TODO(v8:11429): This should either be in Deoptimizer::DeoptimizeFunction,
-    // or not be considered deoptimization at all.
-    Deoptimizer::DeoptimizeBaseline(function->shared());
   }
 
   return ReadOnlyRoots(isolate).undefined_value();
@@ -212,8 +208,6 @@ RUNTIME_FUNCTION(Runtime_DeoptimizeNow) {
 
   if (function->HasAttachedOptimizedCode()) {
     Deoptimizer::DeoptimizeFunction(*function);
-  } else if (function->code().kind() == CodeKind::BASELINE) {
-    Deoptimizer::DeoptimizeBaseline(function->shared());
   }
 
   return ReadOnlyRoots(isolate).undefined_value();
@@ -300,7 +294,7 @@ Object OptimizeFunctionOnNextCall(RuntimeArguments& args, Isolate* isolate,
   IsCompiledScope is_compiled_scope(
       function->shared().is_compiled_scope(isolate));
   if (!is_compiled_scope.is_compiled() &&
-      !Compiler::Compile(function, Compiler::CLEAR_EXCEPTION,
+      !Compiler::Compile(isolate, function, Compiler::CLEAR_EXCEPTION,
                          &is_compiled_scope)) {
     return CrashUnlessFuzzing(isolate);
   }
@@ -362,7 +356,7 @@ Object OptimizeFunctionOnNextCall(RuntimeArguments& args, Isolate* isolate,
   return ReadOnlyRoots(isolate).undefined_value();
 }
 
-bool EnsureFeedbackVector(Handle<JSFunction> function) {
+bool EnsureFeedbackVector(Isolate* isolate, Handle<JSFunction> function) {
   // Check function allows lazy compilation.
   if (!function->shared().allows_lazy_compilation()) return false;
 
@@ -378,7 +372,7 @@ bool EnsureFeedbackVector(Handle<JSFunction> function) {
   bool needs_compilation =
       !function->is_compiled() && !function->has_closure_feedback_cell_array();
   if (needs_compilation &&
-      !Compiler::Compile(function, Compiler::CLEAR_EXCEPTION,
+      !Compiler::Compile(isolate, function, Compiler::CLEAR_EXCEPTION,
                          &is_compiled_scope)) {
     return false;
   }
@@ -390,6 +384,33 @@ bool EnsureFeedbackVector(Handle<JSFunction> function) {
 }
 
 }  // namespace
+
+RUNTIME_FUNCTION(Runtime_CompileBaseline) {
+  HandleScope scope(isolate);
+  DCHECK_EQ(1, args.length());
+  CONVERT_ARG_HANDLE_CHECKED(JSFunction, function, 0);
+
+  IsCompiledScope is_compiled_scope =
+      function->shared(isolate).is_compiled_scope(isolate);
+
+  if (!function->shared(isolate).IsUserJavaScript()) {
+    return CrashUnlessFuzzing(isolate);
+  }
+
+  // First compile the bytecode, if we have to.
+  if (!is_compiled_scope.is_compiled() &&
+      !Compiler::Compile(isolate, function, Compiler::KEEP_EXCEPTION,
+                         &is_compiled_scope)) {
+    return CrashUnlessFuzzing(isolate);
+  }
+
+  if (!Compiler::CompileBaseline(isolate, function, Compiler::KEEP_EXCEPTION,
+                                 &is_compiled_scope)) {
+    return CrashUnlessFuzzing(isolate);
+  }
+
+  return *function;
+}
 
 RUNTIME_FUNCTION(Runtime_OptimizeFunctionOnNextCall) {
   HandleScope scope(isolate);
@@ -406,7 +427,7 @@ RUNTIME_FUNCTION(Runtime_EnsureFeedbackVectorForFunction) {
   HandleScope scope(isolate);
   DCHECK_EQ(1, args.length());
   CONVERT_ARG_HANDLE_CHECKED(JSFunction, function, 0);
-  EnsureFeedbackVector(function);
+  EnsureFeedbackVector(isolate, function);
   return ReadOnlyRoots(isolate).undefined_value();
 }
 
@@ -428,7 +449,7 @@ RUNTIME_FUNCTION(Runtime_PrepareFunctionForOptimization) {
     }
   }
 
-  if (!EnsureFeedbackVector(function)) {
+  if (!EnsureFeedbackVector(isolate, function)) {
     return CrashUnlessFuzzing(isolate);
   }
 
@@ -508,15 +529,14 @@ RUNTIME_FUNCTION(Runtime_OptimizeOsr) {
   function->MarkForOptimization(ConcurrencyMode::kNotConcurrent);
 
   // Make the profiler arm all back edges in unoptimized code.
-  if (it.frame()->IsUnoptimizedJavaScriptFrame()) {
+  if (it.frame()->is_unoptimized()) {
     isolate->runtime_profiler()->AttemptOnStackReplacement(
-        InterpretedFrame::cast(it.frame()),
+        UnoptimizedFrame::cast(it.frame()),
         AbstractCode::kMaxLoopNestingMarker);
   }
 
   return ReadOnlyRoots(isolate).undefined_value();
 }
-
 
 RUNTIME_FUNCTION(Runtime_NeverOptimizeFunction) {
   HandleScope scope(isolate);
@@ -601,8 +621,7 @@ RUNTIME_FUNCTION(Runtime_GetOptimizationStatus) {
       status |= static_cast<int>(OptimizationStatus::kTurboFanned);
     }
   }
-  // TODO(v8:11429): Clean up code kind predicates to include Baseline.
-  if (function->code().kind() == CodeKind::BASELINE) {
+  if (function->HasAttachedCodeKind(CodeKind::BASELINE)) {
     status |= static_cast<int>(OptimizationStatus::kBaseline);
   }
   if (function->ActiveTierIsIgnition()) {
@@ -717,7 +736,6 @@ RUNTIME_FUNCTION(Runtime_NotifyContextDisposed) {
   isolate->heap()->NotifyContextDisposed(true);
   return ReadOnlyRoots(isolate).undefined_value();
 }
-
 
 RUNTIME_FUNCTION(Runtime_SetAllocationTimeout) {
   SealHandleScope shs(isolate);
@@ -913,7 +931,6 @@ RUNTIME_FUNCTION(Runtime_GlobalPrint) {
   return string;
 }
 
-
 RUNTIME_FUNCTION(Runtime_SystemBreak) {
   // The code below doesn't create handles, but when breaking here in GDB
   // having a handle scope might be useful.
@@ -922,7 +939,6 @@ RUNTIME_FUNCTION(Runtime_SystemBreak) {
   base::OS::DebugBreak();
   return ReadOnlyRoots(isolate).undefined_value();
 }
-
 
 RUNTIME_FUNCTION(Runtime_SetForceSlowPath) {
   SealHandleScope shs(isolate);
@@ -981,7 +997,8 @@ RUNTIME_FUNCTION(Runtime_DisassembleFunction) {
   CONVERT_ARG_HANDLE_CHECKED(JSFunction, func, 0);
   IsCompiledScope is_compiled_scope;
   CHECK(func->is_compiled() ||
-        Compiler::Compile(func, Compiler::KEEP_EXCEPTION, &is_compiled_scope));
+        Compiler::Compile(isolate, func, Compiler::KEEP_EXCEPTION,
+                          &is_compiled_scope));
   StdoutStream os;
   func->code().Print(os);
   os << std::endl;
@@ -1099,22 +1116,22 @@ RUNTIME_FUNCTION(Runtime_WasmTraceExit) {
   if (num_returns == 1) {
     wasm::ValueType return_type = sig->GetReturn(0);
     switch (return_type.kind()) {
-      case wasm::ValueType::kI32: {
+      case wasm::kI32: {
         int32_t value = ReadUnalignedValue<int32_t>(value_addr_smi.ptr());
         PrintF(" -> %d\n", value);
         break;
       }
-      case wasm::ValueType::kI64: {
+      case wasm::kI64: {
         int64_t value = ReadUnalignedValue<int64_t>(value_addr_smi.ptr());
         PrintF(" -> %" PRId64 "\n", value);
         break;
       }
-      case wasm::ValueType::kF32: {
+      case wasm::kF32: {
         float_t value = ReadUnalignedValue<float_t>(value_addr_smi.ptr());
         PrintF(" -> %f\n", value);
         break;
       }
-      case wasm::ValueType::kF64: {
+      case wasm::kF64: {
         double_t value = ReadUnalignedValue<double_t>(value_addr_smi.ptr());
         PrintF(" -> %f\n", value);
         break;
@@ -1270,22 +1287,6 @@ RUNTIME_FUNCTION(Runtime_GetWasmExceptionValues) {
   CHECK(values_obj->IsFixedArray());  // Only called with correct input.
   Handle<FixedArray> values = Handle<FixedArray>::cast(values_obj);
   return *isolate->factory()->NewJSArrayWithElements(values);
-}
-
-namespace {
-bool EnableWasmThreads(v8::Local<v8::Context> context) { return true; }
-bool DisableWasmThreads(v8::Local<v8::Context> context) { return false; }
-}  // namespace
-
-// This runtime function enables WebAssembly threads through an embedder
-// callback and thereby bypasses the value in FLAG_experimental_wasm_threads.
-RUNTIME_FUNCTION(Runtime_SetWasmThreadsEnabled) {
-  DCHECK_EQ(1, args.length());
-  CONVERT_BOOLEAN_ARG_CHECKED(flag, 0);
-  v8::Isolate* v8_isolate = reinterpret_cast<v8::Isolate*>(isolate);
-  v8_isolate->SetWasmThreadsEnabledCallback(flag ? EnableWasmThreads
-                                                 : DisableWasmThreads);
-  return ReadOnlyRoots(isolate).undefined_value();
 }
 
 RUNTIME_FUNCTION(Runtime_RegexpHasBytecode) {

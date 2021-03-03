@@ -777,6 +777,97 @@ void TurboAssembler::I64x2UConvertI32x4High(XMMRegister dst, XMMRegister src,
   }
 }
 
+void TurboAssembler::I32x4SConvertI16x8High(XMMRegister dst, XMMRegister src) {
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope avx_scope(this, AVX);
+    // src = |a|b|c|d|e|f|g|h| (high)
+    // dst = |e|e|f|f|g|g|h|h|
+    vpunpckhwd(dst, src, src);
+    vpsrad(dst, dst, 16);
+  } else {
+    CpuFeatureScope sse_scope(this, SSE4_1);
+    if (dst == src) {
+      // 2 bytes shorter than pshufd, but has depdency on dst.
+      movhlps(dst, src);
+      pmovsxwd(dst, dst);
+    } else {
+      // No dependency on dst.
+      pshufd(dst, src, 0xEE);
+      pmovsxwd(dst, dst);
+    }
+  }
+}
+
+void TurboAssembler::I32x4UConvertI16x8High(XMMRegister dst, XMMRegister src,
+                                            XMMRegister scratch) {
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope avx_scope(this, AVX);
+    // scratch = |0|0|0|0|0|0|0|0|
+    // src     = |a|b|c|d|e|f|g|h|
+    // dst     = |0|a|0|b|0|c|0|d|
+    XMMRegister tmp = dst == src ? scratch : dst;
+    vpxor(tmp, tmp, tmp);
+    vpunpckhwd(dst, src, tmp);
+  } else {
+    if (dst == src) {
+      // xorps can be executed on more ports than pshufd.
+      xorps(scratch, scratch);
+      punpckhwd(dst, scratch);
+    } else {
+      CpuFeatureScope sse_scope(this, SSE4_1);
+      // No dependency on dst.
+      pshufd(dst, src, 0xEE);
+      pmovzxwd(dst, dst);
+    }
+  }
+}
+
+void TurboAssembler::I16x8SConvertI8x16High(XMMRegister dst, XMMRegister src) {
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope avx_scope(this, AVX);
+    // src = |a|b|c|d|e|f|g|h|i|j|k|l|m|n|o|p| (high)
+    // dst = |i|i|j|j|k|k|l|l|m|m|n|n|o|o|p|p|
+    vpunpckhbw(dst, src, src);
+    vpsraw(dst, dst, 8);
+  } else {
+    CpuFeatureScope sse_scope(this, SSE4_1);
+    if (dst == src) {
+      // 2 bytes shorter than pshufd, but has depdency on dst.
+      movhlps(dst, src);
+      pmovsxbw(dst, dst);
+    } else {
+      CpuFeatureScope sse_scope(this, SSE4_1);
+      // No dependency on dst.
+      pshufd(dst, src, 0xEE);
+      pmovsxbw(dst, dst);
+    }
+  }
+}
+
+void TurboAssembler::I16x8UConvertI8x16High(XMMRegister dst, XMMRegister src,
+                                            XMMRegister scratch) {
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope avx_scope(this, AVX);
+    // tmp = |0|0|0|0|0|0|0|0 | 0|0|0|0|0|0|0|0|
+    // src = |a|b|c|d|e|f|g|h | i|j|k|l|m|n|o|p|
+    // dst = |0|a|0|b|0|c|0|d | 0|e|0|f|0|g|0|h|
+    XMMRegister tmp = dst == src ? scratch : dst;
+    vpxor(tmp, tmp, tmp);
+    vpunpckhbw(dst, src, tmp);
+  } else {
+    CpuFeatureScope sse_scope(this, SSE4_1);
+    if (dst == src) {
+      // xorps can be executed on more ports than pshufd.
+      xorps(scratch, scratch);
+      punpckhbw(dst, scratch);
+    } else {
+      // No dependency on dst.
+      pshufd(dst, src, 0xEE);
+      pmovzxbw(dst, dst);
+    }
+  }
+}
+
 void TurboAssembler::I16x8Q15MulRSatS(XMMRegister dst, XMMRegister src1,
                                       XMMRegister src2, XMMRegister scratch) {
   // k = i16x8.splat(0x8000)
@@ -959,6 +1050,173 @@ void TurboAssembler::I32x4TruncSatF64x2UZero(XMMRegister dst, XMMRegister src,
           ExternalReferenceAsOperand(
               ExternalReference::address_of_wasm_double_2_power_52(), tmp));
     shufps(dst, scratch, 0x88);
+  }
+}
+
+void TurboAssembler::I64x2Abs(XMMRegister dst, XMMRegister src,
+                              XMMRegister scratch) {
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope avx_scope(this, AVX);
+    XMMRegister tmp = dst == src ? scratch : dst;
+    vpxor(tmp, tmp, tmp);
+    vpsubq(tmp, tmp, src);
+    vblendvpd(dst, src, tmp, src);
+  } else {
+    CpuFeatureScope sse_scope(this, SSE3);
+    movshdup(scratch, src);
+    if (dst != src) {
+      movaps(dst, src);
+    }
+    psrad(scratch, 31);
+    xorps(dst, scratch);
+    psubq(dst, scratch);
+  }
+}
+
+void TurboAssembler::I64x2GtS(XMMRegister dst, XMMRegister src0,
+                              XMMRegister src1, XMMRegister scratch) {
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope avx_scope(this, AVX);
+    vpcmpgtq(dst, src0, src1);
+  } else if (CpuFeatures::IsSupported(SSE4_2)) {
+    CpuFeatureScope sse_scope(this, SSE4_2);
+    DCHECK_EQ(dst, src0);
+    pcmpgtq(dst, src1);
+  } else {
+    CpuFeatureScope sse_scope(this, SSE3);
+    DCHECK_NE(dst, src0);
+    DCHECK_NE(dst, src1);
+    movaps(dst, src1);
+    movaps(scratch, src0);
+    psubq(dst, src0);
+    pcmpeqd(scratch, src1);
+    andps(dst, scratch);
+    movaps(scratch, src0);
+    pcmpgtd(scratch, src1);
+    orps(dst, scratch);
+    movshdup(dst, dst);
+  }
+}
+
+void TurboAssembler::I64x2GeS(XMMRegister dst, XMMRegister src0,
+                              XMMRegister src1, XMMRegister scratch) {
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope avx_scope(this, AVX);
+    vpcmpgtq(dst, src1, src0);
+    vpcmpeqd(scratch, scratch, scratch);
+    vpxor(dst, dst, scratch);
+  } else if (CpuFeatures::IsSupported(SSE4_2)) {
+    CpuFeatureScope sse_scope(this, SSE4_2);
+    DCHECK_NE(dst, src0);
+    if (dst != src1) {
+      movaps(dst, src1);
+    }
+    pcmpgtq(dst, src0);
+    pcmpeqd(scratch, scratch);
+    xorps(dst, scratch);
+  } else {
+    CpuFeatureScope sse_scope(this, SSE3);
+    DCHECK_NE(dst, src0);
+    DCHECK_NE(dst, src1);
+    movaps(dst, src0);
+    movaps(scratch, src1);
+    psubq(dst, src1);
+    pcmpeqd(scratch, src0);
+    andps(dst, scratch);
+    movaps(scratch, src1);
+    pcmpgtd(scratch, src0);
+    orps(dst, scratch);
+    movshdup(dst, dst);
+    pcmpeqd(scratch, scratch);
+    xorps(dst, scratch);
+  }
+}
+
+void TurboAssembler::I16x8ExtAddPairwiseI8x16S(XMMRegister dst, XMMRegister src,
+                                               XMMRegister tmp,
+                                               Register scratch) {
+  // pmaddubsw treats the first operand as unsigned, so pass the external
+  // reference to as the first operand.
+  Operand op = ExternalReferenceAsOperand(
+      ExternalReference::address_of_wasm_i8x16_splat_0x01(), scratch);
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope avx_scope(this, AVX);
+    vmovdqa(tmp, op);
+    vpmaddubsw(dst, tmp, src);
+  } else {
+    CpuFeatureScope sse_scope(this, SSSE3);
+    if (dst == src) {
+      movaps(tmp, op);
+      pmaddubsw(tmp, src);
+      movaps(dst, tmp);
+    } else {
+      movaps(dst, op);
+      pmaddubsw(dst, src);
+    }
+  }
+}
+
+void TurboAssembler::I16x8ExtAddPairwiseI8x16U(XMMRegister dst, XMMRegister src,
+                                               Register scratch) {
+  Operand op = ExternalReferenceAsOperand(
+      ExternalReference::address_of_wasm_i8x16_splat_0x01(), scratch);
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope avx_scope(this, AVX);
+    vpmaddubsw(dst, src, op);
+  } else {
+    CpuFeatureScope sse_scope(this, SSSE3);
+    movaps(dst, src);
+    pmaddubsw(dst, op);
+  }
+}
+
+void TurboAssembler::I32x4ExtAddPairwiseI16x8S(XMMRegister dst, XMMRegister src,
+                                               Register scratch) {
+  Operand op = ExternalReferenceAsOperand(
+      ExternalReference::address_of_wasm_i16x8_splat_0x0001(), scratch);
+  // pmaddwd multiplies signed words in src and op, producing
+  // signed doublewords, then adds pairwise.
+  // src = |a|b|c|d|e|f|g|h|
+  // dst = | a*1 + b*1 | c*1 + d*1 | e*1 + f*1 | g*1 + h*1 |
+  Pmaddwd(dst, src, op);
+}
+
+void TurboAssembler::I32x4ExtAddPairwiseI16x8U(XMMRegister dst, XMMRegister src,
+                                               XMMRegister tmp) {
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope avx_scope(this, AVX);
+    // src = |a|b|c|d|e|f|g|h| (low)
+    // dst = |0|a|0|c|0|e|0|g|
+    vpsrld(dst, src, 16);
+    // scratch = |0|b|0|d|0|f|0|h|
+    vpblendw(tmp, src, dst, 0xAA);
+    // dst = |a+b|c+d|e+f|g+h|
+    vpaddd(dst, dst, tmp);
+  } else if (CpuFeatures::IsSupported(SSE4_1)) {
+    CpuFeatureScope sse_scope(this, SSE4_1);
+    // There is a potentially better lowering if we get rip-relative constants,
+    // see https://github.com/WebAssembly/simd/pull/380.
+    movaps(tmp, src);
+    psrld(tmp, 16);
+    if (dst != src) {
+      movaps(dst, src);
+    }
+    pblendw(dst, tmp, 0xAA);
+    paddd(dst, tmp);
+  } else {
+    // src = |a|b|c|d|e|f|g|h|
+    // tmp = i32x4.splat(0x0000FFFF)
+    pcmpeqd(tmp, tmp);
+    psrld(tmp, byte{16});
+    // tmp =|0|b|0|d|0|f|0|h|
+    pand(tmp, src);
+    // dst = |0|a|0|c|0|e|0|g|
+    if (dst != src) {
+      movaps(dst, src);
+    }
+    psrld(dst, byte{16});
+    // dst = |a+b|c+d|e+f|g+h|
+    paddd(dst, tmp);
   }
 }
 
@@ -1905,15 +2163,6 @@ void TurboAssembler::Psraw(XMMRegister dst, uint8_t shift) {
   }
 }
 
-void TurboAssembler::Psrlw(XMMRegister dst, uint8_t shift) {
-  if (CpuFeatures::IsSupported(AVX)) {
-    CpuFeatureScope scope(this, AVX);
-    vpsrlw(dst, dst, shift);
-  } else {
-    psrlw(dst, shift);
-  }
-}
-
 void TurboAssembler::Psrlq(XMMRegister dst, uint8_t shift) {
   if (CpuFeatures::IsSupported(AVX)) {
     CpuFeatureScope scope(this, AVX);
@@ -2548,9 +2797,17 @@ void TurboAssembler::CallCodeObject(Register code_object) {
   call(code_object);
 }
 
-void TurboAssembler::JumpCodeObject(Register code_object) {
+void TurboAssembler::JumpCodeObject(Register code_object, JumpMode jump_mode) {
   LoadCodeObjectEntry(code_object, code_object);
-  jmp(code_object);
+  switch (jump_mode) {
+    case JumpMode::kJump:
+      jmp(code_object);
+      return;
+    case JumpMode::kPushAndReturn:
+      push(code_object);
+      ret(0);
+      return;
+  }
 }
 
 void TurboAssembler::Jump(const ExternalReference& reference) {

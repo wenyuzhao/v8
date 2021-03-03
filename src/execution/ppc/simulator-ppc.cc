@@ -2297,10 +2297,17 @@ void Simulator::ExecuteGeneric(Instruction* instr) {
       break;
     }
     case MFVSRD: {
-      DCHECK(!instr->Bit(0));
       int frt = instr->RTValue();
       int ra = instr->RAValue();
-      int64_t frt_val = get_d_register(frt);
+      int64_t frt_val;
+      if (!instr->Bit(0)) {
+        // if double reg (TX=0).
+        frt_val = get_d_register(frt);
+      } else {
+        // if simd reg (TX=1).
+        DCHECK_EQ(instr->Bit(0), 1);
+        frt_val = get_simd_register_by_lane<int64_t>(frt, 0);
+      }
       set_register(ra, frt_val);
       break;
     }
@@ -2313,11 +2320,18 @@ void Simulator::ExecuteGeneric(Instruction* instr) {
       break;
     }
     case MTVSRD: {
-      DCHECK(!instr->Bit(0));
       int frt = instr->RTValue();
       int ra = instr->RAValue();
       int64_t ra_val = get_register(ra);
-      set_d_register(frt, ra_val);
+      if (!instr->Bit(0)) {
+        // if double reg (TX=0).
+        set_d_register(frt, ra_val);
+      } else {
+        // if simd reg (TX=1).
+        DCHECK_EQ(instr->Bit(0), 1);
+        set_simd_register_by_lane<int64_t>(frt, 0,
+                                           static_cast<int64_t>(ra_val));
+      }
       break;
     }
     case MTVSRWA: {
@@ -3712,7 +3726,314 @@ void Simulator::ExecuteGeneric(Instruction* instr) {
       set_d_register_from_double(frt, frt_val);
       return;
     }
-
+    // Vector instructions.
+#define FOR_EACH_LANE(i, type) \
+  for (uint32_t i = 0; i < kSimd128Size / sizeof(type); i++)
+    case STVX: {
+      int vrs = instr->RSValue();
+      int ra = instr->RAValue();
+      int rb = instr->RBValue();
+      intptr_t ra_val = ra == 0 ? 0 : get_register(ra);
+      intptr_t rb_val = get_register(rb);
+      __int128 vrs_val =
+          *(reinterpret_cast<__int128*>(get_simd_register(vrs).int8));
+      WriteQW((ra_val + rb_val) & 0xFFFFFFFFFFFFFFF0, vrs_val);
+      break;
+    }
+    case LXVD: {
+      int xt = instr->RTValue();
+      int ra = instr->RAValue();
+      int rb = instr->RBValue();
+      intptr_t ra_val = ra == 0 ? 0 : get_register(ra);
+      intptr_t rb_val = get_register(rb);
+      set_simd_register_by_lane<int64_t>(xt, 0, ReadDW(ra_val + rb_val));
+      set_simd_register_by_lane<int64_t>(
+          xt, 1, ReadDW(ra_val + rb_val + kSystemPointerSize));
+      break;
+    }
+    case STXVD: {
+      int xs = instr->RSValue();
+      int ra = instr->RAValue();
+      int rb = instr->RBValue();
+      intptr_t ra_val = ra == 0 ? 0 : get_register(ra);
+      intptr_t rb_val = get_register(rb);
+      WriteDW(ra_val + rb_val, get_simd_register_by_lane<int64_t>(xs, 0));
+      WriteDW(ra_val + rb_val + kSystemPointerSize,
+              get_simd_register_by_lane<int64_t>(xs, 1));
+      break;
+    }
+#define VSPLT(type)                                       \
+  uint32_t uim = instr->Bits(20, 16);                     \
+  int vrt = instr->RTValue();                             \
+  int vrb = instr->RBValue();                             \
+  type value = get_simd_register_by_lane<type>(vrb, uim); \
+  FOR_EACH_LANE(i, type) { set_simd_register_by_lane<type>(vrt, i, value); }
+    case VSPLTW: {
+      VSPLT(int32_t)
+      break;
+    }
+    case VSPLTH: {
+      VSPLT(int16_t)
+      break;
+    }
+    case VSPLTB: {
+      VSPLT(int8_t)
+      break;
+    }
+#undef VSPLT
+#define VINSERT(type, element)                                              \
+  uint32_t uim = static_cast<uint32_t>(instr->Bits(20, 16)) / sizeof(type); \
+  int vrt = instr->RTValue();                                               \
+  int vrb = instr->RBValue();                                               \
+  set_simd_register_by_lane<type>(                                          \
+      vrt, uim, get_simd_register_by_lane<type>(vrb, element));
+    case VINSERTD: {
+      VINSERT(int64_t, 0)
+      break;
+    }
+    case VINSERTW: {
+      VINSERT(int32_t, 1)
+      break;
+    }
+    case VINSERTH: {
+      VINSERT(int16_t, 3)
+      break;
+    }
+    case VINSERTB: {
+      VINSERT(int8_t, 7)
+      break;
+    }
+#undef VINSERT
+#define VEXTRACT(type, element)                                             \
+  uint32_t uim = static_cast<uint32_t>(instr->Bits(20, 16)) / sizeof(type); \
+  int vrt = instr->RTValue();                                               \
+  int vrb = instr->RBValue();                                               \
+  type val = get_simd_register_by_lane<type>(vrb, uim);                     \
+  set_simd_register_by_lane<uint64_t>(vrt, 0, 0);                           \
+  set_simd_register_by_lane<uint64_t>(vrt, 1, 0);                           \
+  set_simd_register_by_lane<type>(vrt, element, val);
+    case VEXTRACTD: {
+      VEXTRACT(uint64_t, 0)
+      break;
+    }
+    case VEXTRACTUW: {
+      VEXTRACT(uint32_t, 1)
+      break;
+    }
+    case VEXTRACTUH: {
+      VEXTRACT(uint16_t, 3)
+      break;
+    }
+    case VEXTRACTUB: {
+      VEXTRACT(uint8_t, 7)
+      break;
+    }
+#undef VEXTRACT
+#define VECTOR_ARITHMETIC_OP(type, op)                 \
+  int t = instr->RSValue();                            \
+  int a = instr->RAValue();                            \
+  int b = instr->RBValue();                            \
+  FOR_EACH_LANE(i, type) {                             \
+    set_simd_register_by_lane<type>(                   \
+        t, i,                                          \
+        get_simd_register_by_lane<type>(a, i)          \
+            op get_simd_register_by_lane<type>(b, i)); \
+  }
+    case XVADDDP: {
+      VECTOR_ARITHMETIC_OP(double, +)
+      break;
+    }
+    case XVSUBDP: {
+      VECTOR_ARITHMETIC_OP(double, -)
+      break;
+    }
+    case XVMULDP: {
+      VECTOR_ARITHMETIC_OP(double, *)
+      break;
+    }
+    case VADDFP: {
+      VECTOR_ARITHMETIC_OP(float, +)
+      break;
+    }
+    case VSUBFP: {
+      VECTOR_ARITHMETIC_OP(float, -)
+      break;
+    }
+    case XVMULSP: {
+      VECTOR_ARITHMETIC_OP(float, *)
+      break;
+    }
+    case VADDUDM: {
+      VECTOR_ARITHMETIC_OP(int64_t, +)
+      break;
+    }
+    case VSUBUDM: {
+      VECTOR_ARITHMETIC_OP(int64_t, -)
+      break;
+    }
+    case VADDUWM: {
+      VECTOR_ARITHMETIC_OP(int32_t, +)
+      break;
+    }
+    case VSUBUWM: {
+      VECTOR_ARITHMETIC_OP(int32_t, -)
+      break;
+    }
+    case VMULUWM: {
+      VECTOR_ARITHMETIC_OP(int32_t, *)
+      break;
+    }
+    case VADDUHM: {
+      VECTOR_ARITHMETIC_OP(int16_t, +)
+      break;
+    }
+    case VSUBUHM: {
+      VECTOR_ARITHMETIC_OP(int16_t, -)
+      break;
+    }
+    case VADDUBM: {
+      VECTOR_ARITHMETIC_OP(int8_t, +)
+      break;
+    }
+    case VSUBUBM: {
+      VECTOR_ARITHMETIC_OP(int8_t, -)
+      break;
+    }
+#undef VECTOR_ARITHMETIC_OP
+#define VECTOR_MIN_MAX_OP(type, op)                                        \
+  int t = instr->RSValue();                                                \
+  int a = instr->RAValue();                                                \
+  int b = instr->RBValue();                                                \
+  FOR_EACH_LANE(i, type) {                                                 \
+    type a_val = get_simd_register_by_lane<type>(a, i);                    \
+    type b_val = get_simd_register_by_lane<type>(b, i);                    \
+    set_simd_register_by_lane<type>(t, i, a_val op b_val ? a_val : b_val); \
+  }
+    case VMINSD: {
+      VECTOR_MIN_MAX_OP(int64_t, <)
+      break;
+    }
+    case VMINUD: {
+      VECTOR_MIN_MAX_OP(uint64_t, <)
+      break;
+    }
+    case VMINSW: {
+      VECTOR_MIN_MAX_OP(int32_t, <)
+      break;
+    }
+    case VMINUW: {
+      VECTOR_MIN_MAX_OP(uint32_t, <)
+      break;
+    }
+    case VMINSH: {
+      VECTOR_MIN_MAX_OP(int16_t, <)
+      break;
+    }
+    case VMINUH: {
+      VECTOR_MIN_MAX_OP(uint16_t, <)
+      break;
+    }
+    case VMINSB: {
+      VECTOR_MIN_MAX_OP(int8_t, <)
+      break;
+    }
+    case VMINUB: {
+      VECTOR_MIN_MAX_OP(uint8_t, <)
+      break;
+    }
+    case VMAXSD: {
+      VECTOR_MIN_MAX_OP(int64_t, >)
+      break;
+    }
+    case VMAXUD: {
+      VECTOR_MIN_MAX_OP(uint64_t, >)
+      break;
+    }
+    case VMAXSW: {
+      VECTOR_MIN_MAX_OP(int32_t, >)
+      break;
+    }
+    case VMAXUW: {
+      VECTOR_MIN_MAX_OP(uint32_t, >)
+      break;
+    }
+    case VMAXSH: {
+      VECTOR_MIN_MAX_OP(int16_t, >)
+      break;
+    }
+    case VMAXUH: {
+      VECTOR_MIN_MAX_OP(uint16_t, >)
+      break;
+    }
+    case VMAXSB: {
+      VECTOR_MIN_MAX_OP(int8_t, >)
+      break;
+    }
+    case VMAXUB: {
+      VECTOR_MIN_MAX_OP(uint8_t, >)
+      break;
+    }
+#undef VECTOR_MIN_MAX_OP
+#define VECTOR_SHIFT_OP(type, op, mask)                        \
+  int t = instr->RSValue();                                    \
+  int a = instr->RAValue();                                    \
+  int b = instr->RBValue();                                    \
+  FOR_EACH_LANE(i, type) {                                     \
+    set_simd_register_by_lane<type>(                           \
+        t, i,                                                  \
+        get_simd_register_by_lane<type>(a, i)                  \
+            op(get_simd_register_by_lane<type>(b, i) & mask)); \
+  }
+    case VSLD: {
+      VECTOR_SHIFT_OP(int64_t, <<, 0x3f)
+      break;
+    }
+    case VSRAD: {
+      VECTOR_SHIFT_OP(int64_t, >>, 0x3f)
+      break;
+    }
+    case VSRD: {
+      VECTOR_SHIFT_OP(uint64_t, >>, 0x3f)
+      break;
+    }
+    case VSLW: {
+      VECTOR_SHIFT_OP(int32_t, <<, 0x1f)
+      break;
+    }
+    case VSRAW: {
+      VECTOR_SHIFT_OP(int32_t, >>, 0x1f)
+      break;
+    }
+    case VSRW: {
+      VECTOR_SHIFT_OP(uint32_t, >>, 0x1f)
+      break;
+    }
+    case VSLH: {
+      VECTOR_SHIFT_OP(int16_t, <<, 0xf)
+      break;
+    }
+    case VSRAH: {
+      VECTOR_SHIFT_OP(int16_t, >>, 0xf)
+      break;
+    }
+    case VSRH: {
+      VECTOR_SHIFT_OP(uint16_t, >>, 0xf)
+      break;
+    }
+    case VSLB: {
+      VECTOR_SHIFT_OP(int8_t, <<, 0x7)
+      break;
+    }
+    case VSRAB: {
+      VECTOR_SHIFT_OP(int8_t, >>, 0x7)
+      break;
+    }
+    case VSRB: {
+      VECTOR_SHIFT_OP(uint8_t, >>, 0x7)
+      break;
+    }
+#undef VECTOR_SHIFT_OP
+#undef FOR_EACH_LANE
     default: {
       UNIMPLEMENTED();
       break;

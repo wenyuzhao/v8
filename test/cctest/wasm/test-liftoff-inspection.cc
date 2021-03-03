@@ -177,8 +177,8 @@ struct DebugSideTableEntry {
   // Check for equality, but ignore exact register and stack offset.
   static bool CheckValueEquals(const DebugSideTable::Entry::Value& a,
                                const DebugSideTable::Entry::Value& b) {
-    return a.index == b.index && a.type == b.type && a.kind == b.kind &&
-           (a.kind != DebugSideTable::Entry::kConstant ||
+    return a.index == b.index && a.type == b.type && a.storage == b.storage &&
+           (a.storage != DebugSideTable::Entry::kConstant ||
             a.i32_const == b.i32_const);
   }
 };
@@ -190,7 +190,7 @@ std::ostream& operator<<(std::ostream& out, const DebugSideTableEntry& entry) {
   const char* comma = "";
   for (auto& v : entry.changed_values) {
     out << comma << v.index << ":" << v.type.name() << " ";
-    switch (v.kind) {
+    switch (v.storage) {
       case DebugSideTable::Entry::kConstant:
         out << "const:" << v.i32_const;
         break;
@@ -218,7 +218,7 @@ DebugSideTable::Entry::Value Constant(int index, ValueType type,
   DebugSideTable::Entry::Value value;
   value.index = index;
   value.type = type;
-  value.kind = DebugSideTable::Entry::kConstant;
+  value.storage = DebugSideTable::Entry::kConstant;
   value.i32_const = constant;
   return value;
 }
@@ -226,14 +226,14 @@ DebugSideTable::Entry::Value Register(int index, ValueType type) {
   DebugSideTable::Entry::Value value;
   value.index = index;
   value.type = type;
-  value.kind = DebugSideTable::Entry::kRegister;
+  value.storage = DebugSideTable::Entry::kRegister;
   return value;
 }
 DebugSideTable::Entry::Value Stack(int index, ValueType type) {
   DebugSideTable::Entry::Value value;
   value.index = index;
   value.type = type;
-  value.kind = DebugSideTable::Entry::kStack;
+  value.storage = DebugSideTable::Entry::kStack;
   return value;
 }
 

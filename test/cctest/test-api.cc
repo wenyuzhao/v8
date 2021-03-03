@@ -514,6 +514,7 @@ THREADED_TEST(ScriptUsingStringResource) {
     CHECK(value->IsNumber());
     CHECK_EQ(7, value->Int32Value(env.local()).FromJust());
     CHECK(source->IsExternalTwoByte());
+    CHECK(source->IsExternal());
     CHECK_EQ(resource,
              static_cast<TestResource*>(source->GetExternalStringResource()));
     String::Encoding encoding = String::UNKNOWN_ENCODING;
@@ -541,6 +542,8 @@ THREADED_TEST(ScriptUsingOneByteStringResource) {
         String::NewExternalOneByte(env->GetIsolate(), resource)
             .ToLocalChecked();
     CHECK(source->IsExternalOneByte());
+    CHECK(source->IsExternal());
+    CHECK(!source->IsExternalTwoByte());
     CHECK_EQ(static_cast<const String::ExternalStringResourceBase*>(resource),
              source->GetExternalOneByteStringResource());
     String::Encoding encoding = String::UNKNOWN_ENCODING;
@@ -574,6 +577,7 @@ THREADED_TEST(ScriptMakingExternalString) {
     CcTest::CollectGarbage(i::NEW_SPACE);  // in old gen now
     CHECK(!source->IsExternalTwoByte());
     CHECK(!source->IsExternalOneByte());
+    CHECK(!source->IsExternal());
     String::Encoding encoding = String::UNKNOWN_ENCODING;
     CHECK(!source->GetExternalStringResourceBase(&encoding));
     CHECK_EQ(String::ONE_BYTE_ENCODING, encoding);
@@ -15468,7 +15472,7 @@ static int asm_warning_triggered = 0;
 
 static void AsmJsWarningListener(v8::Local<v8::Message> message,
                                  v8::Local<Value>) {
-  DCHECK_EQ(v8::Isolate::kMessageWarning, message->ErrorLevel());
+  CHECK_EQ(v8::Isolate::kMessageWarning, message->ErrorLevel());
   asm_warning_triggered = 1;
 }
 
@@ -15490,7 +15494,12 @@ TEST(AsmJsWarning) {
       "  return {};\n"
       "}\n"
       "module();");
-  DCHECK_EQ(1, asm_warning_triggered);
+#if V8_ENABLE_WEBASSEMBLY
+  int kExpectedWarnings = 1;
+#else
+  int kExpectedWarnings = 0;
+#endif
+  CHECK_EQ(kExpectedWarnings, asm_warning_triggered);
   isolate->RemoveMessageListeners(AsmJsWarningListener);
 }
 
@@ -16798,6 +16807,7 @@ class VisitorImpl : public v8::ExternalResourceVisitor {
   }
   ~VisitorImpl() override = default;
   void VisitExternalString(v8::Local<v8::String> string) override {
+    CHECK(string->IsExternal());
     if (string->IsExternalOneByte()) {
       CHECK(!string->IsExternalTwoByte());
       return;
@@ -16842,6 +16852,7 @@ TEST(ExternalizeOldSpaceTwoByteCons) {
   cons->MakeExternal(resource);
 
   CHECK(cons->IsExternalTwoByte());
+  CHECK(cons->IsExternal());
   CHECK_EQ(resource, cons->GetExternalStringResource());
   String::Encoding encoding;
   CHECK_EQ(resource, cons->GetExternalStringResourceBase(&encoding));
@@ -16879,7 +16890,7 @@ TEST(VisitExternalStrings) {
   v8::HandleScope scope(isolate);
   const char string[] = "Some string";
   uint16_t* two_byte_string = AsciiToTwoByteString(string);
-  TestResource* resource[4];
+  TestResource* resource[5];
   resource[0] = new TestResource(two_byte_string);
   v8::Local<v8::String> string0 =
       v8::String::NewExternalTwoByte(env->GetIsolate(), resource[0])
@@ -16907,11 +16918,29 @@ TEST(VisitExternalStrings) {
       string3_i).is_null());
   CHECK(string3_i->IsInternalizedString());
 
+  // Externalized one-byte string.
+  auto one_byte_resource =
+      new TestOneByteResource(i::StrDup(string), nullptr, 0);
+  v8::Local<v8::String> string4 =
+      String::NewExternalOneByte(env->GetIsolate(), one_byte_resource)
+          .ToLocalChecked();
+
   // We need to add usages for string* to avoid warnings in GCC 4.7
   CHECK(string0->IsExternalTwoByte());
   CHECK(string1->IsExternalTwoByte());
   CHECK(string2->IsExternalTwoByte());
   CHECK(string3->IsExternalTwoByte());
+  CHECK(!string4->IsExternalTwoByte());
+  CHECK(string0->IsExternal());
+  CHECK(string1->IsExternal());
+  CHECK(string2->IsExternal());
+  CHECK(string3->IsExternal());
+  CHECK(string4->IsExternal());
+  CHECK(!string0->IsExternalOneByte());
+  CHECK(!string1->IsExternalOneByte());
+  CHECK(!string2->IsExternalOneByte());
+  CHECK(!string3->IsExternalOneByte());
+  CHECK(string4->IsExternalOneByte());
 
   VisitorImpl visitor(resource);
   isolate->VisitExternalResources(&visitor);
@@ -19079,49 +19108,49 @@ THREADED_TEST(CreationContext) {
   {
     Local<Context> other_context = Context::New(isolate);
     Context::Scope scope(other_context);
-    CHECK(object1->CreationContext() == context1);
+    CHECK(object1->GetCreationContext().ToLocalChecked() == context1);
     CheckContextId(object1, 1);
-    CHECK(func1->CreationContext() == context1);
+    CHECK(func1->GetCreationContext().ToLocalChecked() == context1);
     CheckContextId(func1, 1);
-    CHECK(instance1->CreationContext() == context1);
+    CHECK(instance1->GetCreationContext().ToLocalChecked() == context1);
     CheckContextId(instance1, 1);
-    CHECK(object2->CreationContext() == context2);
+    CHECK(object2->GetCreationContext().ToLocalChecked() == context2);
     CheckContextId(object2, 2);
-    CHECK(func2->CreationContext() == context2);
+    CHECK(func2->GetCreationContext().ToLocalChecked() == context2);
     CheckContextId(func2, 2);
-    CHECK(instance2->CreationContext() == context2);
+    CHECK(instance2->GetCreationContext().ToLocalChecked() == context2);
     CheckContextId(instance2, 2);
   }
 
   {
     Context::Scope scope(context1);
-    CHECK(object1->CreationContext() == context1);
+    CHECK(object1->GetCreationContext().ToLocalChecked() == context1);
     CheckContextId(object1, 1);
-    CHECK(func1->CreationContext() == context1);
+    CHECK(func1->GetCreationContext().ToLocalChecked() == context1);
     CheckContextId(func1, 1);
-    CHECK(instance1->CreationContext() == context1);
+    CHECK(instance1->GetCreationContext().ToLocalChecked() == context1);
     CheckContextId(instance1, 1);
-    CHECK(object2->CreationContext() == context2);
+    CHECK(object2->GetCreationContext().ToLocalChecked() == context2);
     CheckContextId(object2, 2);
-    CHECK(func2->CreationContext() == context2);
+    CHECK(func2->GetCreationContext().ToLocalChecked() == context2);
     CheckContextId(func2, 2);
-    CHECK(instance2->CreationContext() == context2);
+    CHECK(instance2->GetCreationContext().ToLocalChecked() == context2);
     CheckContextId(instance2, 2);
   }
 
   {
     Context::Scope scope(context2);
-    CHECK(object1->CreationContext() == context1);
+    CHECK(object1->GetCreationContext().ToLocalChecked() == context1);
     CheckContextId(object1, 1);
-    CHECK(func1->CreationContext() == context1);
+    CHECK(func1->GetCreationContext().ToLocalChecked() == context1);
     CheckContextId(func1, 1);
-    CHECK(instance1->CreationContext() == context1);
+    CHECK(instance1->GetCreationContext().ToLocalChecked() == context1);
     CheckContextId(instance1, 1);
-    CHECK(object2->CreationContext() == context2);
+    CHECK(object2->GetCreationContext().ToLocalChecked() == context2);
     CheckContextId(object2, 2);
-    CHECK(func2->CreationContext() == context2);
+    CHECK(func2->GetCreationContext().ToLocalChecked() == context2);
     CheckContextId(func2, 2);
-    CHECK(instance2->CreationContext() == context2);
+    CHECK(instance2->GetCreationContext().ToLocalChecked() == context2);
     CheckContextId(instance2, 2);
   }
 }
@@ -19140,7 +19169,7 @@ THREADED_TEST(CreationContextOfJsFunction) {
 
   Local<Context> other_context = Context::New(CcTest::isolate());
   Context::Scope scope(other_context);
-  CHECK(function->CreationContext() == context);
+  CHECK(function->GetCreationContext().ToLocalChecked() == context);
   CheckContextId(function, 1);
 }
 
@@ -19171,12 +19200,11 @@ THREADED_TEST(CreationContextOfJsBoundFunction) {
 
   Local<Context> other_context = Context::New(CcTest::isolate());
   Context::Scope scope(other_context);
-  CHECK(bound_function1->CreationContext() == context1);
+  CHECK(bound_function1->GetCreationContext().ToLocalChecked() == context1);
   CheckContextId(bound_function1, 1);
-  CHECK(bound_function2->CreationContext() == context1);
+  CHECK(bound_function2->GetCreationContext().ToLocalChecked() == context1);
   CheckContextId(bound_function2, 1);
 }
-
 
 void HasOwnPropertyIndexedPropertyGetter(
     uint32_t index,
@@ -24775,7 +24803,7 @@ TEST(ClassPrototypeCreationContext) {
 
   Local<Object> result = Local<Object>::Cast(
       CompileRun("'use strict'; class Example { }; Example.prototype"));
-  CHECK(env.local() == result->CreationContext());
+  CHECK(env.local() == result->GetCreationContext().ToLocalChecked());
 }
 
 
@@ -25554,7 +25582,7 @@ TEST(ObjectTemplatePerContextIntrinsics) {
       object->Get(env.local(), v8_str("values")).ToLocalChecked());
   auto fn = i::Handle<i::JSFunction>::cast(v8::Utils::OpenHandle(*values));
   auto ctx = v8::Utils::OpenHandle(*env.local());
-  CHECK_EQ(*fn->GetCreationContext(), *ctx);
+  CHECK_EQ(*(fn->GetCreationContext().ToHandleChecked()), *ctx);
 
   {
     LocalContext env2;
@@ -25570,7 +25598,7 @@ TEST(ObjectTemplatePerContextIntrinsics) {
         object2->Get(env2.local(), v8_str("values")).ToLocalChecked());
     auto fn2 = i::Handle<i::JSFunction>::cast(v8::Utils::OpenHandle(*values2));
     auto ctx2 = v8::Utils::OpenHandle(*env2.local());
-    CHECK_EQ(*fn2->GetCreationContext(), *ctx2);
+    CHECK_EQ(*(fn2->GetCreationContext().ToHandleChecked()), *ctx2);
   }
 }
 
@@ -26701,6 +26729,7 @@ TEST(AtomicsWaitCallback) {
   AtomicsWaitCallbackCommon(isolate, CompileRun(init), 4, 4);
 }
 
+#if V8_ENABLE_WEBASSEMBLY
 namespace v8 {
 namespace internal {
 namespace wasm {
@@ -26779,6 +26808,7 @@ TEST(WasmI64AtomicWaitCallback) {
 }  // namespace wasm
 }  // namespace internal
 }  // namespace v8
+#endif  // V8_ENABLE_WEBASSEMBLY
 
 TEST(BigIntAPI) {
   LocalContext env;
@@ -27811,8 +27841,9 @@ void CheckFastReturnValue(v8::Local<v8::Value> expected_value,
            !checker.DidCallFast());
   CHECK_EQ(expected_path == ApiCheckerResult::kFastCalled,
            !checker.DidCallSlow());
+  CHECK(checker.DidCallFast() || checker.DidCallSlow());
 
-  CHECK(result->StrictEquals(expected_value));
+  CHECK(result->SameValue(expected_value));
 }
 
 void CallAndDeopt() {
@@ -27932,38 +27963,28 @@ void CallWithUnexpectedObjectType(v8::Local<v8::Value> receiver) {
 }
 
 class TestCFunctionInfo : public v8::CFunctionInfo {
-  const v8::CTypeInfo& ReturnInfo() const override {
-    static v8::CTypeInfo return_info =
-        v8::CTypeInfo::FromCType(v8::CTypeInfo::Type::kVoid);
-    return return_info;
-  }
+  static constexpr unsigned int kArgCount = 2u;
 
-  unsigned int ArgumentCount() const override { return 2; }
+ public:
+  TestCFunctionInfo()
+      : v8::CFunctionInfo(v8::CTypeInfo(v8::CTypeInfo::Type::kVoid), kArgCount,
+                          arg_info_storage_),
+        arg_info_storage_{
+            v8::CTypeInfo(v8::CTypeInfo::Type::kV8Value),
+            v8::CTypeInfo(v8::CTypeInfo::Type::kBool),
+        } {}
 
-  const v8::CTypeInfo& ArgumentInfo(unsigned int index) const override {
-    static v8::CTypeInfo type_info0 =
-        v8::CTypeInfo::FromCType(v8::CTypeInfo::Type::kV8Value);
-    static v8::CTypeInfo type_info1 =
-        v8::CTypeInfo::FromCType(v8::CTypeInfo::Type::kBool);
-    switch (index) {
-      case 0:
-        return type_info0;
-      case 1:
-        return type_info1;
-      default:
-        UNREACHABLE();
-    }
-  }
-
-  bool HasOptions() const override { return false; }
+ private:
+  const v8::CTypeInfo arg_info_storage_[kArgCount];
 };
 
 void CheckDynamicTypeInfo() {
   LocalContext env;
 
   static TestCFunctionInfo type_info;
-  v8::CFunction c_func =
-      v8::CFunction::Make(ApiNumberChecker<bool>::FastCallback, &type_info);
+  v8::CFunction c_func = v8::CFunction(
+      reinterpret_cast<const void*>(ApiNumberChecker<bool>::FastCallback),
+      &type_info);
   CHECK_EQ(c_func.ArgumentCount(), 2);
   CHECK_EQ(c_func.ArgumentInfo(0).GetType(), v8::CTypeInfo::Type::kV8Value);
   CHECK_EQ(c_func.ArgumentInfo(1).GetType(), v8::CTypeInfo::Type::kBool);
@@ -28418,6 +28439,30 @@ TEST(FastApiCalls) {
                                  ApiCheckerResult::kFastCalled);
   CheckFastReturnValue<uint32_t>(v8_num(std::numeric_limits<uint32_t>::max()),
                                  ApiCheckerResult::kFastCalled);
+
+#ifdef V8_ENABLE_FP_PARAMS_IN_C_LINKAGE
+  CheckFastReturnValue<float>(v8_num(0), ApiCheckerResult::kFastCalled);
+  CheckFastReturnValue<float>(v8_num(-0.0), ApiCheckerResult::kFastCalled);
+  CheckFastReturnValue<float>(v8_num(std::numeric_limits<float>::quiet_NaN()),
+                              ApiCheckerResult::kFastCalled);
+  CheckFastReturnValue<float>(v8_num(std::numeric_limits<float>::infinity()),
+                              ApiCheckerResult::kFastCalled);
+  CheckFastReturnValue<float>(v8_num(std::numeric_limits<float>::min()),
+                              ApiCheckerResult::kFastCalled);
+  CheckFastReturnValue<float>(v8_num(std::numeric_limits<float>::max()),
+                              ApiCheckerResult::kFastCalled);
+
+  CheckFastReturnValue<double>(v8_num(0), ApiCheckerResult::kFastCalled);
+  CheckFastReturnValue<double>(v8_num(-0.0), ApiCheckerResult::kFastCalled);
+  CheckFastReturnValue<double>(v8_num(std::numeric_limits<double>::quiet_NaN()),
+                               ApiCheckerResult::kFastCalled);
+  CheckFastReturnValue<double>(v8_num(std::numeric_limits<double>::infinity()),
+                               ApiCheckerResult::kFastCalled);
+  CheckFastReturnValue<double>(v8_num(std::numeric_limits<double>::min()),
+                               ApiCheckerResult::kFastCalled);
+  CheckFastReturnValue<double>(v8_num(std::numeric_limits<double>::max()),
+                               ApiCheckerResult::kFastCalled);
+#endif  // V8_ENABLE_FP_PARAMS_IN_C_LINKAGE
 
   // Check for the deopt loop protection
   CallAndDeopt();

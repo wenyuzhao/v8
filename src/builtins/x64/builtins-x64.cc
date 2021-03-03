@@ -7,7 +7,6 @@
 #include "src/api/api-arguments.h"
 #include "src/base/bits-iterator.h"
 #include "src/base/iterator.h"
-#include "src/baseline/baseline-compiler.h"
 #include "src/codegen/code-factory.h"
 #include "src/common/globals.h"
 #include "src/objects/code.h"
@@ -45,8 +44,9 @@ void Builtins::Generate_Adaptor(MacroAssembler* masm, Address address) {
           RelocInfo::CODE_TARGET);
 }
 
-static void GenerateTailCallToReturnedCode(MacroAssembler* masm,
-                                           Runtime::FunctionId function_id) {
+static void GenerateTailCallToReturnedCode(
+    MacroAssembler* masm, Runtime::FunctionId function_id,
+    JumpMode jump_mode = JumpMode::kJump) {
   // ----------- S t a t e -------------
   //  -- rax : actual argument count
   //  -- rdx : new target (preserved for callee)
@@ -73,7 +73,7 @@ static void GenerateTailCallToReturnedCode(MacroAssembler* masm,
     __ Pop(kJavaScriptCallTargetRegister);
   }
   static_assert(kJavaScriptCallCodeStartRegister == rcx, "ABI mismatch");
-  __ JumpCodeObject(rcx);
+  __ JumpCodeObject(rcx, jump_mode);
 }
 
 namespace {
@@ -917,7 +917,8 @@ static void MaybeOptimizeCode(MacroAssembler* masm, Register feedback_vector,
 
 static void TailCallOptimizedCodeSlot(MacroAssembler* masm,
                                       Register optimized_code_entry,
-                                      Register scratch1, Register scratch2) {
+                                      Register scratch1, Register scratch2,
+                                      JumpMode jump_mode) {
   // ----------- S t a t e -------------
   //  -- rax : actual argument count
   //  -- rdx : new target (preserved for callee if needed, and caller)
@@ -947,13 +948,14 @@ static void TailCallOptimizedCodeSlot(MacroAssembler* masm,
                                       scratch1, scratch2);
   static_assert(kJavaScriptCallCodeStartRegister == rcx, "ABI mismatch");
   __ Move(rcx, optimized_code_entry);
-  __ JumpCodeObject(rcx);
+  __ JumpCodeObject(rcx, jump_mode);
 
   // Optimized code slot contains deoptimized code or code is cleared and
   // optimized code marker isn't updated. Evict the code, update the marker
   // and re-enter the closure's code.
   __ bind(&heal_optimized_code_slot);
-  GenerateTailCallToReturnedCode(masm, Runtime::kHealOptimizedCodeSlot);
+  GenerateTailCallToReturnedCode(masm, Runtime::kHealOptimizedCodeSlot,
+                                 jump_mode);
 }
 
 // Advance the current bytecode offset. This simulates what all bytecode
@@ -1038,6 +1040,44 @@ static void AdvanceBytecodeOffsetOrReturn(MacroAssembler* masm,
   __ bind(&end);
 }
 
+// Read off the optimization state in the feedback vector and check if there
+// is optimized code or a optimization marker that needs to be processed.
+static void LoadOptimizationStateAndJumpIfNeedsProcessing(
+    MacroAssembler* masm, Register optimization_state, Register feedback_vector,
+    Label* has_optimized_code_or_marker) {
+  __ RecordComment("[ Check optimization state");
+
+  __ movl(optimization_state,
+          FieldOperand(feedback_vector, FeedbackVector::kFlagsOffset));
+  __ testl(
+      optimization_state,
+      Immediate(FeedbackVector::kHasOptimizedCodeOrCompileOptimizedMarkerMask));
+  __ j(not_zero, has_optimized_code_or_marker);
+
+  __ RecordComment("]");
+}
+
+static void MaybeOptimizeCodeOrTailCallOptimizedCodeSlot(
+    MacroAssembler* masm, Register optimization_state, Register feedback_vector,
+    JumpMode jump_mode = JumpMode::kJump) {
+  Label maybe_has_optimized_code;
+  __ testl(
+      optimization_state,
+      Immediate(FeedbackVector::kHasCompileOptimizedOrLogFirstExecutionMarker));
+  __ j(zero, &maybe_has_optimized_code);
+
+  Register optimization_marker = optimization_state;
+  __ DecodeField<FeedbackVector::OptimizationMarkerBits>(optimization_marker);
+  MaybeOptimizeCode(masm, feedback_vector, optimization_marker);
+
+  __ bind(&maybe_has_optimized_code);
+  Register optimized_code_entry = optimization_state;
+  __ LoadAnyTaggedField(
+      optimized_code_entry,
+      FieldOperand(feedback_vector, FeedbackVector::kMaybeOptimizedCodeOffset));
+  TailCallOptimizedCodeSlot(masm, optimized_code_entry, r11, r15, jump_mode);
+}
+
 // Generate code for entering a JS function with the interpreter.
 // On entry to the function the receiver and arguments have been pushed on the
 // stack left to right.
@@ -1089,18 +1129,11 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
   __ CmpInstanceType(rcx, FEEDBACK_VECTOR_TYPE);
   __ j(not_equal, &push_stack_frame);
 
-  // Read off the optimization state in the feedback vector.
-  Register optimization_state = rcx;
-  __ movl(optimization_state,
-          FieldOperand(feedback_vector, FeedbackVector::kFlagsOffset));
-
-  // Check if there is optimized code or a optimization marker that needs to be
-  // processed.
+  // Check for an optimization marker.
   Label has_optimized_code_or_marker;
-  __ testl(
-      optimization_state,
-      Immediate(FeedbackVector::kHasOptimizedCodeOrCompileOptimizedMarkerMask));
-  __ j(not_zero, &has_optimized_code_or_marker);
+  Register optimization_state = rcx;
+  LoadOptimizationStateAndJumpIfNeedsProcessing(
+      masm, optimization_state, feedback_vector, &has_optimized_code_or_marker);
 
   Label not_optimized;
   __ bind(&not_optimized);
@@ -1252,25 +1285,8 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
   __ int3();  // Should not return.
 
   __ bind(&has_optimized_code_or_marker);
-  Label maybe_has_optimized_code;
-
-  __ testl(
-      optimization_state,
-      Immediate(FeedbackVector::kHasCompileOptimizedOrLogFirstExecutionMarker));
-  __ j(zero, &maybe_has_optimized_code);
-
-  Register optimization_marker = optimization_state;
-  __ DecodeField<FeedbackVector::OptimizationMarkerBits>(optimization_marker);
-  MaybeOptimizeCode(masm, feedback_vector, optimization_marker);
-  // Fall through if there's no runnable optimized code.
-  __ jmp(&not_optimized);
-
-  __ bind(&maybe_has_optimized_code);
-  Register optimized_code_entry = optimization_state;
-  __ LoadAnyTaggedField(
-      optimized_code_entry,
-      FieldOperand(feedback_vector, FeedbackVector::kMaybeOptimizedCodeOffset));
-  TailCallOptimizedCodeSlot(masm, optimized_code_entry, r11, r15);
+  MaybeOptimizeCodeOrTailCallOptimizedCodeSlot(masm, optimization_state,
+                                               feedback_vector);
 
   __ bind(&is_baseline);
   {
@@ -1281,27 +1297,17 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
     __ LoadTaggedPointerField(
         feedback_vector, FieldOperand(feedback_vector, Cell::kValueOffset));
 
-    Label prepare_for_baseline;
+    Label install_baseline_code;
     // Check if feedback vector is valid. If not, call prepare for baseline to
     // allocate it.
     __ LoadMap(rcx, feedback_vector);
     __ CmpInstanceType(rcx, FEEDBACK_VECTOR_TYPE);
-    __ j(not_equal, &prepare_for_baseline);
+    __ j(not_equal, &install_baseline_code);
 
-    // Read off the optimization state in the feedback vector.
-    // TODO(v8:11429): Is this worth doing here? Baseline code will check it
-    // anyway...
-    optimization_state = rcx;
-    __ movl(optimization_state,
-            FieldOperand(feedback_vector, FeedbackVector::kFlagsOffset));
-
-    // Check if there is optimized code or a optimization marker that needs to
-    // be processed.
-    __ testl(
-        optimization_state,
-        Immediate(
-            FeedbackVector::kHasOptimizedCodeOrCompileOptimizedMarkerMask));
-    __ j(not_zero, &has_optimized_code_or_marker);
+    // Check for an optimization marker.
+    LoadOptimizationStateAndJumpIfNeedsProcessing(
+        masm, optimization_state, feedback_vector,
+        &has_optimized_code_or_marker);
 
     // Load the baseline code into the closure.
     __ LoadTaggedPointerField(rcx,
@@ -1313,8 +1319,8 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
                                         kInterpreterBytecodeOffsetRegister);
     __ JumpCodeObject(rcx);
 
-    __ bind(&prepare_for_baseline);
-    GenerateTailCallToReturnedCode(masm, Runtime::kPrepareForBaseline);
+    __ bind(&install_baseline_code);
+    GenerateTailCallToReturnedCode(masm, Runtime::kInstallBaselineCode);
   }
 
   __ bind(&stack_overflow);
@@ -1617,28 +1623,16 @@ void Builtins::Generate_BaselineOutOfLinePrologue(MacroAssembler* masm) {
     __ Assert(equal, AbortReason::kExpectedFeedbackVector);
   }
 
-  __ RecordComment("[ Check optimization state");
-
-  // Read off the optimization state in the feedback vector.
+  // Check for an optimization marker.
   Register optimization_state = rcx;
-  __ movl(optimization_state,
-          FieldOperand(feedback_vector, FeedbackVector::kFlagsOffset));
-
-  // Check if there is optimized code or a optimization marker that needs to
-  // be processed.
   Label has_optimized_code_or_marker;
-  __ testl(
-      optimization_state,
-      Immediate(FeedbackVector::kHasOptimizedCodeOrCompileOptimizedMarkerMask));
-  __ j(not_zero, &has_optimized_code_or_marker);
-  __ RecordComment("]");
+  LoadOptimizationStateAndJumpIfNeedsProcessing(
+      masm, optimization_state, feedback_vector, &has_optimized_code_or_marker);
 
   // Increment invocation count for the function.
   __ incl(
       FieldOperand(feedback_vector, FeedbackVector::kInvocationCountOffset));
 
-  // Normally r12 is callee saved, but since this isn't a "real" call, we know
-  // that the baseline code doesn't care about r12, so we can reuse it here.
   Register return_address = r12;
 
   __ RecordComment("[ Frame Setup");
@@ -1646,7 +1640,7 @@ void Builtins::Generate_BaselineOutOfLinePrologue(MacroAssembler* masm) {
   // set-up frame once we're done setting it up.
   __ PopReturnAddressTo(return_address);
   FrameScope frame_scope(masm, StackFrame::MANUAL);
-  __ EnterFrame(StackFrame::MANUAL);
+  __ EnterFrame(StackFrame::BASELINE);
 
   __ Push(descriptor.GetRegisterParameter(
       BaselineOutOfLinePrologueDescriptor::kCalleeContext));  // Callee's
@@ -1676,11 +1670,14 @@ void Builtins::Generate_BaselineOutOfLinePrologue(MacroAssembler* masm) {
           Immediate(0));
   __ Push(bytecode_array);
 
-  // Horrible hack: This should be the bytecode offset, but we calculate that
-  // from the PC, so we cache the feedback vector in there instead.
+  // Baseline code frames store the feedback vector where interpreter would
+  // store the bytecode offset.
   __ Push(feedback_vector);
 
   __ RecordComment("]");
+
+  Register new_target = descriptor.GetRegisterParameter(
+      BaselineOutOfLinePrologueDescriptor::kJavaScriptCallNewTarget);
 
   __ RecordComment("[ Stack/interrupt check");
   Label call_stack_guard;
@@ -1697,7 +1694,7 @@ void Builtins::Generate_BaselineOutOfLinePrologue(MacroAssembler* masm) {
     __ movzxwl(frame_size,
                FieldOperand(bytecode_array, BytecodeArray::kFrameSizeOffset));
     __ Move(kScratchRegister, rsp);
-    DCHECK_NE(frame_size, kJavaScriptCallNewTargetRegister);
+    DCHECK_NE(frame_size, new_target);
     __ subq(kScratchRegister, frame_size);
     __ cmpq(kScratchRegister,
             __ StackLimitAsOperand(StackLimitKind::kInterruptStackLimit));
@@ -1707,49 +1704,38 @@ void Builtins::Generate_BaselineOutOfLinePrologue(MacroAssembler* masm) {
 
   // Push the return address back onto the stack for return.
   __ PushReturnAddressFrom(return_address);
-  // Do "fast" return to caller pushed pc.
+  // Return to caller pushed pc, without any frame teardown.
   __ Ret();
 
-  __ RecordComment("[ Optimized marker check");
   __ bind(&has_optimized_code_or_marker);
   {
-    // TODO(v8:11429,verwaest): Overwrite return address instead.
-    // Drop the return adress
+    __ RecordComment("[ Optimized marker check");
+    // Drop the return address, rebalancing the return stack buffer by using
+    // JumpMode::kPushAndReturn. We can't leave the slot and overwrite it on
+    // return since we may do a runtime call along the way that requires the
+    // stack to only contain valid frames.
     __ Drop(1);
-    Register optimization_state = rcx;
-
-    // TODO(v8:11429): Extract to helper.
-    Label maybe_has_optimized_code;
-    __ testl(
-        optimization_state,
-        Immediate(
-            FeedbackVector::kHasCompileOptimizedOrLogFirstExecutionMarker));
-    __ j(zero, &maybe_has_optimized_code);
-
-    Register optimization_marker = optimization_state;
-    __ DecodeField<FeedbackVector::OptimizationMarkerBits>(optimization_marker);
-    MaybeOptimizeCode(masm, feedback_vector, optimization_marker);
-
-    __ bind(&maybe_has_optimized_code);
-    Register optimized_code_entry = optimization_state;
-    __ LoadAnyTaggedField(
-        optimized_code_entry,
-        FieldOperand(feedback_vector,
-                     FeedbackVector::kMaybeOptimizedCodeOffset));
-    TailCallOptimizedCodeSlot(masm, optimized_code_entry, r11, r15);
+    MaybeOptimizeCodeOrTailCallOptimizedCodeSlot(masm, rcx, feedback_vector,
+                                                 JumpMode::kPushAndReturn);
     __ Trap();
+    __ RecordComment("]");
   }
 
   __ bind(&call_stack_guard);
   {
     __ RecordComment("[ Stack/interrupt call");
-    // Save incoming new target or generator
-    __ Push(kJavaScriptCallNewTargetRegister);
-    __ CallRuntime(Runtime::kStackGuard, 0);
-    __ Pop(kJavaScriptCallNewTargetRegister);
+    {
+      // Push the baseline code return address now, as if it had been pushed by
+      // the call to this builtin.
+      __ PushReturnAddressFrom(return_address);
+      FrameScope frame_scope(masm, StackFrame::INTERNAL);
+      // Save incoming new target or generator
+      __ Push(new_target);
+      __ CallRuntime(Runtime::kStackGuard, 0);
+      __ Pop(new_target);
+    }
 
-    // Push the return address back onto the stack for return.
-    __ PushReturnAddressFrom(return_address);
+    // Return to caller pushed pc, without any frame teardown.
     __ Ret();
     __ RecordComment("]");
   }
@@ -1844,7 +1830,8 @@ void Builtins::Generate_NotifyDeoptimized(MacroAssembler* masm) {
 
 void Builtins::Generate_TailCallOptimizedCodeSlot(MacroAssembler* masm) {
   Register optimized_code_entry = kJavaScriptCallCodeStartRegister;
-  TailCallOptimizedCodeSlot(masm, optimized_code_entry, r11, r15);
+  TailCallOptimizedCodeSlot(masm, optimized_code_entry, r11, r15,
+                            JumpMode::kJump);
 }
 
 // static
@@ -2511,7 +2498,7 @@ void Builtins::Generate_Call(MacroAssembler* masm, ConvertReceiverMode mode) {
   // Overwrite the original receiver with the (original) target.
   __ movq(args.GetReceiverOperand(), rdi);
   // Let the "call_as_function_delegate" take care of the rest.
-  __ LoadNativeContextSlot(Context::CALL_AS_FUNCTION_DELEGATE_INDEX, rdi);
+  __ LoadNativeContextSlot(rdi, Context::CALL_AS_FUNCTION_DELEGATE_INDEX);
   __ Jump(masm->isolate()->builtins()->CallFunction(
               ConvertReceiverMode::kNotNullOrUndefined),
           RelocInfo::CODE_TARGET);
@@ -2621,7 +2608,7 @@ void Builtins::Generate_Construct(MacroAssembler* masm) {
     // Overwrite the original receiver with the (original) target.
     __ movq(args.GetReceiverOperand(), rdi);
     // Let the "call_as_constructor_delegate" take care of the rest.
-    __ LoadNativeContextSlot(Context::CALL_AS_CONSTRUCTOR_DELEGATE_INDEX, rdi);
+    __ LoadNativeContextSlot(rdi, Context::CALL_AS_CONSTRUCTOR_DELEGATE_INDEX);
     __ Jump(masm->isolate()->builtins()->CallFunction(),
             RelocInfo::CODE_TARGET);
   }

@@ -118,6 +118,7 @@ class Interpreter;
 }  // namespace interpreter
 
 namespace compiler {
+class NodeObserver;
 class PerIsolateCompilerCache;
 }  // namespace compiler
 
@@ -430,7 +431,6 @@ using DebugObjectCache = std::vector<Handle<HeapObject>>;
   V(ExtensionCallback, wasm_module_callback, &NoExtension)                    \
   V(ExtensionCallback, wasm_instance_callback, &NoExtension)                  \
   V(WasmStreamingCallback, wasm_streaming_callback, nullptr)                  \
-  V(WasmThreadsEnabledCallback, wasm_threads_enabled_callback, nullptr)       \
   V(WasmLoadSourceMapCallback, wasm_load_source_map_callback, nullptr)        \
   V(WasmSimdEnabledCallback, wasm_simd_enabled_callback, nullptr)             \
   V(WasmExceptionsEnabledCallback, wasm_exceptions_enabled_callback, nullptr) \
@@ -464,7 +464,8 @@ using DebugObjectCache = std::vector<Handle<HeapObject>>;
   V(bool, only_terminate_in_safe_scope, false)                                \
   V(bool, detailed_source_positions_for_profiling, FLAG_detailed_line_info)   \
   V(int, embedder_wrapper_type_index, -1)                                     \
-  V(int, embedder_wrapper_object_index, -1)
+  V(int, embedder_wrapper_object_index, -1)                                   \
+  V(compiler::NodeObserver*, node_observer, nullptr)
 
 #define THREAD_LOCAL_TOP_ACCESSOR(type, name)                         \
   inline void set_##name(type v) { thread_local_top()->name##_ = v; } \
@@ -630,20 +631,25 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   // Mutex for serializing access to break control structures.
   base::RecursiveMutex* break_access() { return &break_access_; }
 
-  // Shared mutex for allowing concurrent read/writes to FeedbackVectors.
+  // Shared mutex for allowing thread-safe concurrent reads of FeedbackVectors.
   base::SharedMutex* feedback_vector_access() {
     return &feedback_vector_access_;
   }
 
-  // Shared mutex for allowing concurrent read/writes to Strings.
-  base::SharedMutex* string_access() { return &string_access_; }
-
-  // Shared mutex for allowing concurrent read/writes to TransitionArrays.
-  base::SharedMutex* transition_array_access() {
-    return &transition_array_access_;
+  // Shared mutex for allowing thread-safe concurrent reads of
+  // InternalizedStrings.
+  base::SharedMutex* internalized_string_access() {
+    return &internalized_string_access_;
   }
 
-  // Shared mutex for allowing concurrent read/writes to SharedFunctionInfos.
+  // Shared mutex for allowing thread-safe concurrent reads of TransitionArrays
+  // of kind kFullTransitionArray.
+  base::SharedMutex* full_transition_array_access() {
+    return &full_transition_array_access_;
+  }
+
+  // Shared mutex for allowing thread-safe concurrent reads of
+  // SharedFunctionInfos.
   base::SharedMutex* shared_function_info_access() {
     return &shared_function_info_access_;
   }
@@ -671,7 +677,6 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   inline void set_pending_exception(Object exception_obj);
   inline void clear_pending_exception();
 
-  bool AreWasmThreadsEnabled(Handle<Context> context);
   bool IsWasmSimdEnabled(Handle<Context> context);
   bool AreWasmExceptionsEnabled(Handle<Context> context);
 
@@ -1805,8 +1810,8 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   std::shared_ptr<Counters> async_counters_;
   base::RecursiveMutex break_access_;
   base::SharedMutex feedback_vector_access_;
-  base::SharedMutex string_access_;
-  base::SharedMutex transition_array_access_;
+  base::SharedMutex internalized_string_access_;
+  base::SharedMutex full_transition_array_access_;
   base::SharedMutex shared_function_info_access_;
   Logger* logger_ = nullptr;
   StubCache* load_stub_cache_ = nullptr;

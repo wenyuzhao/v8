@@ -171,7 +171,7 @@ class TranslatedValue {
 class TranslatedFrame {
  public:
   enum Kind {
-    kInterpretedFunction,
+    kUnoptimizedFunction,
     kArgumentsAdaptor,
     kConstructStub,
     kBuiltinContinuation,
@@ -251,9 +251,9 @@ class TranslatedFrame {
   const_reference front() const { return values_.front(); }
 
   // Only for Kind == kJSToWasmBuiltinContinuation
-  base::Optional<wasm::ValueType::Kind> wasm_call_return_type() const {
+  base::Optional<wasm::ValueKind> wasm_call_return_kind() const {
     DCHECK_EQ(kind(), kJSToWasmBuiltinContinuation);
-    return return_type_;
+    return return_kind_;
   }
 
  private:
@@ -261,7 +261,7 @@ class TranslatedFrame {
   friend class Deoptimizer;
 
   // Constructor static methods.
-  static TranslatedFrame InterpretedFrame(BytecodeOffset bytecode_offset,
+  static TranslatedFrame UnoptimizedFrame(BytecodeOffset bytecode_offset,
                                           SharedFunctionInfo shared_info,
                                           int height, int return_value_offset,
                                           int return_value_count);
@@ -276,7 +276,7 @@ class TranslatedFrame {
       BytecodeOffset bailout_id, SharedFunctionInfo shared_info, int height);
   static TranslatedFrame JSToWasmBuiltinContinuationFrame(
       BytecodeOffset bailout_id, SharedFunctionInfo shared_info, int height,
-      base::Optional<wasm::ValueType::Kind> return_type);
+      base::Optional<wasm::ValueKind> return_type);
   static TranslatedFrame JavaScriptBuiltinContinuationFrame(
       BytecodeOffset bailout_id, SharedFunctionInfo shared_info, int height);
   static TranslatedFrame JavaScriptBuiltinContinuationWithCatchFrame(
@@ -315,7 +315,7 @@ class TranslatedFrame {
   ValuesContainer values_;
 
   // Only for Kind == kJSToWasmBuiltinContinuation
-  base::Optional<wasm::ValueType::Kind> return_type_;
+  base::Optional<wasm::ValueKind> return_kind_;
 };
 
 // Auxiliary class for translating deoptimization values.
@@ -442,8 +442,8 @@ class TranslatedState {
   FeedbackSlot feedback_slot_;
 };
 
-// Return type encoding for a Wasm function returning void.
-const int kNoWasmReturnType = -1;
+// Return kind encoding for a Wasm function returning void.
+const int kNoWasmReturnKind = -1;
 
 }  // namespace internal
 }  // namespace v8

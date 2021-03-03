@@ -5,11 +5,14 @@
 #ifndef V8_OBJECTS_SWISS_NAME_DICTIONARY_H_
 #define V8_OBJECTS_SWISS_NAME_DICTIONARY_H_
 
+#include <cstdint>
+
 #include "src/base/export-template.h"
 #include "src/common/globals.h"
 #include "src/objects/fixed-array.h"
 #include "src/objects/internal-index.h"
 #include "src/objects/js-objects.h"
+#include "src/objects/swiss-hash-table-helpers.h"
 #include "src/roots/roots.h"
 
 // Has to be the last include (doesn't have include guards):
@@ -37,7 +40,6 @@ namespace internal {
 //       identity hash: 4 bytes, raw int32_t
 //   Meta table pointer: kTaggedSize bytes.
 //     See below for explanation of the meta table.
-//     For capacity 0, this contains the Smi |kNoMetaTableSentinel| instead.
 //   Data table:
 //     For each logical bucket of the hash table, contains the corresponding key
 //     and value.
@@ -68,16 +70,123 @@ namespace internal {
 //       corresponding bucket  hasn't been used before.
 class SwissNameDictionary : public HeapObject {
  public:
+  using Group = swiss_table::Group;
+
+  template <typename LocalIsolate>
+  inline static Handle<SwissNameDictionary> Add(
+      LocalIsolate* isolate, Handle<SwissNameDictionary> table,
+      Handle<Name> key, Handle<Object> value, PropertyDetails details,
+      InternalIndex* entry_out = nullptr);
+
+  static Handle<SwissNameDictionary> Shrink(Isolate* isolate,
+                                            Handle<SwissNameDictionary> table);
+
+  static Handle<SwissNameDictionary> DeleteEntry(
+      Isolate* isolate, Handle<SwissNameDictionary> table, InternalIndex entry);
+
+  template <typename LocalIsolate>
+  inline InternalIndex FindEntry(LocalIsolate* isolate, Object key);
+
+  // This is to make the interfaces of NameDictionary::FindEntry and
+  // OrderedNameDictionary::FindEntry compatible.
+  // TODO(emrich) clean this up: NameDictionary uses Handle<Object>
+  // for FindEntry keys due to its Key typedef, but that's also used
+  // for adding, where we do need handles.
+  template <typename LocalIsolate>
+  inline InternalIndex FindEntry(LocalIsolate* isolate, Handle<Object> key);
+
+  static inline bool IsKey(ReadOnlyRoots roots, Object key_candidate);
+  inline bool ToKey(ReadOnlyRoots roots, InternalIndex entry, Object* out_key);
+
+  inline Object KeyAt(InternalIndex entry);
+  inline Name NameAt(InternalIndex entry);
+  inline Object ValueAt(InternalIndex entry);
+  inline PropertyDetails DetailsAt(InternalIndex entry);
+
+  inline void ValueAtPut(InternalIndex entry, Object value);
+  inline void DetailsAtPut(InternalIndex entry, PropertyDetails value);
+
+  inline int NumberOfElements();
+  inline int NumberOfDeletedElements();
+
   inline int Capacity();
+  inline int UsedCapacity();
+
+  template <typename LocalIsolate>
+  void Initialize(LocalIsolate* isolate, ByteArray meta_table, int capacity);
+
+  template <typename LocalIsolate>
+  static Handle<SwissNameDictionary> Rehash(LocalIsolate* isolate,
+                                            Handle<SwissNameDictionary> table,
+                                            int new_capacity);
+  void Rehash(Isolate* isolate);
+
+  inline void SetHash(int hash);
+  inline int Hash();
+
+  class IndexIterator {
+   public:
+    inline IndexIterator(Handle<SwissNameDictionary> dict, int start);
+
+    inline IndexIterator& operator++();
+
+    inline bool operator==(const IndexIterator& b) const;
+    inline bool operator!=(const IndexIterator& b) const;
+
+    inline InternalIndex operator*();
+
+   private:
+    int used_capacity_;
+    int enum_index_;
+
+    // This may be an empty handle, but only if the capacity of the table is
+    // 0 and pointer compression is disabled.
+    Handle<SwissNameDictionary> dict_;
+  };
+
+  class IndexIterable {
+   public:
+    inline explicit IndexIterable(Handle<SwissNameDictionary> dict);
+
+    inline IndexIterator begin();
+    inline IndexIterator end();
+
+   private:
+    // This may be an empty handle, but only if the capacity of the table is
+    // 0 and pointer compression is disabled.
+    Handle<SwissNameDictionary> dict_;
+  };
+
+  inline IndexIterable IterateEntriesOrdered();
+  inline IndexIterable IterateEntries();
+
+  // For the given enumeration index, returns the entry (= bucket of the Swiss
+  // Table) containing the data for the mapping with that enumeration index.
+  // The returned bucket may be deleted.
+  inline int EntryForEnumerationIndex(int enumeration_index);
 
   inline static constexpr bool IsValidCapacity(int capacity);
+  inline static int CapacityFor(int at_least_space_for);
+
+  // Given a capacity, how much of it can we fill before resizing?
+  inline static constexpr int MaxUsableCapacity(int capacity);
+
+  // The maximum allowed capacity for any SwissNameDictionary.
+  inline static constexpr int MaxCapacity();
 
   // Returns total size in bytes required for a table of given capacity.
   inline static constexpr int SizeFor(int capacity);
 
-  // TODO(v8:11388) This is a temporary placeholder for the actual value, which
-  // is added here in a follow-up CL.
-  static const int kGroupWidth = 8;
+  inline static constexpr int MetaTableSizePerEntryFor(int capacity);
+  inline static constexpr int MetaTableSizeFor(int capacity);
+
+  inline static constexpr int DataTableSize(int capacity);
+  inline static constexpr int CtrlTableSize(int capacity);
+
+  // Indicates that IterateEntries() returns entries ordered.
+  static constexpr bool kIsOrderedDictionaryType = true;
+
+  static const int kGroupWidth = Group::kWidth;
 
   class BodyDescriptor;
 
@@ -88,9 +197,19 @@ class SwissNameDictionary : public HeapObject {
   // Defines how many kTaggedSize sized values are associcated which each entry
   // in the data table.
   static constexpr int kDataTableEntryCount = 2;
+  static constexpr int kDataTableKeyEntryIndex = 0;
+  static constexpr int kDataTableValueEntryIndex = kDataTableKeyEntryIndex + 1;
 
-  inline static constexpr int DataTableSize(int capacity);
-  inline static constexpr int CtrlTableSize(int capacity);
+  static constexpr int kMetaTableElementCountOffset = 0;
+  static constexpr int kMetaTableDeletedElementCountOffset = 1;
+  static constexpr int kMetaTableEnumerationTableStartOffset = 2;
+
+  // The maximum capacity of any SwissNameDictionary whose meta table can use 1
+  // byte per entry.
+  static constexpr int kMax1ByteMetaTableCapacity = (1 << 8);
+  // The maximum capacity of any SwissNameDictionary whose meta table can use 2
+  // bytes per entry.
+  static constexpr int kMax2ByteMetaTableCapacity = (1 << 16);
 
   // TODO(v8:11388) We would like to use Torque-generated constants here, but
   // those are currently incorrect.
@@ -105,10 +224,87 @@ class SwissNameDictionary : public HeapObject {
   inline static constexpr Offset CtrlTableStartOffset(int capacity);
   inline static constexpr Offset PropertyDetailsTableStartOffset(int capacity);
 
+#if VERIFY_HEAP
+  void SwissNameDictionaryVerify(Isolate* isolate, bool slow_checks);
+#endif
   DECL_VERIFIER(SwissNameDictionary)
   DECL_PRINTER(SwissNameDictionary)
   DECL_CAST(SwissNameDictionary)
   OBJECT_CONSTRUCTORS(SwissNameDictionary, HeapObject);
+
+ private:
+  using ctrl_t = swiss_table::ctrl_t;
+  using Ctrl = swiss_table::Ctrl;
+
+  template <typename LocalIsolate>
+  inline static Handle<SwissNameDictionary> EnsureGrowable(
+      LocalIsolate* isolate, Handle<SwissNameDictionary> table);
+
+  // Returns table of byte-encoded PropertyDetails (without enumeration index
+  // stored in PropertyDetails).
+  inline uint8_t* PropertyDetailsTable();
+
+  // Sets key and value to the hole for the given entry.
+  inline void ClearDataTableEntry(Isolate* isolate, int entry);
+  inline void SetKey(int entry, Object key);
+
+  inline void DetailsAtPut(int entry, PropertyDetails value);
+  inline void ValueAtPut(int entry, Object value);
+
+  inline PropertyDetails DetailsAt(int entry);
+  inline Object ValueAtRaw(int entry);
+  inline Object KeyAt(int entry);
+
+  inline bool ToKey(ReadOnlyRoots roots, int entry, Object* out_key);
+
+  inline int FindFirstEmpty(uint32_t hash);
+  // Adds |key| ->  (|value|, |details|) as a new mapping to the table, which
+  // must have sufficient room. Returns the entry (= bucket) used by the new
+  // mapping. Does not update the number of present entries or the
+  // enumeration table.
+  inline int AddInternal(Name key, Object value, PropertyDetails details);
+
+  // Use |set_ctrl| for modifications whenever possible, since that function
+  // correctly maintains the copy of the first group at the end of the ctrl
+  // table.
+  inline ctrl_t* CtrlTable();
+
+  inline static bool IsEmpty(ctrl_t c);
+  inline static bool IsFull(ctrl_t c);
+  inline static bool IsDeleted(ctrl_t c);
+  inline static bool IsEmptyOrDeleted(ctrl_t c);
+
+  // Sets the a control byte, taking the necessary copying of the first group
+  // into account.
+  inline void SetCtrl(int entry, ctrl_t h);
+  inline ctrl_t GetCtrl(int entry);
+
+  inline Object LoadFromDataTable(int entry, int data_offset);
+  inline Object LoadFromDataTable(IsolateRoot root, int entry, int data_offset);
+  inline void StoreToDataTable(int entry, int data_offset, Object data);
+  inline void StoreToDataTableNoBarrier(int entry, int data_offset,
+                                        Object data);
+
+  inline void SetCapacity(int capacity);
+  inline void SetNumberOfElements(int elements);
+  inline void SetNumberOfDeletedElements(int deleted_elements);
+
+  static inline swiss_table::ProbeSequence<Group::kWidth> probe(uint32_t hash,
+                                                                int capacity);
+
+  // Sets that the entry with the given |enumeration_index| is stored at the
+  // given bucket of the data table.
+  inline void SetEntryForEnumerationIndex(int enumeration_index, int entry);
+
+  DECL_ACCESSORS(meta_table, ByteArray)
+  inline void SetMetaTableField(int field_index, int value);
+  inline int GetMetaTableField(int field_index);
+
+  template <typename T>
+  inline static void SetMetaTableField(ByteArray meta_table, int field_index,
+                                       int value);
+  template <typename T>
+  inline static int GetMetaTableField(ByteArray meta_table, int field_index);
 };
 
 }  // namespace internal

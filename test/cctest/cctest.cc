@@ -264,7 +264,7 @@ i::Handle<i::JSFunction> Optimize(
   i::Handle<i::SharedFunctionInfo> shared(function->shared(), isolate);
   i::IsCompiledScope is_compiled_scope(shared->is_compiled_scope(isolate));
   CHECK(is_compiled_scope.is_compiled() ||
-        i::Compiler::Compile(function, i::Compiler::CLEAR_EXCEPTION,
+        i::Compiler::Compile(isolate, function, i::Compiler::CLEAR_EXCEPTION,
                              &is_compiled_scope));
 
   CHECK_NOT_NULL(zone);
@@ -283,7 +283,7 @@ i::Handle<i::JSFunction> Optimize(
       i::compiler::Pipeline::GenerateCodeForTesting(&info, isolate, out_broker)
           .ToHandleChecked();
   info.native_context().AddOptimizedCode(*code);
-  function->set_code(*code);
+  function->set_code(*code, v8::kReleaseStore);
 
   return function;
 }

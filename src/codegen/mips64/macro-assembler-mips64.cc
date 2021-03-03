@@ -2755,6 +2755,51 @@ void TurboAssembler::ExtMulHigh(MSADataType type, MSARegister dst,
 }
 #undef EXT_MUL_BINOP
 
+void TurboAssembler::LoadSplat(MSASize sz, MSARegister dst, MemOperand src) {
+  UseScratchRegisterScope temps(this);
+  Register scratch = temps.Acquire();
+  switch (sz) {
+    case MSA_B:
+      Lb(scratch, src);
+      fill_b(dst, scratch);
+      break;
+    case MSA_H:
+      Lh(scratch, src);
+      fill_h(dst, scratch);
+      break;
+    case MSA_W:
+      Lw(scratch, src);
+      fill_w(dst, scratch);
+      break;
+    case MSA_D:
+      Ld(scratch, src);
+      fill_d(dst, scratch);
+      break;
+    default:
+      UNREACHABLE();
+  }
+}
+
+void TurboAssembler::ExtAddPairwise(MSADataType type, MSARegister dst,
+                                    MSARegister src) {
+  switch (type) {
+    case MSAS8:
+      hadd_s_h(dst, src, src);
+      break;
+    case MSAU8:
+      hadd_u_h(dst, src, src);
+      break;
+    case MSAS16:
+      hadd_s_w(dst, src, src);
+      break;
+    case MSAU16:
+      hadd_u_w(dst, src, src);
+      break;
+    default:
+      UNREACHABLE();
+  }
+}
+
 void TurboAssembler::MSARoundW(MSARegister dst, MSARegister src,
                                FPURoundingMode mode) {
   BlockTrampolinePoolScope block_trampoline_pool(this);
@@ -5281,7 +5326,7 @@ void TurboAssembler::LoadMap(Register destination, Register object) {
   Ld(destination, FieldMemOperand(object, HeapObject::kMapOffset));
 }
 
-void MacroAssembler::LoadNativeContextSlot(int index, Register dst) {
+void MacroAssembler::LoadNativeContextSlot(Register dst, int index) {
   LoadMap(dst, cp);
   Ld(dst,
      FieldMemOperand(dst, Map::kConstructorOrBackPointerOrNativeContextOffset));

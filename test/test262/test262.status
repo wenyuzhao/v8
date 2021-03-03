@@ -587,6 +587,13 @@
   'intl402/DateTimeFormat/prototype/formatRange/date-same-returns-single-date': [FAIL],
   'intl402/DateTimeFormat/prototype/formatRangeToParts/date-same-returns-single-date': [FAIL],
 
+  # http://crbug/v8/11466
+  # https://github.com/tc39/test262/issues/2950
+  'intl402/Segmenter/constructor/constructor/options-toobject': [FAIL],
+  'intl402/Segmenter/constructor/constructor/options-toobject-prototype': [FAIL],
+  'intl402/ListFormat/constructor/constructor/options-toobject': [FAIL],
+  'intl402/ListFormat/constructor/constructor/options-toobject-prototype': [FAIL],
+
   ######################## NEEDS INVESTIGATION ###########################
 
   # https://bugs.chromium.org/p/v8/issues/detail?id=7833
@@ -736,8 +743,6 @@
   'built-ins/ArrayBuffer/length-is-too-large-throws': [SKIP],
   'built-ins/SharedArrayBuffer/allocation-limit': [SKIP],
   'built-ins/SharedArrayBuffer/length-is-too-large-throws': [SKIP],
-  # https://bugs.chromium.org/p/v8/issues/detail?id=11438
-  'intl402/DateTimeFormat/timezone-invalid' : [SKIP],
 }],  # asan == True or msan == True or tsan == True
 
 ['system == android', {

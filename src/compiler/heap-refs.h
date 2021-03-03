@@ -76,14 +76,17 @@ enum class OddballType : uint8_t {
   /* Subtypes of FixedArrayBase */                  \
   V(BytecodeArray)                                  \
   /* Subtypes of Name */                            \
+  V(String)                                         \
   V(Symbol)                                         \
   /* Subtypes of HeapObject */                      \
   V(AccessorInfo)                                   \
   V(ArrayBoilerplateDescription)                    \
   V(CallHandlerInfo)                                \
   V(Cell)                                           \
+  V(Code)                                           \
   V(FeedbackCell)                                   \
   V(FeedbackVector)                                 \
+  V(Name)                                           \
   V(RegExpBoilerplateDescription)                   \
   V(SharedFunctionInfo)                             \
   V(TemplateObjectDescription)
@@ -127,18 +130,14 @@ enum class OddballType : uint8_t {
   /* Subtypes of FixedArrayBase */            \
   V(FixedArray)                               \
   V(FixedDoubleArray)                         \
-  /* Subtypes of Name */                      \
-  V(String)                                   \
   /* Subtypes of JSReceiver */                \
   V(JSObject)                                 \
   /* Subtypes of HeapObject */                \
   V(AllocationSite)                           \
-  V(Code)                                     \
   V(DescriptorArray)                          \
   V(FixedArrayBase)                           \
   V(FunctionTemplateInfo)                     \
   V(JSReceiver)                               \
-  V(Name)                                     \
   V(SourceTextModule)                         \
   /* Subtypes of Object */                    \
   V(HeapObject)
@@ -198,12 +197,6 @@ class V8_EXPORT_PRIVATE ObjectRef {
 
   bool BooleanValue() const;
   Maybe<double> OddballToNumber() const;
-
-  // Return the element at key {index} if {index} is known to be an own data
-  // property of the object that is non-writable and non-configurable.
-  base::Optional<ObjectRef> GetOwnConstantElement(
-      uint32_t index, SerializationPolicy policy =
-                          SerializationPolicy::kAssumeSerialized) const;
 
   Isolate* isolate() const;
 
@@ -341,13 +334,19 @@ class JSObjectRef : public JSReceiverRef {
 
   ObjectRef RawFastPropertyAt(FieldIndex index) const;
 
+  // Return the element at key {index} if {index} is known to be an own data
+  // property of the object that is non-writable and non-configurable.
+  base::Optional<ObjectRef> GetOwnConstantElement(
+      uint32_t index, SerializationPolicy policy =
+                          SerializationPolicy::kAssumeSerialized) const;
+
   // Return the value of the property identified by the field {index}
   // if {index} is known to be an own data property of the object.
   base::Optional<ObjectRef> GetOwnDataProperty(
       Representation field_representation, FieldIndex index,
       SerializationPolicy policy =
           SerializationPolicy::kAssumeSerialized) const;
-  FixedArrayBaseRef elements() const;
+  base::Optional<FixedArrayBaseRef> elements() const;
   void SerializeElements();
   void EnsureElementsTenured();
   ElementsKind GetElementsKind() const;
@@ -389,7 +388,6 @@ class V8_EXPORT_PRIVATE JSFunctionRef : public JSObjectRef {
   bool has_feedback_vector() const;
   bool has_initial_map() const;
   bool has_prototype() const;
-  bool HasAttachedOptimizedCode() const;
   bool PrototypeRequiresRuntimeLookup() const;
 
   void Serialize();
@@ -806,26 +804,19 @@ class BytecodeArrayRef : public FixedArrayBaseRef {
 
   Handle<BytecodeArray> object() const;
 
+  // NOTE: Concurrent reads of the actual bytecodes as well as the constant pool
+  // (both immutable) do not go through BytecodeArrayRef but are performed
+  // directly through the handle by BytecodeArrayIterator.
+
   int register_count() const;
   int parameter_count() const;
   interpreter::Register incoming_new_target_or_generator_register() const;
 
-  // Bytecode access methods.
-  uint8_t get(int index) const;
-  Address GetFirstBytecodeAddress() const;
-
   Handle<ByteArray> SourcePositionTable() const;
-
-  // Constant pool access.
-  Handle<Object> GetConstantAtIndex(int index) const;
-  bool IsConstantAtIndexSmi(int index) const;
-  Smi GetConstantAtIndexAsSmi(int index) const;
 
   // Exception handler table.
   Address handler_table_address() const;
   int handler_table_size() const;
-
-  void SerializeForCompilation();
 };
 
 class JSArrayRef : public JSObjectRef {
@@ -834,13 +825,24 @@ class JSArrayRef : public JSObjectRef {
 
   Handle<JSArray> object() const;
 
-  ObjectRef length() const;
+  // The `length` property of boilerplate JSArray objects. Boilerplates are
+  // immutable after initialization. Must not be used for non-boilerplate
+  // JSArrays.
+  ObjectRef GetBoilerplateLength() const;
 
   // Return the element at key {index} if the array has a copy-on-write elements
   // storage and {index} is known to be an own data property.
+  // Note the value returned by this function is only valid if we ensure at
+  // runtime that the backing store has not changed.
   base::Optional<ObjectRef> GetOwnCowElement(
-      uint32_t index, SerializationPolicy policy =
-                          SerializationPolicy::kAssumeSerialized) const;
+      FixedArrayBaseRef elements_ref, uint32_t index,
+      SerializationPolicy policy =
+          SerializationPolicy::kAssumeSerialized) const;
+
+  // The `JSArray::length` property; not safe to use in general, but can be
+  // used in some special cases that guarantee a valid `length` value despite
+  // concurrent reads.
+  ObjectRef length_unsafe() const;
 };
 
 class ScopeInfoRef : public HeapObjectRef {
@@ -907,9 +909,18 @@ class StringRef : public NameRef {
 
   Handle<String> object() const;
 
+  // With concurrent inlining on, we return base::nullopt due to not being able
+  // to use LookupIterator in a thread-safe way.
+  base::Optional<ObjectRef> GetCharAsStringOrUndefined(
+      uint32_t index, SerializationPolicy policy =
+                          SerializationPolicy::kAssumeSerialized) const;
+
+  // When concurrently accessing non-read-only non-internalized strings, we
+  // return base::nullopt for these methods.
   base::Optional<int> length() const;
   base::Optional<uint16_t> GetFirstChar();
   base::Optional<double> ToNumber();
+
   bool IsSeqString() const;
   bool IsExternalString() const;
 };
@@ -997,7 +1008,7 @@ class CodeRef : public HeapObjectRef {
 
   Handle<Code> object() const;
 
-  unsigned inlined_bytecode_size() const;
+  unsigned GetInlinedBytecodeSize() const;
 };
 
 class InternalizedStringRef : public StringRef {

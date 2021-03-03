@@ -6,8 +6,6 @@
 #include <memory>
 
 #include "src/common/globals.h"
-#include "src/compiler/node.h"
-#include "src/debug/debug-wasm-objects-inl.h"
 #include "src/diagnostics/disasm.h"
 #include "src/diagnostics/disassembler.h"
 #include "src/heap/heap-inl.h"                // For InOldSpace.
@@ -22,6 +20,10 @@
 #include "src/wasm/wasm-code-manager.h"
 #include "src/wasm/wasm-engine.h"
 #include "src/wasm/wasm-objects-inl.h"
+
+#if V8_ENABLE_WEBASSEMBLY
+#include "src/debug/debug-wasm-objects-inl.h"
+#endif  // V8_ENABLE_WEBASSEMBLY
 
 namespace v8 {
 namespace internal {
@@ -176,9 +178,11 @@ void HeapObject::HeapObjectPrint(std::ostream& os) {  // NOLINT
     case WASM_INSTANCE_OBJECT_TYPE:
       WasmInstanceObject::cast(*this).WasmInstanceObjectPrint(os);
       break;
+#if V8_ENABLE_WEBASSEMBLY
     case WASM_VALUE_OBJECT_TYPE:
       WasmValueObject::cast(*this).WasmValueObjectPrint(os);
       break;
+#endif  // V8_ENABLE_WEBASSEMBLY
     case CODE_TYPE:
       Code::cast(*this).CodePrint(os);
       break;
@@ -941,9 +945,72 @@ void OrderedNameDictionary::OrderedNameDictionaryPrint(std::ostream& os) {
   PrintDictionaryContentsFull(os, *this);
 }
 
+void print_hex_byte(std::ostream& os, int value) {
+  os << "0x" << std::setfill('0') << std::setw(2) << std::right << std::hex
+     << (value & 0xff) << std::setfill(' ');
+}
+
 void SwissNameDictionary::SwissNameDictionaryPrint(std::ostream& os) {
-  // Here to satisfy compiler, implemented in follow-up CL.
-  UNREACHABLE();
+  this->PrintHeader(os, "SwissNameDictionary");
+  os << "\n - meta table ByteArray: "
+     << reinterpret_cast<void*>(this->meta_table().ptr());
+  os << "\n - capacity: " << this->Capacity();
+  os << "\n - elements: " << this->NumberOfElements();
+  os << "\n - deleted: " << this->NumberOfDeletedElements();
+
+  std::ios_base::fmtflags sav_flags = os.flags();
+  os << "\n - ctrl table (omitting buckets where key is hole value): {";
+  for (int i = 0; i < this->Capacity() + kGroupWidth; i++) {
+    ctrl_t ctrl = CtrlTable()[i];
+
+    if (ctrl == Ctrl::kEmpty) continue;
+
+    os << "\n   " << std::setw(12) << std::dec << i << ": ";
+    switch (ctrl) {
+      case Ctrl::kEmpty:
+        UNREACHABLE();
+        break;
+      case Ctrl::kDeleted:
+        print_hex_byte(os, ctrl);
+        os << " (= kDeleted)";
+        break;
+      case Ctrl::kSentinel:
+        print_hex_byte(os, ctrl);
+        os << " (= kSentinel)";
+        break;
+      default:
+        print_hex_byte(os, ctrl);
+        os << " (= H2 of a key)";
+        break;
+    }
+  }
+  os << "\n }";
+
+  os << "\n - enumeration table: {";
+  for (int enum_index = 0; enum_index < this->UsedCapacity(); enum_index++) {
+    int entry = EntryForEnumerationIndex(enum_index);
+    os << "\n   " << std::setw(12) << std::dec << enum_index << ": " << entry;
+  }
+  os << "\n }";
+
+  os << "\n - data table (omitting slots where key is the hole): {";
+  for (int bucket = 0; bucket < this->Capacity(); ++bucket) {
+    Object k;
+    if (!this->ToKey(this->GetReadOnlyRoots(), bucket, &k)) continue;
+
+    Object value = this->ValueAtRaw(bucket);
+    PropertyDetails details = this->DetailsAt(bucket);
+    os << "\n   " << std::setw(12) << std::dec << bucket << ": ";
+    if (k.IsString()) {
+      String::cast(k).PrintUC16(os);
+    } else {
+      os << Brief(k);
+    }
+    os << " -> " << Brief(value);
+    details.PrintAsSlowTo(os, false);
+  }
+  os << "\n }\n";
+  os.flags(sav_flags);
 }
 
 void PropertyArray::PropertyArrayPrint(std::ostream& os) {  // NOLINT
@@ -1744,27 +1811,27 @@ void WasmStruct::WasmStructPrint(std::ostream& os) {  // NOLINT
     uint32_t field_offset = struct_type->field_offset(i);
     Address field_address = RawField(field_offset).address();
     switch (field.kind()) {
-      case wasm::ValueType::kI32:
+      case wasm::kI32:
         os << base::ReadUnalignedValue<int32_t>(field_address);
         break;
-      case wasm::ValueType::kI64:
+      case wasm::kI64:
         os << base::ReadUnalignedValue<int64_t>(field_address);
         break;
-      case wasm::ValueType::kF32:
+      case wasm::kF32:
         os << base::ReadUnalignedValue<float>(field_address);
         break;
-      case wasm::ValueType::kF64:
+      case wasm::kF64:
         os << base::ReadUnalignedValue<double>(field_address);
         break;
-      case wasm::ValueType::kI8:
-      case wasm::ValueType::kI16:
-      case wasm::ValueType::kS128:
-      case wasm::ValueType::kRef:
-      case wasm::ValueType::kOptRef:
-      case wasm::ValueType::kRtt:
-      case wasm::ValueType::kRttWithDepth:
-      case wasm::ValueType::kBottom:
-      case wasm::ValueType::kStmt:
+      case wasm::kI8:
+      case wasm::kI16:
+      case wasm::kS128:
+      case wasm::kRef:
+      case wasm::kOptRef:
+      case wasm::kRtt:
+      case wasm::kRttWithDepth:
+      case wasm::kBottom:
+      case wasm::kStmt:
         os << "UNIMPLEMENTED";  // TODO(7748): Implement.
         break;
     }
@@ -1780,31 +1847,31 @@ void WasmArray::WasmArrayPrint(std::ostream& os) {  // NOLINT
   os << "\n - length: " << len;
   Address data_ptr = ptr() + WasmArray::kHeaderSize - kHeapObjectTag;
   switch (array_type->element_type().kind()) {
-    case wasm::ValueType::kI32:
+    case wasm::kI32:
       PrintTypedArrayElements(os, reinterpret_cast<int32_t*>(data_ptr), len,
                               true);
       break;
-    case wasm::ValueType::kI64:
+    case wasm::kI64:
       PrintTypedArrayElements(os, reinterpret_cast<int64_t*>(data_ptr), len,
                               true);
       break;
-    case wasm::ValueType::kF32:
+    case wasm::kF32:
       PrintTypedArrayElements(os, reinterpret_cast<float*>(data_ptr), len,
                               true);
       break;
-    case wasm::ValueType::kF64:
+    case wasm::kF64:
       PrintTypedArrayElements(os, reinterpret_cast<double*>(data_ptr), len,
                               true);
       break;
-    case wasm::ValueType::kI8:
-    case wasm::ValueType::kI16:
-    case wasm::ValueType::kS128:
-    case wasm::ValueType::kRef:
-    case wasm::ValueType::kOptRef:
-    case wasm::ValueType::kRtt:
-    case wasm::ValueType::kRttWithDepth:
-    case wasm::ValueType::kBottom:
-    case wasm::ValueType::kStmt:
+    case wasm::kI8:
+    case wasm::kI16:
+    case wasm::kS128:
+    case wasm::kRef:
+    case wasm::kOptRef:
+    case wasm::kRtt:
+    case wasm::kRttWithDepth:
+    case wasm::kBottom:
+    case wasm::kStmt:
       os << "\n   Printing elements of this type is unimplemented, sorry";
       // TODO(7748): Implement.
       break;
@@ -1900,16 +1967,17 @@ void WasmTableObject::WasmTableObjectPrint(std::ostream& os) {  // NOLINT
   os << "\n";
 }
 
+#if V8_ENABLE_WEBASSEMBLY
 void WasmValueObject::WasmValueObjectPrint(std::ostream& os) {  // NOLINT
   PrintHeader(os, "WasmValueObject");
-  os << "\n - type: " << Brief(type());
   os << "\n - value: " << Brief(value());
   os << "\n";
 }
+#endif  // V8_ENABLE_WEBASSEMBLY
 
 void WasmGlobalObject::WasmGlobalObjectPrint(std::ostream& os) {  // NOLINT
   PrintHeader(os, "WasmGlobalObject");
-  if (type().is_reference_type()) {
+  if (type().is_reference()) {
     os << "\n - tagged_buffer: " << Brief(tagged_buffer());
   } else {
     os << "\n - untagged_buffer: " << Brief(untagged_buffer());
@@ -1917,7 +1985,7 @@ void WasmGlobalObject::WasmGlobalObjectPrint(std::ostream& os) {  // NOLINT
   os << "\n - offset: " << offset();
   os << "\n - raw_type: " << raw_type();
   os << "\n - is_mutable: " << is_mutable();
-  os << "\n - type: " << type().kind();
+  os << "\n - type: " << type();
   os << "\n - is_mutable: " << is_mutable();
   os << "\n";
 }
@@ -2285,7 +2353,8 @@ void StackFrameInfo::StackFrameInfoPrint(std::ostream& os) {  // NOLINT
   os << "\n - receiver_or_instance: " << Brief(receiver_or_instance());
   os << "\n - function: " << Brief(function());
   os << "\n - code_object: " << Brief(code_object());
-  os << "\n - offset: " << offset();
+  os << "\n - code_offset_or_source_position: "
+     << code_offset_or_source_position();
   os << "\n - flags: " << flags();
   os << "\n - parameters: " << Brief(parameters());
   os << "\n";
@@ -2749,8 +2818,4 @@ V8_EXPORT_PRIVATE extern void _v8_internal_Print_TransitionTree(void* object) {
     transitions.PrintTransitionTree();
 #endif
   }
-}
-
-V8_EXPORT_PRIVATE extern void _v8_internal_Node_Print(void* object) {
-  reinterpret_cast<i::compiler::Node*>(object)->Print();
 }

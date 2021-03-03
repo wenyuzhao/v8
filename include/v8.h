@@ -1936,7 +1936,7 @@ class V8_EXPORT ScriptCompiler {
    */
   class V8_EXPORT StreamedSource {
    public:
-    enum Encoding { ONE_BYTE, TWO_BYTE, UTF8 };
+    enum Encoding { ONE_BYTE, TWO_BYTE, UTF8, WINDOWS_1252 };
 
     V8_DEPRECATED(
         "This class takes ownership of source_stream, so use the constructor "
@@ -3248,6 +3248,11 @@ class V8_EXPORT String : public Name {
   V8_INLINE static Local<String> Empty(Isolate* isolate);
 
   /**
+   * Returns true if the string is external.
+   */
+  bool IsExternal() const;
+
+  /**
    * Returns true if the string is both external and two-byte.
    */
   bool IsExternalTwoByte() const;
@@ -3323,7 +3328,8 @@ class V8_EXPORT String : public Name {
     ~ExternalStringResource() override = default;
 
     /**
-     * The string data from the underlying buffer.
+     * The string data from the underlying buffer. If the resource is cacheable
+     * then data() must return the same value for all invocations.
      */
     virtual const uint16_t* data() const = 0;
 
@@ -3332,8 +3338,29 @@ class V8_EXPORT String : public Name {
      */
     virtual size_t length() const = 0;
 
+    /**
+     * Returns the cached data from the underlying buffer. This method can be
+     * called only for cacheable resources (i.e. IsCacheable() == true) and only
+     * after UpdateDataCache() was called.
+     */
+    const uint16_t* cached_data() const {
+      CheckCachedDataInvariants();
+      return cached_data_;
+    }
+
+    /**
+     * Update {cached_data_} with the data from the underlying buffer. This can
+     * be called only for cacheable resources.
+     */
+    void UpdateDataCache();
+
    protected:
     ExternalStringResource() = default;
+
+   private:
+    void CheckCachedDataInvariants() const;
+
+    const uint16_t* cached_data_ = nullptr;
   };
 
   /**
@@ -3354,12 +3381,39 @@ class V8_EXPORT String : public Name {
      * buffer.
      */
     ~ExternalOneByteStringResource() override = default;
-    /** The string data from the underlying buffer.*/
+
+    /**
+     * The string data from the underlying buffer. If the resource is cacheable
+     * then data() must return the same value for all invocations.
+     */
     virtual const char* data() const = 0;
+
     /** The number of Latin-1 characters in the string.*/
     virtual size_t length() const = 0;
+
+    /**
+     * Returns the cached data from the underlying buffer. If the resource is
+     * uncacheable or if UpdateDataCache() was not called before, it has
+     * undefined behaviour.
+     */
+    const char* cached_data() const {
+      CheckCachedDataInvariants();
+      return cached_data_;
+    }
+
+    /**
+     * Update {cached_data_} with the data from the underlying buffer. This can
+     * be called only for cacheable resources.
+     */
+    void UpdateDataCache();
+
    protected:
     ExternalOneByteStringResource() = default;
+
+   private:
+    void CheckCachedDataInvariants() const;
+
+    const char* cached_data_ = nullptr;
   };
 
   /**
@@ -4222,12 +4276,18 @@ class V8_EXPORT Object : public Value {
   /**
    * Returns the context in which the object was created.
    */
+  V8_DEPRECATE_SOON("Use MaybeLocal<Context> GetCreationContext()")
   Local<Context> CreationContext();
+  MaybeLocal<Context> GetCreationContext();
 
   /** Same as above, but works for Persistents */
-  V8_INLINE static Local<Context> CreationContext(
+  V8_DEPRECATE_SOON(
+      "Use MaybeLocal<Context> GetCreationContext(const "
+      "PersistentBase<Object>& object)")
+  static Local<Context> CreationContext(const PersistentBase<Object>& object);
+  V8_INLINE static MaybeLocal<Context> GetCreationContext(
       const PersistentBase<Object>& object) {
-    return object.val_->CreationContext();
+    return object.val_->GetCreationContext();
   }
 
   /**
@@ -7743,9 +7803,6 @@ using ApiImplementationCallback = void (*)(const FunctionCallbackInfo<Value>&);
 // --- Callback for WebAssembly.compileStreaming ---
 using WasmStreamingCallback = void (*)(const FunctionCallbackInfo<Value>&);
 
-// --- Callback for checking if WebAssembly threads are enabled ---
-using WasmThreadsEnabledCallback = bool (*)(Local<Context> context);
-
 // --- Callback for loading source map file for Wasm profiling support
 using WasmLoadSourceMapCallback = Local<String> (*)(Isolate* isolate,
                                                     const char* name);
@@ -9651,8 +9708,6 @@ class V8_EXPORT Isolate {
   void SetWasmInstanceCallback(ExtensionCallback callback);
 
   void SetWasmStreamingCallback(WasmStreamingCallback callback);
-
-  void SetWasmThreadsEnabledCallback(WasmThreadsEnabledCallback callback);
 
   void SetWasmLoadSourceMapCallback(WasmLoadSourceMapCallback callback);
 

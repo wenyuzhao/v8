@@ -1951,28 +1951,40 @@ Reduction JSNativeContextSpecialization::ReduceElementLoadFromHeapConstant(
   // Check whether we're accessing a known element on the {receiver} and can
   // constant-fold the load.
   NumberMatcher mkey(key);
-  if (mkey.IsInteger() && mkey.IsInRange(0.0, kMaxUInt32 - 1.0)) {
-    uint32_t index = static_cast<uint32_t>(mkey.ResolvedValue());
-    base::Optional<ObjectRef> element =
-        receiver_ref.GetOwnConstantElement(index);
-    if (!element.has_value() && receiver_ref.IsJSArray()) {
-      // We didn't find a constant element, but if the receiver is a cow-array
-      // we can exploit the fact that any future write to the element will
-      // replace the whole elements storage.
-      element = receiver_ref.AsJSArray().GetOwnCowElement(index);
-      if (element.has_value()) {
-        Node* elements = effect = graph()->NewNode(
-            simplified()->LoadField(AccessBuilder::ForJSObjectElements()),
-            receiver, effect, control);
-        FixedArrayRef array_elements =
-            receiver_ref.AsJSArray().elements().AsFixedArray();
-        Node* check = graph()->NewNode(simplified()->ReferenceEqual(), elements,
-                                       jsgraph()->Constant(array_elements));
-        effect = graph()->NewNode(
-            simplified()->CheckIf(DeoptimizeReason::kCowArrayElementsChanged),
-            check, effect, control);
+  if (mkey.IsInteger() &&
+      mkey.IsInRange(0.0, static_cast<double>(JSObject::kMaxElementIndex))) {
+    STATIC_ASSERT(JSObject::kMaxElementIndex <= kMaxUInt32);
+    const uint32_t index = static_cast<uint32_t>(mkey.ResolvedValue());
+    base::Optional<ObjectRef> element;
+
+    if (receiver_ref.IsJSObject()) {
+      element = receiver_ref.AsJSObject().GetOwnConstantElement(index);
+      if (!element.has_value() && receiver_ref.IsJSArray()) {
+        // We didn't find a constant element, but if the receiver is a cow-array
+        // we can exploit the fact that any future write to the element will
+        // replace the whole elements storage.
+        JSArrayRef array_ref = receiver_ref.AsJSArray();
+        base::Optional<FixedArrayBaseRef> array_elements = array_ref.elements();
+        if (array_elements.has_value()) {
+          element = array_ref.GetOwnCowElement(*array_elements, index);
+          if (element.has_value()) {
+            Node* elements = effect = graph()->NewNode(
+                simplified()->LoadField(AccessBuilder::ForJSObjectElements()),
+                receiver, effect, control);
+            Node* check =
+                graph()->NewNode(simplified()->ReferenceEqual(), elements,
+                                 jsgraph()->Constant(*array_elements));
+            effect = graph()->NewNode(
+                simplified()->CheckIf(
+                    DeoptimizeReason::kCowArrayElementsChanged),
+                check, effect, control);
+          }
+        }
       }
+    } else if (receiver_ref.IsString()) {
+      element = receiver_ref.AsString().GetCharAsStringOrUndefined(index);
     }
+
     if (element.has_value()) {
       Node* value = access_mode == AccessMode::kHas
                         ? jsgraph()->TrueConstant()
@@ -2206,7 +2218,6 @@ Node* JSNativeContextSpecialization::InlinePropertyGetterCall(
     ZoneVector<Node*>* if_exceptions, PropertyAccessInfo const& access_info) {
   ObjectRef constant(broker(), access_info.constant());
   Node* target = jsgraph()->Constant(constant);
-  FrameStateInfo const& frame_info = FrameStateInfoOf(frame_state->op());
   // Introduce the call to the getter function.
   Node* value;
   if (constant.IsJSFunction()) {
@@ -2221,12 +2232,8 @@ Node* JSNativeContextSpecialization::InlinePropertyGetterCall(
                        ? receiver
                        : jsgraph()->Constant(ObjectRef(
                              broker(), access_info.holder().ToHandleChecked()));
-    SharedFunctionInfoRef shared_info(
-        broker(), frame_info.shared_info().ToHandleChecked());
-
-    value =
-        InlineApiCall(receiver, holder, frame_state, nullptr, effect, control,
-                      shared_info, constant.AsFunctionTemplateInfo());
+    value = InlineApiCall(receiver, holder, frame_state, nullptr, effect,
+                          control, constant.AsFunctionTemplateInfo());
   }
   // Remember to rewire the IfException edge if this is inside a try-block.
   if (if_exceptions != nullptr) {
@@ -2246,7 +2253,6 @@ void JSNativeContextSpecialization::InlinePropertySetterCall(
     PropertyAccessInfo const& access_info) {
   ObjectRef constant(broker(), access_info.constant());
   Node* target = jsgraph()->Constant(constant);
-  FrameStateInfo const& frame_info = FrameStateInfoOf(frame_state->op());
   // Introduce the call to the setter function.
   if (constant.IsJSFunction()) {
     Node* feedback = jsgraph()->UndefinedConstant();
@@ -2261,10 +2267,8 @@ void JSNativeContextSpecialization::InlinePropertySetterCall(
                        ? receiver
                        : jsgraph()->Constant(ObjectRef(
                              broker(), access_info.holder().ToHandleChecked()));
-    SharedFunctionInfoRef shared_info(
-        broker(), frame_info.shared_info().ToHandleChecked());
     InlineApiCall(receiver, holder, frame_state, value, effect, control,
-                  shared_info, constant.AsFunctionTemplateInfo());
+                  constant.AsFunctionTemplateInfo());
   }
   // Remember to rewire the IfException edge if this is inside a try-block.
   if (if_exceptions != nullptr) {
@@ -2279,8 +2283,7 @@ void JSNativeContextSpecialization::InlinePropertySetterCall(
 
 Node* JSNativeContextSpecialization::InlineApiCall(
     Node* receiver, Node* holder, Node* frame_state, Node* value, Node** effect,
-    Node** control, SharedFunctionInfoRef const& shared_info,
-    FunctionTemplateInfoRef const& function_template_info) {
+    Node** control, FunctionTemplateInfoRef const& function_template_info) {
   if (!function_template_info.has_call_code()) {
     return nullptr;
   }

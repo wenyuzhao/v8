@@ -285,11 +285,9 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   AVX_OP_SSE4_1(Pblendw, pblendw)
   AVX_OP_SSE4_1(Ptest, ptest)
   AVX_OP_SSE4_1(Pmovsxbw, pmovsxbw)
-  AVX_OP_SSE4_1(Pmovsxbd, pmovsxbd)
   AVX_OP_SSE4_1(Pmovsxwd, pmovsxwd)
   AVX_OP_SSE4_1(Pmovsxdq, pmovsxdq)
   AVX_OP_SSE4_1(Pmovzxbw, pmovzxbw)
-  AVX_OP_SSE4_1(Pmovzxbd, pmovzxbd)
   AVX_OP_SSE4_1(Pmovzxwd, pmovzxwd)
   AVX_OP_SSE4_1(Pmovzxdq, pmovzxdq)
   AVX_OP_SSE4_1(Pextrb, pextrb)
@@ -535,7 +533,8 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
 
   void LoadCodeObjectEntry(Register destination, Register code_object) override;
   void CallCodeObject(Register code_object) override;
-  void JumpCodeObject(Register code_object) override;
+  void JumpCodeObject(Register code_object,
+                      JumpMode jump_mode = JumpMode::kJump) override;
 
   void RetpolineCall(Register reg);
   void RetpolineCall(Address destination, RelocInfo::Mode rmode);
@@ -555,7 +554,7 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   void Trap() override;
   void DebugBreak() override;
 
-  // Supports both AVX (dst != src1) and SSE (checks that dst == src1).
+  // Will move src1 to dst if dst != src1.
   void Pmaddwd(XMMRegister dst, XMMRegister src1, Operand src2);
   void Pmaddwd(XMMRegister dst, XMMRegister src1, XMMRegister src2);
   void Pmaddubsw(XMMRegister dst, XMMRegister src1, Operand src2);
@@ -598,7 +597,6 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
 
   // Supports both SSE and AVX. Move src1 to dst if they are not equal on SSE.
   void Pshufb(XMMRegister dst, XMMRegister src1, XMMRegister src2);
-  void Pshufb(XMMRegister dst, XMMRegister src1, Operand src2);
   void Pmulhrsw(XMMRegister dst, XMMRegister src1, XMMRegister src2);
 
   // These Wasm SIMD ops do not have direct lowerings on x64. These
@@ -633,6 +631,15 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   void F64x2ConvertLowI32x4U(XMMRegister dst, XMMRegister src);
   void I32x4TruncSatF64x2SZero(XMMRegister dst, XMMRegister src);
   void I32x4TruncSatF64x2UZero(XMMRegister dst, XMMRegister src);
+
+  void I64x2Abs(XMMRegister dst, XMMRegister src);
+  void I64x2GtS(XMMRegister dst, XMMRegister src0, XMMRegister src1);
+  void I64x2GeS(XMMRegister dst, XMMRegister src0, XMMRegister src1);
+
+  void I16x8ExtAddPairwiseI8x16S(XMMRegister dst, XMMRegister src);
+  void I32x4ExtAddPairwiseI16x8U(XMMRegister dst, XMMRegister src);
+
+  void I8x16Swizzle(XMMRegister dst, XMMRegister src, XMMRegister mask);
 
   void Abspd(XMMRegister dst);
   void Negpd(XMMRegister dst);
@@ -1088,11 +1095,11 @@ class V8_EXPORT_PRIVATE MacroAssembler : public TurboAssembler {
 
   // Load the global proxy from the current context.
   void LoadGlobalProxy(Register dst) {
-    LoadNativeContextSlot(Context::GLOBAL_PROXY_INDEX, dst);
+    LoadNativeContextSlot(dst, Context::GLOBAL_PROXY_INDEX);
   }
 
   // Load the native context slot with the current index.
-  void LoadNativeContextSlot(int index, Register dst);
+  void LoadNativeContextSlot(Register dst, int index);
 
   // ---------------------------------------------------------------------------
   // Runtime calls
@@ -1137,19 +1144,7 @@ class V8_EXPORT_PRIVATE MacroAssembler : public TurboAssembler {
   // In-place weak references.
   void LoadWeakValue(Register in_out, Label* target_if_cleared);
 
-  // ---------------------------------------------------------------------------
-  // Debugging
-
-  static int SafepointRegisterStackIndex(Register reg) {
-    return SafepointRegisterStackIndex(reg.code());
-  }
-
  private:
-  // Order general registers are pushed by Pushad.
-  // rax, rcx, rdx, rbx, rsi, rdi, r8, r9, r11, r12, r14, r15.
-  static const int kSafepointPushRegisterIndices[Register::kNumRegisters];
-  static const int kNumSafepointSavedRegisters = 12;
-
   // Helper functions for generating invokes.
   void InvokePrologue(Register expected_parameter_count,
                       Register actual_parameter_count, Label* done,
@@ -1162,15 +1157,6 @@ class V8_EXPORT_PRIVATE MacroAssembler : public TurboAssembler {
   void EnterExitFrameEpilogue(int arg_stack_space, bool save_doubles);
 
   void LeaveExitFrameEpilogue();
-
-  // Compute memory operands for safepoint stack slots.
-  static int SafepointRegisterStackIndex(int reg_code) {
-    return kNumSafepointRegisters - kSafepointPushRegisterIndices[reg_code] - 1;
-  }
-
-  // Needs access to SafepointRegisterStackIndex for compiled frame
-  // traversal.
-  friend class CommonFrame;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(MacroAssembler);
 };

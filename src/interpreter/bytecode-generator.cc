@@ -10,6 +10,7 @@
 #include "src/builtins/builtins-constructor.h"
 #include "src/codegen/compiler.h"
 #include "src/codegen/unoptimized-compilation-info.h"
+#include "src/common/globals.h"
 #include "src/interpreter/bytecode-flags.h"
 #include "src/interpreter/bytecode-jump-table.h"
 #include "src/interpreter/bytecode-label.h"
@@ -122,10 +123,10 @@ class V8_NODISCARD BytecodeGenerator::ControlScope {
   void Continue(Statement* stmt) {
     PerformCommand(CMD_CONTINUE, stmt, kNoSourcePosition);
   }
-  void ReturnAccumulator(int source_position = kNoSourcePosition) {
+  void ReturnAccumulator(int source_position) {
     PerformCommand(CMD_RETURN, nullptr, source_position);
   }
-  void AsyncReturnAccumulator(int source_position = kNoSourcePosition) {
+  void AsyncReturnAccumulator(int source_position) {
     PerformCommand(CMD_ASYNC_RETURN, nullptr, source_position);
   }
 
@@ -1458,7 +1459,7 @@ void BytecodeGenerator::GenerateBytecodeBody() {
   // end of the function without an explicit return being present on all paths.
   if (!builder()->RemainderOfBlockIsDead()) {
     builder()->LoadUndefined();
-    BuildReturn();
+    BuildReturn(literal->return_position());
   }
 }
 
@@ -1772,10 +1773,14 @@ void BytecodeGenerator::VisitReturnStatement(ReturnStatement* stmt) {
   AllocateBlockCoverageSlotIfEnabled(stmt, SourceRangeKind::kContinuation);
   builder()->SetStatementPosition(stmt);
   VisitForAccumulatorValue(stmt->expression());
+  int return_position = stmt->end_position();
+  if (return_position == kNoSourcePosition) {
+    return_position = info()->literal()->return_position();
+  }
   if (stmt->is_async_return()) {
-    execution_control()->AsyncReturnAccumulator(stmt->end_position());
+    execution_control()->AsyncReturnAccumulator(return_position);
   } else {
-    execution_control()->ReturnAccumulator(stmt->end_position());
+    execution_control()->ReturnAccumulator(return_position);
   }
 }
 
@@ -2441,7 +2446,7 @@ void BytecodeGenerator::BuildClassLiteral(ClassLiteral* expr, Register name) {
         .LoadAccumulatorWithRegister(class_constructor);
   }
 
-  if (expr->static_fields_initializer() != nullptr) {
+  if (expr->static_initializer() != nullptr) {
     // TODO(gsathya): This can be optimized away to be a part of the
     // class boilerplate in the future. The name argument can be
     // passed to the DefineClass runtime function and have it set
@@ -2461,8 +2466,7 @@ void BytecodeGenerator::BuildClassLiteral(ClassLiteral* expr, Register name) {
     }
 
     RegisterList args = register_allocator()->NewRegisterList(1);
-    Register initializer =
-        VisitForRegisterValue(expr->static_fields_initializer());
+    Register initializer = VisitForRegisterValue(expr->static_initializer());
 
     builder()
         ->MoveRegister(class_constructor, args[0])
@@ -2488,46 +2492,64 @@ void BytecodeGenerator::VisitClassLiteral(ClassLiteral* expr, Register name) {
   }
 }
 
-void BytecodeGenerator::VisitInitializeClassMembersStatement(
-    InitializeClassMembersStatement* stmt) {
+void BytecodeGenerator::BuildClassProperty(ClassLiteral::Property* property) {
+  RegisterAllocationScope register_scope(this);
   RegisterList args = register_allocator()->NewRegisterList(3);
   Register constructor = args[0], key = args[1], value = args[2];
   builder()->MoveRegister(builder()->Receiver(), constructor);
 
+  // Private methods are not initialized in BuildClassProperty.
+  DCHECK_IMPLIES(property->is_private(),
+                 property->kind() == ClassLiteral::Property::FIELD);
+
+  if (property->is_computed_name()) {
+    DCHECK_EQ(property->kind(), ClassLiteral::Property::FIELD);
+    DCHECK(!property->is_private());
+    Variable* var = property->computed_name_var();
+    DCHECK_NOT_NULL(var);
+    // The computed name is already evaluated and stored in a variable at class
+    // definition time.
+    BuildVariableLoad(var, HoleCheckMode::kElided);
+    builder()->StoreAccumulatorInRegister(key);
+  } else if (property->is_private()) {
+    Variable* private_name_var = property->private_name_var();
+    DCHECK_NOT_NULL(private_name_var);
+    BuildVariableLoad(private_name_var, HoleCheckMode::kElided);
+    builder()->StoreAccumulatorInRegister(key);
+  } else {
+    BuildLoadPropertyKey(property, key);
+  }
+
+  builder()->SetExpressionAsStatementPosition(property->value());
+  VisitForRegisterValue(property->value(), value);
+
+  Runtime::FunctionId function_id =
+      property->kind() == ClassLiteral::Property::FIELD &&
+              !property->is_private()
+          ? Runtime::kCreateDataProperty
+          : Runtime::kAddPrivateField;
+  builder()->CallRuntime(function_id, args);
+}
+
+void BytecodeGenerator::VisitInitializeClassMembersStatement(
+    InitializeClassMembersStatement* stmt) {
   for (int i = 0; i < stmt->fields()->length(); i++) {
-    ClassLiteral::Property* property = stmt->fields()->at(i);
-    // Private methods are not initialized in the
-    // InitializeClassMembersStatement.
-    DCHECK_IMPLIES(property->is_private(),
-                   property->kind() == ClassLiteral::Property::FIELD);
+    BuildClassProperty(stmt->fields()->at(i));
+  }
+}
 
-    if (property->is_computed_name()) {
-      DCHECK_EQ(property->kind(), ClassLiteral::Property::FIELD);
-      DCHECK(!property->is_private());
-      Variable* var = property->computed_name_var();
-      DCHECK_NOT_NULL(var);
-      // The computed name is already evaluated and stored in a
-      // variable at class definition time.
-      BuildVariableLoad(var, HoleCheckMode::kElided);
-      builder()->StoreAccumulatorInRegister(key);
-    } else if (property->is_private()) {
-      Variable* private_name_var = property->private_name_var();
-      DCHECK_NOT_NULL(private_name_var);
-      BuildVariableLoad(private_name_var, HoleCheckMode::kElided);
-      builder()->StoreAccumulatorInRegister(key);
-    } else {
-      BuildLoadPropertyKey(property, key);
+void BytecodeGenerator::VisitInitializeClassStaticElementsStatement(
+    InitializeClassStaticElementsStatement* stmt) {
+  for (int i = 0; i < stmt->elements()->length(); i++) {
+    ClassLiteral::StaticElement* element = stmt->elements()->at(i);
+    switch (element->kind()) {
+      case ClassLiteral::StaticElement::PROPERTY:
+        BuildClassProperty(element->property());
+        break;
+      case ClassLiteral::StaticElement::STATIC_BLOCK:
+        VisitBlock(element->static_block());
+        break;
     }
-
-    builder()->SetExpressionAsStatementPosition(property->value());
-    VisitForRegisterValue(property->value(), value);
-
-    Runtime::FunctionId function_id =
-        property->kind() == ClassLiteral::Property::FIELD &&
-                !property->is_private()
-            ? Runtime::kCreateDataProperty
-            : Runtime::kAddPrivateField;
-    builder()->CallRuntime(function_id, args);
   }
 }
 
@@ -2876,7 +2898,7 @@ void BytecodeGenerator::VisitObjectLiteral(ObjectLiteral* expr) {
         // the class, meaning we can't wait until the
         // StoreDataPropertyInLiteral call later to set the name.
         if (property->value()->IsClassLiteral() &&
-            property->value()->AsClassLiteral()->static_fields_initializer() !=
+            property->value()->AsClassLiteral()->static_initializer() !=
                 nullptr) {
           value = register_allocator()->NewRegister();
           VisitClassLiteral(property->value()->AsClassLiteral(), key);
@@ -3290,7 +3312,7 @@ void BytecodeGenerator::BuildReturn(int source_position) {
   if (info()->flags().collect_type_profile()) {
     builder()->CollectTypeProfile(info()->literal()->return_position());
   }
-  builder()->SetReturnPosition(source_position, info()->literal());
+  builder()->SetStatementPosition(source_position);
   builder()->Return();
 }
 
@@ -4377,9 +4399,9 @@ void BytecodeGenerator::VisitYield(Yield* expr) {
     builder()->Bind(jump_table, JSGeneratorObject::kReturn);
     builder()->LoadAccumulatorWithRegister(input);
     if (IsAsyncGeneratorFunction(function_kind())) {
-      execution_control()->AsyncReturnAccumulator();
+      execution_control()->AsyncReturnAccumulator(kNoSourcePosition);
     } else {
-      execution_control()->ReturnAccumulator();
+      execution_control()->ReturnAccumulator(kNoSourcePosition);
     }
   }
 
@@ -4529,9 +4551,9 @@ void BytecodeGenerator::VisitYieldStar(YieldStar* expr) {
           if (iterator_type == IteratorType::kAsync) {
             // Await input.
             BuildAwait(expr->position());
-            execution_control()->AsyncReturnAccumulator();
+            execution_control()->AsyncReturnAccumulator(kNoSourcePosition);
           } else {
-            execution_control()->ReturnAccumulator();
+            execution_control()->ReturnAccumulator(kNoSourcePosition);
           }
         }
 
@@ -4621,9 +4643,9 @@ void BytecodeGenerator::VisitYieldStar(YieldStar* expr) {
       .JumpIfFalse(ToBooleanMode::kAlreadyBoolean, &completion_is_output_value)
       .LoadAccumulatorWithRegister(output_value);
   if (iterator_type == IteratorType::kAsync) {
-    execution_control()->AsyncReturnAccumulator();
+    execution_control()->AsyncReturnAccumulator(kNoSourcePosition);
   } else {
-    execution_control()->ReturnAccumulator();
+    execution_control()->ReturnAccumulator(kNoSourcePosition);
   }
 
   builder()->Bind(&completion_is_output_value);

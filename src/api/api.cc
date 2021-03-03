@@ -109,12 +109,15 @@
 #include "src/trap-handler/trap-handler.h"
 #include "src/utils/detachable-vector.h"
 #include "src/utils/version.h"
+
+#if V8_ENABLE_WEBASSEMBLY
 #include "src/wasm/streaming-decoder.h"
 #include "src/wasm/value-type.h"
 #include "src/wasm/wasm-engine.h"
 #include "src/wasm/wasm-objects-inl.h"
 #include "src/wasm/wasm-result.h"
 #include "src/wasm/wasm-serialization.h"
+#endif  // V8_ENABLE_WEBASSEMBLY
 
 #if V8_OS_LINUX || V8_OS_MACOSX || V8_OS_FREEBSD
 #include <signal.h>
@@ -125,12 +128,16 @@
 #if V8_OS_WIN
 #include <versionhelpers.h>
 #include <windows.h>
+
 #include "include/v8-wasm-trap-handler-win.h"
 #include "src/trap-handler/handler-inside-win.h"
 #if defined(V8_OS_WIN64)
 #include "src/base/platform/wrappers.h"
 #include "src/diagnostics/unwinding-info-win64.h"
 #endif  // V8_OS_WIN64
+#if defined(V8_ENABLE_SYSTEM_INSTRUMENTATION)
+#include "src/diagnostics/system-jit-win.h"
+#endif
 #endif  // V8_OS_WIN
 
 // Has to be the last include (doesn't have include guards):
@@ -1095,7 +1102,9 @@ void Template::Set(v8::Local<Name> name, v8::Local<Data> value,
   ENTER_V8_NO_SCRIPT_NO_EXCEPTION(isolate);
   i::HandleScope scope(isolate);
   auto value_obj = Utils::OpenHandle(*value);
-  CHECK(!value_obj->IsJSReceiver() || value_obj->IsTemplateInfo());
+  Utils::ApiCheck(!value_obj->IsJSReceiver() || value_obj->IsTemplateInfo(),
+                  "v8::Template::Set",
+                  "Invalid value, must be a primitive or a Template");
   if (value_obj->IsObjectTemplateInfo()) {
     templ->set_serial_number(0);
     if (templ->IsFunctionTemplateInfo()) {
@@ -1163,8 +1172,12 @@ void FunctionTemplate::SetPrototypeProviderTemplate(
   ENTER_V8_NO_SCRIPT_NO_EXCEPTION(i_isolate);
   i::Handle<i::FunctionTemplateInfo> result =
       Utils::OpenHandle(*prototype_provider);
-  CHECK(self->GetPrototypeTemplate().IsUndefined(i_isolate));
-  CHECK(self->GetParentTemplate().IsUndefined(i_isolate));
+  Utils::ApiCheck(self->GetPrototypeTemplate().IsUndefined(i_isolate),
+                  "v8::FunctionTemplate::SetPrototypeProviderTemplate",
+                  "Protoype must be undefiend");
+  Utils::ApiCheck(self->GetParentTemplate().IsUndefined(i_isolate),
+                  "v8::FunctionTemplate::SetPrototypeProviderTemplate",
+                  "Prototype provider must be empty");
   i::FunctionTemplateInfo::SetPrototypeProviderTemplate(i_isolate, self,
                                                         result);
 }
@@ -1180,7 +1193,9 @@ void FunctionTemplate::Inherit(v8::Local<FunctionTemplate> value) {
   EnsureNotInstantiated(info, "v8::FunctionTemplate::Inherit");
   i::Isolate* i_isolate = info->GetIsolate();
   ENTER_V8_NO_SCRIPT_NO_EXCEPTION(i_isolate);
-  CHECK(info->GetPrototypeProviderTemplate().IsUndefined(i_isolate));
+  Utils::ApiCheck(info->GetPrototypeProviderTemplate().IsUndefined(i_isolate),
+                  "v8::FunctionTemplate::Inherit",
+                  "Protoype provider must be empty");
   i::FunctionTemplateInfo::SetParentTemplate(i_isolate, info,
                                              Utils::OpenHandle(*value));
 }
@@ -2050,23 +2065,26 @@ int Module::GetModuleRequestsLength() const {
 }
 
 Local<String> Module::GetModuleRequest(int i) const {
-  CHECK_GE(i, 0);
+  Utils::ApiCheck(i >= 0, "v8::Module::GetModuleRequest",
+                  "index must be positive");
   i::Handle<i::Module> self = Utils::OpenHandle(this);
-  Utils::ApiCheck(self->IsSourceTextModule(), "Module::GetModuleRequest",
+  Utils::ApiCheck(self->IsSourceTextModule(), "v8::Module::GetModuleRequest",
                   "Expected SourceTextModule");
   i::Isolate* isolate = self->GetIsolate();
   ASSERT_NO_SCRIPT_NO_EXCEPTION(isolate);
   i::Handle<i::FixedArray> module_requests(
       i::Handle<i::SourceTextModule>::cast(self)->info().module_requests(),
       isolate);
-  CHECK_LT(i, module_requests->length());
+  Utils::ApiCheck(i < module_requests->length(), "v8::Module::GetModuleRequest",
+                  "index is out of bounds");
   i::Handle<i::ModuleRequest> module_request(
       i::ModuleRequest::cast(module_requests->get(i)), isolate);
   return ToApiHandle<String>(i::handle(module_request->specifier(), isolate));
 }
 
 Location Module::GetModuleRequestLocation(int i) const {
-  CHECK_GE(i, 0);
+  Utils::ApiCheck(i >= 0, "v8::Module::GetModuleRequest",
+                  "index must be positive");
   i::Handle<i::Module> self = Utils::OpenHandle(this);
   i::Isolate* isolate = self->GetIsolate();
   ASSERT_NO_SCRIPT_NO_EXCEPTION(isolate);
@@ -2077,7 +2095,8 @@ Location Module::GetModuleRequestLocation(int i) const {
   i::Handle<i::FixedArray> module_requests(
       i::Handle<i::SourceTextModule>::cast(self)->info().module_requests(),
       isolate);
-  CHECK_LT(i, module_requests->length());
+  Utils::ApiCheck(i < module_requests->length(), "v8::Module::GetModuleRequest",
+                  "index is out of bounds");
   i::Handle<i::ModuleRequest> module_request(
       i::ModuleRequest::cast(module_requests->get(i)), isolate);
   int position = module_request->position();
@@ -2205,8 +2224,8 @@ MaybeLocal<Value> Module::Evaluate(Local<Context> context) {
   i::TimerEventScope<i::TimerEventExecute> timer_scope(isolate);
 
   i::Handle<i::Module> self = Utils::OpenHandle(this);
-  // It's an API error to call Evaluate before Instantiate.
-  CHECK_GE(self->status(), i::Module::kInstantiated);
+  Utils::ApiCheck(self->status() >= i::Module::kInstantiated,
+                  "Module::Evaluate", "Expected instantiated module");
 
   Local<Value> result;
   has_pending_exception = !ToLocal(i::Module::Evaluate(isolate, self), &result);
@@ -2360,8 +2379,9 @@ MaybeLocal<Script> ScriptCompiler::Compile(Local<Context> context,
 MaybeLocal<Module> ScriptCompiler::CompileModule(
     Isolate* isolate, Source* source, CompileOptions options,
     NoCacheReason no_cache_reason) {
-  CHECK(options == kNoCompileOptions || options == kConsumeCodeCache);
-
+  Utils::ApiCheck(options == kNoCompileOptions || options == kConsumeCodeCache,
+                  "v8::ScriptCompiler::CompileModule",
+                  "Invalid CompileOptions");
   Utils::ApiCheck(source->GetResourceOptions().IsModule(),
                   "v8::ScriptCompiler::CompileModule",
                   "Invalid ScriptOrigin: is_module must be true");
@@ -2592,7 +2612,9 @@ ScriptCompiler::CachedData* ScriptCompiler::CreateCodeCacheForFunction(
   i::Handle<i::SharedFunctionInfo> shared(js_function->shared(),
                                           js_function->GetIsolate());
   ASSERT_NO_SCRIPT_NO_EXCEPTION(shared->GetIsolate());
-  CHECK(shared->is_wrapped());
+  Utils::ApiCheck(shared->is_wrapped(),
+                  "v8::ScriptCompiler::CreateCodeCacheForFunction",
+                  "Expected SharedFunctionInfo with wrapped source code.");
   return i::CodeSerializer::Serialize(shared);
 }
 
@@ -2822,6 +2844,7 @@ int Message::GetStartColumn() const {
 }
 
 int Message::GetWasmFunctionIndex() const {
+#if V8_ENABLE_WEBASSEMBLY
   auto self = Utils::OpenHandle(this);
   i::Isolate* isolate = self->GetIsolate();
   ENTER_V8_NO_SCRIPT_NO_EXCEPTION(isolate);
@@ -2839,6 +2862,9 @@ int Message::GetWasmFunctionIndex() const {
   auto debug_script = ToApiHandle<debug::Script>(script);
   return Local<debug::WasmScript>::Cast(debug_script)
       ->GetContainingFunction(start_position);
+#else
+  return Message::kNoWasmFunctionIndexInfo;
+#endif  // V8_ENABLE_WEBASSEMBLY
 }
 
 Maybe<int> Message::GetStartColumn(Local<Context> context) const {
@@ -3340,8 +3366,13 @@ VALUE_IS_SPECIFIC_TYPE(SymbolObject, SymbolWrapper)
 VALUE_IS_SPECIFIC_TYPE(Date, JSDate)
 VALUE_IS_SPECIFIC_TYPE(Map, JSMap)
 VALUE_IS_SPECIFIC_TYPE(Set, JSSet)
+#if V8_ENABLE_WEBASSEMBLY
 VALUE_IS_SPECIFIC_TYPE(WasmMemoryObject, WasmMemoryObject)
 VALUE_IS_SPECIFIC_TYPE(WasmModuleObject, WasmModuleObject)
+#else
+bool Value::IsWasmMemoryObject() const { return false; }
+bool Value::IsWasmModuleObject() const { return false; }
+#endif  // V8_ENABLE_WEBASSEMBLY
 VALUE_IS_SPECIFIC_TYPE(WeakMap, JSWeakMap)
 VALUE_IS_SPECIFIC_TYPE(WeakSet, JSWeakSet)
 
@@ -3700,7 +3731,8 @@ std::unique_ptr<v8::BackingStore> v8::BackingStore::Reallocate(
     size_t byte_length) {
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
   LOG_API(i_isolate, ArrayBuffer, BackingStore_Reallocate);
-  CHECK_LE(byte_length, i::JSArrayBuffer::kMaxByteLength);
+  Utils::ApiCheck(byte_length <= i::JSArrayBuffer::kMaxByteLength,
+                  "v8::BackingStore::Reallocate", "byte_lenght is too large");
   ENTER_V8_NO_SCRIPT_NO_EXCEPTION(i_isolate);
   i::BackingStore* i_backing_store =
       reinterpret_cast<i::BackingStore*>(backing_store.get());
@@ -4705,15 +4737,40 @@ Local<v8::Object> v8::Object::Clone() {
   auto self = i::Handle<i::JSObject>::cast(Utils::OpenHandle(this));
   auto isolate = self->GetIsolate();
   ENTER_V8_NO_SCRIPT_NO_EXCEPTION(isolate);
-  auto result = isolate->factory()->CopyJSObject(self);
-  CHECK(!result.is_null());
+  i::Handle<i::JSObject> result = isolate->factory()->CopyJSObject(self);
   return Utils::ToLocal(result);
 }
 
+namespace {
+Local<v8::Context> CreationContextImpl(i::Handle<i::JSReceiver> self) {
+  i::Handle<i::Context> context;
+  if (self->GetCreationContext().ToHandle(&context)) {
+    return Utils::ToLocal(context);
+  }
+
+  return Local<v8::Context>();
+}
+}  // namespace
+
 Local<v8::Context> v8::Object::CreationContext() {
   auto self = Utils::OpenHandle(this);
-  i::Handle<i::Context> context = self->GetCreationContext();
-  return Utils::ToLocal(context);
+  return CreationContextImpl(self);
+}
+
+Local<v8::Context> v8::Object::CreationContext(
+    const PersistentBase<Object>& object) {
+  auto self = Utils::OpenHandle(object.val_);
+  return CreationContextImpl(self);
+}
+
+MaybeLocal<v8::Context> v8::Object::GetCreationContext() {
+  auto self = Utils::OpenHandle(this);
+  i::Handle<i::Context> context;
+  if (self->GetCreationContext().ToHandle(&context)) {
+    return Utils::ToLocal(context);
+  }
+
+  return MaybeLocal<v8::Context>();
 }
 
 int v8::Object::GetIdentityHash() {
@@ -5351,6 +5408,11 @@ int String::Write(Isolate* isolate, uint16_t* buffer, int start, int length,
                      start, length, options);
 }
 
+bool v8::String::IsExternal() const {
+  i::Handle<i::String> str = Utils::OpenHandle(this);
+  return i::StringShape(*str).IsExternal();
+}
+
 bool v8::String::IsExternalTwoByte() const {
   i::Handle<i::String> str = Utils::OpenHandle(this);
   return i::StringShape(*str).IsExternalTwoByte();
@@ -5425,6 +5487,24 @@ String::ExternalStringResource* String::GetExternalStringResourceSlow() const {
     return reinterpret_cast<String::ExternalStringResource*>(value);
   }
   return nullptr;
+}
+
+void String::ExternalStringResource::UpdateDataCache() {
+  DCHECK(IsCacheable());
+  cached_data_ = data();
+}
+
+void String::ExternalStringResource::CheckCachedDataInvariants() const {
+  DCHECK(IsCacheable() && cached_data_ != nullptr);
+}
+
+void String::ExternalOneByteStringResource::UpdateDataCache() {
+  DCHECK(IsCacheable());
+  cached_data_ = data();
+}
+
+void String::ExternalOneByteStringResource::CheckCachedDataInvariants() const {
+  DCHECK(IsCacheable() && cached_data_ != nullptr);
 }
 
 String::ExternalStringResourceBase* String::GetExternalStringResourceBaseSlow(
@@ -6021,7 +6101,8 @@ v8::Isolate* Context::GetIsolate() {
 
 v8::MicrotaskQueue* Context::GetMicrotaskQueue() {
   i::Handle<i::Context> env = Utils::OpenHandle(this);
-  CHECK(env->IsNativeContext());
+  Utils::ApiCheck(env->IsNativeContext(), "v8::Context::GetMicrotaskQueue",
+                  "Must be calld on a native context");
   return i::Handle<i::NativeContext>::cast(env)->microtask_queue();
 }
 
@@ -6752,8 +6833,12 @@ MaybeLocal<v8::RegExp> v8::RegExp::New(Local<Context> context,
 MaybeLocal<v8::RegExp> v8::RegExp::NewWithBacktrackLimit(
     Local<Context> context, Local<String> pattern, Flags flags,
     uint32_t backtrack_limit) {
-  CHECK(i::Smi::IsValid(backtrack_limit));
-  CHECK_NE(backtrack_limit, i::JSRegExp::kNoBacktrackLimit);
+  Utils::ApiCheck(i::Smi::IsValid(backtrack_limit),
+                  "v8::RegExp::NewWithBacktrackLimit",
+                  "backtrack_limit is too large or too small.");
+  Utils::ApiCheck(backtrack_limit != i::JSRegExp::kNoBacktrackLimit,
+                  "v8::RegExp::NewWithBacktrackLimit",
+                  "Must set backtrack_limit");
   PREPARE_FOR_EXECUTION(context, RegExp, New, RegExp);
   Local<v8::RegExp> result;
   has_pending_exception = !ToLocal<RegExp>(
@@ -7263,6 +7348,7 @@ CompiledWasmModule::CompiledWasmModule(
 }
 
 OwnedBuffer CompiledWasmModule::Serialize() {
+#if V8_ENABLE_WEBASSEMBLY
   TRACE_EVENT0("v8.wasm", "wasm.SerializeModule");
   i::wasm::WasmSerializer wasm_serializer(native_module_.get());
   size_t buffer_size = wasm_serializer.GetSerializedNativeModuleSize();
@@ -7270,20 +7356,32 @@ OwnedBuffer CompiledWasmModule::Serialize() {
   if (!wasm_serializer.SerializeNativeModule({buffer.get(), buffer_size}))
     return {};
   return {std::move(buffer), buffer_size};
+#else
+  UNREACHABLE();
+#endif  // V8_ENABLE_WEBASSEMBLY
 }
 
 MemorySpan<const uint8_t> CompiledWasmModule::GetWireBytesRef() {
+#if V8_ENABLE_WEBASSEMBLY
   i::Vector<const uint8_t> bytes_vec = native_module_->wire_bytes();
   return {bytes_vec.begin(), bytes_vec.size()};
+#else
+  UNREACHABLE();
+#endif  // V8_ENABLE_WEBASSEMBLY
 }
 
 Local<ArrayBuffer> v8::WasmMemoryObject::Buffer() {
+#if V8_ENABLE_WEBASSEMBLY
   i::Handle<i::WasmMemoryObject> obj = Utils::OpenHandle(this);
   i::Handle<i::JSArrayBuffer> buffer(obj->array_buffer(), obj->GetIsolate());
   return Utils::ToLocal(buffer);
+#else
+  UNREACHABLE();
+#endif  // V8_ENABLE_WEBASSEMBLY
 }
 
 CompiledWasmModule WasmModuleObject::GetCompiledModule() {
+#if V8_ENABLE_WEBASSEMBLY
   i::Handle<i::WasmModuleObject> obj =
       i::Handle<i::WasmModuleObject>::cast(Utils::OpenHandle(this));
   auto source_url = i::String::cast(obj->script().source_url());
@@ -7293,10 +7391,14 @@ CompiledWasmModule WasmModuleObject::GetCompiledModule() {
   i::Handle<i::String> url(source_url, obj->GetIsolate());
   return CompiledWasmModule(std::move(obj->shared_native_module()),
                             cstring.get(), length);
+#else
+  UNREACHABLE();
+#endif  // V8_ENABLE_WEBASSEMBLY
 }
 
 MaybeLocal<WasmModuleObject> WasmModuleObject::FromCompiledModule(
     Isolate* isolate, const CompiledWasmModule& compiled_module) {
+#if V8_ENABLE_WEBASSEMBLY
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
   i::Handle<i::WasmModuleObject> module_object =
       i_isolate->wasm_engine()->ImportNativeModule(
@@ -7304,6 +7406,9 @@ MaybeLocal<WasmModuleObject> WasmModuleObject::FromCompiledModule(
           i::VectorOf(compiled_module.source_url()));
   return Local<WasmModuleObject>::Cast(
       Utils::ToLocal(i::Handle<i::JSObject>::cast(module_object)));
+#else
+  UNREACHABLE();
+#endif  // V8_ENABLE_WEBASSEMBLY
 }
 
 WasmModuleObjectBuilderStreaming::WasmModuleObjectBuilderStreaming(
@@ -8248,12 +8353,18 @@ void Isolate::RequestInterrupt(InterruptCallback callback, void* data) {
 }
 
 bool Isolate::HasPendingBackgroundTasks() {
+#if V8_ENABLE_WEBASSEMBLY
   i::Isolate* isolate = reinterpret_cast<i::Isolate*>(this);
   return isolate->wasm_engine()->HasRunningCompileJob(isolate);
+#else
+  return false;
+#endif  // V8_ENABLE_WEBASSEMBLY
 }
 
 void Isolate::RequestGarbageCollectionForTesting(GarbageCollectionType type) {
-  CHECK(i::FLAG_expose_gc);
+  Utils::ApiCheck(i::FLAG_expose_gc,
+                  "v8::Isolate::RequestGarbageCollectionForTesting",
+                  "Must use --expose-gc");
   if (type == kMinorGarbageCollection) {
     reinterpret_cast<i::Isolate*>(this)->heap()->CollectGarbage(
         i::NEW_SPACE, i::GarbageCollectionReason::kTesting,
@@ -8305,6 +8416,12 @@ void Isolate::Initialize(Isolate* isolate,
     code_event_handler = i::GDBJITInterface::EventHandler;
   }
 #endif  // ENABLE_GDB_JIT_INTERFACE
+#if defined(V8_TARGET_OS_WIN) && defined(V8_ENABLE_SYSTEM_INSTRUMENTATION)
+  if (code_event_handler == nullptr) {
+    code_event_handler = i::ETWJITInterface::EventHandler;
+  }
+#endif  // defined(V8_TARGET_OS_WIN)
+
   if (code_event_handler) {
     i_isolate->InitializeLoggingAndCounters();
     i_isolate->logger()->SetCodeEventHandler(kJitCodeEventDefault,
@@ -8562,16 +8679,21 @@ void Isolate::GetHeapStatistics(HeapStatistics* heap_statistics) {
   // now we just add the values, thereby over-approximating the peak slightly.
   heap_statistics->malloced_memory_ =
       isolate->allocator()->GetCurrentMemoryUsage() +
-      isolate->wasm_engine()->allocator()->GetCurrentMemoryUsage() +
       isolate->string_table()->GetCurrentMemoryUsage();
   heap_statistics->external_memory_ = isolate->heap()->backing_store_bytes();
   heap_statistics->peak_malloced_memory_ =
-      isolate->allocator()->GetMaxMemoryUsage() +
-      isolate->wasm_engine()->allocator()->GetMaxMemoryUsage();
+      isolate->allocator()->GetMaxMemoryUsage();
   heap_statistics->number_of_native_contexts_ = heap->NumberOfNativeContexts();
   heap_statistics->number_of_detached_contexts_ =
       heap->NumberOfDetachedContexts();
   heap_statistics->does_zap_garbage_ = heap->ShouldZapGarbage();
+
+#if V8_ENABLE_WEBASSEMBLY
+  heap_statistics->malloced_memory_ +=
+      isolate->wasm_engine()->allocator()->GetCurrentMemoryUsage();
+  heap_statistics->peak_malloced_memory_ +=
+      isolate->wasm_engine()->allocator()->GetMaxMemoryUsage();
+#endif  // V8_ENABLE_WEBASSEMBLY
 }
 
 size_t Isolate::NumberOfHeapSpaces() {
@@ -8876,6 +8998,7 @@ void Isolate::LowMemoryNotification() {
 
 int Isolate::ContextDisposedNotification(bool dependant_context) {
   i::Isolate* isolate = reinterpret_cast<i::Isolate*>(this);
+#if V8_ENABLE_WEBASSEMBLY
   if (!dependant_context) {
     if (!isolate->context().is_null()) {
       // We left the current context, we can abort all WebAssembly compilations
@@ -8886,6 +9009,7 @@ int Isolate::ContextDisposedNotification(bool dependant_context) {
           isolate->native_context());
     }
   }
+#endif  // V8_ENABLE_WEBASSEMBLY
   // TODO(ahaas): move other non-heap activity out of the heap call.
   return isolate->heap()->NotifyContextDisposed(dependant_context);
 }
@@ -9025,9 +9149,6 @@ CALLBACK_SETTER(WasmInstanceCallback, ExtensionCallback, wasm_instance_callback)
 
 CALLBACK_SETTER(WasmStreamingCallback, WasmStreamingCallback,
                 wasm_streaming_callback)
-
-CALLBACK_SETTER(WasmThreadsEnabledCallback, WasmThreadsEnabledCallback,
-                wasm_threads_enabled_callback)
 
 CALLBACK_SETTER(WasmLoadSourceMapCallback, WasmLoadSourceMapCallback,
                 wasm_load_source_map_callback)
@@ -9534,10 +9655,11 @@ void CpuProfiler::SetUsePreciseSampling(bool use_precise_sampling) {
       use_precise_sampling);
 }
 
-CpuProfilingStatus CpuProfiler::StartProfiling(Local<String> title,
-                                               CpuProfilingOptions options) {
+CpuProfilingStatus CpuProfiler::StartProfiling(
+    Local<String> title, CpuProfilingOptions options,
+    std::unique_ptr<DiscardedSamplesDelegate> delegate) {
   return reinterpret_cast<i::CpuProfiler*>(this)->StartProfiling(
-      *Utils::OpenHandle(*title), options);
+      *Utils::OpenHandle(*title), options, std::move(delegate));
 }
 
 CpuProfilingStatus CpuProfiler::StartProfiling(Local<String> title,
@@ -9878,7 +10000,9 @@ void EmbedderHeapTracer::FinalizeTracing() {
 void EmbedderHeapTracer::GarbageCollectionForTesting(
     EmbedderStackState stack_state) {
   CHECK(isolate_);
-  CHECK(i::FLAG_expose_gc);
+  Utils::ApiCheck(i::FLAG_expose_gc,
+                  "v8::EmbedderHeapTracer::GarbageCollectionForTesting",
+                  "Must use --expose-gc");
   i::Heap* const heap = reinterpret_cast<i::Isolate*>(isolate_)->heap();
   heap->SetEmbedderStackStateForNextFinalization(stack_state);
   heap->PreciseCollectAllGarbage(i::Heap::kNoGCFlags,
@@ -9939,32 +10063,25 @@ void EmbedderHeapTracer::ResetHandleInNonTracingGC(
   UNREACHABLE();
 }
 
-const void* CTypeInfo::GetWrapperInfo() const {
-  DCHECK(payload_ & kWrapperTypeInfoMask);
-  return reinterpret_cast<const void*>(payload_ & kWrapperTypeInfoMask);
-}
-
 CFunction::CFunction(const void* address, const CFunctionInfo* type_info)
     : address_(address), type_info_(type_info) {
   CHECK_NOT_NULL(address_);
   CHECK_NOT_NULL(type_info_);
-  for (unsigned int i = 0; i < type_info_->ArgumentCount(); ++i) {
-    if (type_info_->ArgumentInfo(i).IsArray()) {
-      // Array args require an integer passed for their length
-      // as the next argument.
-      DCHECK_LT(i + 1, type_info_->ArgumentCount());
-      switch (type_info_->ArgumentInfo(i + 1).GetType()) {
-        case CTypeInfo::Type::kInt32:
-        case CTypeInfo::Type::kUint32:
-        case CTypeInfo::Type::kInt64:
-        case CTypeInfo::Type::kUint64:
-          break;
-        default:
-          UNREACHABLE();
-          break;
-      }
+}
+
+CFunctionInfo::CFunctionInfo(const CTypeInfo& return_info,
+                             unsigned int arg_count, const CTypeInfo* arg_info)
+    : return_info_(return_info), arg_count_(arg_count), arg_info_(arg_info) {
+  if (arg_count_ > 0) {
+    for (unsigned int i = 0; i < arg_count_ - 1; ++i) {
+      DCHECK(arg_info_[i].GetType() != CTypeInfo::kCallbackOptionsType);
     }
   }
+}
+
+const CTypeInfo& CFunctionInfo::ArgumentInfo(unsigned int index) const {
+  DCHECK_LT(index, ArgumentCount());
+  return arg_info_[index];
 }
 
 RegisterState::RegisterState()

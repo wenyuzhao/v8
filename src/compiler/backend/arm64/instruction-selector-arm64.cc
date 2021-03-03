@@ -9,6 +9,7 @@
 #include "src/common/globals.h"
 #include "src/compiler/backend/instruction-codes.h"
 #include "src/compiler/backend/instruction-selector-impl.h"
+#include "src/compiler/backend/instruction-selector.h"
 #include "src/compiler/machine-operator.h"
 #include "src/compiler/node-matchers.h"
 #include "src/compiler/node-properties.h"
@@ -210,14 +211,6 @@ void VisitRRIR(InstructionSelector* selector, ArchOpcode opcode, Node* node) {
   selector->Emit(opcode, g.DefineAsRegister(node),
                  g.UseRegister(node->InputAt(0)), g.UseImmediate(imm),
                  g.UseUniqueRegister(node->InputAt(1)));
-}
-
-void VisitRRRR(InstructionSelector* selector, InstructionCode opcode,
-               Node* node) {
-  Arm64OperandGenerator g(selector);
-  selector->Emit(
-      opcode, g.DefineAsRegister(node), g.UseRegister(node->InputAt(0)),
-      g.UseRegister(node->InputAt(1)), g.UseRegister(node->InputAt(2)));
 }
 
 struct ExtendingLoadMatcher {
@@ -566,7 +559,7 @@ int32_t LeftShiftForReducedMultiply(Matcher* m) {
 
 void InstructionSelector::VisitStackSlot(Node* node) {
   StackSlotRepresentation rep = StackSlotRepresentationOf(node->op());
-  int slot = frame_->AllocateSpillSlot(rep.size(), rep.alignment());
+  int slot = frame_->AllocateSpillSlot(rep.size());
   OperandGenerator g(this);
 
   Emit(kArchStackSlot, g.DefineAsRegister(node),
@@ -3426,6 +3419,7 @@ void InstructionSelector::VisitInt64AbsWithOverflow(Node* node) {
   V(F32x4RecipApprox, kArm64F32x4RecipApprox)               \
   V(F32x4RecipSqrtApprox, kArm64F32x4RecipSqrtApprox)       \
   V(F32x4DemoteF64x2Zero, kArm64F32x4DemoteF64x2Zero)       \
+  V(I64x2Abs, kArm64I64x2Abs)                               \
   V(I64x2Neg, kArm64I64x2Neg)                               \
   V(I64x2BitMask, kArm64I64x2BitMask)                       \
   V(I32x4SConvertF32x4, kArm64I32x4SConvertF32x4)           \
@@ -3476,7 +3470,6 @@ void InstructionSelector::VisitInt64AbsWithOverflow(Node* node) {
   V(F32x4Add, kArm64F32x4Add)                           \
   V(F32x4AddHoriz, kArm64F32x4AddHoriz)                 \
   V(F32x4Sub, kArm64F32x4Sub)                           \
-  V(F32x4Mul, kArm64F32x4Mul)                           \
   V(F32x4Div, kArm64F32x4Div)                           \
   V(F32x4Min, kArm64F32x4Min)                           \
   V(F32x4Max, kArm64F32x4Max)                           \
@@ -3523,10 +3516,11 @@ void InstructionSelector::VisitInt64AbsWithOverflow(Node* node) {
   V(I16x8GeU, kArm64I16x8GeU)                           \
   V(I16x8RoundingAverageU, kArm64I16x8RoundingAverageU) \
   V(I16x8Q15MulRSatS, kArm64I16x8Q15MulRSatS)           \
+  V(I8x16Add, kArm64I8x16Add)                           \
+  V(I8x16Sub, kArm64I8x16Sub)                           \
   V(I8x16SConvertI16x8, kArm64I8x16SConvertI16x8)       \
   V(I8x16AddSatS, kArm64I8x16AddSatS)                   \
   V(I8x16SubSatS, kArm64I8x16SubSatS)                   \
-  V(I8x16Mul, kArm64I8x16Mul)                           \
   V(I8x16MinS, kArm64I8x16MinS)                         \
   V(I8x16MaxS, kArm64I8x16MaxS)                         \
   V(I8x16Eq, kArm64I8x16Eq)                             \
@@ -3622,17 +3616,51 @@ SIMD_BINOP_LIST(SIMD_VISIT_BINOP)
 #undef SIMD_VISIT_BINOP
 #undef SIMD_BINOP_LIST
 
-#define VISIT_SIGN_SELECT(NAME, SIZE)                 \
-  void InstructionSelector::Visit##NAME(Node* node) { \
-    InstructionCode opcode = kArm64SignSelect;        \
-    opcode |= LaneSizeField::encode(SIZE);            \
-    VisitRRRR(this, opcode, node);                    \
+using ShuffleMatcher =
+    ValueMatcher<S128ImmediateParameter, IrOpcode::kI8x16Shuffle>;
+using BinopWithShuffleMatcher = BinopMatcher<ShuffleMatcher, ShuffleMatcher>;
+
+void InstructionSelector::VisitF32x4Mul(Node* node) {
+  // Pattern match:
+  //   f32x4.mul(x, shuffle(x, y, indices)) => f32x4.mul(x, y, laneidx)
+  //   where shuffle(x, y, indices) = dup(x[laneidx]) or dup(y[laneidx])
+  // f32x4.mul is commutative, so use BinopMatcher.
+  BinopWithShuffleMatcher m = BinopWithShuffleMatcher(node);
+  ShuffleMatcher left = m.left();
+  ShuffleMatcher right = m.right();
+
+  Node* input = nullptr;
+  Node* dup_node = nullptr;
+
+  int index = 0;
+  // TODO(zhin): We can canonicalize first to avoid checking index < 4.
+  // e.g. shuffle(x, y, [16, 17, 18, 19...]) => shuffle(y, y, [0, 1, 2, 3]...).
+  // But doing so can mutate the inputs of the shuffle node without updating the
+  // shuffle immediates themselves. Fix that before we canonicalize here.
+  // We don't want CanCover here because in many use cases, the shuffle is
+  // generated early in the function, but the f32x4.mul happens in a loop, which
+  // won't cover the shuffle since they are different basic blocks.
+  if (left.HasResolvedValue() && wasm::SimdShuffle::TryMatchSplat<4>(
+                                     left.ResolvedValue().data(), &index)) {
+    dup_node = left.node()->InputAt(index < 4 ? 0 : 1);
+    input = right.node();
+  } else if (right.HasResolvedValue() &&
+             wasm::SimdShuffle::TryMatchSplat<4>(right.ResolvedValue().data(),
+                                                 &index)) {
+    dup_node = right.node()->InputAt(index < 4 ? 0 : 1);
+    input = left.node();
   }
 
-VISIT_SIGN_SELECT(I8x16SignSelect, 8)
-VISIT_SIGN_SELECT(I16x8SignSelect, 16)
-VISIT_SIGN_SELECT(I32x4SignSelect, 32)
-VISIT_SIGN_SELECT(I64x2SignSelect, 64)
+  if (dup_node == nullptr) {
+    return VisitRRR(this, kArm64F32x4Mul, node);
+  }
+
+  // Canonicalization would get rid of this too.
+  index %= 4;
+  Arm64OperandGenerator g(this);
+  Emit(kArm64F32x4MulElement, g.DefineAsRegister(node), g.UseRegister(input),
+       g.UseRegister(dup_node), g.UseImmediate(index));
+}
 
 void InstructionSelector::VisitI64x2Mul(Node* node) {
   Arm64OperandGenerator g(this);
@@ -3665,7 +3693,6 @@ void InstructionSelector::VisitI64x2Mul(Node* node) {
 
 VISIT_SIMD_ADD(I32x4)
 VISIT_SIMD_ADD(I16x8)
-VISIT_SIMD_ADD(I8x16)
 #undef VISIT_SIMD_ADD
 
 #define VISIT_SIMD_SUB(Type)                                                  \
@@ -3685,7 +3712,6 @@ VISIT_SIMD_ADD(I8x16)
 
 VISIT_SIMD_SUB(I32x4)
 VISIT_SIMD_SUB(I16x8)
-VISIT_SIMD_SUB(I8x16)
 #undef VISIT_SIMD_SUB
 
 void InstructionSelector::VisitS128Select(Node* node) {
@@ -3965,24 +3991,6 @@ void InstructionSelector::VisitI8x16Popcnt(Node* node) {
   InstructionCode code = kArm64Cnt;
   code |= LaneSizeField::encode(8);
   VisitRR(this, code, node);
-}
-
-void InstructionSelector::VisitI32x4WidenI8x16S(Node* node) {
-  InstructionCode opcode = kArm64I32x4WidenI8x16S;
-  uint8_t laneidx = OpParameter<uint8_t>(node->op());
-  DCHECK_GT(4, laneidx);
-  opcode |= LaneSizeField::encode(laneidx);
-  Arm64OperandGenerator g(this);
-  Emit(opcode, g.DefineAsRegister(node), g.UseRegister(node->InputAt(0)));
-}
-
-void InstructionSelector::VisitI32x4WidenI8x16U(Node* node) {
-  InstructionCode opcode = kArm64I32x4WidenI8x16U;
-  uint8_t laneidx = OpParameter<uint8_t>(node->op());
-  DCHECK_GT(4, laneidx);
-  opcode |= LaneSizeField::encode(laneidx);
-  Arm64OperandGenerator g(this);
-  Emit(opcode, g.DefineAsRegister(node), g.UseRegister(node->InputAt(0)));
 }
 
 // static

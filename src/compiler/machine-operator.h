@@ -183,6 +183,7 @@ class S128ImmediateParameter {
   explicit S128ImmediateParameter(const uint8_t immediate[16]) {
     std::copy(immediate, immediate + 16, immediate_.begin());
   }
+  S128ImmediateParameter() = default;
   const std::array<uint8_t, 16>& immediate() const { return immediate_; }
   const uint8_t* data() const { return immediate_.data(); }
   uint8_t operator[](int x) const { return immediate_[x]; }
@@ -688,7 +689,6 @@ class V8_EXPORT_PRIVATE MachineOperatorBuilder final
   const Operator* I64x2ExtMulHighI32x4S();
   const Operator* I64x2ExtMulLowI32x4U();
   const Operator* I64x2ExtMulHighI32x4U();
-  const Operator* I64x2SignSelect();
 
   const Operator* I32x4Splat();
   const Operator* I32x4ExtractLane(int32_t);
@@ -725,13 +725,10 @@ class V8_EXPORT_PRIVATE MachineOperatorBuilder final
   const Operator* I32x4ExtMulHighI16x8S();
   const Operator* I32x4ExtMulLowI16x8U();
   const Operator* I32x4ExtMulHighI16x8U();
-  const Operator* I32x4SignSelect();
   const Operator* I32x4ExtAddPairwiseI16x8S();
   const Operator* I32x4ExtAddPairwiseI16x8U();
   const Operator* I32x4TruncSatF64x2SZero();
   const Operator* I32x4TruncSatF64x2UZero();
-  const Operator* I32x4WidenI8x16S(uint8_t laneidx);
-  const Operator* I32x4WidenI8x16U(uint8_t laneidx);
 
   const Operator* I16x8Splat();
   const Operator* I16x8ExtractLaneU(int32_t);
@@ -774,7 +771,6 @@ class V8_EXPORT_PRIVATE MachineOperatorBuilder final
   const Operator* I16x8ExtMulHighI8x16S();
   const Operator* I16x8ExtMulLowI8x16U();
   const Operator* I16x8ExtMulHighI8x16U();
-  const Operator* I16x8SignSelect();
   const Operator* I16x8ExtAddPairwiseI8x16S();
   const Operator* I16x8ExtAddPairwiseI8x16U();
 
@@ -790,7 +786,6 @@ class V8_EXPORT_PRIVATE MachineOperatorBuilder final
   const Operator* I8x16AddSatS();
   const Operator* I8x16Sub();
   const Operator* I8x16SubSatS();
-  const Operator* I8x16Mul();
   const Operator* I8x16MinS();
   const Operator* I8x16MaxS();
   const Operator* I8x16Eq();
@@ -810,7 +805,6 @@ class V8_EXPORT_PRIVATE MachineOperatorBuilder final
   const Operator* I8x16Popcnt();
   const Operator* I8x16Abs();
   const Operator* I8x16BitMask();
-  const Operator* I8x16SignSelect();
 
   const Operator* S128Load();
   const Operator* S128Store();

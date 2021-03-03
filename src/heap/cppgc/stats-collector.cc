@@ -17,8 +17,10 @@ namespace internal {
 constexpr size_t StatsCollector::kAllocationThresholdBytes;
 
 StatsCollector::StatsCollector(
-    std::unique_ptr<MetricRecorder> histogram_recorder)
-    : metric_recorder_(std::move(histogram_recorder)) {}
+    std::unique_ptr<MetricRecorder> histogram_recorder, Platform* platform)
+    : metric_recorder_(std::move(histogram_recorder)), platform_(platform) {
+  USE(platform_);
+}
 
 void StatsCollector::RegisterObserver(AllocationObserver* observer) {
   DCHECK_EQ(allocation_observers_.end(),
@@ -234,10 +236,16 @@ size_t StatsCollector::allocated_object_size() const {
 
 void StatsCollector::NotifyAllocatedMemory(int64_t size) {
   memory_allocated_bytes_ += size;
+  ForAllAllocationObservers([size](AllocationObserver* observer) {
+    observer->AllocatedSizeIncreased(static_cast<size_t>(size));
+  });
 }
 
 void StatsCollector::NotifyFreedMemory(int64_t size) {
   memory_freed_bytes_since_end_of_marking_ += size;
+  ForAllAllocationObservers([size](AllocationObserver* observer) {
+    observer->AllocatedSizeDecreased(static_cast<size_t>(size));
+  });
 }
 
 void StatsCollector::RecordHistogramSample(ScopeId scope_id_,

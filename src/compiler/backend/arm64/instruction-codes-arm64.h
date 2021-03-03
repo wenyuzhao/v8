@@ -215,6 +215,7 @@ namespace compiler {
   V(Arm64F32x4AddHoriz)                     \
   V(Arm64F32x4Sub)                          \
   V(Arm64F32x4Mul)                          \
+  V(Arm64F32x4MulElement)                   \
   V(Arm64F32x4Div)                          \
   V(Arm64F32x4Min)                          \
   V(Arm64F32x4Max)                          \
@@ -230,6 +231,7 @@ namespace compiler {
   V(Arm64I64x2Splat)                        \
   V(Arm64I64x2ExtractLane)                  \
   V(Arm64I64x2ReplaceLane)                  \
+  V(Arm64I64x2Abs)                          \
   V(Arm64I64x2Neg)                          \
   V(Arm64I64x2Shl)                          \
   V(Arm64I64x2ShrS)                         \
@@ -272,8 +274,6 @@ namespace compiler {
   V(Arm64I32x4DotI16x8S)                    \
   V(Arm64I32x4TruncSatF64x2SZero)           \
   V(Arm64I32x4TruncSatF64x2UZero)           \
-  V(Arm64I32x4WidenI8x16S)                  \
-  V(Arm64I32x4WidenI8x16U)                  \
   V(Arm64I16x8Splat)                        \
   V(Arm64I16x8ExtractLaneU)                 \
   V(Arm64I16x8ExtractLaneS)                 \
@@ -320,7 +320,6 @@ namespace compiler {
   V(Arm64I8x16AddSatS)                      \
   V(Arm64I8x16Sub)                          \
   V(Arm64I8x16SubSatS)                      \
-  V(Arm64I8x16Mul)                          \
   V(Arm64I8x16Mla)                          \
   V(Arm64I8x16Mls)                          \
   V(Arm64I8x16MinS)                         \
@@ -340,7 +339,6 @@ namespace compiler {
   V(Arm64I8x16RoundingAverageU)             \
   V(Arm64I8x16Abs)                          \
   V(Arm64I8x16BitMask)                      \
-  V(Arm64SignSelect)                        \
   V(Arm64S128Const)                         \
   V(Arm64S128Zero)                          \
   V(Arm64S128Dup)                           \

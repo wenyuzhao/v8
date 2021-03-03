@@ -66,12 +66,6 @@ class Deoptimizer : public Malloced {
   // instead of the function code (e.g. OSR code not installed on function).
   static void DeoptimizeFunction(JSFunction function, Code code = Code());
 
-  // From Baseline to Ignition.
-  // TODO(v8:11429): Consider moving this to the debugger, since it's only for
-  // debug.
-  static void DeoptimizeBaseline(SharedFunctionInfo shared);
-  static void DeoptimizeAllBaseline(Isolate* isolate);
-
   // Deoptimize all code in the given isolate.
   V8_EXPORT_PRIVATE static void DeoptimizeAll(Isolate* isolate);
 
@@ -160,7 +154,7 @@ class Deoptimizer : public Malloced {
   void DeleteFrameDescriptions();
 
   void DoComputeOutputFrames();
-  void DoComputeInterpretedFrame(TranslatedFrame* translated_frame,
+  void DoComputeUnoptimizedFrame(TranslatedFrame* translated_frame,
                                  int frame_index, bool goto_catch_handler);
   void DoComputeArgumentsAdaptorFrame(TranslatedFrame* translated_frame,
                                       int frame_index);
@@ -170,8 +164,8 @@ class Deoptimizer : public Malloced {
   static Builtins::Name TrampolineForBuiltinContinuation(
       BuiltinContinuationMode mode, bool must_handle_result);
 
-  TranslatedValue TranslatedValueForWasmReturnType(
-      base::Optional<wasm::ValueType::Kind> wasm_call_return_type);
+  TranslatedValue TranslatedValueForWasmReturnKind(
+      base::Optional<wasm::ValueKind> wasm_call_return_kind);
 
   void DoComputeBuiltinContinuation(TranslatedFrame* translated_frame,
                                     int frame_index,

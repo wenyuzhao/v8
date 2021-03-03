@@ -10,6 +10,7 @@
 #include "include/cppgc/platform.h"
 #include "include/v8-platform.h"
 #include "include/v8.h"
+#include "src/base/logging.h"
 #include "src/base/macros.h"
 #include "src/base/platform/time.h"
 #include "src/execution/isolate.h"
@@ -64,6 +65,15 @@ cppgc::HeapStatistics CppHeap::CollectStatistics(
       detail_level);
 }
 
+void CppHeap::EnableDetachedGarbageCollectionsForTesting() {
+  return internal::CppHeap::From(this)
+      ->EnableDetachedGarbageCollectionsForTesting();
+}
+
+void CppHeap::CollectGarbageForTesting(cppgc::EmbedderStackState stack_state) {
+  return internal::CppHeap::From(this)->CollectGarbageForTesting(stack_state);
+}
+
 void JSHeapConsistency::DijkstraMarkingBarrierSlow(
     cppgc::HeapHandle& heap_handle, const TracedReferenceBase& ref) {
   auto& heap_base = cppgc::internal::HeapBase::From(heap_handle);
@@ -96,6 +106,10 @@ class CppgcPlatformAdapter final : public cppgc::Platform {
   }
 
   std::shared_ptr<TaskRunner> GetForegroundTaskRunner() final {
+    // If no Isolate has been set, there's no task runner to leverage for
+    // foreground tasks.
+    if (!isolate_) return nullptr;
+
     return platform_->GetForegroundTaskRunner(isolate_);
   }
 
@@ -144,7 +158,7 @@ UnifiedHeapConcurrentMarker::CreateConcurrentMarkingVisitor(
 
 class UnifiedHeapMarker final : public cppgc::internal::MarkerBase {
  public:
-  UnifiedHeapMarker(Key, Heap& v8_heap, cppgc::internal::HeapBase& cpp_heap,
+  UnifiedHeapMarker(Key, Heap* v8_heap, cppgc::internal::HeapBase& cpp_heap,
                     cppgc::Platform* platform, MarkingConfig config);
 
   ~UnifiedHeapMarker() final = default;
@@ -166,7 +180,7 @@ class UnifiedHeapMarker final : public cppgc::internal::MarkerBase {
   cppgc::internal::ConservativeMarkingVisitor conservative_marking_visitor_;
 };
 
-UnifiedHeapMarker::UnifiedHeapMarker(Key key, Heap& v8_heap,
+UnifiedHeapMarker::UnifiedHeapMarker(Key key, Heap* v8_heap,
                                      cppgc::internal::HeapBase& heap,
                                      cppgc::Platform* platform,
                                      MarkingConfig config)
@@ -221,6 +235,7 @@ void CppHeap::Terminate() {
 }
 
 void CppHeap::AttachIsolate(Isolate* isolate) {
+  CHECK(!in_detached_testing_mode);
   CHECK_NULL(isolate_);
   isolate_ = isolate;
   static_cast<CppgcPlatformAdapter*>(platform())
@@ -271,13 +286,19 @@ void CppHeap::TracePrologue(TraceFlags flags) {
   // Finish sweeping in case it is still running.
   sweeper_.FinishIfRunning();
 
+  current_flags_ = flags;
   const UnifiedHeapMarker::MarkingConfig marking_config{
       UnifiedHeapMarker::MarkingConfig::CollectionType::kMajor,
       cppgc::Heap::StackState::kNoHeapPointers,
-      cppgc::Heap::MarkingType::kIncrementalAndConcurrent,
-      flags == TraceFlags::kForced
+      flags & TraceFlags::kForced
+          ? UnifiedHeapMarker::MarkingConfig::MarkingType::kAtomic
+          : UnifiedHeapMarker::MarkingConfig::MarkingType::
+                kIncrementalAndConcurrent,
+      flags & TraceFlags::kForced
           ? UnifiedHeapMarker::MarkingConfig::IsForcedGC::kForced
           : UnifiedHeapMarker::MarkingConfig::IsForcedGC::kNotForced};
+  DCHECK_IMPLIES(!isolate_, cppgc::Heap::MarkingType::kAtomic ==
+                                marking_config.marking_type);
   if ((flags == TraceFlags::kReduceMemory) || (flags == TraceFlags::kForced)) {
     // Only enable compaction when in a memory reduction garbage collection as
     // it may significantly increase the final garbage collection pause.
@@ -286,7 +307,8 @@ void CppHeap::TracePrologue(TraceFlags flags) {
   }
   marker_ =
       cppgc::internal::MarkerFactory::CreateAndStartMarking<UnifiedHeapMarker>(
-          *isolate_->heap(), AsBase(), platform_.get(), marking_config);
+          isolate_ ? isolate_->heap() : nullptr, AsBase(), platform_.get(),
+          marking_config);
   marking_done_ = false;
 }
 
@@ -296,9 +318,9 @@ bool CppHeap::AdvanceTracing(double deadline_in_ms) {
   // accounting since this scope is also accounted under an outer v8 scope.
   // Make sure to only account this scope once.
   cppgc::internal::StatsCollector::EnabledScope stats_scope(
-      AsBase(), in_atomic_pause_
-                    ? cppgc::internal::StatsCollector::kAtomicMark
-                    : cppgc::internal::StatsCollector::kIncrementalMark);
+      stats_collector(),
+      in_atomic_pause_ ? cppgc::internal::StatsCollector::kAtomicMark
+                       : cppgc::internal::StatsCollector::kIncrementalMark);
   const v8::base::TimeDelta deadline =
       in_atomic_pause_ ? v8::base::TimeDelta::Max()
                        : v8::base::TimeDelta::FromMillisecondsD(deadline_in_ms);
@@ -316,7 +338,7 @@ bool CppHeap::IsTracingDone() { return marking_done_; }
 void CppHeap::EnterFinalPause(EmbedderStackState stack_state) {
   CHECK(!in_disallow_gc_scope());
   cppgc::internal::StatsCollector::EnabledScope stats_scope(
-      AsBase(), cppgc::internal::StatsCollector::kAtomicMark);
+      stats_collector(), cppgc::internal::StatsCollector::kAtomicMark);
   in_atomic_pause_ = true;
   if (override_stack_state_) {
     stack_state = *override_stack_state_;
@@ -333,19 +355,16 @@ void CppHeap::TraceEpilogue(TraceSummary* trace_summary) {
   CHECK(marking_done_);
   {
     cppgc::internal::StatsCollector::EnabledScope stats_scope(
-        AsBase(), cppgc::internal::StatsCollector::kAtomicMark);
+        stats_collector(), cppgc::internal::StatsCollector::kAtomicMark);
     cppgc::subtle::DisallowGarbageCollectionScope disallow_gc_scope(*this);
     marker_->LeaveAtomicPause();
   }
   marker_.reset();
-  {
-    cppgc::subtle::DisallowGarbageCollectionScope disallow_gc_scope(*this);
-    prefinalizer_handler()->InvokePreFinalizers();
-  }
+  ExecutePreFinalizers();
   // TODO(chromium:1056170): replace build flag with dedicated flag.
 #if DEBUG
   UnifiedHeapMarkingVerifier verifier(*this);
-  verifier.Run(cppgc::Heap::StackState::kNoHeapPointers);
+  verifier.Run(stack_state_of_prev_gc_);
 #endif
 
   {
@@ -353,9 +372,16 @@ void CppHeap::TraceEpilogue(TraceSummary* trace_summary) {
     cppgc::internal::Sweeper::SweepingConfig::CompactableSpaceHandling
         compactable_space_handling = compactor_.CompactSpacesIfEnabled();
     const cppgc::internal::Sweeper::SweepingConfig sweeping_config{
-        cppgc::internal::Sweeper::SweepingConfig::SweepingType::
-            kIncrementalAndConcurrent,
+        // In case the GC was forced, also finalize sweeping right away.
+        current_flags_ & TraceFlags::kForced
+            ? cppgc::internal::Sweeper::SweepingConfig::SweepingType::kAtomic
+            : cppgc::internal::Sweeper::SweepingConfig::SweepingType::
+                  kIncrementalAndConcurrent,
         compactable_space_handling};
+    DCHECK_IMPLIES(
+        !isolate_,
+        cppgc::internal::Sweeper::SweepingConfig::SweepingType::kAtomic ==
+            sweeping_config.sweeping_type);
     sweeper().Start(sweeping_config);
   }
   in_atomic_pause_ = false;
@@ -387,6 +413,33 @@ void CppHeap::ReportBufferedAllocationSizeIfPossible() {
     IncreaseAllocatedSize(static_cast<size_t>(buffered_allocated_bytes_));
   }
   buffered_allocated_bytes_ = 0;
+}
+
+void CppHeap::CollectGarbageForTesting(
+    cppgc::internal::GarbageCollector::Config::StackState stack_state) {
+  if (in_no_gc_scope()) return;
+
+  // Finish sweeping in case it is still running.
+  sweeper().FinishIfRunning();
+
+  if (isolate_) {
+    // Go through EmbedderHeapTracer API and perform a unified heap collection.
+    GarbageCollectionForTesting(stack_state);
+  } else {
+    // Perform an atomic GC, with starting incremental/concurrent marking and
+    // immediately finalizing the garbage collection.
+    TracePrologue(TraceFlags::kForced);
+    EnterFinalPause(stack_state);
+    AdvanceTracing(std::numeric_limits<double>::infinity());
+    TraceEpilogue(nullptr);
+  }
+}
+
+void CppHeap::EnableDetachedGarbageCollectionsForTesting() {
+  CHECK(!in_detached_testing_mode);
+  CHECK_NULL(isolate_);
+  no_gc_scope_--;
+  in_detached_testing_mode = true;
 }
 
 }  // namespace internal

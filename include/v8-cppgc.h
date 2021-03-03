@@ -9,9 +9,9 @@
 #include <memory>
 #include <vector>
 
+#include "cppgc/common.h"
 #include "cppgc/custom-space.h"
 #include "cppgc/heap-statistics.h"
-#include "cppgc/internal/process-heap.h"
 #include "cppgc/internal/write-barrier.h"
 #include "cppgc/visitor.h"
 #include "v8-internal.h"  // NOLINT(build/include_directory)
@@ -73,6 +73,9 @@ struct WrapperDescriptor final {
 };
 
 struct V8_EXPORT CppHeapCreateParams {
+  CppHeapCreateParams(const CppHeapCreateParams&) = delete;
+  CppHeapCreateParams& operator=(const CppHeapCreateParams&) = delete;
+
   std::vector<std::unique_ptr<cppgc::CustomSpaceBase>> custom_spaces;
   WrapperDescriptor wrapper_descriptor;
 };
@@ -115,6 +118,20 @@ class V8_EXPORT CppHeap {
    */
   cppgc::HeapStatistics CollectStatistics(
       cppgc::HeapStatistics::DetailLevel detail_level);
+
+  /**
+   * Enables a detached mode that allows testing garbage collection using
+   * `cppgc::testing` APIs. Once used, the heap cannot be attached to an
+   * `Isolate` anymore.
+   */
+  void EnableDetachedGarbageCollectionsForTesting();
+
+  /**
+   * Performs a stop-the-world garbage collection for testing purposes.
+   *
+   * \param stack_state The stack state to assume for the garbage collection.
+   */
+  void CollectGarbageForTesting(cppgc::EmbedderStackState stack_state);
 
  private:
   CppHeap() = default;
@@ -168,7 +185,7 @@ class V8_EXPORT JSHeapConsistency final {
                       WriteBarrierParams& params, HeapHandleCallback callback) {
     if (ref.IsEmpty()) return WriteBarrierType::kNone;
 
-    if (V8_LIKELY(!cppgc::internal::ProcessHeap::
+    if (V8_LIKELY(!cppgc::internal::WriteBarrier::
                       IsAnyIncrementalOrConcurrentMarking())) {
       return cppgc::internal::WriteBarrier::Type::kNone;
     }

@@ -268,7 +268,6 @@ namespace compiler {
   V(PPC_I64x2SConvertI32x4High)      \
   V(PPC_I64x2UConvertI32x4Low)       \
   V(PPC_I64x2UConvertI32x4High)      \
-  V(PPC_I64x2SignSelect)             \
   V(PPC_I32x4Splat)                  \
   V(PPC_I32x4ExtractLane)            \
   V(PPC_I32x4ReplaceLane)            \
@@ -301,7 +300,6 @@ namespace compiler {
   V(PPC_I32x4DotI16x8S)              \
   V(PPC_I32x4ExtAddPairwiseI16x8S)   \
   V(PPC_I32x4ExtAddPairwiseI16x8U)   \
-  V(PPC_I32x4SignSelect)             \
   V(PPC_F32x4Qfma)                   \
   V(PPC_F32x4Qfms)                   \
   V(PPC_I16x8Splat)                  \
@@ -342,14 +340,12 @@ namespace compiler {
   V(PPC_I16x8ExtAddPairwiseI8x16S)   \
   V(PPC_I16x8ExtAddPairwiseI8x16U)   \
   V(PPC_I16x8Q15MulRSatS)            \
-  V(PPC_I16x8SignSelect)             \
   V(PPC_I8x16Splat)                  \
   V(PPC_I8x16ExtractLaneU)           \
   V(PPC_I8x16ExtractLaneS)           \
   V(PPC_I8x16ReplaceLane)            \
   V(PPC_I8x16Add)                    \
   V(PPC_I8x16Sub)                    \
-  V(PPC_I8x16Mul)                    \
   V(PPC_I8x16MinS)                   \
   V(PPC_I8x16MinU)                   \
   V(PPC_I8x16MaxS)                   \
@@ -375,7 +371,6 @@ namespace compiler {
   V(PPC_I8x16Shuffle)                \
   V(PPC_I8x16Swizzle)                \
   V(PPC_I8x16BitMask)                \
-  V(PPC_I8x16SignSelect)             \
   V(PPC_V64x2AllTrue)                \
   V(PPC_V32x4AllTrue)                \
   V(PPC_V16x8AllTrue)                \

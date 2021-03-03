@@ -14,9 +14,11 @@
 #include "include/cppgc/macros.h"
 #include "src/base/macros.h"
 #include "src/heap/cppgc/compactor.h"
+#include "src/heap/cppgc/garbage-collector.h"
 #include "src/heap/cppgc/marker.h"
 #include "src/heap/cppgc/metric-recorder.h"
 #include "src/heap/cppgc/object-allocator.h"
+#include "src/heap/cppgc/process-heap-statistics.h"
 #include "src/heap/cppgc/raw-heap.h"
 #include "src/heap/cppgc/sweeper.h"
 #include "v8config.h"  // NOLINT(build/include_directory)
@@ -38,6 +40,7 @@ class NoGarbageCollectionScope;
 }  // namespace subtle
 
 namespace testing {
+class Heap;
 class OverrideEmbedderStackStateScope;
 }  // namespace testing
 
@@ -160,13 +163,23 @@ class V8_EXPORT_PRIVATE HeapBase : public cppgc::HeapHandle {
 
   HeapStatistics CollectStatistics(HeapStatistics::DetailLevel);
 
+  EmbedderStackState stack_state_of_prev_gc() const {
+    return stack_state_of_prev_gc_;
+  }
+  void SetStackStateOfPrevGC(EmbedderStackState stack_state) {
+    stack_state_of_prev_gc_ = stack_state;
+  }
+
  protected:
+  // Used by the incremental scheduler to finalize a GC if supported.
   virtual void FinalizeIncrementalGarbageCollectionIfNeeded(
       cppgc::Heap::StackState) = 0;
 
   bool in_no_gc_scope() const { return no_gc_scope_ > 0; }
 
   bool IsMarking() const { return marker_.get(); }
+
+  void ExecutePreFinalizers();
 
   RawHeap raw_heap_;
   std::shared_ptr<cppgc::Platform> platform_;
@@ -189,6 +202,8 @@ class V8_EXPORT_PRIVATE HeapBase : public cppgc::HeapHandle {
   PersistentRegion strong_cross_thread_persistent_region_;
   PersistentRegion weak_cross_thread_persistent_region_;
 
+  ProcessHeapStatisticsUpdater::AllocationObserverImpl
+      allocation_observer_for_PROCESS_HEAP_STATISTICS_;
 #if defined(CPPGC_YOUNG_GENERATION)
   std::set<void*> remembered_slots_;
 #endif
@@ -197,6 +212,8 @@ class V8_EXPORT_PRIVATE HeapBase : public cppgc::HeapHandle {
   size_t disallow_gc_scope_ = 0;
 
   const StackSupport stack_support_;
+  EmbedderStackState stack_state_of_prev_gc_ =
+      EmbedderStackState::kNoHeapPointers;
   std::unique_ptr<EmbedderStackState> override_stack_state_;
 
   bool in_atomic_pause_ = false;
@@ -205,6 +222,7 @@ class V8_EXPORT_PRIVATE HeapBase : public cppgc::HeapHandle {
   friend class testing::TestWithHeap;
   friend class cppgc::subtle::DisallowGarbageCollectionScope;
   friend class cppgc::subtle::NoGarbageCollectionScope;
+  friend class cppgc::testing::Heap;
   friend class cppgc::testing::OverrideEmbedderStackStateScope;
 };
 

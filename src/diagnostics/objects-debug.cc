@@ -5,7 +5,6 @@
 #include "src/codegen/assembler-inl.h"
 #include "src/common/globals.h"
 #include "src/date/date.h"
-#include "src/debug/debug-wasm-objects-inl.h"
 #include "src/diagnostics/disasm.h"
 #include "src/diagnostics/disassembler.h"
 #include "src/heap/combined-heap.h"
@@ -77,6 +76,10 @@
 #include "src/utils/ostreams.h"
 #include "src/wasm/wasm-objects-inl.h"
 #include "torque-generated/class-verifiers.h"
+
+#if V8_ENABLE_WEBASSEMBLY
+#include "src/debug/debug-wasm-objects-inl.h"
+#endif  // V8_ENABLE_WEBASSEMBLY
 
 namespace v8 {
 namespace internal {
@@ -229,9 +232,11 @@ void HeapObject::HeapObjectVerify(Isolate* isolate) {
     case WASM_INSTANCE_OBJECT_TYPE:
       WasmInstanceObject::cast(*this).WasmInstanceObjectVerify(isolate);
       break;
+#if V8_ENABLE_WEBASSEMBLY
     case WASM_VALUE_OBJECT_TYPE:
       WasmValueObject::cast(*this).WasmValueObjectVerify(isolate);
       break;
+#endif  // V8_ENABLE_WEBASSEMBLY
     case JS_SET_KEY_VALUE_ITERATOR_TYPE:
     case JS_SET_VALUE_ITERATOR_TYPE:
       JSSetIterator::cast(*this).JSSetIteratorVerify(isolate);
@@ -817,7 +822,6 @@ void JSFunction::JSFunctionVerify(Isolate* isolate) {
   TorqueGeneratedClassVerifiers::JSFunctionVerify(*this, isolate);
   CHECK(code().IsCode());
   CHECK(map().is_callable());
-  CHECK_IMPLIES(code().kind() == CodeKind::BASELINE, has_feedback_vector());
   Handle<JSFunction> function(*this, isolate);
   LookupIterator it(isolate, function, isolate->factory()->prototype_string(),
                     LookupIterator::OWN_SKIP_INTERCEPTOR);
@@ -1248,8 +1252,78 @@ void SmallOrderedNameDictionary::SmallOrderedNameDictionaryVerify(
 }
 
 void SwissNameDictionary::SwissNameDictionaryVerify(Isolate* isolate) {
-  // TODO(v8:11388) Here to satisfy compiler, implemented in follow-up CL.
-  UNREACHABLE();
+  this->SwissNameDictionaryVerify(isolate, false);
+}
+
+void SwissNameDictionary::SwissNameDictionaryVerify(Isolate* isolate,
+                                                    bool slow_checks) {
+  DisallowHeapAllocation no_gc;
+
+  CHECK(IsValidCapacity(Capacity()));
+
+  meta_table().ByteArrayVerify(isolate);
+
+  int seen_deleted = 0;
+  int seen_present = 0;
+
+  for (int i = 0; i < Capacity(); i++) {
+    ctrl_t ctrl = GetCtrl(i);
+
+    if (IsFull(ctrl) || slow_checks) {
+      Object key = KeyAt(i);
+      Object value = ValueAtRaw(i);
+
+      if (IsFull(ctrl)) {
+        ++seen_present;
+
+        Name name = Name::cast(key);
+        if (slow_checks) {
+          CHECK_EQ(swiss_table::H2(name.hash()), ctrl);
+        }
+
+        CHECK(!key.IsTheHole());
+        CHECK(!value.IsTheHole());
+        name.NameVerify(isolate);
+        value.ObjectVerify(isolate);
+      } else if (IsDeleted(ctrl)) {
+        ++seen_deleted;
+        CHECK(key.IsTheHole());
+        CHECK(value.IsTheHole());
+      } else if (IsEmpty(ctrl)) {
+        CHECK(key.IsTheHole());
+        CHECK(value.IsTheHole());
+      } else {
+        // Something unexpected. Note that we don't use kSentinel at the moment.
+        UNREACHABLE();
+      }
+    }
+  }
+
+  CHECK_EQ(seen_present, NumberOfElements());
+  if (slow_checks) {
+    CHECK_EQ(seen_deleted, NumberOfDeletedElements());
+
+    // Verify copy of first group at end (= after Capacity() slots) of control
+    // table.
+    for (int i = 0; i < std::min(static_cast<int>(Group::kWidth), Capacity());
+         ++i) {
+      CHECK_EQ(CtrlTable()[i], CtrlTable()[Capacity() + i]);
+    }
+    // If 2 * capacity is smaller than the capacity plus group width, the slots
+    // after that must be empty.
+    for (int i = 2 * Capacity(); i < Capacity() + kGroupWidth; ++i) {
+      CHECK_EQ(Ctrl::kEmpty, CtrlTable()[i]);
+    }
+
+    for (int enum_index = 0; enum_index < UsedCapacity(); ++enum_index) {
+      int entry = EntryForEnumerationIndex(enum_index);
+      CHECK_LT(entry, Capacity());
+      ctrl_t ctrl = GetCtrl(entry);
+
+      // Enum table must not point to empty slots.
+      CHECK(IsFull(ctrl) || IsDeleted(ctrl));
+    }
+  }
 }
 
 void JSRegExp::JSRegExpVerify(Isolate* isolate) {
@@ -1544,11 +1618,12 @@ void WasmInstanceObject::WasmInstanceObjectVerify(Isolate* isolate) {
   }
 }
 
+#if V8_ENABLE_WEBASSEMBLY
 void WasmValueObject::WasmValueObjectVerify(Isolate* isolate) {
   JSObjectVerify(isolate);
   CHECK(IsWasmValueObject());
-  CHECK(type().IsString());
 }
+#endif  // V8_ENABLE_WEBASSEMBLY
 
 void WasmExportedFunctionData::WasmExportedFunctionDataVerify(
     Isolate* isolate) {

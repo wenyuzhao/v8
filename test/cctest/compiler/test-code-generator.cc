@@ -211,7 +211,7 @@ Handle<Code> BuildTeardownFunction(Isolate* isolate,
     Node* param = __ UntypedParameter(i + 2);
     switch (parameters[i].representation()) {
       case MachineRepresentation::kTagged:
-        __ StoreFixedArrayElement(result_array, i, param,
+        __ StoreFixedArrayElement(result_array, i, __ Cast(param),
                                   UNSAFE_SKIP_WRITE_BARRIER);
         break;
       // Box FP values into HeapNumbers.
@@ -222,18 +222,19 @@ Handle<Code> BuildTeardownFunction(Isolate* isolate,
       case MachineRepresentation::kFloat64: {
         __ StoreObjectFieldNoWriteBarrier(
             __ Cast(__ LoadFixedArrayElement(result_array, i)),
-            HeapNumber::kValueOffset, __ UncheckedCast<Float64T>(param));
+            __ IntPtrConstant(HeapNumber::kValueOffset),
+            __ UncheckedCast<Float64T>(param));
       } break;
       case MachineRepresentation::kSimd128: {
         TNode<FixedArray> vector =
             __ Cast(__ LoadFixedArrayElement(result_array, i));
         for (int lane = 0; lane < 4; lane++) {
-          TNode<Smi> lane_value =
-              __ SmiFromInt32(tester.raw_assembler_for_testing()->AddNode(
+          TNode<Smi> lane_value = __ SmiFromInt32(__ UncheckedCast<Int32T>(
+              tester.raw_assembler_for_testing()->AddNode(
                   tester.raw_assembler_for_testing()
                       ->machine()
                       ->I32x4ExtractLane(lane),
-                  param));
+                  param)));
           __ StoreFixedArrayElement(vector, lane, lane_value,
                                     UNSAFE_SKIP_WRITE_BARRIER);
         }

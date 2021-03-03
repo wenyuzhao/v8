@@ -606,9 +606,8 @@ bool CodeGenerator::IsNextInAssemblyOrder(RpoNumber block) const {
       .IsNext(instructions()->InstructionBlockAt(block)->ao_number());
 }
 
-void CodeGenerator::RecordSafepoint(ReferenceMap* references,
-                                    Safepoint::DeoptMode deopt_mode) {
-  Safepoint safepoint = safepoints()->DefineSafepoint(tasm(), deopt_mode);
+void CodeGenerator::RecordSafepoint(ReferenceMap* references) {
+  Safepoint safepoint = safepoints()->DefineSafepoint(tasm());
   int frame_header_offset = frame()->GetFixedSlotCount();
   for (const InstructionOperand& operand : references->reference_operands()) {
     if (operand.IsStackSlot()) {
@@ -1051,9 +1050,7 @@ Label* CodeGenerator::AddJumpTable(Label** targets, size_t target_count) {
 void CodeGenerator::RecordCallPosition(Instruction* instr) {
   const bool needs_frame_state =
       instr->HasCallDescriptorFlag(CallDescriptor::kNeedsFrameState);
-  RecordSafepoint(instr->reference_map(), needs_frame_state
-                                              ? Safepoint::kLazyDeopt
-                                              : Safepoint::kNoLazyDeopt);
+  RecordSafepoint(instr->reference_map());
 
   if (instr->HasCallDescriptorFlag(CallDescriptor::kHasExceptionHandler)) {
     InstructionOperandConverter i(this, instr);
@@ -1156,7 +1153,7 @@ void CodeGenerator::BuildTranslationForFrameStateDescriptor(
       static_cast<unsigned int>(descriptor->GetHeight());
 
   switch (descriptor->type()) {
-    case FrameStateType::kInterpretedFunction: {
+    case FrameStateType::kUnoptimizedFunction: {
       int return_offset = 0;
       int return_count = 0;
       if (!state_combine.IsOutputIgnored()) {
@@ -1184,7 +1181,7 @@ void CodeGenerator::BuildTranslationForFrameStateDescriptor(
           static_cast<const JSToWasmFrameStateDescriptor*>(descriptor);
       translations_.BeginJSToWasmBuiltinContinuationFrame(
           bailout_id, shared_info_id, height,
-          js_to_wasm_descriptor->return_type());
+          js_to_wasm_descriptor->return_kind());
       break;
     }
     case FrameStateType::kJavaScriptBuiltinContinuation: {

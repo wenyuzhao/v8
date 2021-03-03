@@ -1006,8 +1006,8 @@ size_t GetConservativeFrameSizeInBytes(FrameStateType type,
                                        size_t locals_count,
                                        BytecodeOffset bailout_id) {
   switch (type) {
-    case FrameStateType::kInterpretedFunction: {
-      auto info = InterpretedFrameInfo::Conservative(
+    case FrameStateType::kUnoptimizedFunction: {
+      auto info = UnoptimizedFrameInfo::Conservative(
           static_cast<int>(parameters_count), static_cast<int>(locals_count));
       return info.frame_size_in_bytes();
     }
@@ -1015,7 +1015,10 @@ size_t GetConservativeFrameSizeInBytes(FrameStateType type,
       // The arguments adaptor frame state is only used in the deoptimizer and
       // does not occupy any extra space in the stack. Check out the design doc:
       // https://docs.google.com/document/d/150wGaUREaZI6YWqOQFD5l2mWQXaPbbZjcAIJLOFrzMs/edit
-      return 0;
+      // We just need to account for the additional parameters we might push
+      // here.
+      return UnoptimizedFrameInfo::GetStackSizeForAdditionalArguments(
+          static_cast<int>(parameters_count));
     case FrameStateType::kConstructStub: {
       auto info = ConstructStubFrameInfo::Conservative(
           static_cast<int>(parameters_count));
@@ -1074,7 +1077,7 @@ FrameStateDescriptor::FrameStateDescriptor(
 
 size_t FrameStateDescriptor::GetHeight() const {
   switch (type()) {
-    case FrameStateType::kInterpretedFunction:
+    case FrameStateType::kUnoptimizedFunction:
       return locals_count();  // The accumulator is *not* included.
     case FrameStateType::kBuiltinContinuation:
     case FrameStateType::kJSToWasmBuiltinContinuation:
@@ -1138,7 +1141,7 @@ JSToWasmFrameStateDescriptor::JSToWasmFrameStateDescriptor(
     : FrameStateDescriptor(zone, type, bailout_id, state_combine,
                            parameters_count, locals_count, stack_count,
                            shared_info, outer_state),
-      return_type_(wasm::WasmReturnTypeFromSignature(wasm_signature)) {}
+      return_kind_(wasm::WasmReturnTypeFromSignature(wasm_signature)) {}
 
 std::ostream& operator<<(std::ostream& os, const RpoNumber& rpo) {
   return os << rpo.ToSize();

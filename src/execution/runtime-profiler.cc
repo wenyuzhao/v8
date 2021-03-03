@@ -27,16 +27,16 @@ static const int kProfilerTicksBeforeOptimization = 3;
 // The number of ticks required for optimizing a function increases with
 // the size of the bytecode. This is in addition to the
 // kProfilerTicksBeforeOptimization required for any function.
-static const int kBytecodeSizeAllowancePerTick = 1200;
+static const int kBytecodeSizeAllowancePerTick = 1100;
 
 // Maximum size in bytes of generate code for a function to allow OSR.
-static const int kOSRBytecodeSizeAllowanceBase = 132;
+static const int kOSRBytecodeSizeAllowanceBase = 119;
 
-static const int kOSRBytecodeSizeAllowancePerTick = 48;
+static const int kOSRBytecodeSizeAllowancePerTick = 44;
 
 // Maximum size in bytes of generated code for a function to be optimized
 // the very first time it is seen on the stack.
-static const int kMaxBytecodeSizeForEarlyOpt = 90;
+static const int kMaxBytecodeSizeForEarlyOpt = 81;
 
 // Number of times a function has to be seen on the stack before it is
 // OSRed in TurboProp
@@ -143,7 +143,7 @@ void RuntimeProfiler::Optimize(JSFunction function, OptimizationReason reason,
   function.MarkForOptimization(ConcurrencyMode::kConcurrent);
 }
 
-void RuntimeProfiler::AttemptOnStackReplacement(InterpretedFrame* frame,
+void RuntimeProfiler::AttemptOnStackReplacement(UnoptimizedFrame* frame,
                                                 int loop_nesting_levels) {
   JSFunction function = frame->function();
   SharedFunctionInfo shared = function.shared();
@@ -164,7 +164,7 @@ void RuntimeProfiler::AttemptOnStackReplacement(InterpretedFrame* frame,
     PrintF(scope.file(), "]\n");
   }
 
-  DCHECK(frame->IsUnoptimizedJavaScriptFrame());
+  DCHECK(frame->is_unoptimized());
   int level = frame->GetBytecodeArray().osr_loop_nesting_level();
   frame->GetBytecodeArray().set_osr_loop_nesting_level(std::min(
       {level + loop_nesting_levels, AbstractCode::kMaxLoopNestingMarker}));
@@ -189,12 +189,12 @@ void RuntimeProfiler::MaybeOptimizeFrame(JSFunction function,
 
   // Note: We currently do not trigger OSR compilation from NCI or TP code.
   // TODO(jgruber,v8:8888): But we should.
-  if (frame->is_interpreted()) {
+  if (frame->is_unoptimized()) {
     if (FLAG_always_osr) {
-      AttemptOnStackReplacement(InterpretedFrame::cast(frame),
+      AttemptOnStackReplacement(UnoptimizedFrame::cast(frame),
                                 AbstractCode::kMaxLoopNestingMarker);
       // Fall through and do a normal optimized compile as well.
-    } else if (MaybeOSR(function, InterpretedFrame::cast(frame))) {
+    } else if (MaybeOSR(function, UnoptimizedFrame::cast(frame))) {
       return;
     }
   }
@@ -210,7 +210,7 @@ void RuntimeProfiler::MaybeOptimizeFrame(JSFunction function,
           current_global_ticks_);
 }
 
-bool RuntimeProfiler::MaybeOSR(JSFunction function, InterpretedFrame* frame) {
+bool RuntimeProfiler::MaybeOSR(JSFunction function, UnoptimizedFrame* frame) {
   int ticks = function.feedback_vector().profiler_ticks();
   // TODO(rmcilroy): Also ensure we only OSR top-level code if it is smaller
   // than kMaxToplevelSourceSize.
@@ -234,7 +234,7 @@ bool RuntimeProfiler::MaybeOSR(JSFunction function, InterpretedFrame* frame) {
     // OSR should happen roughly at the same with or without FLAG_turboprop.
     // Turboprop has much lower interrupt budget so scale the ticks accordingly.
     int scale_factor =
-        FLAG_turboprop ? FLAG_ticks_scale_factor_for_top_tier : 1;
+        FLAG_turboprop ? FLAG_interrupt_budget_scale_factor_for_top_tier : 1;
     int64_t scaled_ticks = static_cast<int64_t>(ticks) / scale_factor;
     int64_t allowance = kOSRBytecodeSizeAllowanceBase +
                         scaled_ticks * kOSRBytecodeSizeAllowancePerTick;
@@ -269,8 +269,6 @@ OptimizationReason RuntimeProfiler::ShouldOptimize(JSFunction function,
   }
   int ticks = function.feedback_vector().profiler_ticks();
   bool active_tier_is_turboprop = function.ActiveTierIsMidtierTurboprop();
-  int scale_factor =
-      active_tier_is_turboprop ? FLAG_ticks_scale_factor_for_top_tier : 1;
   int ticks_for_optimization =
       kProfilerTicksBeforeOptimization +
       (bytecode.length() / kBytecodeSizeAllowancePerTick);
@@ -285,7 +283,6 @@ OptimizationReason RuntimeProfiler::ShouldOptimize(JSFunction function,
         std::min(global_ticks_diff / kMidTierGlobalTicksScaleFactor,
                  kMaxAdditionalMidTierGlobalTicks);
   }
-  ticks_for_optimization *= scale_factor;
   if (ticks >= ticks_for_optimization) {
     return OptimizationReason::kHotAndStable;
   } else if (ShouldOptimizeAsSmallFunction(bytecode.length(), ticks,
@@ -344,7 +341,7 @@ void RuntimeProfiler::MarkCandidatesForOptimization(JavaScriptFrame* frame) {
 
 void RuntimeProfiler::MarkCandidatesForOptimizationFromBytecode() {
   JavaScriptFrameIterator it(isolate_);
-  DCHECK(it.frame()->IsUnoptimizedJavaScriptFrame());
+  DCHECK(it.frame()->is_unoptimized());
   MarkCandidatesForOptimization(it.frame());
 }
 

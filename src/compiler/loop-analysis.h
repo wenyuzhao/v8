@@ -178,6 +178,17 @@ class V8_EXPORT_PRIVATE LoopFinder {
                                  Zone* temp_zone);
 
   static bool HasMarkedExits(LoopTree* loop_tree_, const LoopTree::Loop* loop);
+
+  // Find all nodes of a loop given its header node. Will exit early once the
+  // current loop size exceed {max_size}. This is a very restricted version of
+  // BuildLoopTree.
+  // Assumptions:
+  // 1) All loop exits of the loop are marked with LoopExit, LoopExitEffect,
+  //    and LoopExitValue nodes.
+  // 2) There are no nested loops within this loop.
+  static ZoneUnorderedSet<Node*>* FindUnnestedLoopFromHeader(Node* loop_header,
+                                                             Zone* zone,
+                                                             size_t max_size);
 };
 
 // Copies a range of nodes any number of times.

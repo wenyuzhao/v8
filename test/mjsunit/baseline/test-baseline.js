@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --allow-natives-syntax --super-ic
+// Flags: --allow-natives-syntax --super-ic --sparkplug
 
 function run(f, ...args) {
   try { f(...args); } catch (e) {}
@@ -294,6 +294,9 @@ assertEquals(run((x)=>{
   }
   let f1 = factory();
   let f2 = factory();
+  %NeverOptimizeFunction(f1);
+  %NeverOptimizeFunction(f2);
+
   assertEquals(f1(0), 0);
   assertEquals(f2(0), 0);
   assertTrue(isInterpreted(f1))
@@ -309,27 +312,4 @@ assertEquals(run((x)=>{
   assertEquals(f2(0), 0);
   assertTrue(isBaseline(f1));
   assertTrue(isBaseline(f2));
-})();
-
-// DeoptNow to Ignition
-(function() {
-  function f() { %DeoptimizeNow(); }
-  f();
-  assertTrue(isInterpreted(f));
-  %CompileBaseline(f);
-  f();
-  assertTrue(isInterpreted(f));
-})();
-
-// Deopt to Ignition
-(function() {
-  function f() {}
-  f();
-  assertTrue(isInterpreted(f));
-  %CompileBaseline(f);
-  f();
-  assertTrue(isBaseline(f));
-  %DeoptimizeFunction(f);
-  f();
-  assertTrue(isInterpreted(f));
 })();

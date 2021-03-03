@@ -50,6 +50,11 @@ class V8_EXPORT_PRIVATE CppHeap final
 
   void Terminate();
 
+  void EnableDetachedGarbageCollectionsForTesting();
+
+  void CollectGarbageForTesting(
+      cppgc::internal::GarbageCollector::Config::StackState);
+
   // v8::EmbedderHeapTracer interface.
   void RegisterV8References(
       const std::vector<std::pair<void*, void*> >& embedder_fields) final;
@@ -75,6 +80,7 @@ class V8_EXPORT_PRIVATE CppHeap final
 
   Isolate* isolate_ = nullptr;
   bool marking_done_ = false;
+  TraceFlags current_flags_ = TraceFlags::kNoFlags;
 
   // Buffered allocated bytes. Reporting allocated bytes to V8 can trigger a GC
   // atomic pause. Allocated bytes are buffer in case this is temporarily
@@ -82,6 +88,8 @@ class V8_EXPORT_PRIVATE CppHeap final
   int64_t buffered_allocated_bytes_ = 0;
 
   v8::WrapperDescriptor wrapper_descriptor_;
+
+  bool in_detached_testing_mode = false;
 };
 
 }  // namespace internal

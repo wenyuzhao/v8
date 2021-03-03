@@ -8,7 +8,6 @@
 
 #include "src/base/bits.h"
 #include "src/codegen/code-factory.h"
-#include "src/codegen/code-stub-assembler.h"
 #include "src/codegen/interface-descriptors.h"
 #include "src/codegen/machine-type.h"
 #include "src/codegen/macro-assembler.h"
@@ -227,7 +226,7 @@ bool CodeAssembler::IsIntPtrAbsWithOverflowSupported() const {
 }
 
 #ifdef DEBUG
-void CodeAssembler::GenerateCheckMaybeObjectIsObject(Node* node,
+void CodeAssembler::GenerateCheckMaybeObjectIsObject(TNode<MaybeObject> node,
                                                      const char* location) {
   Label ok(this);
   GotoIf(WordNotEqual(WordAnd(BitcastMaybeObjectToWord(node),
@@ -558,31 +557,30 @@ TNode<WordT> CodeAssembler::WordPoisonOnSpeculation(TNode<WordT> value) {
   return UncheckedCast<WordT>(raw_assembler()->WordPoisonOnSpeculation(value));
 }
 
-#define DEFINE_CODE_ASSEMBLER_BINARY_OP(name, ResType, Arg1Type, Arg2Type) \
-  TNode<ResType> CodeAssembler::name(SloppyTNode<Arg1Type> a,              \
-                                     SloppyTNode<Arg2Type> b) {            \
-    return UncheckedCast<ResType>(raw_assembler()->name(a, b));            \
+#define DEFINE_CODE_ASSEMBLER_BINARY_OP(name, ResType, Arg1Type, Arg2Type)   \
+  TNode<ResType> CodeAssembler::name(TNode<Arg1Type> a, TNode<Arg2Type> b) { \
+    return UncheckedCast<ResType>(raw_assembler()->name(a, b));              \
   }
 CODE_ASSEMBLER_BINARY_OP_LIST(DEFINE_CODE_ASSEMBLER_BINARY_OP)
 #undef DEFINE_CODE_ASSEMBLER_BINARY_OP
 
-TNode<WordT> CodeAssembler::WordShl(SloppyTNode<WordT> value, int shift) {
+TNode<WordT> CodeAssembler::WordShl(TNode<WordT> value, int shift) {
   return (shift != 0) ? WordShl(value, IntPtrConstant(shift)) : value;
 }
 
-TNode<WordT> CodeAssembler::WordShr(SloppyTNode<WordT> value, int shift) {
+TNode<WordT> CodeAssembler::WordShr(TNode<WordT> value, int shift) {
   return (shift != 0) ? WordShr(value, IntPtrConstant(shift)) : value;
 }
 
-TNode<WordT> CodeAssembler::WordSar(SloppyTNode<WordT> value, int shift) {
+TNode<WordT> CodeAssembler::WordSar(TNode<WordT> value, int shift) {
   return (shift != 0) ? WordSar(value, IntPtrConstant(shift)) : value;
 }
 
-TNode<Word32T> CodeAssembler::Word32Shr(SloppyTNode<Word32T> value, int shift) {
+TNode<Word32T> CodeAssembler::Word32Shr(TNode<Word32T> value, int shift) {
   return (shift != 0) ? Word32Shr(value, Int32Constant(shift)) : value;
 }
 
-TNode<Word32T> CodeAssembler::Word32Sar(SloppyTNode<Word32T> value, int shift) {
+TNode<Word32T> CodeAssembler::Word32Sar(TNode<Word32T> value, int shift) {
   return (shift != 0) ? Word32Sar(value, Int32Constant(shift)) : value;
 }
 
@@ -651,13 +649,12 @@ TNode<Float64T> CodeAssembler::RoundIntPtrToFloat64(Node* value) {
   return UncheckedCast<Float64T>(raw_assembler()->ChangeInt32ToFloat64(value));
 }
 
-TNode<Int32T> CodeAssembler::TruncateFloat32ToInt32(
-    SloppyTNode<Float32T> value) {
+TNode<Int32T> CodeAssembler::TruncateFloat32ToInt32(TNode<Float32T> value) {
   return UncheckedCast<Int32T>(raw_assembler()->TruncateFloat32ToInt32(
       value, TruncateKind::kSetOverflowToMin));
 }
 #define DEFINE_CODE_ASSEMBLER_UNARY_OP(name, ResType, ArgType) \
-  TNode<ResType> CodeAssembler::name(SloppyTNode<ArgType> a) { \
+  TNode<ResType> CodeAssembler::name(TNode<ArgType> a) {       \
     return UncheckedCast<ResType>(raw_assembler()->name(a));   \
   }
 CODE_ASSEMBLER_UNARY_OP_LIST(DEFINE_CODE_ASSEMBLER_UNARY_OP)
@@ -675,17 +672,15 @@ Node* CodeAssembler::Load(MachineType type, Node* base, Node* offset,
 
 TNode<Object> CodeAssembler::LoadFullTagged(Node* base,
                                             LoadSensitivity needs_poisoning) {
-  return BitcastWordToTagged(
-      Load(MachineType::Pointer(), base, needs_poisoning));
+  return BitcastWordToTagged(Load<RawPtrT>(base, needs_poisoning));
 }
 
-TNode<Object> CodeAssembler::LoadFullTagged(Node* base, Node* offset,
+TNode<Object> CodeAssembler::LoadFullTagged(Node* base, TNode<IntPtrT> offset,
                                             LoadSensitivity needs_poisoning) {
   // Please use LoadFromObject(MachineType::MapInHeader(), object,
   // IntPtrConstant(-kHeapObjectTag)) instead.
   DCHECK(!raw_assembler()->IsMapOffsetConstantMinusTag(offset));
-  return BitcastWordToTagged(
-      Load(MachineType::Pointer(), base, offset, needs_poisoning));
+  return BitcastWordToTagged(Load<RawPtrT>(base, offset, needs_poisoning));
 }
 
 Node* CodeAssembler::AtomicLoad(MachineType type, TNode<RawPtrT> base,

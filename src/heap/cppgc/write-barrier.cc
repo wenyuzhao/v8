@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "include/cppgc/internal/write-barrier.h"
+#include "src/heap/cppgc/write-barrier.h"
 
 #include "include/cppgc/heap-consistency.h"
 #include "include/cppgc/internal/pointer-policies.h"
@@ -19,6 +19,9 @@
 
 namespace cppgc {
 namespace internal {
+
+// static
+AtomicEntryFlag WriteBarrier::incremental_or_concurrent_marking_flag_;
 
 namespace {
 
@@ -149,13 +152,15 @@ bool WriteBarrierTypeForNonCagedHeapPolicy::IsMarking(const void* object,
   // a pointer on the same page.
   const auto* page = BasePage::FromPayload(object);
   *handle = page->heap();
-  return page->heap()->marker();
+  const MarkerBase* marker = page->heap()->marker();
+  return marker && marker->IsMarking();
 }
 
 // static
 bool WriteBarrierTypeForNonCagedHeapPolicy::IsMarking(HeapHandle& heap_handle) {
   const auto& heap_base = internal::HeapBase::From(heap_handle);
-  return heap_base.marker();
+  const MarkerBase* marker = heap_base.marker();
+  return marker && marker->IsMarking();
 }
 
 #if defined(CPPGC_CAGED_HEAP)
@@ -164,8 +169,8 @@ bool WriteBarrierTypeForNonCagedHeapPolicy::IsMarking(HeapHandle& heap_handle) {
 bool WriteBarrierTypeForCagedHeapPolicy::IsMarking(
     const HeapHandle& heap_handle, WriteBarrier::Params& params) {
   const auto& heap_base = internal::HeapBase::From(heap_handle);
-  if (heap_base.marker()) {
-    return true;
+  if (const MarkerBase* marker = heap_base.marker()) {
+    return marker->IsMarking();
   }
   // Also set caged heap start here to avoid another call immediately after
   // checking IsMarking().

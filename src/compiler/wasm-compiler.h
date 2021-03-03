@@ -39,6 +39,7 @@ enum class TrapId : uint32_t;
 struct Int64LoweringSpecialCase;
 template <size_t VarCount>
 class GraphAssemblerLabel;
+enum class BranchHint : uint8_t;
 }  // namespace compiler
 
 namespace wasm {
@@ -176,6 +177,17 @@ struct WasmInstanceCacheNodes {
   Node* mem_mask;
 };
 
+struct WasmLoopInfo {
+  Node* header;
+  uint32_t nesting_depth;
+  bool is_innermost;
+
+  WasmLoopInfo(Node* header, uint32_t nesting_depth, bool is_innermost)
+      : header(header),
+        nesting_depth(nesting_depth),
+        is_innermost(is_innermost) {}
+};
+
 // Abstracts details of building TurboFan graph nodes for wasm to separate
 // the wasm decoder from the internal details of TurboFan.
 class WasmGraphBuilder {
@@ -221,6 +233,8 @@ class WasmGraphBuilder {
   Node* LoopExitValue(Node* value, MachineRepresentation representation);
   Node* TerminateThrow(Node* effect, Node* control);
   Node* Merge(unsigned count, Node** controls);
+  template <typename... Nodes>
+  Node* Merge(Node* fst, Nodes*... args);
   Node* Phi(wasm::ValueType type, unsigned count, Node** vals_and_control);
   Node* CreateOrMergeIntoPhi(MachineRepresentation rep, Node* merge,
                              Node* tnode, Node* fnode);
@@ -553,7 +567,6 @@ class WasmGraphBuilder {
   Node* BuildCallRef(uint32_t sig_index, Vector<Node*> args, Vector<Node*> rets,
                      CheckForNull null_check, IsReturnCall continuation,
                      wasm::WasmCodePosition position);
-  Node* GetBuiltinPointerTarget(int builtin_id);
 
   Node* BuildF32CopySign(Node* left, Node* right);
   Node* BuildF64CopySign(Node* left, Node* right);
@@ -622,11 +635,11 @@ class WasmGraphBuilder {
   // generates {index > max ? Smi(max) : Smi(index)}
   Node* BuildConvertUint32ToSmiWithSaturation(Node* index, uint32_t maxval);
 
-  using NodeConsumer = std::function<void(Node*)>;
+  using BranchBuilder = std::function<void(Node*, BranchHint)>;
   struct Callbacks {
-    NodeConsumer succeed_if;
-    NodeConsumer fail_if;
-    NodeConsumer fail_if_not;
+    BranchBuilder succeed_if;
+    BranchBuilder fail_if;
+    BranchBuilder fail_if_not;
   };
 
   // This type is used to collect control/effect nodes we need to merge at the
@@ -713,6 +726,7 @@ class WasmGraphBuilder {
   WasmInstanceCacheNodes* instance_cache_ = nullptr;
 
   SetOncePointer<Node> instance_node_;
+  SetOncePointer<Node> ref_null_node_;
   SetOncePointer<Node> globals_start_;
   SetOncePointer<Node> imported_mutable_globals_;
   SetOncePointer<Node> stack_check_code_node_;

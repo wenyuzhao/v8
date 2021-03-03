@@ -4,6 +4,7 @@
 
 #include "src/heap/cppgc/heap-base.h"
 
+#include "include/cppgc/heap-consistency.h"
 #include "src/base/bounded-page-allocator.h"
 #include "src/base/platform/platform.h"
 #include "src/heap/base/stack.h"
@@ -68,8 +69,8 @@ HeapBase::HeapBase(
       page_backend_(
           std::make_unique<PageBackend>(platform_->GetPageAllocator())),
 #endif
-      stats_collector_(
-          std::make_unique<StatsCollector>(std::move(histogram_recorder))),
+      stats_collector_(std::make_unique<StatsCollector>(
+          std::move(histogram_recorder), platform_.get())),
       stack_(std::make_unique<heap::base::Stack>(
           v8::base::Stack::GetStackStart())),
       prefinalizer_handler_(std::make_unique<PreFinalizerHandler>(*this)),
@@ -78,6 +79,8 @@ HeapBase::HeapBase(
                         stats_collector_.get()),
       sweeper_(&raw_heap_, platform_.get(), stats_collector_.get()),
       stack_support_(stack_support) {
+  stats_collector_->RegisterObserver(
+      &allocation_observer_for_PROCESS_HEAP_STATISTICS_);
 }
 
 HeapBase::~HeapBase() = default;
@@ -88,6 +91,11 @@ size_t HeapBase::ObjectPayloadSize() const {
 
 void HeapBase::AdvanceIncrementalGarbageCollectionOnAllocationIfNeeded() {
   if (marker_) marker_->AdvanceMarkingOnAllocation();
+}
+void HeapBase::ExecutePreFinalizers() {
+  // Pre finalizers are forbidden from allocating objects.
+  cppgc::subtle::DisallowGarbageCollectionScope no_gc_scope(*this);
+  prefinalizer_handler_->InvokePreFinalizers();
 }
 
 void HeapBase::Terminate() {
@@ -104,12 +112,17 @@ void HeapBase::Terminate() {
     // Clear root sets.
     strong_persistent_region_.ClearAllUsedNodes();
     strong_cross_thread_persistent_region_.ClearAllUsedNodes();
+    // Clear weak root sets, as the GC below does not execute weakness
+    // callbacks.
+    weak_persistent_region_.ClearAllUsedNodes();
+    weak_cross_thread_persistent_region_.ClearAllUsedNodes();
 
     stats_collector()->NotifyMarkingStarted(
         GarbageCollector::Config::CollectionType::kMajor,
         GarbageCollector::Config::IsForcedGC::kForced);
     stats_collector()->NotifyMarkingCompleted(0);
     object_allocator().ResetLinearAllocationBuffers();
+    ExecutePreFinalizers();
     sweeper().Start(
         {Sweeper::SweepingConfig::SweepingType::kAtomic,
          Sweeper::SweepingConfig::CompactableSpaceHandling::kSweep});

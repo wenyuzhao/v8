@@ -4,14 +4,13 @@
 
 #include <tuple>
 
-#include "src/init/v8.h"
-
 #include "src/api/api-inl.h"
 #include "src/base/overflowing-math.h"
 #include "src/codegen/compiler.h"
 #include "src/execution/execution.h"
 #include "src/handles/handles.h"
 #include "src/heap/heap-inl.h"
+#include "src/init/v8.h"
 #include "src/interpreter/bytecode-array-builder.h"
 #include "src/interpreter/bytecode-array-iterator.h"
 #include "src/interpreter/bytecode-flags.h"
@@ -2355,7 +2354,6 @@ TEST(InterpreterUnaryNot) {
     bool expected_value = ((i & 1) == 1);
     BytecodeArrayBuilder builder(zone, 1, 0);
 
-    Register r0(0);
     builder.LoadFalse();
     for (size_t j = 0; j < i; j++) {
       builder.LogicalNot(ToBooleanMode::kAlreadyBoolean);
@@ -2393,7 +2391,6 @@ TEST(InterpreterUnaryNotNonBoolean) {
   for (size_t i = 0; i < arraysize(object_type_tuples); i++) {
     BytecodeArrayBuilder builder(zone, 1, 0);
 
-    Register r0(0);
     LoadLiteralForTest(&builder, object_type_tuples[i].first);
     builder.LogicalNot(ToBooleanMode::kConvertToBoolean).Return();
     Handle<BytecodeArray> bytecode_array = builder.ToBytecodeArray(isolate);

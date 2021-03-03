@@ -196,6 +196,10 @@
   'test-streaming-compilation/SingleThreadedTestDeserializationFails': [SKIP],
   'test-streaming-compilation/AsyncTestDeserializationFails': [SKIP],
   'test-streaming-compilation/AsyncTestDeserializationBypassesCompilation': [SKIP],
+
+  # %ObserveNode tests relies on TurboFan.
+  'test-sloppy-equality/*' : [SKIP],
+  'test-js-to-wasm/*': [SKIP],
 }],  # variant == nooptimization
 
 ##############################################################################
@@ -293,6 +297,9 @@
 ['arch == arm and not simulator_run', {
   # crbug.com/v8/7605
   'test-heap/OutOfMemorySmallObjects': [SKIP],
+
+  # crbug.com/v8/11134
+  'test-cpu-profiler/MultipleThreadsSingleIsolate': [PASS, ['system != android', SKIP]],
 }],  # 'arch == arm and not simulator_run'
 
 ##############################################################################
@@ -505,12 +512,9 @@
 }],
 
 ##############################################################################
-['lite_mode or variant == jitless', {
-
-  # Slow tests
-  'test-heap/IncrementalMarkingStepMakesBigProgressWithLargeObjects': [SKIP],
-
-  # TODO(v8:7777): Re-enable once wasm is supported in jitless mode.
+# TODO(v8:7777): Change this once wasm is supported in jitless mode.
+['not has_webassembly or variant == jitless', {
+  'test-api/TurboAsmDisablesDetach': [SKIP],
   'test-api/WasmI32AtomicWaitCallback': [SKIP],
   'test-api/WasmI64AtomicWaitCallback': [SKIP],
   'test-api-wasm/WasmStreaming*': [SKIP],
@@ -533,6 +537,13 @@
   'test-wasm-stack/*': [SKIP],
   'test-wasm-trap-position/*': [SKIP],
   'wasm-run-utils/*': [SKIP],
+}],  # not has_webassembly or variant == jitless
+
+##############################################################################
+['lite_mode or variant == jitless', {
+
+  # Slow tests
+  'test-heap/IncrementalMarkingStepMakesBigProgressWithLargeObjects': [SKIP],
 
   # Tests that generate code at runtime.
   'codegen-tester/*': [SKIP],
@@ -619,7 +630,6 @@
   'serializer-tester/SerializeConstructWithSpread': [SKIP],
   'serializer-tester/SerializeInlinedClosure': [SKIP],
   'serializer-tester/SerializeInlinedFunction': [SKIP],
-  'test-api/TurboAsmDisablesDetach': [SKIP],
   'test-cpu-profiler/TickLinesOptimized': [SKIP],
   'test-heap/TestOptimizeAfterBytecodeFlushingCandidate': [SKIP],
   'test-js-to-wasm/*': [SKIP],

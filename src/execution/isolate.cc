@@ -79,7 +79,7 @@
 #include "src/profiler/tracing-cpu-profiler.h"
 #include "src/regexp/regexp-stack.h"
 #include "src/snapshot/embedded/embedded-data.h"
-#include "src/snapshot/embedded/embedded-file-writer.h"
+#include "src/snapshot/embedded/embedded-file-writer-interface.h"
 #include "src/snapshot/read-only-deserializer.h"
 #include "src/snapshot/startup-deserializer.h"
 #include "src/strings/string-builder-inl.h"
@@ -662,7 +662,8 @@ class StackTraceBuilder {
   void AppendPromiseCombinatorFrame(Handle<JSFunction> element_function,
                                     Handle<JSFunction> combinator) {
     if (!IsVisibleInStackTrace(combinator)) return;
-    int flags = StackFrameInfo::kIsAsync;
+    int flags =
+        StackFrameInfo::kIsAsync | StackFrameInfo::kIsSourcePositionComputed;
 
     Handle<Object> receiver(combinator->native_context().promise_function(),
                             isolate_);
@@ -673,9 +674,10 @@ class StackTraceBuilder {
 
     // We store the offset of the promise into the element function's
     // hash field for element callbacks.
-    int offset = Smi::ToInt(Smi::cast(element_function->GetIdentityHash())) - 1;
+    int promise_index =
+        Smi::ToInt(Smi::cast(element_function->GetIdentityHash())) - 1;
 
-    AppendFrame(receiver, combinator, code, offset, flags, parameters);
+    AppendFrame(receiver, combinator, code, promise_index, flags, parameters);
   }
 
   void AppendJavaScriptFrame(
@@ -1214,8 +1216,8 @@ Address Isolate::GetAbstractPC(int* line, int* column) {
     *column = -1;
   }
 
-  if (frame->is_interpreted()) {
-    InterpretedFrame* iframe = static_cast<InterpretedFrame*>(frame);
+  if (frame->is_unoptimized()) {
+    UnoptimizedFrame* iframe = static_cast<UnoptimizedFrame*>(frame);
     Address bytecode_start =
         iframe->GetBytecodeArray().GetFirstBytecodeAddress();
     return bytecode_start + iframe->GetBytecodeOffset();
@@ -1561,6 +1563,8 @@ Handle<JSMessageObject> Isolate::CreateMessageOrAbort(
 
 Object Isolate::ThrowInternal(Object raw_exception, MessageLocation* location) {
   DCHECK(!has_pending_exception());
+  DCHECK_IMPLIES(trap_handler::IsTrapHandlerEnabled(),
+                 !trap_handler::IsThreadInWasm());
 
   HandleScope scope(this);
   Handle<Object> exception(raw_exception, this);
@@ -1656,6 +1660,8 @@ Object Isolate::ReThrow(Object exception) {
 
 Object Isolate::UnwindAndFindHandler() {
   Object exception = pending_exception();
+  DCHECK_IMPLIES(trap_handler::IsTrapHandlerEnabled(),
+                 !trap_handler::IsThreadInWasm());
 
   auto FoundHandler = [&](Context context, Address instruction_start,
                           intptr_t handler_offset,
@@ -1729,11 +1735,6 @@ Object Isolate::UnwindAndFindHandler() {
       }
 
       case StackFrame::WASM: {
-        if (trap_handler::IsThreadInWasm()) {
-          // TODO(thibaudm): The flag should be cleared already.
-          trap_handler::ClearThreadInWasm();
-        }
-
         if (!catchable_by_wasm) break;
 
         // For WebAssembly frames we perform a lookup in the handler table.
@@ -1753,8 +1754,7 @@ Object Isolate::UnwindAndFindHandler() {
                             StandardFrameConstants::kFixedFrameSizeAboveFp -
                             wasm_code->stack_slots() * kSystemPointerSize;
 
-        // This is going to be handled by Wasm, so we need to set the TLS flag
-        // again. It was cleared above assuming the frame would be unwound.
+        // This is going to be handled by Wasm, so we need to set the TLS flag.
         trap_handler::SetThreadInWasm();
 
         return FoundHandler(Context(), wasm_code->instruction_start(), offset,
@@ -1827,8 +1827,8 @@ Object Isolate::UnwindAndFindHandler() {
       case StackFrame::BASELINE: {
         // For interpreted frame we perform a range lookup in the handler table.
         if (!catchable_by_js) break;
-        InterpretedFrame* js_frame = static_cast<InterpretedFrame*>(frame);
-        int register_slots = InterpreterFrameConstants::RegisterStackSlotCount(
+        UnoptimizedFrame* js_frame = UnoptimizedFrame::cast(frame);
+        int register_slots = UnoptimizedFrameConstants::RegisterStackSlotCount(
             js_frame->GetBytecodeArray().register_count());
         int context_reg = 0;  // Will contain register index holding context.
         int offset =
@@ -1851,25 +1851,24 @@ Object Isolate::UnwindAndFindHandler() {
             Context::cast(js_frame->ReadInterpreterRegister(context_reg));
         DCHECK(context.IsContext());
 
-        if (frame->type() == StackFrame::BASELINE) {
-          Code code = frame->LookupCode();
-          intptr_t pc_offset =
-              static_cast<BaselineFrame*>(frame)->GetPCForBytecodeOffset(
-                  offset);
-          // Write the context directly into the context register, so that we
-          // don't need to have a context read + write in the baseline code.
-          js_frame->WriteInterpreterRegister(
-              interpreter::Register::current_context().index(), context);
+        if (frame->is_baseline()) {
+          BaselineFrame* sp_frame = BaselineFrame::cast(js_frame);
+          Code code = sp_frame->LookupCode();
+          intptr_t pc_offset = sp_frame->GetPCForBytecodeOffset(offset);
+          // Patch the context register directly on the frame, so that we don't
+          // need to have a context read + write in the baseline code.
+          sp_frame->PatchContext(context);
           return FoundHandler(Context(), code.InstructionStart(), pc_offset,
+                              code.constant_pool(), return_sp, sp_frame->fp());
+        } else {
+          InterpretedFrame::cast(js_frame)->PatchBytecodeOffset(
+              static_cast<int>(offset));
+
+          Code code =
+              builtins()->builtin(Builtins::kInterpreterEnterBytecodeDispatch);
+          return FoundHandler(context, code.InstructionStart(), 0,
                               code.constant_pool(), return_sp, frame->fp());
         }
-
-        js_frame->PatchBytecodeOffset(static_cast<int>(offset));
-
-        Code code =
-            builtins()->builtin(Builtins::kInterpreterEnterBytecodeDispatch);
-        return FoundHandler(context, code.InstructionStart(), 0,
-                            code.constant_pool(), return_sp, frame->fp());
       }
 
       case StackFrame::BUILTIN:
@@ -2173,35 +2172,7 @@ bool Isolate::ComputeLocationFromStackTrace(MessageLocation* target,
   Handle<FixedArray> stack = Handle<FixedArray>::cast(property);
   for (int i = 0; i < stack->length(); i++) {
     Handle<StackFrameInfo> frame(StackFrameInfo::cast(stack->get(i)), this);
-    if (frame->IsWasm()) {
-      auto offset = StackFrameInfo::GetSourcePosition(this, frame);
-      Handle<Script> script(frame->GetWasmInstance().module_object().script(),
-                            this);
-      *target = MessageLocation(script, offset, offset + 1);
-      return true;
-    }
-
-    Handle<JSFunction> fun = handle(JSFunction::cast(frame->function()), this);
-    if (!fun->shared().IsSubjectToDebugging()) continue;
-
-    Object script = fun->shared().script();
-    if (script.IsScript() &&
-        !(Script::cast(script).source().IsUndefined(this))) {
-      Handle<SharedFunctionInfo> shared = handle(fun->shared(), this);
-
-      AbstractCode abstract_code = AbstractCode::cast(frame->code_object());
-      const int code_offset = frame->offset();
-      Handle<Script> casted_script(Script::cast(script), this);
-      if (shared->HasBytecodeArray() &&
-          shared->GetBytecodeArray(this).HasSourcePositionTable()) {
-        int pos = abstract_code.SourcePosition(code_offset);
-        *target = MessageLocation(casted_script, pos, pos + 1, shared);
-      } else {
-        *target = MessageLocation(casted_script, shared, code_offset);
-      }
-
-      return true;
-    }
+    if (StackFrameInfo::ComputeLocation(frame, target)) return true;
   }
   return false;
 }
@@ -2554,14 +2525,6 @@ bool Isolate::get_capture_stack_trace_for_uncaught_exceptions() const {
 void Isolate::SetAbortOnUncaughtExceptionCallback(
     v8::Isolate::AbortOnUncaughtExceptionCallback callback) {
   abort_on_uncaught_exception_callback_ = callback;
-}
-
-bool Isolate::AreWasmThreadsEnabled(Handle<Context> context) {
-  if (wasm_threads_enabled_callback()) {
-    v8::Local<v8::Context> api_context = v8::Utils::ToLocal(context);
-    return wasm_threads_enabled_callback()(api_context);
-  }
-  return FLAG_experimental_wasm_threads;
 }
 
 bool Isolate::IsWasmSimdEnabled(Handle<Context> context) {

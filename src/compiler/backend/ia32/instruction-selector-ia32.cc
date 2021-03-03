@@ -398,7 +398,7 @@ void VisitRROI8x16SimdShift(InstructionSelector* selector, Node* node,
 
 void InstructionSelector::VisitStackSlot(Node* node) {
   StackSlotRepresentation rep = StackSlotRepresentationOf(node->op());
-  int slot = frame_->AllocateSpillSlot(rep.size(), rep.alignment());
+  int slot = frame_->AllocateSpillSlot(rep.size());
   OperandGenerator g(this);
 
   Emit(kArchStackSlot, g.DefineAsRegister(node),
@@ -432,7 +432,8 @@ void InstructionSelector::VisitLoadLane(Node* node) {
   }
 
   IA32OperandGenerator g(this);
-  InstructionOperand outputs[] = {g.DefineAsRegister(node)};
+  InstructionOperand outputs[] = {IsSupported(AVX) ? g.DefineAsRegister(node)
+                                                   : g.DefineSameAsFirst(node)};
   // Input 0 is value node, 1 is lane idx, and GetEffectiveAddressMemoryOperand
   // uses up to 3 inputs. This ordering is consistent with other operations that
   // use the same opcode.
@@ -2500,20 +2501,6 @@ void InstructionSelector::VisitI32x4UConvertF32x4(Node* node) {
        arraysize(temps), temps);
 }
 
-void InstructionSelector::VisitI8x16Mul(Node* node) {
-  IA32OperandGenerator g(this);
-  InstructionOperand operand0 = g.UseUniqueRegister(node->InputAt(0));
-  InstructionOperand operand1 = g.UseUniqueRegister(node->InputAt(1));
-  InstructionOperand temps[] = {g.TempSimd128Register()};
-  if (IsSupported(AVX)) {
-    Emit(kAVXI8x16Mul, g.DefineAsRegister(node), operand0, operand1,
-         arraysize(temps), temps);
-  } else {
-    Emit(kSSEI8x16Mul, g.DefineSameAsFirst(node), operand0, operand1,
-         arraysize(temps), temps);
-  }
-}
-
 void InstructionSelector::VisitS128Zero(Node* node) {
   IA32OperandGenerator g(this);
   Emit(kIA32S128Zero, g.DefineAsRegister(node));
@@ -3076,59 +3063,36 @@ void InstructionSelector::VisitF64x2Pmax(Node* node) {
 }
 
 namespace {
-void VisitSignSelect(InstructionSelector* selector, Node* node,
-                     ArchOpcode opcode) {
+void VisitExtAddPairwise(InstructionSelector* selector, Node* node,
+                         ArchOpcode opcode, bool need_temp) {
   IA32OperandGenerator g(selector);
-  // signselect(x, y, -1) = x
-  // pblendvb(dst, x, y, -1) = dst <- y, so we need to swap x and y.
-  if (selector->IsSupported(AVX)) {
-    selector->Emit(
-        opcode, g.DefineAsRegister(node), g.UseRegister(node->InputAt(1)),
-        g.UseRegister(node->InputAt(0)), g.UseRegister(node->InputAt(2)));
+  InstructionOperand operand0 = g.UseRegister(node->InputAt(0));
+  InstructionOperand dst = (selector->IsSupported(AVX))
+                               ? g.DefineAsRegister(node)
+                               : g.DefineSameAsFirst(node);
+  if (need_temp) {
+    InstructionOperand temps[] = {g.TempRegister()};
+    selector->Emit(opcode, dst, operand0, arraysize(temps), temps);
   } else {
-    // We would like to fix the mask to be xmm0, since that is what
-    // pblendvb/blendvps/blendvps uses as an implicit operand. However, xmm0 is
-    // also scratch register, so our mask values can be overwritten. Instead, we
-    // manually move the mask to xmm0 inside codegen.
-    selector->Emit(
-        opcode, g.DefineSameAsFirst(node), g.UseRegister(node->InputAt(1)),
-        g.UseRegister(node->InputAt(0)), g.UseRegister(node->InputAt(2)));
+    selector->Emit(opcode, dst, operand0);
   }
 }
 }  // namespace
 
-void InstructionSelector::VisitI8x16SignSelect(Node* node) {
-  VisitSignSelect(this, node, kIA32I8x16SignSelect);
-}
-
-void InstructionSelector::VisitI16x8SignSelect(Node* node) {
-  VisitSignSelect(this, node, kIA32I16x8SignSelect);
-}
-
-void InstructionSelector::VisitI32x4SignSelect(Node* node) {
-  VisitSignSelect(this, node, kIA32I32x4SignSelect);
-}
-
-void InstructionSelector::VisitI64x2SignSelect(Node* node) {
-  VisitSignSelect(this, node, kIA32I64x2SignSelect);
-}
-
 void InstructionSelector::VisitI32x4ExtAddPairwiseI16x8S(Node* node) {
-  VisitRRSimd(this, node, kIA32I32x4ExtAddPairwiseI16x8S);
+  VisitExtAddPairwise(this, node, kIA32I32x4ExtAddPairwiseI16x8S, true);
 }
 
 void InstructionSelector::VisitI32x4ExtAddPairwiseI16x8U(Node* node) {
-  VisitRRSimd(this, node, kIA32I32x4ExtAddPairwiseI16x8U);
+  VisitExtAddPairwise(this, node, kIA32I32x4ExtAddPairwiseI16x8U, false);
 }
 
 void InstructionSelector::VisitI16x8ExtAddPairwiseI8x16S(Node* node) {
-  IA32OperandGenerator g(this);
-  Emit(kIA32I16x8ExtAddPairwiseI8x16S, g.DefineAsRegister(node),
-       g.UseUniqueRegister(node->InputAt(0)));
+  VisitExtAddPairwise(this, node, kIA32I16x8ExtAddPairwiseI8x16S, true);
 }
 
 void InstructionSelector::VisitI16x8ExtAddPairwiseI8x16U(Node* node) {
-  VisitRRSimd(this, node, kIA32I16x8ExtAddPairwiseI8x16U);
+  VisitExtAddPairwise(this, node, kIA32I16x8ExtAddPairwiseI8x16U, true);
 }
 
 void InstructionSelector::VisitI8x16Popcnt(Node* node) {

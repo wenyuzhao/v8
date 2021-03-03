@@ -65,13 +65,20 @@ class V8_EXPORT_PRIVATE Compiler : public AllStatic {
   // whereas successful compilation ensures the {is_compiled} predicate on the
   // given function holds (except for live-edit, which compiles the world).
 
-  static bool Compile(Handle<SharedFunctionInfo> shared,
+  static bool Compile(Isolate* isolate, Handle<SharedFunctionInfo> shared,
                       ClearExceptionFlag flag,
                       IsCompiledScope* is_compiled_scope);
-  static bool Compile(Handle<JSFunction> function, ClearExceptionFlag flag,
+  static bool Compile(Isolate* isolate, Handle<JSFunction> function,
+                      ClearExceptionFlag flag,
                       IsCompiledScope* is_compiled_scope);
-  static bool CompileOptimized(Handle<JSFunction> function,
+  static bool CompileBaseline(Isolate* isolate, Handle<JSFunction> function,
+                              ClearExceptionFlag flag,
+                              IsCompiledScope* is_compiled_scope);
+  static bool CompileOptimized(Isolate* isolate, Handle<JSFunction> function,
                                ConcurrencyMode mode, CodeKind code_kind);
+  static MaybeHandle<SharedFunctionInfo> CompileToplevel(
+      ParseInfo* parse_info, Handle<Script> script, Isolate* isolate,
+      IsCompiledScope* is_compiled_scope);
 
   static void LogFunctionCompilation(Isolate* isolate,
                                      CodeEventListener::LogEventsAndTags tag,

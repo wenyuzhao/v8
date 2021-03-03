@@ -944,7 +944,8 @@ enum ControlKind : uint8_t {
   kControlLet,
   kControlTry,
   kControlTryCatch,
-  kControlTryCatchAll
+  kControlTryCatchAll,
+  kControlTryUnwind
 };
 
 enum Reachability : uint8_t {
@@ -1004,8 +1005,10 @@ struct ControlBase : public PcForErrors<validate> {
   bool is_incomplete_try() const { return kind == kControlTry; }
   bool is_try_catch() const { return kind == kControlTryCatch; }
   bool is_try_catchall() const { return kind == kControlTryCatchAll; }
+  bool is_try_unwind() const { return kind == kControlTryUnwind; }
   bool is_try() const {
-    return is_incomplete_try() || is_try_catch() || is_try_catchall();
+    return is_incomplete_try() || is_try_catch() || is_try_catchall() ||
+           is_try_unwind();
   }
 
   inline Merge<Value>* br_merge() {
@@ -1522,8 +1525,6 @@ class WasmDecoder : public Decoder {
       case kExprI32x4ReplaceLane:
       case kExprS128Load32Lane:
       case kExprS128Store32Lane:
-      case kExprI32x4WidenI8x16S:
-      case kExprI32x4WidenI8x16U:
         num_lanes = 4;
         break;
       case kExprI16x8ExtractLaneS:
@@ -1744,6 +1745,7 @@ class WasmDecoder : public Decoder {
       case kExprReturnCallRef:
       case kExprDrop:
       case kExprSelect:
+      case kExprCatchAll:
       case kExprUnwind:
         return 1;
       case kExprSelectWithType: {
@@ -2034,7 +2036,6 @@ class WasmDecoder : public Decoder {
       case kExprBrIf:
       case kExprBrTable:
       case kExprIf:
-      case kExprRethrow:
         return {1, 0};
       case kExprLocalGet:
       case kExprGlobalGet:
@@ -2071,6 +2072,10 @@ class WasmDecoder : public Decoder {
       case kExprElse:
       case kExprTry:
       case kExprCatch:
+      case kExprCatchAll:
+      case kExprDelegate:
+      case kExprUnwind:
+      case kExprRethrow:
       case kExprNop:
       case kExprNopForTestingUnsupportedInLiftoff:
       case kExprReturn:
@@ -2087,7 +2092,6 @@ class WasmDecoder : public Decoder {
         opcode = this->read_prefixed_opcode<validate>(pc);
         switch (opcode) {
           FOREACH_SIMD_1_OPERAND_1_PARAM_OPCODE(DECLARE_OPCODE_CASE)
-          FOREACH_SIMD_POST_MVP_ONE_OPERAND_OPCODE(DECLARE_OPCODE_CASE)
             return {1, 1};
           FOREACH_SIMD_1_OPERAND_2_PARAM_OPCODE(DECLARE_OPCODE_CASE)
           FOREACH_SIMD_MASK_OPERAND_OPCODE(DECLARE_OPCODE_CASE)
@@ -2172,7 +2176,11 @@ MemoryAccessImmediate<validate>::MemoryAccessImmediate(
     : MemoryAccessImmediate(decoder, pc, max_alignment,
                             decoder->module_->is_memory64) {}
 
-#define CALL_INTERFACE(name, ...) interface_.name(this, ##__VA_ARGS__)
+#define CALL_INTERFACE(name, ...)         \
+  do {                                    \
+    DCHECK(this->ok());                   \
+    interface_.name(this, ##__VA_ARGS__); \
+  } while (false)
 #define CALL_INTERFACE_IF_REACHABLE(name, ...)            \
   do {                                                    \
     DCHECK(!control_.empty());                            \
@@ -2223,6 +2231,7 @@ class WasmFullDecoder : public WasmDecoder<validate> {
     uint32_t params_count = static_cast<uint32_t>(this->num_locals());
     uint32_t locals_length;
     this->DecodeLocals(this->pc(), &locals_length, params_count);
+    if (this->failed()) return TraceFailed();
     this->consume_bytes(locals_length);
     for (uint32_t index = params_count; index < this->num_locals(); index++) {
       if (!VALIDATE(this->local_type(index).is_defaultable())) {
@@ -2401,6 +2410,7 @@ class WasmFullDecoder : public WasmDecoder<validate> {
           case kControlIfElse:
           case kControlTryCatch:
           case kControlTryCatchAll:
+          case kControlTryUnwind:
           case kControlLet:  // TODO(7748): Implement
             break;
         }
@@ -2519,12 +2529,17 @@ class WasmFullDecoder : public WasmDecoder<validate> {
       this->DecodeError("catch after catch-all for try");
       return 0;
     }
+    if (!VALIDATE(!c->is_try_unwind())) {
+      this->DecodeError("catch after unwind for try");
+      return 0;
+    }
     c->kind = kControlTryCatch;
     FallThruTo(c);
     DCHECK_LE(stack_ + c->stack_depth, stack_end_);
     stack_end_ = stack_ + c->stack_depth;
     c->reachability = control_at(1)->innerReachability();
     const WasmExceptionSig* sig = imm.exception->sig;
+    EnsureStackSpace(static_cast<int>(sig->parameter_count()));
     for (size_t i = 0, e = sig->parameter_count(); i < e; ++i) {
       Push(sig->GetParam(i));
     }
@@ -2551,7 +2566,8 @@ class WasmFullDecoder : public WasmDecoder<validate> {
           "delegate target must be a try block or the function block");
       return 0;
     }
-    if (target->is_try_catch() || target->is_try_catchall()) {
+    if (target->is_try_catch() || target->is_try_catchall() ||
+        target->is_try_catchall()) {
       this->DecodeError(
           "cannot delegate inside the catch handler of the target");
     }
@@ -2563,6 +2579,31 @@ class WasmFullDecoder : public WasmDecoder<validate> {
     return 1 + imm.length;
   }
 
+  DECODE(CatchAll) {
+    CHECK_PROTOTYPE_OPCODE(eh);
+    DCHECK(!control_.empty());
+    Control* c = &control_.back();
+    if (!VALIDATE(c->is_try())) {
+      this->DecodeError("catch-all does not match a try");
+      return 0;
+    }
+    if (!VALIDATE(!c->is_try_catchall())) {
+      this->error("catch-all already present for try");
+      return 0;
+    }
+    if (!VALIDATE(!c->is_try_unwind())) {
+      this->error("cannot have catch-all after unwind");
+      return 0;
+    }
+    FallThruTo(c);
+    c->kind = kControlTryCatchAll;
+    stack_end_ = stack_ + c->stack_depth;
+    c->reachability = control_at(1)->innerReachability();
+    CALL_INTERFACE_IF_PARENT_REACHABLE(CatchAll, c);
+    current_code_reachable_ = this->ok() && c->reachable();
+    return 1;
+  }
+
   DECODE(Unwind) {
     CHECK_PROTOTYPE_OPCODE(eh);
     DCHECK(!control_.empty());
@@ -2571,12 +2612,13 @@ class WasmFullDecoder : public WasmDecoder<validate> {
       this->DecodeError("unwind does not match a try");
       return 0;
     }
-    if (!VALIDATE(!c->is_try_catch() && !c->is_try_catchall())) {
+    if (!VALIDATE(!c->is_try_catch() && !c->is_try_catchall() &&
+                  !c->is_try_unwind())) {
       this->error("catch, catch-all or unwind already present for try");
       return 0;
     }
-    c->kind = kControlTryCatchAll;
     FallThruTo(c);
+    c->kind = kControlTryUnwind;
     stack_end_ = stack_ + c->stack_depth;
     c->reachability = control_at(1)->innerReachability();
     CALL_INTERFACE_IF_PARENT_REACHABLE(CatchAll, c);
@@ -2592,12 +2634,12 @@ class WasmFullDecoder : public WasmDecoder<validate> {
     Control* c = control_at(imm.depth);
     TypeCheckBranchResult check_result = TypeCheckBranch(c, true);
     switch (ref_object.type.kind()) {
-      case ValueType::kBottom:
+      case kBottom:
         // We are in a polymorphic stack. No need to push an additional bottom
         // value.
         DCHECK(check_result != kReachableBranch);
         break;
-      case ValueType::kRef: {
+      case kRef: {
         // Simply forward the popped argument to the result.
         Value* result = Push(ref_object.type);
         if (V8_LIKELY(check_result == kReachableBranch)) {
@@ -2605,7 +2647,7 @@ class WasmFullDecoder : public WasmDecoder<validate> {
         }
         break;
       }
-      case ValueType::kOptRef: {
+      case kOptRef: {
         if (V8_LIKELY(check_result == kReachableBranch)) {
           CALL_INTERFACE_IF_REACHABLE(BrOnNull, ref_object, imm.depth);
           Value* result =
@@ -2679,38 +2721,23 @@ class WasmFullDecoder : public WasmDecoder<validate> {
     return 1 + imm.length;
   }
 
-  // Alias for "catch_all" if the current block is a try.
   DECODE(Else) {
     DCHECK(!control_.empty());
     Control* c = &control_.back();
-    if (!VALIDATE(c->is_if() || c->is_try())) {
-      this->DecodeError("else/catch_all does not match an if/try");
+    if (!VALIDATE(c->is_if())) {
+      this->DecodeError("else does not match an if");
       return 0;
     }
-    if (c->is_if()) {
-      if (!VALIDATE(c->is_onearmed_if())) {
-        this->DecodeError("else already present for if");
-        return 0;
-      }
-      if (!TypeCheckFallThru()) return 0;
-      c->kind = kControlIfElse;
-      CALL_INTERFACE_IF_PARENT_REACHABLE(Else, c);
-      if (c->reachable()) c->end_merge.reached = true;
-      PushMergeValues(c, &c->start_merge);
-      c->reachability = control_at(1)->innerReachability();
-    } else {
-      CHECK_PROTOTYPE_OPCODE(eh);
-      DCHECK(c->is_try());
-      if (!VALIDATE(!c->is_try_catchall())) {
-        this->error("catch-all or unwind already present for try");
-        return 0;
-      }
-      c->kind = kControlTryCatchAll;
-      FallThruTo(c);
-      stack_end_ = stack_ + c->stack_depth;
-      c->reachability = control_at(1)->innerReachability();
-      CALL_INTERFACE_IF_PARENT_REACHABLE(CatchAll, c);
+    if (!VALIDATE(c->is_onearmed_if())) {
+      this->DecodeError("else already present for if");
+      return 0;
     }
+    if (!TypeCheckFallThru()) return 0;
+    c->kind = kControlIfElse;
+    CALL_INTERFACE_IF_PARENT_REACHABLE(Else, c);
+    if (c->reachable()) c->end_merge.reached = true;
+    PushMergeValues(c, &c->start_merge);
+    c->reachability = control_at(1)->innerReachability();
     current_code_reachable_ = this->ok() && c->reachable();
     return 1;
   }
@@ -2736,6 +2763,11 @@ class WasmFullDecoder : public WasmDecoder<validate> {
       c->reachability = control_at(1)->innerReachability();
       CALL_INTERFACE_IF_PARENT_REACHABLE(CatchAll, c);
       current_code_reachable_ = this->ok() && control_.back().reachable();
+      CALL_INTERFACE_IF_REACHABLE(Rethrow, c);
+      EndControl();
+    }
+    if (c->is_try_unwind()) {
+      // Unwind implicitly rethrows at the end.
       CALL_INTERFACE_IF_REACHABLE(Rethrow, c);
       EndControl();
     }
@@ -2770,7 +2802,7 @@ class WasmFullDecoder : public WasmDecoder<validate> {
     Value fval = Pop(1);
     Value tval = Pop(0, fval.type);
     ValueType type = tval.type == kWasmBottom ? fval.type : tval.type;
-    if (!VALIDATE(!type.is_reference_type())) {
+    if (!VALIDATE(!type.is_reference())) {
       this->DecodeError(
           "select without type is only valid for value type inputs");
       return 0;
@@ -2939,12 +2971,12 @@ class WasmFullDecoder : public WasmDecoder<validate> {
     Value value = Pop(0);
     Value* result = Push(kWasmI32);
     switch (value.type.kind()) {
-      case ValueType::kOptRef:
+      case kOptRef:
         CALL_INTERFACE_IF_REACHABLE(UnOp, kExprRefIsNull, value, result);
         return 1;
-      case ValueType::kBottom:
+      case kBottom:
         // We are in unreachable code, the return value does not matter.
-      case ValueType::kRef:
+      case kRef:
         // For non-nullable references, the result is always false.
         CALL_INTERFACE_IF_REACHABLE(Drop);
         CALL_INTERFACE_IF_REACHABLE(I32Const, result, 0);
@@ -2974,14 +3006,14 @@ class WasmFullDecoder : public WasmDecoder<validate> {
     CHECK_PROTOTYPE_OPCODE(typed_funcref);
     Value value = Pop(0);
     switch (value.type.kind()) {
-      case ValueType::kBottom:
+      case kBottom:
         // We are in unreachable code. Forward the bottom value.
-      case ValueType::kRef: {
+      case kRef: {
         Value* result = Push(value.type);
         CALL_INTERFACE_IF_REACHABLE(Forward, value, result);
         return 1;
       }
-      case ValueType::kOptRef: {
+      case kOptRef: {
         Value* result =
             Push(ValueType::Ref(value.type.heap_type(), kNonNullable));
         CALL_INTERFACE_IF_REACHABLE(RefAsNonNull, value, result);
@@ -3182,8 +3214,7 @@ class WasmFullDecoder : public WasmDecoder<validate> {
       // We are in unreachable code, maintain the polymorphic stack.
       return 1;
     }
-    if (!VALIDATE(func_type.is_object_reference_type() &&
-                  func_type.has_index() &&
+    if (!VALIDATE(func_type.is_object_reference() && func_type.has_index() &&
                   this->module_->has_signature(func_type.ref_index()))) {
       PopTypeError(0, func_ref, "function reference");
       return 0;
@@ -3205,8 +3236,7 @@ class WasmFullDecoder : public WasmDecoder<validate> {
       // We are in unreachable code, maintain the polymorphic stack.
       return 1;
     }
-    if (!VALIDATE(func_type.is_object_reference_type() &&
-                  func_type.has_index() &&
+    if (!VALIDATE(func_type.is_object_reference() && func_type.has_index() &&
                   this->module_->has_signature(func_type.ref_index()))) {
       PopTypeError(0, func_ref, "function reference");
       return 0;
@@ -3234,6 +3264,9 @@ class WasmFullDecoder : public WasmDecoder<validate> {
   DECODE(Simd) {
     CHECK_PROTOTYPE_OPCODE(simd);
     if (!CheckHardwareSupportsSimd()) {
+      if (FLAG_correctness_fuzzer_suppressions) {
+        FATAL("Aborting on missing Wasm SIMD support");
+      }
       this->DecodeError("Wasm SIMD unsupported");
       return 0;
     }
@@ -3307,6 +3340,7 @@ class WasmFullDecoder : public WasmDecoder<validate> {
     DECODE_IMPL(Try);
     DECODE_IMPL(Catch);
     DECODE_IMPL(Delegate);
+    DECODE_IMPL(CatchAll);
     DECODE_IMPL(Unwind);
     DECODE_IMPL(BrOnNull);
     DECODE_IMPL(Let);
@@ -3825,10 +3859,6 @@ class WasmFullDecoder : public WasmDecoder<validate> {
       }
       case kExprPrefetchNT: {
         return SimdPrefetch(opcode_length, /*temporal=*/false);
-      }
-      case kExprI32x4WidenI8x16S:
-      case kExprI32x4WidenI8x16U: {
-        return SimdExtractLane(opcode, kWasmS128, opcode_length);
       }
       default: {
         const FunctionSig* sig = WasmOpcodes::Signature(opcode);
@@ -4743,7 +4773,8 @@ class WasmFullDecoder : public WasmDecoder<validate> {
     this->end_ = this->pc_;  // Terminate decoding loop.
     this->current_code_reachable_ = false;
     TRACE(" !%s\n", this->error_.message().c_str());
-    CALL_INTERFACE(OnFirstError);
+    // Cannot use CALL_INTERFACE here because it checks if this->ok().
+    interface_.OnFirstError(this);
   }
 
   int BuildSimplePrototypeOperator(WasmOpcode opcode) {

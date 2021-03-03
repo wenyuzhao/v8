@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --allow-natives-syntax
+// Flags: --allow-natives-syntax --sparkplug
 
 // Tier-up across Realms
 
@@ -19,6 +19,8 @@
 
   let f1 = Realm.eval(realm1, "(" + factory1.toString() + ")")();
   let f2 = Realm.eval(realm2, "(" + factory1.toString() + ")")();
+  %NeverOptimizeFunction(f1);
+  %NeverOptimizeFunction(f2);
 
   %CompileBaseline(f1);
   assertEquals(0, f1(0));
@@ -46,6 +48,9 @@
   let realmFactory = Realm.eval(realm2, "(" + factory2.toString() + ")");
   let f2 = realmFactory();
   let f3 = realmFactory();
+  %NeverOptimizeFunction(f1);
+  %NeverOptimizeFunction(f2);
+  %NeverOptimizeFunction(f3);
 
   assertEquals(0, f2(0));
   %CompileBaseline(f1);

@@ -250,7 +250,8 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
     // TODO(mips): Implement.
     UNIMPLEMENTED();
   }
-  void JumpCodeObject(Register code_object) override {
+  void JumpCodeObject(Register code_object,
+                      JumpMode jump_mode = JumpMode::kJump) override {
     // TODO(mips): Implement.
     UNIMPLEMENTED();
   }
@@ -801,6 +802,8 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
                  MSARegister src2);
   void ExtMulHigh(MSADataType type, MSARegister dst, MSARegister src1,
                   MSARegister src2);
+  void LoadSplat(MSASize sz, MSARegister dst, MemOperand src);
+  void ExtAddPairwise(MSADataType type, MSARegister dst, MSARegister src);
   void MSARoundW(MSARegister dst, MSARegister src, FPURoundingMode mode);
   void MSARoundD(MSARegister dst, MSARegister src, FPURoundingMode mode);
 
@@ -1045,10 +1048,10 @@ class V8_EXPORT_PRIVATE MacroAssembler : public TurboAssembler {
 
   // Load the global proxy from the current context.
   void LoadGlobalProxy(Register dst) {
-    LoadNativeContextSlot(Context::GLOBAL_PROXY_INDEX, dst);
+    LoadNativeContextSlot(dst, Context::GLOBAL_PROXY_INDEX);
   }
 
-  void LoadNativeContextSlot(int index, Register dst);
+  void LoadNativeContextSlot(Register dst, int index);
 
   // Load the initial map from the global function. The registers
   // function and map can be the same, function is then overwritten.

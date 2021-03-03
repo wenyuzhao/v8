@@ -214,7 +214,7 @@ DeoptimizedFrameInfo* Deoptimizer::DebuggerInspectableFrame(
   int counter = jsframe_index;
   for (auto it = translated_values.begin(); it != translated_values.end();
        it++) {
-    if (it->kind() == TranslatedFrame::kInterpretedFunction ||
+    if (it->kind() == TranslatedFrame::kUnoptimizedFunction ||
         it->kind() == TranslatedFrame::kJavaScriptBuiltinContinuation ||
         it->kind() ==
             TranslatedFrame::kJavaScriptBuiltinContinuationWithCatch) {
@@ -228,7 +228,7 @@ DeoptimizedFrameInfo* Deoptimizer::DebuggerInspectableFrame(
   CHECK(frame_it != translated_values.end());
   // We only include kJavaScriptBuiltinContinuation frames above to get the
   // counting right.
-  CHECK_EQ(frame_it->kind(), TranslatedFrame::kInterpretedFunction);
+  CHECK_EQ(frame_it->kind(), TranslatedFrame::kUnoptimizedFunction);
 
   DeoptimizedFrameInfo* info =
       new DeoptimizedFrameInfo(&translated_values, frame_it, isolate);
@@ -382,7 +382,6 @@ void Deoptimizer::DeoptimizeAll(Isolate* isolate) {
   TraceDeoptAll(isolate);
   isolate->AbortConcurrentOptimization(BlockingBehavior::kBlock);
   DisallowGarbageCollection no_gc;
-  DeoptimizeAllBaseline(isolate);
   // For all contexts, mark all code, then deoptimize.
   Object context = isolate->heap()->native_contexts_list();
   while (!context.IsUndefined(isolate)) {
@@ -421,73 +420,6 @@ void Deoptimizer::MarkAllCodeForContext(NativeContext native_context) {
   }
 }
 
-namespace {
-class DeoptimizeBaselineVisitor : public ThreadVisitor {
- public:
-  explicit DeoptimizeBaselineVisitor(SharedFunctionInfo shared)
-      : shared_(shared) {}
-  DeoptimizeBaselineVisitor() : shared_(SharedFunctionInfo()) {}
-
-  void VisitThread(Isolate* isolate, ThreadLocalTop* top) override {
-    bool deopt_all = shared_ == SharedFunctionInfo();
-    for (JavaScriptFrameIterator it(isolate, top); !it.done(); it.Advance()) {
-      if (it.frame()->type() == StackFrame::BASELINE) {
-        BaselineFrame* frame = BaselineFrame::cast(it.frame());
-        if (!deopt_all && frame->function().shared() != shared_) continue;
-        frame->InterpretedFrame::PatchBytecodeOffset(
-            frame->GetBytecodeOffset());
-        Address* pc_addr = frame->pc_address();
-        Address advance = BUILTIN_CODE(isolate, InterpreterEnterBytecodeAdvance)
-                              ->InstructionStart();
-        PointerAuthentication::ReplacePC(pc_addr, advance, kSystemPointerSize);
-      }
-    }
-  }
-
- private:
-  SharedFunctionInfo shared_;
-  DISALLOW_GARBAGE_COLLECTION(no_gc_)
-};
-}  // namespace
-
-void Deoptimizer::DeoptimizeBaseline(SharedFunctionInfo shared) {
-  DCHECK_EQ(shared.GetCode().kind(), CodeKind::BASELINE);
-  Isolate* isolate = shared.GetIsolate();
-  DeoptimizeBaselineVisitor visitor(shared);
-  visitor.VisitThread(isolate, isolate->thread_local_top());
-  isolate->thread_manager()->IterateArchivedThreads(&visitor);
-  // TODO(v8:11429): Avoid this heap walk somehow.
-  HeapObjectIterator iterator(isolate->heap());
-  auto trampoline = BUILTIN_CODE(isolate, InterpreterEntryTrampoline);
-  shared.flush_baseline_data();
-  for (HeapObject obj = iterator.Next(); !obj.is_null();
-       obj = iterator.Next()) {
-    if (obj.IsJSFunction()) {
-      JSFunction fun = JSFunction::cast(obj);
-      if (fun.shared() == shared && fun.code().kind() == CodeKind::BASELINE) {
-        fun.set_code(*trampoline);
-      }
-    }
-  }
-}
-
-void Deoptimizer::DeoptimizeAllBaseline(Isolate* isolate) {
-  DeoptimizeBaselineVisitor visitor;
-  visitor.VisitThread(isolate, isolate->thread_local_top());
-  HeapObjectIterator iterator(isolate->heap());
-  auto trampoline = BUILTIN_CODE(isolate, InterpreterEntryTrampoline);
-  isolate->thread_manager()->IterateArchivedThreads(&visitor);
-  for (HeapObject obj = iterator.Next(); !obj.is_null();
-       obj = iterator.Next()) {
-    if (obj.IsJSFunction()) {
-      JSFunction fun = JSFunction::cast(obj);
-      if (fun.shared().HasBaselineData()) {
-        fun.set_code(*trampoline);
-      }
-    }
-  }
-}
-
 void Deoptimizer::DeoptimizeFunction(JSFunction function, Code code) {
   Isolate* isolate = function.GetIsolate();
   RuntimeCallTimerScope runtimeTimer(isolate,
@@ -505,7 +437,8 @@ void Deoptimizer::DeoptimizeFunction(JSFunction function, Code code) {
     // The code in the function's optimized code feedback vector slot might
     // be different from the code on the function - evict it if necessary.
     function.feedback_vector().EvictOptimizedCodeMarkedForDeoptimization(
-        function.shared(), "unlinking code marked for deopt");
+        function.raw_feedback_cell(), function.shared(),
+        "unlinking code marked for deopt");
     if (!code.deopt_already_counted()) {
       code.set_deopt_already_counted(true);
     }
@@ -775,7 +708,7 @@ namespace {
 int LookupCatchHandler(Isolate* isolate, TranslatedFrame* translated_frame,
                        int* data_out) {
   switch (translated_frame->kind()) {
-    case TranslatedFrame::kInterpretedFunction: {
+    case TranslatedFrame::kUnoptimizedFunction: {
       int bytecode_offset = translated_frame->bytecode_offset().ToInt();
       HandlerTable table(
           translated_frame->raw_shared_info().GetBytecodeArray(isolate));
@@ -993,8 +926,8 @@ void Deoptimizer::DoComputeOutputFrames() {
     TranslatedFrame* translated_frame = &(translated_state_.frames()[i]);
     const bool handle_exception = deoptimizing_throw_ && i == count - 1;
     switch (translated_frame->kind()) {
-      case TranslatedFrame::kInterpretedFunction:
-        DoComputeInterpretedFrame(translated_frame, frame_index,
+      case TranslatedFrame::kUnoptimizedFunction:
+        DoComputeUnoptimizedFrame(translated_frame, frame_index,
                                   handle_exception);
         break;
       case TranslatedFrame::kArgumentsAdaptor:
@@ -1048,7 +981,7 @@ void Deoptimizer::DoComputeOutputFrames() {
       stack_guard->real_jslimit() - kStackLimitSlackForDeoptimizationInBytes);
 }
 
-void Deoptimizer::DoComputeInterpretedFrame(TranslatedFrame* translated_frame,
+void Deoptimizer::DoComputeUnoptimizedFrame(TranslatedFrame* translated_frame,
                                             int frame_index,
                                             bool goto_catch_handler) {
   SharedFunctionInfo shared = translated_frame->raw_shared_info();
@@ -1072,13 +1005,13 @@ void Deoptimizer::DoComputeInterpretedFrame(TranslatedFrame* translated_frame,
                             TranslatedFrame::kArgumentsAdaptor;
 
   const int locals_count = translated_frame->height();
-  InterpretedFrameInfo frame_info = InterpretedFrameInfo::Precise(
+  UnoptimizedFrameInfo frame_info = UnoptimizedFrameInfo::Precise(
       parameters_count, locals_count, is_topmost, should_pad_arguments);
   const uint32_t output_frame_size = frame_info.frame_size_in_bytes();
 
   TranslatedFrame::iterator function_iterator = value_iterator++;
   if (verbose_tracing_enabled()) {
-    PrintF(trace_scope()->file(), "  translating interpreted frame ");
+    PrintF(trace_scope()->file(), "  translating unoptimized frame ");
     std::unique_ptr<char[]> name = shared.DebugNameCStr();
     PrintF(trace_scope()->file(), "%s", name.get());
     PrintF(trace_scope()->file(),
@@ -1105,10 +1038,8 @@ void Deoptimizer::DoComputeInterpretedFrame(TranslatedFrame* translated_frame,
 
   // Compute the incoming parameter translation.
   ReadOnlyRoots roots(isolate());
-  if (should_pad_arguments) {
-    for (int i = 0; i < ArgumentPaddingSlots(parameters_count); ++i) {
-      frame_writer.PushRawObject(roots.the_hole_value(), "padding\n");
-    }
+  if (should_pad_arguments && ShouldPadArguments(parameters_count)) {
+    frame_writer.PushRawObject(roots.the_hole_value(), "padding\n");
   }
 
   // Note: parameters_count includes the receiver.
@@ -1152,7 +1083,7 @@ void Deoptimizer::DoComputeInterpretedFrame(TranslatedFrame* translated_frame,
   const intptr_t fp_value = top_address + frame_writer.top_offset();
   output_frame->SetFp(fp_value);
   if (is_topmost) {
-    Register fp_reg = InterpretedFrame::fp_register();
+    Register fp_reg = UnoptimizedFrame::fp_register();
     output_frame->SetRegister(fp_reg.code(), fp_value);
   }
 
@@ -1260,7 +1191,7 @@ void Deoptimizer::DoComputeInterpretedFrame(TranslatedFrame* translated_frame,
 
   // Translate the accumulator register (depending on frame position).
   if (is_topmost) {
-    for (int i = 0; i < ArgumentPaddingSlots(1); ++i) {
+    if (kPadArguments) {
       frame_writer.PushRawObject(roots.the_hole_value(), "padding\n");
     }
     // For topmost frame, put the accumulator on the stack. The
@@ -1323,7 +1254,7 @@ void Deoptimizer::DoComputeInterpretedFrame(TranslatedFrame* translated_frame,
     output_frame->SetConstantPool(constant_pool_value);
     if (is_topmost) {
       Register constant_pool_reg =
-          InterpretedFrame::constant_pool_pointer_register();
+          UnoptimizedFrame::constant_pool_pointer_register();
       output_frame->SetRegister(constant_pool_reg.code(), constant_pool_value);
     }
   }
@@ -1364,10 +1295,11 @@ void Deoptimizer::DoComputeArgumentsAdaptorFrame(
       argument_count_without_receiver - formal_parameter_count;
   // The number of pushed arguments is the maximum of the actual argument count
   // and the formal parameter count + the receiver.
-  const int padding = ArgumentPaddingSlots(
+  const bool should_pad_args = ShouldPadArguments(
       std::max(argument_count_without_receiver, formal_parameter_count) + 1);
   const int output_frame_size =
-      (std::max(0, extra_argument_count) + padding) * kSystemPointerSize;
+      std::max(0, extra_argument_count * kSystemPointerSize) +
+      (should_pad_args ? kSystemPointerSize : 0);
   if (verbose_tracing_enabled()) {
     PrintF(trace_scope_->file(),
            "  translating arguments adaptor => variable_size=%d\n",
@@ -1390,7 +1322,7 @@ void Deoptimizer::DoComputeArgumentsAdaptorFrame(
   FrameWriter frame_writer(this, output_frame, verbose_trace_scope());
 
   ReadOnlyRoots roots(isolate());
-  for (int i = 0; i < padding; ++i) {
+  if (should_pad_args) {
     frame_writer.PushRawObject(roots.the_hole_value(), "padding\n");
   }
 
@@ -1452,7 +1384,7 @@ void Deoptimizer::DoComputeConstructStubFrame(TranslatedFrame* translated_frame,
   output_frame->SetTop(top_address);
 
   ReadOnlyRoots roots(isolate());
-  for (int i = 0; i < ArgumentPaddingSlots(parameters_count); ++i) {
+  if (ShouldPadArguments(parameters_count)) {
     frame_writer.PushRawObject(roots.the_hole_value(), "padding\n");
   }
 
@@ -1518,7 +1450,7 @@ void Deoptimizer::DoComputeConstructStubFrame(TranslatedFrame* translated_frame,
   frame_writer.PushTranslatedValue(receiver_iterator, debug_hint);
 
   if (is_topmost) {
-    for (int i = 0; i < ArgumentPaddingSlots(1); ++i) {
+    if (kPadArguments) {
       frame_writer.PushRawObject(roots.the_hole_value(), "padding\n");
     }
     // Ensure the result is restored back when we return to the stub.
@@ -1625,25 +1557,25 @@ Builtins::Name Deoptimizer::TrampolineForBuiltinContinuation(
   UNREACHABLE();
 }
 
-TranslatedValue Deoptimizer::TranslatedValueForWasmReturnType(
-    base::Optional<wasm::ValueType::Kind> wasm_call_return_type) {
-  if (wasm_call_return_type) {
-    switch (wasm_call_return_type.value()) {
-      case wasm::ValueType::kI32:
+TranslatedValue Deoptimizer::TranslatedValueForWasmReturnKind(
+    base::Optional<wasm::ValueKind> wasm_call_return_kind) {
+  if (wasm_call_return_kind) {
+    switch (wasm_call_return_kind.value()) {
+      case wasm::kI32:
         return TranslatedValue::NewInt32(
             &translated_state_,
             (int32_t)input_->GetRegister(kReturnRegister0.code()));
-      case wasm::ValueType::kI64:
+      case wasm::kI64:
         return TranslatedValue::NewInt64ToBigInt(
             &translated_state_,
             (int64_t)input_->GetRegister(kReturnRegister0.code()));
-      case wasm::ValueType::kF32:
+      case wasm::kF32:
         return TranslatedValue::NewFloat(
             &translated_state_,
             Float32(*reinterpret_cast<float*>(
                 input_->GetDoubleRegister(wasm::kFpReturnRegisters[0].code())
                     .get_bits_address())));
-      case wasm::ValueType::kF64:
+      case wasm::kF64:
         return TranslatedValue::NewDouble(
             &translated_state_,
             input_->GetDoubleRegister(wasm::kFpReturnRegisters[0].code()));
@@ -1726,8 +1658,8 @@ void Deoptimizer::DoComputeBuiltinContinuation(
     // This TranslatedValue will be written in the output frame in place of the
     // hole and we'll use ContinueToCodeStubBuiltin in place of
     // ContinueToCodeStubBuiltinWithResult.
-    TranslatedValue result = TranslatedValueForWasmReturnType(
-        translated_frame->wasm_call_return_type());
+    TranslatedValue result = TranslatedValueForWasmReturnKind(
+        translated_frame->wasm_call_return_kind());
     translated_frame->Add(result);
   }
 
@@ -1802,8 +1734,7 @@ void Deoptimizer::DoComputeBuiltinContinuation(
   ++value_iterator;
 
   ReadOnlyRoots roots(isolate());
-  const int padding = ArgumentPaddingSlots(frame_info.stack_parameter_count());
-  for (int i = 0; i < padding; ++i) {
+  if (ShouldPadArguments(frame_info.stack_parameter_count())) {
     frame_writer.PushRawObject(roots.the_hole_value(), "padding\n");
   }
 
@@ -1958,7 +1889,7 @@ void Deoptimizer::DoComputeBuiltinContinuation(
   }
 
   if (is_topmost) {
-    for (int i = 0; i < ArgumentPaddingSlots(1); ++i) {
+    if (kPadArguments) {
       frame_writer.PushRawObject(roots.the_hole_value(), "padding\n");
     }
 

@@ -153,6 +153,8 @@
  *   - bool
  *   - int32_t
  *   - uint32_t
+ *   - float32_t
+ *   - float64_t
  * Currently supported argument types:
  *  - pointer to an embedder type
  *  - bool
@@ -191,7 +193,7 @@ namespace v8 {
 
 class CTypeInfo {
  public:
-  enum class Type : char {
+  enum class Type : uint8_t {
     kVoid,
     kBool,
     kInt32,
@@ -203,65 +205,106 @@ class CTypeInfo {
     kV8Value,
   };
 
-  enum class ArgFlags : uint8_t {
+  // kCallbackOptionsType is not part of the Type enum
+  // because it is only used internally. Use value 255 that is larger
+  // than any valid Type enum.
+  static constexpr Type kCallbackOptionsType = Type(255);
+
+  enum class Flags : uint8_t {
     kNone = 0,
-    kIsArrayBit = 1 << 0,  // This argument is first in an array of values.
   };
 
-  static CTypeInfo FromWrapperType(ArgFlags flags = ArgFlags::kNone) {
-    return CTypeInfo(static_cast<int>(flags) | kIsWrapperTypeBit);
+  explicit constexpr CTypeInfo(Type type, Flags flags = Flags::kNone)
+      : type_(type), flags_(flags) {}
+
+  constexpr Type GetType() const { return type_; }
+
+  constexpr Flags GetFlags() const { return flags_; }
+
+ private:
+  Type type_;
+  Flags flags_;
+};
+
+class V8_EXPORT CFunctionInfo {
+ public:
+  // Construct a struct to hold a CFunction's type information.
+  // |return_info| describes the function's return type.
+  // |arg_info| is an array of |arg_count| CTypeInfos describing the
+  //   arguments. Only the last argument may be of the special type
+  //   CTypeInfo::kCallbackOptionsType.
+  CFunctionInfo(const CTypeInfo& return_info, unsigned int arg_count,
+                const CTypeInfo* arg_info);
+
+  const CTypeInfo& ReturnInfo() const { return return_info_; }
+
+  // The argument count, not including the v8::FastApiCallbackOptions
+  // if present.
+  unsigned int ArgumentCount() const {
+    return HasOptions() ? arg_count_ - 1 : arg_count_;
   }
 
-  static constexpr CTypeInfo FromCType(Type ctype,
-                                       ArgFlags flags = ArgFlags::kNone) {
-    // TODO(mslekova): Refactor the manual bit manipulations to use
-    // PointerWithPayload instead.
-    // ctype cannot be Type::kV8Value.
-    return CTypeInfo(
-        ((static_cast<uintptr_t>(ctype) << kTypeOffset) & kTypeMask) |
-        static_cast<int>(flags));
-  }
+  // |index| must be less than ArgumentCount().
+  //  Note: if the last argument passed on construction of CFunctionInfo
+  //  has type CTypeInfo::kCallbackOptionsType, it is not included in
+  //  ArgumentCount().
+  const CTypeInfo& ArgumentInfo(unsigned int index) const;
 
-  const void* GetWrapperInfo() const;
-
-  constexpr Type GetType() const {
-    if (payload_ & kIsWrapperTypeBit) {
-      return Type::kV8Value;
-    }
-    return static_cast<Type>((payload_ & kTypeMask) >> kTypeOffset);
-  }
-
-  constexpr bool IsArray() const {
-    return payload_ & static_cast<int>(ArgFlags::kIsArrayBit);
-  }
-
-  static const CTypeInfo& Invalid() {
-    static CTypeInfo invalid = CTypeInfo(0);
-    return invalid;
+  bool HasOptions() const {
+    // The options arg is always the last one.
+    return arg_count_ > 0 && arg_info_[arg_count_ - 1].GetType() ==
+                                 CTypeInfo::kCallbackOptionsType;
   }
 
  private:
-  explicit constexpr CTypeInfo(uintptr_t payload) : payload_(payload) {}
-
-  // That must be the last bit after ArgFlags.
-  static constexpr uintptr_t kIsWrapperTypeBit = 1 << 1;
-  static constexpr uintptr_t kWrapperTypeInfoMask = static_cast<uintptr_t>(~0)
-                                                    << 2;
-
-  static constexpr unsigned int kTypeOffset = kIsWrapperTypeBit;
-  static constexpr unsigned int kTypeSize = 8 - kTypeOffset;
-  static constexpr uintptr_t kTypeMask =
-      (~(static_cast<uintptr_t>(~0) << kTypeSize)) << kTypeOffset;
-
-  const uintptr_t payload_;
+  const CTypeInfo return_info_;
+  const unsigned int arg_count_;
+  const CTypeInfo* arg_info_;
 };
 
-class CFunctionInfo {
+class V8_EXPORT CFunction {
  public:
-  virtual const CTypeInfo& ReturnInfo() const = 0;
-  virtual unsigned int ArgumentCount() const = 0;
-  virtual const CTypeInfo& ArgumentInfo(unsigned int index) const = 0;
-  virtual bool HasOptions() const = 0;
+  constexpr CFunction() : address_(nullptr), type_info_(nullptr) {}
+
+  const CTypeInfo& ReturnInfo() const { return type_info_->ReturnInfo(); }
+
+  const CTypeInfo& ArgumentInfo(unsigned int index) const {
+    return type_info_->ArgumentInfo(index);
+  }
+
+  unsigned int ArgumentCount() const { return type_info_->ArgumentCount(); }
+
+  const void* GetAddress() const { return address_; }
+  const CFunctionInfo* GetTypeInfo() const { return type_info_; }
+
+  template <typename F>
+  static CFunction Make(F* func) {
+    return ArgUnwrap<F*>::Make(func);
+  }
+
+  template <typename F>
+  V8_DEPRECATED("Use CFunctionBuilder instead.")
+  static CFunction MakeWithFallbackSupport(F* func) {
+    return ArgUnwrap<F*>::Make(func);
+  }
+
+  CFunction(const void* address, const CFunctionInfo* type_info);
+
+ private:
+  const void* address_;
+  const CFunctionInfo* type_info_;
+
+  template <typename F>
+  class ArgUnwrap {
+    static_assert(sizeof(F) != sizeof(F),
+                  "CFunction must be created from a function pointer.");
+  };
+
+  template <typename R, typename... Args>
+  class ArgUnwrap<R (*)(Args...)> {
+   public:
+    static CFunction Make(R (*func)(Args...));
+  };
 };
 
 struct ApiObject {
@@ -296,69 +339,6 @@ struct FastApiCallbackOptions {
 
 namespace internal {
 
-template <typename T>
-struct GetCType {
-  static constexpr CTypeInfo Get() {
-    return CTypeInfo::FromCType(CTypeInfo::Type::kV8Value);
-  }
-};
-
-#define SPECIALIZE_GET_C_TYPE_FOR(ctype, ctypeinfo)            \
-  template <>                                                  \
-  struct GetCType<ctype> {                                     \
-    static constexpr CTypeInfo Get() {                         \
-      return CTypeInfo::FromCType(CTypeInfo::Type::ctypeinfo); \
-    }                                                          \
-  };
-
-#define SUPPORTED_C_TYPES(V) \
-  V(void, kVoid)             \
-  V(bool, kBool)             \
-  V(int32_t, kInt32)         \
-  V(uint32_t, kUint32)       \
-  V(int64_t, kInt64)         \
-  V(uint64_t, kUint64)       \
-  V(float, kFloat32)         \
-  V(double, kFloat64)        \
-  V(ApiObject, kV8Value)
-
-SUPPORTED_C_TYPES(SPECIALIZE_GET_C_TYPE_FOR)
-
-// T* where T is a primitive (array of primitives).
-template <typename T, typename = void>
-struct GetCTypePointerImpl {
-  static constexpr CTypeInfo Get() {
-    return CTypeInfo::FromCType(GetCType<T>::Get().GetType(),
-                                CTypeInfo::ArgFlags::kIsArrayBit);
-  }
-};
-
-// T* where T is an API object.
-template <typename T>
-struct GetCTypePointerImpl<T, void> {
-  static constexpr CTypeInfo Get() { return CTypeInfo::FromWrapperType(); }
-};
-
-// T** where T is a primitive. Not allowed.
-template <typename T, typename = void>
-struct GetCTypePointerPointerImpl {
-  static_assert(sizeof(T**) != sizeof(T**), "Unsupported type");
-};
-
-// T** where T is an API object (array of API objects).
-template <typename T>
-struct GetCTypePointerPointerImpl<T, void> {
-  static constexpr CTypeInfo Get() {
-    return CTypeInfo::FromWrapperType(CTypeInfo::ArgFlags::kIsArrayBit);
-  }
-};
-
-template <typename T>
-struct GetCType<T**> : public GetCTypePointerPointerImpl<T> {};
-
-template <typename T>
-struct GetCType<T*> : public GetCTypePointerImpl<T> {};
-
 // Helper to count the number of occurances of `T` in `List`
 template <typename T, typename... List>
 struct count : std::integral_constant<int, 0> {};
@@ -368,104 +348,178 @@ struct count<T, T, Args...>
 template <typename T, typename U, typename... Args>
 struct count<T, U, Args...> : count<T, Args...> {};
 
-template <typename R, typename... Args>
+template <typename RetBuilder, typename... ArgBuilders>
 class CFunctionInfoImpl : public CFunctionInfo {
- public:
   static constexpr int kOptionsArgCount =
-      count<FastApiCallbackOptions&, Args...>();
+      count<FastApiCallbackOptions&, ArgBuilders...>();
   static constexpr int kReceiverCount = 1;
-  CFunctionInfoImpl()
-      : return_info_(internal::GetCType<R>::Get()),
-        arg_count_(sizeof...(Args) - kOptionsArgCount),
-        arg_info_{internal::GetCType<Args>::Get()...} {
-    static_assert(kOptionsArgCount == 0 || kOptionsArgCount == 1,
-                  "Only one options parameter is supported.");
-    static_assert(sizeof...(Args) >= kOptionsArgCount + kReceiverCount,
-                  "The receiver or the fallback argument is missing.");
-    constexpr CTypeInfo::Type type = internal::GetCType<R>::Get().GetType();
-    static_assert(
-        type == CTypeInfo::Type::kVoid || type == CTypeInfo::Type::kBool ||
-            type == CTypeInfo::Type::kInt32 || type == CTypeInfo::Type::kUint32,
-        "floating point, 64-bit, and api object values are not currently "
-        "supported.");
-  }
 
-  const CTypeInfo& ReturnInfo() const override { return return_info_; }
-  unsigned int ArgumentCount() const override { return arg_count_; }
-  const CTypeInfo& ArgumentInfo(unsigned int index) const override {
-    if (index >= ArgumentCount()) {
-      return CTypeInfo::Invalid();
-    }
-    return arg_info_[index];
+  static_assert(kOptionsArgCount == 0 || kOptionsArgCount == 1,
+                "Only one options parameter is supported.");
+
+  static_assert(sizeof...(ArgBuilders) >= kOptionsArgCount + kReceiverCount,
+                "The receiver or the options argument is missing.");
+
+ public:
+  constexpr CFunctionInfoImpl()
+      : CFunctionInfo(RetBuilder::Build(), sizeof...(ArgBuilders),
+                      arg_info_storage_),
+        arg_info_storage_{ArgBuilders::Build()...} {
+    constexpr CTypeInfo::Type kReturnType = RetBuilder::Build().GetType();
+    static_assert(kReturnType == CTypeInfo::Type::kVoid ||
+                      kReturnType == CTypeInfo::Type::kBool ||
+                      kReturnType == CTypeInfo::Type::kInt32 ||
+                      kReturnType == CTypeInfo::Type::kUint32 ||
+                      kReturnType == CTypeInfo::Type::kFloat32 ||
+                      kReturnType == CTypeInfo::Type::kFloat64,
+                  "64-bit int and api object values are not currently "
+                  "supported return types.");
   }
-  bool HasOptions() const override { return kOptionsArgCount == 1; }
 
  private:
-  const CTypeInfo return_info_;
-  const unsigned int arg_count_;
-  const CTypeInfo arg_info_[sizeof...(Args)];
+  const CTypeInfo arg_info_storage_[sizeof...(ArgBuilders)];
+};
+
+template <typename T>
+struct TypeInfoHelper {
+  static_assert(sizeof(T) != sizeof(T), "This type is not supported");
+};
+
+#define SPECIALIZE_GET_TYPE_INFO_HELPER_FOR(T, Enum)                          \
+  template <>                                                                 \
+  struct TypeInfoHelper<T> {                                                  \
+    static constexpr CTypeInfo::Flags Flags() {                               \
+      return CTypeInfo::Flags::kNone;                                         \
+    }                                                                         \
+                                                                              \
+    static constexpr CTypeInfo::Type Type() { return CTypeInfo::Type::Enum; } \
+  };
+
+#define BASIC_C_TYPES(V) \
+  V(void, kVoid)         \
+  V(bool, kBool)         \
+  V(int32_t, kInt32)     \
+  V(uint32_t, kUint32)   \
+  V(int64_t, kInt64)     \
+  V(uint64_t, kUint64)   \
+  V(float, kFloat32)     \
+  V(double, kFloat64)    \
+  V(ApiObject, kV8Value)
+
+BASIC_C_TYPES(SPECIALIZE_GET_TYPE_INFO_HELPER_FOR)
+
+#undef BASIC_C_TYPES
+
+template <>
+struct TypeInfoHelper<FastApiCallbackOptions&> {
+  static constexpr CTypeInfo::Flags Flags() { return CTypeInfo::Flags::kNone; }
+
+  static constexpr CTypeInfo::Type Type() {
+    return CTypeInfo::kCallbackOptionsType;
+  }
+};
+
+template <typename T, CTypeInfo::Flags... Flags>
+class CTypeInfoBuilder {
+ public:
+  using BaseType = T;
+
+  static constexpr CTypeInfo Build() {
+    // Get the flags and merge in any additional flags.
+    uint8_t flags = uint8_t(TypeInfoHelper<T>::Flags());
+    int unused[] = {0, (flags |= uint8_t(Flags), 0)...};
+    // With C++17, we could use a "..." fold expression over a parameter pack.
+    // Since we're still using C++14, we have to evaluate an OR expresion while
+    // constructing an unused list of 0's. This applies the binary operator
+    // for each value in Flags.
+    (void)unused;
+
+    // Return the same type with the merged flags.
+    return CTypeInfo(TypeInfoHelper<T>::Type(), CTypeInfo::Flags(flags));
+  }
+};
+
+template <typename RetBuilder, typename... ArgBuilders>
+class CFunctionBuilderWithFunction {
+ public:
+  explicit constexpr CFunctionBuilderWithFunction(const void* fn) : fn_(fn) {}
+
+  template <CTypeInfo::Flags... Flags>
+  constexpr auto Ret() {
+    return CFunctionBuilderWithFunction<
+        CTypeInfoBuilder<typename RetBuilder::BaseType, Flags...>,
+        ArgBuilders...>(fn_);
+  }
+
+  template <unsigned int N, CTypeInfo::Flags... Flags>
+  constexpr auto Arg() {
+    // Return a copy of the builder with the Nth arg builder merged with
+    // template parameter pack Flags.
+    return ArgImpl<N, Flags...>(
+        std::make_index_sequence<sizeof...(ArgBuilders)>());
+  }
+
+  auto Build() {
+    static CFunctionInfoImpl<RetBuilder, ArgBuilders...> instance;
+    return CFunction(fn_, &instance);
+  }
+
+ private:
+  template <bool Merge, unsigned int N, CTypeInfo::Flags... Flags>
+  struct GetArgBuilder;
+
+  // Returns the same ArgBuilder as the one at index N, including its flags.
+  // Flags in the template parameter pack are ignored.
+  template <unsigned int N, CTypeInfo::Flags... Flags>
+  struct GetArgBuilder<false, N, Flags...> {
+    using type =
+        typename std::tuple_element<N, std::tuple<ArgBuilders...>>::type;
+  };
+
+  // Returns an ArgBuilder with the same base type as the one at index N,
+  // but merges the flags with the flags in the template parameter pack.
+  template <unsigned int N, CTypeInfo::Flags... Flags>
+  struct GetArgBuilder<true, N, Flags...> {
+    using type = CTypeInfoBuilder<
+        typename std::tuple_element<N,
+                                    std::tuple<ArgBuilders...>>::type::BaseType,
+        std::tuple_element<N, std::tuple<ArgBuilders...>>::type::Build()
+            .GetFlags(),
+        Flags...>;
+  };
+
+  // Return a copy of the CFunctionBuilder, but merges the Flags on ArgBuilder
+  // index N with the new Flags passed in the template parameter pack.
+  template <unsigned int N, CTypeInfo::Flags... Flags, size_t... I>
+  constexpr auto ArgImpl(std::index_sequence<I...>) {
+    return CFunctionBuilderWithFunction<
+        RetBuilder, typename GetArgBuilder<N == I, I, Flags...>::type...>(fn_);
+  }
+
+  const void* fn_;
+};
+
+class CFunctionBuilder {
+ public:
+  constexpr CFunctionBuilder() {}
+
+  template <typename R, typename... Args>
+  constexpr auto Fn(R (*fn)(Args...)) {
+    return CFunctionBuilderWithFunction<CTypeInfoBuilder<R>,
+                                        CTypeInfoBuilder<Args>...>(
+        reinterpret_cast<const void*>(fn));
+  }
 };
 
 }  // namespace internal
 
-class V8_EXPORT CFunction {
- public:
-  constexpr CFunction() : address_(nullptr), type_info_(nullptr) {}
+// static
+template <typename R, typename... Args>
+CFunction CFunction::ArgUnwrap<R (*)(Args...)>::Make(R (*func)(Args...)) {
+  return internal::CFunctionBuilder().Fn(func).Build();
+}
 
-  const CTypeInfo& ReturnInfo() const { return type_info_->ReturnInfo(); }
-
-  const CTypeInfo& ArgumentInfo(unsigned int index) const {
-    return type_info_->ArgumentInfo(index);
-  }
-
-  unsigned int ArgumentCount() const { return type_info_->ArgumentCount(); }
-
-  const void* GetAddress() const { return address_; }
-  const CFunctionInfo* GetTypeInfo() const { return type_info_; }
-
-  template <typename F>
-  static CFunction Make(F* func) {
-    return ArgUnwrap<F*>::Make(func);
-  }
-
-  template <typename F>
-  V8_DEPRECATED("Use CFunction::Make instead.")
-  static CFunction MakeWithFallbackSupport(F* func) {
-    return ArgUnwrap<F*>::Make(func);
-  }
-
-  template <typename F>
-  static CFunction Make(F* func, const CFunctionInfo* type_info) {
-    return CFunction(reinterpret_cast<const void*>(func), type_info);
-  }
-
- private:
-  const void* address_;
-  const CFunctionInfo* type_info_;
-
-  CFunction(const void* address, const CFunctionInfo* type_info);
-
-  template <typename R, typename... Args>
-  static CFunctionInfo* GetCFunctionInfo() {
-    static internal::CFunctionInfoImpl<R, Args...> instance;
-    return &instance;
-  }
-
-  template <typename F>
-  class ArgUnwrap {
-    static_assert(sizeof(F) != sizeof(F),
-                  "CFunction must be created from a function pointer.");
-  };
-
-  template <typename R, typename... Args>
-  class ArgUnwrap<R (*)(Args...)> {
-   public:
-    static CFunction Make(R (*func)(Args...)) {
-      return CFunction(reinterpret_cast<const void*>(func),
-                       GetCFunctionInfo<R, Args...>());
-    }
-  };
-};
+using CFunctionBuilder = internal::CFunctionBuilder;
 
 }  // namespace v8
 

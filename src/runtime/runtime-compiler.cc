@@ -31,9 +31,9 @@ namespace {
 
 // Returns false iff an exception was thrown.
 bool MaybeSpawnNativeContextIndependentCompilationJob(
-    Handle<JSFunction> function, ConcurrencyMode mode) {
+    Isolate* isolate, Handle<JSFunction> function, ConcurrencyMode mode) {
   if (!FLAG_turbo_nci) return true;  // Nothing to do.
-  return Compiler::CompileOptimized(function, mode,
+  return Compiler::CompileOptimized(isolate, function, mode,
                                     CodeKind::NATIVE_CONTEXT_INDEPENDENT);
 }
 
@@ -45,12 +45,14 @@ Object CompileOptimized(Isolate* isolate, Handle<JSFunction> function,
   }
 
   // Compile for the next tier.
-  if (!Compiler::CompileOptimized(function, mode, function->NextTier())) {
+  if (!Compiler::CompileOptimized(isolate, function, mode,
+                                  function->NextTier())) {
     return ReadOnlyRoots(isolate).exception();
   }
 
   // Possibly compile for NCI caching.
-  if (!MaybeSpawnNativeContextIndependentCompilationJob(function, mode)) {
+  if (!MaybeSpawnNativeContextIndependentCompilationJob(isolate, function,
+                                                        mode)) {
     return ReadOnlyRoots(isolate).exception();
   }
 
@@ -70,7 +72,7 @@ void TryInstallNCICode(Isolate* isolate, Handle<JSFunction> function,
 
   Handle<Code> code;
   if (sfi->TryGetCachedCode(isolate).ToHandle(&code)) {
-    function->set_code(*code);
+    function->set_code(*code, kReleaseStore);
     JSFunction::EnsureFeedbackVector(function, is_compiled_scope);
     if (FLAG_trace_turbo_nci) CompilationCacheCode::TraceHit(sfi, code);
   }
@@ -98,7 +100,7 @@ RUNTIME_FUNCTION(Runtime_CompileLazy) {
     return isolate->StackOverflow();
   }
   IsCompiledScope is_compiled_scope;
-  if (!Compiler::Compile(function, Compiler::KEEP_EXCEPTION,
+  if (!Compiler::Compile(isolate, function, Compiler::KEEP_EXCEPTION,
                          &is_compiled_scope)) {
     return ReadOnlyRoots(isolate).exception();
   }
@@ -109,8 +111,7 @@ RUNTIME_FUNCTION(Runtime_CompileLazy) {
   return function->code();
 }
 
-// TODO(v8:11429): Consider renaming PrepareForBaseline.
-RUNTIME_FUNCTION(Runtime_PrepareForBaseline) {
+RUNTIME_FUNCTION(Runtime_InstallBaselineCode) {
   HandleScope scope(isolate);
   DCHECK_EQ(1, args.length());
   CONVERT_ARG_HANDLE_CHECKED(JSFunction, function, 0);
@@ -180,7 +181,8 @@ RUNTIME_FUNCTION(Runtime_HealOptimizedCodeSlot) {
   DCHECK(function->shared().is_compiled());
 
   function->feedback_vector().EvictOptimizedCodeMarkedForDeoptimization(
-      function->shared(), "Runtime_HealOptimizedCodeSlot");
+      function->raw_feedback_cell(), function->shared(),
+      "Runtime_HealOptimizedCodeSlot");
   return function->code();
 }
 
@@ -203,10 +205,12 @@ RUNTIME_FUNCTION(Runtime_InstantiateAsmJs) {
   }
   Handle<SharedFunctionInfo> shared(function->shared(), isolate);
   if (shared->HasAsmWasmData()) {
+#if V8_ENABLE_WEBASSEMBLY
     Handle<AsmWasmData> data(shared->asm_wasm_data(), isolate);
     MaybeHandle<Object> result = AsmJs::InstantiateAsmWasm(
         isolate, shared, data, stdlib, foreign, memory);
     if (!result.is_null()) return *result.ToHandleChecked();
+#endif
     // Remove wasm data, mark as broken for asm->wasm, replace function code
     // with UncompiledData, and return a smi 0 to indicate failure.
     SharedFunctionInfo::DiscardCompiled(isolate, shared);
@@ -297,22 +301,22 @@ static bool IsSuitableForOnStackReplacement(Isolate* isolate,
 
 namespace {
 
-BytecodeOffset DetermineEntryAndDisarmOSRForInterpreter(
-    JavaScriptFrame* frame) {
-  InterpretedFrame* iframe = reinterpret_cast<InterpretedFrame*>(frame);
+BytecodeOffset DetermineEntryAndDisarmOSRForUnoptimized(
+    JavaScriptFrame* js_frame) {
+  UnoptimizedFrame* frame = reinterpret_cast<UnoptimizedFrame*>(js_frame);
 
   // Note that the bytecode array active on the stack might be different from
   // the one installed on the function (e.g. patched by debugger). This however
   // is fine because we guarantee the layout to be in sync, hence any
   // BytecodeOffset representing the entry point will be valid for any copy of
   // the bytecode.
-  Handle<BytecodeArray> bytecode(iframe->GetBytecodeArray(), iframe->isolate());
+  Handle<BytecodeArray> bytecode(frame->GetBytecodeArray(), frame->isolate());
 
-  DCHECK_IMPLIES(frame->type() == StackFrame::INTERPRETED,
+  DCHECK_IMPLIES(frame->is_interpreted(),
                  frame->LookupCode().is_interpreter_trampoline_builtin());
-  DCHECK_IMPLIES(frame->type() == StackFrame::BASELINE,
+  DCHECK_IMPLIES(frame->is_baseline(),
                  frame->LookupCode().kind() == CodeKind::BASELINE);
-  DCHECK(frame->is_interpreted());
+  DCHECK(frame->is_unoptimized());
   DCHECK(frame->function().shared().HasBytecodeArray());
 
   // Reset the OSR loop nesting depth to disarm back edges.
@@ -320,7 +324,7 @@ BytecodeOffset DetermineEntryAndDisarmOSRForInterpreter(
 
   // Return a BytecodeOffset representing the bytecode offset of the back
   // branch.
-  return BytecodeOffset(iframe->GetBytecodeOffset());
+  return BytecodeOffset(frame->GetBytecodeOffset());
 }
 
 }  // namespace
@@ -335,11 +339,11 @@ RUNTIME_FUNCTION(Runtime_CompileForOnStackReplacement) {
   // Determine frame triggering OSR request.
   JavaScriptFrameIterator it(isolate);
   JavaScriptFrame* frame = it.frame();
-  DCHECK(frame->is_interpreted());
+  DCHECK(frame->is_unoptimized());
 
   // Determine the entry point for which this OSR request has been fired and
   // also disarm all back edges in the calling code to stop new requests.
-  BytecodeOffset osr_offset = DetermineEntryAndDisarmOSRForInterpreter(frame);
+  BytecodeOffset osr_offset = DetermineEntryAndDisarmOSRForUnoptimized(frame);
   DCHECK(!osr_offset.IsNone());
 
   MaybeHandle<Code> maybe_result;
@@ -356,9 +360,10 @@ RUNTIME_FUNCTION(Runtime_CompileForOnStackReplacement) {
 
     // Possibly compile for NCI caching.
     if (!MaybeSpawnNativeContextIndependentCompilationJob(
-            function, isolate->concurrent_recompilation_enabled()
-                          ? ConcurrencyMode::kConcurrent
-                          : ConcurrencyMode::kNotConcurrent)) {
+            isolate, function,
+            isolate->concurrent_recompilation_enabled()
+                ? ConcurrencyMode::kConcurrent
+                : ConcurrencyMode::kNotConcurrent)) {
       return Object();
     }
   }
@@ -425,43 +430,9 @@ RUNTIME_FUNCTION(Runtime_CompileForOnStackReplacement) {
   }
 
   if (!function->HasAttachedOptimizedCode()) {
-    function->set_code(function->shared().GetCode());
+    function->set_code(function->shared().GetCode(), kReleaseStore);
   }
   return Object();
-}
-
-RUNTIME_FUNCTION(Runtime_CompileBaseline) {
-  HandleScope scope(isolate);
-  DCHECK_EQ(1, args.length());
-  CONVERT_ARG_HANDLE_CHECKED(JSFunction, function, 0);
-
-  Handle<SharedFunctionInfo> shared(function->shared(isolate), isolate);
-  IsCompiledScope is_compiled_scope = shared->is_compiled_scope(isolate);
-
-  StackLimitCheck check(isolate);
-  if (check.JsHasOverflowed(kStackSpaceRequiredForCompilation * KB)) {
-    return isolate->StackOverflow();
-  }
-  if (!shared->IsUserJavaScript()) {
-    return *function;
-  }
-  if (!is_compiled_scope.is_compiled()) {
-    if (!Compiler::Compile(function, Compiler::KEEP_EXCEPTION,
-                           &is_compiled_scope)) {
-      return ReadOnlyRoots(isolate).exception();
-    }
-  }
-
-  // TODO(v8:11429): Add a Compiler::Compile* method for this.
-  JSFunction::EnsureFeedbackVector(function, &is_compiled_scope);
-
-  if (!shared->HasBaselineData()) {
-    Handle<Code> code = CompileWithBaseline(isolate, shared);
-    function->set_code(*code);
-  } else {
-    function->set_code(shared->baseline_data().baseline_code(isolate));
-  }
-  return *function;
 }
 
 static Object CompileGlobalEval(Isolate* isolate,

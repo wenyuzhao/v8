@@ -392,7 +392,7 @@ void AccessorAssembler::HandleLoadICSmiHandlerCase(
       if (Is64()) {
         GotoIfNot(
             UintPtrLessThanOrEqual(var_intptr_index.value(),
-                                   IntPtrConstant(JSArray::kMaxArrayIndex)),
+                                   IntPtrConstant(JSObject::kMaxElementIndex)),
             miss);
       } else {
         GotoIf(IntPtrLessThan(var_intptr_index.value(), IntPtrConstant(0)),
@@ -2137,7 +2137,7 @@ void AccessorAssembler::EmitElementLoad(
     {
       Comment("dictionary elements");
       if (Is64()) {
-        GotoIf(UintPtrLessThan(IntPtrConstant(JSArray::kMaxArrayIndex),
+        GotoIf(UintPtrLessThan(IntPtrConstant(JSObject::kMaxElementIndex),
                                intptr_index),
                out_of_bounds);
       } else {
@@ -2328,11 +2328,11 @@ void AccessorAssembler::GenericElementLoad(
     // without ever checking the prototype chain.
     GotoIf(IsJSTypedArrayInstanceType(lookup_start_object_instance_type),
            &return_undefined);
-    // Positive OOB indices within JSArray index range are effectively the same
+    // Positive OOB indices within elements index range are effectively the same
     // as hole loads. Larger keys and negative keys are named loads.
     if (Is64()) {
       Branch(UintPtrLessThanOrEqual(index,
-                                    IntPtrConstant(JSArray::kMaxArrayIndex)),
+                                    IntPtrConstant(JSObject::kMaxElementIndex)),
              &if_element_hole, slow);
     } else {
       Branch(IntPtrLessThan(index, IntPtrConstant(0)), slow, &if_element_hole);
@@ -3074,34 +3074,14 @@ void AccessorAssembler::ScriptContextTableLookup(
     TNode<ScopeInfo> scope_info =
         CAST(LoadContextElement(script_context, Context::SCOPE_INFO_INDEX));
 
-    TVARIABLE(IntPtrT, scope_var_index,
-              IntPtrConstant(ScopeInfo::kVariablePartIndex - 1));
-    TNode<IntPtrT> num_scope_vars = SmiUntag(
-        CAST(LoadObjectField(scope_info, ScopeInfo::kContextLocalCountOffset)));
-    TNode<IntPtrT> end_index = IntPtrAdd(
-        num_scope_vars, IntPtrConstant(ScopeInfo::kVariablePartIndex));
-    Label loop_scope_info(this, &scope_var_index);
-    Goto(&loop_scope_info);
+    TNode<IntPtrT> context_local_index =
+        IndexOfLocalName(scope_info, name, &loop);
 
-    BIND(&loop_scope_info);
-    {
-      scope_var_index = IntPtrAdd(scope_var_index.value(), IntPtrConstant(1));
-      GotoIf(IntPtrGreaterThanOrEqual(scope_var_index.value(), end_index),
-             &loop);
-
-      FixedArrayBoundsCheck(scope_info, scope_var_index.value(), 0);
-      TNode<Object> var_name = CAST(LoadArrayElement(
-          scope_info, FixedArray::kHeaderSize, scope_var_index.value()));
-      GotoIf(TaggedNotEqual(var_name, name), &loop_scope_info);
-
-      TNode<IntPtrT> var_index =
-          IntPtrAdd(IntPtrConstant(Context::MIN_CONTEXT_SLOTS),
-                    IntPtrSub(scope_var_index.value(),
-                              IntPtrConstant(ScopeInfo::kVariablePartIndex)));
-      TNode<Object> result = LoadContextElement(script_context, var_index);
-      GotoIf(IsTheHole(result), found_hole);
-      Return(result);
-    }
+    TNode<IntPtrT> var_index = IntPtrAdd(
+        IntPtrConstant(Context::MIN_CONTEXT_SLOTS), context_local_index);
+    TNode<Object> result = LoadContextElement(script_context, var_index);
+    GotoIf(IsTheHole(result), found_hole);
+    Return(result);
   }
 }
 

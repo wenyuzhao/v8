@@ -137,7 +137,7 @@ ShouldThrow GetShouldThrow(Isolate* isolate, Maybe<ShouldThrow> should_throw) {
   if (mode == LanguageMode::kStrict) return kThrowOnError;
 
   for (StackFrameIterator it(isolate); !it.done(); it.Advance()) {
-    if (!(it.frame()->is_optimized() || it.frame()->is_interpreted())) {
+    if (!(it.frame()->is_optimized() || it.frame()->is_unoptimized())) {
       continue;
     }
     // Get the language mode from closure.
@@ -1490,7 +1490,8 @@ MaybeHandle<Object> Object::GetPropertyWithAccessor(LookupIterator* it) {
   // Regular accessor.
   Handle<Object> getter(accessor_pair->getter(), isolate);
   if (getter->IsFunctionTemplateInfo()) {
-    SaveAndSwitchContext save(isolate, *holder->GetCreationContext());
+    SaveAndSwitchContext save(isolate,
+                              *holder->GetCreationContext().ToHandleChecked());
     return Builtins::InvokeApiFunction(
         isolate, false, Handle<FunctionTemplateInfo>::cast(getter), receiver, 0,
         nullptr, isolate->factory()->undefined_value());
@@ -1595,7 +1596,8 @@ Maybe<bool> Object::SetPropertyWithAccessor(
   // Regular accessor.
   Handle<Object> setter(AccessorPair::cast(*structure).setter(), isolate);
   if (setter->IsFunctionTemplateInfo()) {
-    SaveAndSwitchContext save(isolate, *holder->GetCreationContext());
+    SaveAndSwitchContext save(isolate,
+                              *holder->GetCreationContext().ToHandleChecked());
     Handle<Object> argv[] = {value};
     RETURN_ON_EXCEPTION_VALUE(
         isolate,
@@ -1957,6 +1959,10 @@ void HeapObject::HeapObjectShortPrint(std::ostream& os) {  // NOLINT
       break;
     case NAME_DICTIONARY_TYPE:
       os << "<NameDictionary[" << FixedArray::cast(*this).length() << "]>";
+      break;
+    case SWISS_NAME_DICTIONARY_TYPE:
+      os << "<SwissNameDictionary["
+         << SwissNameDictionary::cast(*this).Capacity() << "]>";
       break;
     case GLOBAL_DICTIONARY_TYPE:
       os << "<GlobalDictionary[" << FixedArray::cast(*this).length() << "]>";
@@ -2349,6 +2355,7 @@ bool HeapObject::NeedsRehashing(InstanceType instance_type) const {
     case SMALL_ORDERED_HASH_MAP_TYPE:
     case SMALL_ORDERED_HASH_SET_TYPE:
     case SMALL_ORDERED_NAME_DICTIONARY_TYPE:
+    case SWISS_NAME_DICTIONARY_TYPE:
     case JS_MAP_TYPE:
     case JS_SET_TYPE:
       return true;
@@ -2372,6 +2379,7 @@ bool HeapObject::CanBeRehashed() const {
     case GLOBAL_DICTIONARY_TYPE:
     case NUMBER_DICTIONARY_TYPE:
     case SIMPLE_NUMBER_DICTIONARY_TYPE:
+    case SWISS_NAME_DICTIONARY_TYPE:
       return true;
     case DESCRIPTOR_ARRAY_TYPE:
     case STRONG_DESCRIPTOR_ARRAY_TYPE:
@@ -2396,6 +2404,9 @@ void HeapObject::RehashBasedOnMap(Isolate* isolate) {
       UNREACHABLE();
     case NAME_DICTIONARY_TYPE:
       NameDictionary::cast(*this).Rehash(isolate);
+      break;
+    case SWISS_NAME_DICTIONARY_TYPE:
+      SwissNameDictionary::cast(*this).Rehash(isolate);
       break;
     case GLOBAL_DICTIONARY_TYPE:
       GlobalDictionary::cast(*this).Rehash(isolate);
@@ -4292,7 +4303,7 @@ template Handle<DescriptorArray> DescriptorArray::Allocate(
     LocalIsolate* isolate, int nof_descriptors, int slack,
     AllocationType allocation);
 
-void DescriptorArray::Initialize(EnumCache enum_cache,
+void DescriptorArray::Initialize(EnumCache empty_enum_cache,
                                  HeapObject undefined_value,
                                  int nof_descriptors, int slack) {
   DCHECK_GE(nof_descriptors, 0);
@@ -4302,13 +4313,13 @@ void DescriptorArray::Initialize(EnumCache enum_cache,
   set_number_of_descriptors(nof_descriptors);
   set_raw_number_of_marked_descriptors(0);
   set_filler16bits(0);
-  set_enum_cache(enum_cache);
+  set_enum_cache(empty_enum_cache, SKIP_WRITE_BARRIER);
   MemsetTagged(GetDescriptorSlot(0), undefined_value,
                number_of_all_descriptors() * kEntrySize);
 }
 
 void DescriptorArray::ClearEnumCache() {
-  set_enum_cache(GetReadOnlyRoots().empty_enum_cache());
+  set_enum_cache(GetReadOnlyRoots().empty_enum_cache(), SKIP_WRITE_BARRIER);
 }
 
 void DescriptorArray::Replace(InternalIndex index, Descriptor* descriptor) {

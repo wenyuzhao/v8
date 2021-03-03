@@ -183,6 +183,7 @@ namespace compiler {
   V(ArmF32x4DemoteF64x2Zero)       \
   V(ArmI64x2SplatI32Pair)          \
   V(ArmI64x2ReplaceLaneI32Pair)    \
+  V(ArmI64x2Abs)                   \
   V(ArmI64x2Neg)                   \
   V(ArmI64x2Shl)                   \
   V(ArmI64x2ShrS)                  \
@@ -193,6 +194,8 @@ namespace compiler {
   V(ArmI64x2BitMask)               \
   V(ArmI64x2Eq)                    \
   V(ArmI64x2Ne)                    \
+  V(ArmI64x2GtS)                   \
+  V(ArmI64x2GeS)                   \
   V(ArmI64x2SConvertI32x4Low)      \
   V(ArmI64x2SConvertI32x4High)     \
   V(ArmI64x2UConvertI32x4Low)      \
@@ -276,7 +279,6 @@ namespace compiler {
   V(ArmI8x16AddSatS)               \
   V(ArmI8x16Sub)                   \
   V(ArmI8x16SubSatS)               \
-  V(ArmI8x16Mul)                   \
   V(ArmI8x16MinS)                  \
   V(ArmI8x16MaxS)                  \
   V(ArmI8x16Eq)                    \
@@ -295,7 +297,6 @@ namespace compiler {
   V(ArmI8x16RoundingAverageU)      \
   V(ArmI8x16Abs)                   \
   V(ArmI8x16BitMask)               \
-  V(ArmSignSelect)                 \
   V(ArmS128Const)                  \
   V(ArmS128Zero)                   \
   V(ArmS128AllOnes)                \

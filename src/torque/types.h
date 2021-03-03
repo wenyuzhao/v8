@@ -215,7 +215,7 @@ struct Field {
 
   SourcePosition pos;
   const AggregateType* aggregate;
-  base::Optional<Expression*> index;
+  base::Optional<ClassFieldIndexInfo> index;
   NameAndType name_and_type;
 
   // The byte offset of this field from the beginning of the containing class or
@@ -268,12 +268,7 @@ class AbstractType final : public Type {
   DECLARE_TYPE_BOILERPLATE(AbstractType)
   const std::string& name() const { return name_; }
   std::string ToExplicitString() const override { return name(); }
-  std::string GetGeneratedTypeNameImpl() const override {
-    if (generated_type_.empty()) {
-      return parent()->GetGeneratedTypeName();
-    }
-    return IsConstexpr() ? generated_type_ : "TNode<" + generated_type_ + ">";
-  }
+  std::string GetGeneratedTypeNameImpl() const override;
   std::string GetGeneratedTNodeTypeNameImpl() const override;
   bool IsConstexpr() const final {
     const bool is_constexpr = flags_ & AbstractTypeFlag::kConstexpr;

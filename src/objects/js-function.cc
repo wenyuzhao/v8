@@ -19,27 +19,22 @@ namespace v8 {
 namespace internal {
 
 CodeKinds JSFunction::GetAttachedCodeKinds() const {
-  CodeKinds result;
-
   // Note: There's a special case when bytecode has been aged away. After
   // flushing the bytecode, the JSFunction will still have the interpreter
   // entry trampoline attached, but the bytecode is no longer available.
-  if (code().is_interpreter_trampoline_builtin()) {
-    result |= CodeKindFlag::INTERPRETED_FUNCTION;
+  Code code = this->code(kAcquireLoad);
+  if (code.is_interpreter_trampoline_builtin()) {
+    return CodeKindFlag::INTERPRETED_FUNCTION;
   }
 
-  const CodeKind kind = code().kind();
-  if (!CodeKindIsOptimizedJSFunction(kind) ||
-      code().marked_for_deoptimization()) {
-    DCHECK_EQ((result & ~kJSFunctionCodeKindsMask), 0);
-    return result;
+  const CodeKind kind = code.kind();
+  if (!CodeKindIsJSFunction(kind)) return {};
+
+  if (CodeKindIsOptimizedJSFunction(kind) && code.marked_for_deoptimization()) {
+    // Nothing is attached.
+    return {};
   }
-
-  DCHECK(CodeKindIsOptimizedJSFunction(kind));
-  result |= CodeKindToCodeKindFlag(kind);
-
-  DCHECK_EQ((result & ~kJSFunctionCodeKindsMask), 0);
-  return result;
+  return CodeKindToCodeKindFlag(kind);
 }
 
 CodeKinds JSFunction::GetAvailableCodeKinds() const {
@@ -81,6 +76,11 @@ bool JSFunction::HasAvailableOptimizedCode() const {
   return (result & kOptimizedJSFunctionCodeKindsMask) != 0;
 }
 
+bool JSFunction::HasAttachedCodeKind(CodeKind kind) const {
+  CodeKinds result = GetAttachedCodeKinds();
+  return (result & CodeKindToCodeKindFlag(kind)) != 0;
+}
+
 bool JSFunction::HasAvailableCodeKind(CodeKind kind) const {
   CodeKinds result = GetAvailableCodeKinds();
   return (result & CodeKindToCodeKindFlag(kind)) != 0;
@@ -117,12 +117,14 @@ bool HighestTierOf(CodeKinds kinds, CodeKind* highest_tier) {
 bool JSFunction::ActiveTierIsIgnition() const {
   if (!shared().HasBytecodeArray()) return false;
   bool result = (GetActiveTier() == CodeKind::INTERPRETED_FUNCTION);
-  DCHECK_IMPLIES(result,
-                 code().is_interpreter_trampoline_builtin() ||
-                     (CodeKindIsOptimizedJSFunction(code().kind()) &&
-                      code().marked_for_deoptimization()) ||
-                     (code().builtin_index() == Builtins::kCompileLazy &&
-                      shared().IsInterpreted()));
+#ifdef DEBUG
+  Code code = this->code(kAcquireLoad);
+  DCHECK_IMPLIES(result, code.is_interpreter_trampoline_builtin() ||
+                             (CodeKindIsOptimizedJSFunction(code.kind()) &&
+                              code.marked_for_deoptimization()) ||
+                             (code.builtin_index() == Builtins::kCompileLazy &&
+                              shared().IsInterpreted()));
+#endif  // DEBUG
   return result;
 }
 
@@ -149,9 +151,7 @@ bool JSFunction::ActiveTierIsNCI() const {
 }
 
 bool JSFunction::ActiveTierIsBaseline() const {
-  CodeKind highest_tier;
-  if (!HighestTierOf(GetAvailableCodeKinds(), &highest_tier)) return false;
-  return highest_tier == CodeKind::BASELINE;
+  return GetActiveTier() == CodeKind::BASELINE;
 }
 
 bool JSFunction::ActiveTierIsIgnitionOrBaseline() const {
@@ -300,9 +300,7 @@ void JSFunction::EnsureClosureFeedbackCellArray(
   if (V8_UNLIKELY(FLAG_feedback_allocation_on_bytecode_size) &&
       (reset_budget_for_feedback_allocation ||
        !has_closure_feedback_cell_array)) {
-    int budget = function->shared().GetBytecodeArray(isolate).length() *
-                 FLAG_scale_factor_for_feedback_allocation;
-    function->raw_feedback_cell().set_interrupt_budget(budget);
+    function->SetInterruptBudget();
   }
 
   if (has_closure_feedback_cell_array) {
@@ -320,9 +318,8 @@ void JSFunction::EnsureClosureFeedbackCellArray(
   if (function->raw_feedback_cell() == isolate->heap()->many_closures_cell()) {
     Handle<FeedbackCell> feedback_cell =
         isolate->factory()->NewOneClosureCell(feedback_cell_array);
-    feedback_cell->set_interrupt_budget(
-        function->raw_feedback_cell().interrupt_budget());
     function->set_raw_feedback_cell(*feedback_cell, kReleaseStore);
+    function->SetInterruptBudget();
   } else {
     function->raw_feedback_cell().set_value(*feedback_cell_array,
                                             kReleaseStore);
@@ -352,7 +349,7 @@ void JSFunction::EnsureFeedbackVector(Handle<JSFunction> function,
   DCHECK(function->raw_feedback_cell() !=
          isolate->heap()->many_closures_cell());
   function->raw_feedback_cell().set_value(*feedback_vector, kReleaseStore);
-  function->raw_feedback_cell().SetInterruptBudget();
+  function->SetInterruptBudget();
 }
 
 // static
@@ -617,7 +614,9 @@ bool CanSubclassHaveInobjectProperties(InstanceType instance_type) {
     case WASM_MEMORY_OBJECT_TYPE:
     case WASM_MODULE_OBJECT_TYPE:
     case WASM_TABLE_OBJECT_TYPE:
+#if V8_ENABLE_WEBASSEMBLY
     case WASM_VALUE_OBJECT_TYPE:
+#endif  // V8_ENABLE_WEBASSEMBLY
       return true;
 
     case BIGINT_TYPE:
@@ -812,11 +811,48 @@ void JSFunction::PrintName(FILE* out) {
   PrintF(out, "%s", shared().DebugNameCStr().get());
 }
 
+namespace {
+
+bool UseFastFunctionNameLookup(Isolate* isolate, Map map) {
+  DCHECK(map.IsJSFunctionMap());
+  if (map.NumberOfOwnDescriptors() < JSFunction::kMinDescriptorsForFastBind) {
+    return false;
+  }
+  DCHECK(!map.is_dictionary_map());
+  HeapObject value;
+  ReadOnlyRoots roots(isolate);
+  auto descriptors = map.instance_descriptors(kRelaxedLoad);
+  InternalIndex kNameIndex{JSFunction::kNameDescriptorIndex};
+  if (descriptors.GetKey(kNameIndex) != roots.name_string() ||
+      !descriptors.GetValue(kNameIndex)
+           .GetHeapObjectIfStrong(isolate, &value)) {
+    return false;
+  }
+  return value.IsAccessorInfo();
+}
+
+}  // namespace
+
 Handle<String> JSFunction::GetDebugName(Handle<JSFunction> function) {
+  // Below we use the same fast-path that we already established for
+  // Function.prototype.bind(), where we avoid a slow "name" property
+  // lookup if the DescriptorArray for the |function| still has the
+  // "name" property at the original spot and that property is still
+  // implemented via an AccessorInfo (which effectively means that
+  // it must be the FunctionNameGetter).
   Isolate* isolate = function->GetIsolate();
-  Handle<Object> name =
-      JSReceiver::GetDataProperty(function, isolate->factory()->name_string());
-  if (name->IsString()) return Handle<String>::cast(name);
+  if (!UseFastFunctionNameLookup(isolate, function->map())) {
+    // Normally there should be an else case for the fast-path check
+    // above, which should invoke JSFunction::GetName(), since that's
+    // what the FunctionNameGetter does, however GetDataProperty() has
+    // never invoked accessors and thus always returned undefined for
+    // JSFunction where the "name" property is untouched, so we retain
+    // that exact behavior and go with SharedFunctionInfo::DebugName()
+    // in case of the fast-path.
+    Handle<Object> name =
+        GetDataProperty(function, isolate->factory()->name_string());
+    if (name->IsString()) return Handle<String>::cast(name);
+  }
   return SharedFunctionInfo::DebugName(handle(function->shared(), isolate));
 }
 
@@ -930,7 +966,7 @@ int JSFunction::CalculateExpectedNofProperties(Isolate* isolate,
     Handle<SharedFunctionInfo> shared(func->shared(), isolate);
     IsCompiledScope is_compiled_scope(shared->is_compiled_scope(isolate));
     if (is_compiled_scope.is_compiled() ||
-        Compiler::Compile(func, Compiler::CLEAR_EXCEPTION,
+        Compiler::Compile(isolate, func, Compiler::CLEAR_EXCEPTION,
                           &is_compiled_scope)) {
       DCHECK(shared->is_compiled());
       int count = shared->expected_nof_properties();

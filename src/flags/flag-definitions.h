@@ -169,6 +169,13 @@ struct MaybeBoolFlag {
 #define ENABLE_CONTROL_FLOW_INTEGRITY_BOOL false
 #endif
 
+#if V8_TARGET_ARCH_X64 || V8_TARGET_ARCH_ARM64
+#define ENABLE_SPARKPLUG true
+#else
+// TODO(v8:11421): Enable Sparkplug for other architectures
+#define ENABLE_SPARKPLUG false
+#endif
+
 // Supported ARM configurations are:
 //  "armv6":       ARMv6 + VFPv2
 //  "armv7":       ARMv7 + VFPv3-D32 + NEON
@@ -255,8 +262,7 @@ DEFINE_IMPLICATION(harmony_weak_refs_with_cleanup_some, harmony_weak_refs)
   V(harmony_regexp_sequence, "RegExp Unicode sequence properties")             \
   V(harmony_weak_refs_with_cleanup_some,                                       \
     "harmony weak references with FinalizationRegistry.prototype.cleanupSome") \
-  V(harmony_import_assertions, "harmony import assertions")                    \
-  V(harmony_private_brand_checks, "harmony private brand checks")
+  V(harmony_import_assertions, "harmony import assertions")
 
 #ifdef V8_INTL_SUPPORT
 #define HARMONY_INPROGRESS(V) \
@@ -267,9 +273,11 @@ DEFINE_IMPLICATION(harmony_weak_refs_with_cleanup_some, harmony_weak_refs)
 #endif
 
 // Features that are complete (but still behind --harmony/es-staging flag).
-#define HARMONY_STAGED_BASE(V)                          \
-  V(harmony_top_level_await, "harmony top level await") \
-  V(harmony_relative_indexing_methods, "harmony relative indexing methods")
+#define HARMONY_STAGED_BASE(V)                                              \
+  V(harmony_top_level_await, "harmony top level await")                     \
+  V(harmony_relative_indexing_methods, "harmony relative indexing methods") \
+  V(harmony_private_brand_checks, "harmony private brand checks")           \
+  V(harmony_class_static_blocks, "harmony static initializer blocks")
 
 #ifdef V8_INTL_SUPPORT
 #define HARMONY_STAGED(V)               \
@@ -429,6 +437,9 @@ DEFINE_WEAK_IMPLICATION(future, write_protect_code_memory)
 DEFINE_WEAK_IMPLICATION(future, finalize_streaming_on_background)
 DEFINE_WEAK_IMPLICATION(future, super_ic)
 DEFINE_WEAK_IMPLICATION(future, turbo_inline_js_wasm_calls)
+#if ENABLE_SPARKPLUG
+DEFINE_WEAK_IMPLICATION(future, sparkplug)
+#endif
 
 // Flags for jitless
 DEFINE_BOOL(jitless, V8_LITE_BOOL,
@@ -441,9 +452,11 @@ DEFINE_NEG_IMPLICATION(jitless, track_field_types)
 DEFINE_NEG_IMPLICATION(jitless, track_heap_object_fields)
 // Regexps are interpreted.
 DEFINE_IMPLICATION(jitless, regexp_interpret_all)
+#if ENABLE_SPARKPLUG
 // No Sparkplug compilation.
 DEFINE_NEG_IMPLICATION(jitless, sparkplug)
 DEFINE_NEG_IMPLICATION(jitless, always_sparkplug)
+#endif
 // asm.js validation is disabled since it triggers wasm code generation.
 DEFINE_NEG_IMPLICATION(jitless, validate_asm)
 // --jitless also implies --no-expose-wasm, see InitializeOncePerProcessImpl.
@@ -505,12 +518,12 @@ DEFINE_BOOL_READONLY(enable_sealed_frozen_elements_kind, true,
 DEFINE_BOOL(unbox_double_arrays, true, "automatically unbox arrays of doubles")
 DEFINE_BOOL_READONLY(string_slices, true, "use string slices")
 
-DEFINE_INT(interrupt_budget, 144 * KB,
+DEFINE_INT(interrupt_budget, 132 * KB,
            "interrupt budget which should be used for the profiler counter")
 
 // Flags for inline caching and feedback vectors.
 DEFINE_BOOL(use_ic, true, "use inline caching")
-DEFINE_INT(budget_for_feedback_vector_allocation, 1 * KB,
+DEFINE_INT(budget_for_feedback_vector_allocation, 940,
            "The budget in amount of bytecode executed by a function before we "
            "decide to allocate feedback vectors")
 DEFINE_INT(scale_factor_for_feedback_allocation, 4,
@@ -539,9 +552,15 @@ DEFINE_BOOL(stress_lazy_source_positions, false,
             "collect lazy source positions immediately after lazy compile")
 DEFINE_STRING(print_bytecode_filter, "*",
               "filter for selecting which functions to print bytecode")
-#ifdef V8_TRACE_IGNITION
+#ifdef V8_TRACE_UNOPTIMIZED
+DEFINE_BOOL(trace_unoptimized, false,
+            "trace the bytecodes executed by all unoptimized execution")
 DEFINE_BOOL(trace_ignition, false,
             "trace the bytecodes executed by the ignition interpreter")
+DEFINE_BOOL(trace_baseline_exec, false,
+            "trace the bytecodes executed by the baseline code")
+DEFINE_WEAK_IMPLICATION(trace_unoptimized, trace_ignition)
+DEFINE_WEAK_IMPLICATION(trace_unoptimized, trace_baseline_exec)
 #endif
 #ifdef V8_TRACE_FEEDBACK_UPDATES
 DEFINE_BOOL(
@@ -571,22 +590,37 @@ DEFINE_BOOL(
     turboprop_as_toptier, false,
     "enable experimental turboprop compiler without further tierup to turbofan")
 DEFINE_IMPLICATION(turboprop_as_toptier, turboprop)
-DEFINE_VALUE_IMPLICATION(turboprop, interrupt_budget, 15 * KB)
+DEFINE_VALUE_IMPLICATION(turboprop, interrupt_budget, 14 * KB)
 DEFINE_VALUE_IMPLICATION(turboprop, reuse_opt_code_count, 2)
 DEFINE_UINT_READONLY(max_minimorphic_map_checks, 4,
                      "max number of map checks to perform in minimorphic state")
-// Since Turboprop uses much lower value for interrupt budget, we need to wait
-// for a higher number of ticks to tierup to Turbofan roughly match the default.
-// The default of 10 is approximately the ration of TP to TF interrupt budget.
-DEFINE_INT(ticks_scale_factor_for_top_tier, 10,
+// The scale factor determines the interrupt budget when tiering up from
+// Turboprop to TurboFan. The default of 10 is approximately the ratio of
+// Turboprop to the TurboFan interrupt budget.
+DEFINE_INT(interrupt_budget_scale_factor_for_top_tier, 10,
            "scale factor for profiler ticks when tiering up from midtier")
 
 // Flags for Sparkplug
-DEFINE_BOOL(sparkplug, false, "enable experimental sparkplug baseline compiler")
-DEFINE_BOOL(always_sparkplug, false, "directly tier up to sparkplug")
-DEFINE_BOOL(sparkplug_inline_smi, true, "inline fast paths for smi ops")
-DEFINE_NEG_IMPLICATION(sparkplug, write_protect_code_memory)
+#undef FLAG
+#if ENABLE_SPARKPLUG
+#define FLAG FLAG_FULL
+#else
+#define FLAG FLAG_READONLY
+#endif
+DEFINE_BOOL(sparkplug, false, "enable experimental Sparkplug baseline compiler")
+DEFINE_BOOL(always_sparkplug, false, "directly tier up to Sparkplug code")
+#if ENABLE_SPARKPLUG
 DEFINE_IMPLICATION(always_sparkplug, sparkplug)
+#endif
+DEFINE_STRING(sparkplug_filter, "*", "filter for Sparkplug baseline compiler")
+DEFINE_BOOL(trace_baseline, false, "trace baseline compilation")
+#if !defined(V8_OS_MACOSX) || !defined(V8_HOST_ARCH_ARM64)
+// Don't disable --write-protect-code-memory on Apple Silicon.
+DEFINE_NEG_IMPLICATION(sparkplug, write_protect_code_memory)
+#endif
+
+#undef FLAG
+#define FLAG FLAG_FULL
 
 // Flags for concurrent recompilation.
 DEFINE_BOOL(concurrent_recompilation, true,
@@ -687,16 +721,16 @@ DEFINE_BOOL(turbo_splitting, true, "split nodes during scheduling in TurboFan")
 DEFINE_BOOL(function_context_specialization, false,
             "enable function context specialization in TurboFan")
 DEFINE_BOOL(turbo_inlining, true, "enable inlining in TurboFan")
-DEFINE_INT(max_inlined_bytecode_size, 500,
+DEFINE_INT(max_inlined_bytecode_size, 460,
            "maximum size of bytecode for a single inlining")
-DEFINE_INT(max_inlined_bytecode_size_cumulative, 1000,
+DEFINE_INT(max_inlined_bytecode_size_cumulative, 920,
            "maximum cumulative size of bytecode considered for inlining")
-DEFINE_INT(max_inlined_bytecode_size_absolute, 5000,
+DEFINE_INT(max_inlined_bytecode_size_absolute, 4600,
            "maximum absolute size of bytecode considered for inlining")
 DEFINE_FLOAT(
     reserve_inline_budget_scale_factor, 1.2,
     "scale factor of bytecode size used to calculate the inlining budget")
-DEFINE_INT(max_inlined_bytecode_size_small, 30,
+DEFINE_INT(max_inlined_bytecode_size_small, 27,
            "maximum size of bytecode considered for small function inlining")
 DEFINE_INT(max_optimized_bytecode_size, 60 * KB,
            "maximum bytecode size to "
@@ -804,7 +838,7 @@ DEFINE_BOOL(wasm_generic_wrapper, true,
 #ifdef V8_ENABLE_WEBASSEMBLY
 DEFINE_BOOL(expose_wasm, true, "expose wasm interface to JavaScript")
 #else
-DEFINE_BOOL(expose_wasm, false, "expose wasm interface to JavaScript")
+DEFINE_BOOL_READONLY(expose_wasm, false, "expose wasm interface to JavaScript")
 #endif
 DEFINE_INT(wasm_num_compilation_tasks, 128,
            "maximum number of parallel compilation tasks for wasm")
@@ -905,9 +939,8 @@ DEFINE_BOOL(wasm_stack_checks, true,
 DEFINE_BOOL(wasm_math_intrinsics, true,
             "intrinsify some Math imports into wasm")
 
-DEFINE_BOOL(wasm_loop_unrolling, false,
-            "generate and then remove loop exits in wasm turbofan code "
-            "(placeholder for future loop unrolling feature)")
+DEFINE_BOOL(wasm_loop_unrolling, true,
+            "enable loop unrolling for wasm functions (experimental)")
 DEFINE_BOOL(wasm_trap_handler, true,
             "use signal handlers to catch out of bounds memory access in wasm"
             " (currently Linux x86_64 only)")
@@ -927,9 +960,6 @@ DEFINE_DEBUG_BOOL(trace_wasm_lazy_compilation, false,
                   "trace lazy compilation of wasm functions")
 DEFINE_BOOL(wasm_lazy_validation, false,
             "enable lazy validation for lazily compiled wasm functions")
-
-DEFINE_BOOL(wasm_grow_shared_memory, true,
-            "allow growing shared WebAssembly memory objects")
 DEFINE_BOOL(wasm_simd_post_mvp, false,
             "allow experimental SIMD operations for prototyping that are not "
             "included in the current proposal")
@@ -1176,6 +1206,9 @@ DEFINE_BOOL(fast_promotion_new_space, false,
             "fast promote new space on high survival rates")
 
 DEFINE_BOOL(clear_free_memory, false, "initialize free memory with 0")
+
+DEFINE_BOOL(crash_on_aborted_evacuation, false,
+            "crash when evacuation of page fails")
 
 DEFINE_BOOL_READONLY(
     young_generation_large_objects, true,

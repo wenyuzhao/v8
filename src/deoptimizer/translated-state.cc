@@ -268,10 +268,10 @@ void TranslationArrayPrintSingleFrame(std::ostream& os,
 namespace {
 
 // Decodes the return type of a Wasm function as the integer value of
-// wasm::ValueType::Kind, or kNoWasmReturnType if the function returns void.
-base::Optional<wasm::ValueType::Kind> DecodeWasmReturnType(int code) {
-  if (code != kNoWasmReturnType) {
-    return {static_cast<wasm::ValueType::Kind>(code)};
+// wasm::ValueKind, or kNoWasmReturnKind if the function returns void.
+base::Optional<wasm::ValueKind> DecodeWasmReturnKind(int code) {
+  if (code != kNoWasmReturnKind) {
+    return {static_cast<wasm::ValueKind>(code)};
   }
   return {};
 }
@@ -626,10 +626,10 @@ void TranslatedValue::Handlify() {
   }
 }
 
-TranslatedFrame TranslatedFrame::InterpretedFrame(
+TranslatedFrame TranslatedFrame::UnoptimizedFrame(
     BytecodeOffset bytecode_offset, SharedFunctionInfo shared_info, int height,
     int return_value_offset, int return_value_count) {
-  TranslatedFrame frame(kInterpretedFunction, shared_info, height,
+  TranslatedFrame frame(kUnoptimizedFunction, shared_info, height,
                         return_value_offset, return_value_count);
   frame.bytecode_offset_ = bytecode_offset;
   return frame;
@@ -658,10 +658,10 @@ TranslatedFrame TranslatedFrame::BuiltinContinuationFrame(
 
 TranslatedFrame TranslatedFrame::JSToWasmBuiltinContinuationFrame(
     BytecodeOffset bytecode_offset, SharedFunctionInfo shared_info, int height,
-    base::Optional<wasm::ValueType::Kind> return_type) {
+    base::Optional<wasm::ValueKind> return_kind) {
   TranslatedFrame frame(kJSToWasmBuiltinContinuation, shared_info, height);
   frame.bytecode_offset_ = bytecode_offset;
-  frame.return_type_ = return_type;
+  frame.return_kind_ = return_kind;
   return frame;
 }
 
@@ -697,7 +697,7 @@ int TranslatedFrame::GetValueCount() {
   static constexpr int kTheFunction = 1;
 
   switch (kind()) {
-    case kInterpretedFunction: {
+    case kUnoptimizedFunction: {
       int parameter_count =
           InternalFormalParameterCountWithReceiver(raw_shared_info_);
       static constexpr int kTheContext = 1;
@@ -757,7 +757,7 @@ TranslatedFrame TranslatedState::CreateNextTranslatedFrame(
                bytecode_offset.ToInt(), arg_count, height, return_value_offset,
                return_value_count);
       }
-      return TranslatedFrame::InterpretedFrame(bytecode_offset, shared_info,
+      return TranslatedFrame::UnoptimizedFrame(bytecode_offset, shared_info,
                                                height, return_value_offset,
                                                return_value_count);
     }
@@ -810,8 +810,8 @@ TranslatedFrame TranslatedState::CreateNextTranslatedFrame(
       SharedFunctionInfo shared_info =
           SharedFunctionInfo::cast(literal_array.get(iterator->Next()));
       int height = iterator->Next();
-      base::Optional<wasm::ValueType::Kind> return_type =
-          DecodeWasmReturnType(iterator->Next());
+      base::Optional<wasm::ValueKind> return_kind =
+          DecodeWasmReturnKind(iterator->Next());
       if (trace_file != nullptr) {
         std::unique_ptr<char[]> name = shared_info.DebugNameCStr();
         PrintF(trace_file, "  reading JS to Wasm builtin continuation frame %s",
@@ -819,10 +819,10 @@ TranslatedFrame TranslatedState::CreateNextTranslatedFrame(
         PrintF(trace_file,
                " => bailout_id=%d, height=%d return_type=%d; inputs:\n",
                bailout_id.ToInt(), height,
-               return_type.has_value() ? return_type.value() : -1);
+               return_kind.has_value() ? return_kind.value() : -1);
       }
       return TranslatedFrame::JSToWasmBuiltinContinuationFrame(
-          bailout_id, shared_info, height, return_type);
+          bailout_id, shared_info, height, return_kind);
     }
 
     case TranslationOpcode::JAVA_SCRIPT_BUILTIN_CONTINUATION_FRAME: {
@@ -1894,7 +1894,7 @@ TranslatedValue* TranslatedState::ResolveCapturedObject(TranslatedValue* slot) {
 
 TranslatedFrame* TranslatedState::GetFrameFromJSFrameIndex(int jsframe_index) {
   for (size_t i = 0; i < frames_.size(); i++) {
-    if (frames_[i].kind() == TranslatedFrame::kInterpretedFunction ||
+    if (frames_[i].kind() == TranslatedFrame::kUnoptimizedFunction ||
         frames_[i].kind() == TranslatedFrame::kJavaScriptBuiltinContinuation ||
         frames_[i].kind() ==
             TranslatedFrame::kJavaScriptBuiltinContinuationWithCatch) {
@@ -1911,7 +1911,7 @@ TranslatedFrame* TranslatedState::GetFrameFromJSFrameIndex(int jsframe_index) {
 TranslatedFrame* TranslatedState::GetArgumentsInfoFromJSFrameIndex(
     int jsframe_index, int* args_count) {
   for (size_t i = 0; i < frames_.size(); i++) {
-    if (frames_[i].kind() == TranslatedFrame::kInterpretedFunction ||
+    if (frames_[i].kind() == TranslatedFrame::kUnoptimizedFunction ||
         frames_[i].kind() == TranslatedFrame::kJavaScriptBuiltinContinuation ||
         frames_[i].kind() ==
             TranslatedFrame::kJavaScriptBuiltinContinuationWithCatch) {
@@ -2012,7 +2012,7 @@ void TranslatedState::StoreMaterializedValuesAndDeopt(JavaScriptFrame* frame) {
   if (new_store && value_changed) {
     materialized_store->Set(stack_frame_pointer_,
                             previously_materialized_objects);
-    CHECK_EQ(frames_[0].kind(), TranslatedFrame::kInterpretedFunction);
+    CHECK_EQ(frames_[0].kind(), TranslatedFrame::kUnoptimizedFunction);
     CHECK_EQ(frame->function(), frames_[0].front().GetRawValue());
     Deoptimizer::DeoptimizeFunction(frame->function(), frame->LookupCode());
   }

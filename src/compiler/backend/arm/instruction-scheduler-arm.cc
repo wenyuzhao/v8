@@ -163,6 +163,7 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kArmF32x4DemoteF64x2Zero:
     case kArmI64x2SplatI32Pair:
     case kArmI64x2ReplaceLaneI32Pair:
+    case kArmI64x2Abs:
     case kArmI64x2Neg:
     case kArmI64x2Shl:
     case kArmI64x2ShrS:
@@ -173,6 +174,8 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kArmI64x2BitMask:
     case kArmI64x2Eq:
     case kArmI64x2Ne:
+    case kArmI64x2GtS:
+    case kArmI64x2GeS:
     case kArmI64x2SConvertI32x4Low:
     case kArmI64x2SConvertI32x4High:
     case kArmI64x2UConvertI32x4Low:
@@ -256,7 +259,6 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kArmI8x16AddSatS:
     case kArmI8x16Sub:
     case kArmI8x16SubSatS:
-    case kArmI8x16Mul:
     case kArmI8x16MinS:
     case kArmI8x16MaxS:
     case kArmI8x16Eq:
@@ -275,7 +277,6 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kArmI8x16RoundingAverageU:
     case kArmI8x16Abs:
     case kArmI8x16BitMask:
-    case kArmSignSelect:
     case kArmS128Const:
     case kArmS128Zero:
     case kArmS128AllOnes:

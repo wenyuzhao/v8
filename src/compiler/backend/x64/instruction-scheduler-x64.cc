@@ -195,7 +195,6 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kX64I64x2GeS:
     case kX64I64x2Ne:
     case kX64I64x2ShrU:
-    case kX64I64x2SignSelect:
     case kX64I64x2ExtMulLowI32x4S:
     case kX64I64x2ExtMulHighI32x4S:
     case kX64I64x2ExtMulLowI32x4U:
@@ -233,7 +232,6 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kX64I32x4Abs:
     case kX64I32x4BitMask:
     case kX64I32x4DotI16x8S:
-    case kX64I32x4SignSelect:
     case kX64I32x4ExtMulLowI16x8S:
     case kX64I32x4ExtMulHighI16x8S:
     case kX64I32x4ExtMulLowI16x8U:
@@ -242,8 +240,6 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kX64I32x4ExtAddPairwiseI16x8U:
     case kX64I32x4TruncSatF64x2SZero:
     case kX64I32x4TruncSatF64x2UZero:
-    case kX64I32x4WidenI8x16S:
-    case kX64I32x4WidenI8x16U:
     case kX64I16x8Splat:
     case kX64I16x8ExtractLaneS:
     case kX64I16x8SConvertI8x16Low:
@@ -277,7 +273,6 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kX64I16x8RoundingAverageU:
     case kX64I16x8Abs:
     case kX64I16x8BitMask:
-    case kX64I16x8SignSelect:
     case kX64I16x8ExtMulLowI8x16S:
     case kX64I16x8ExtMulHighI8x16S:
     case kX64I16x8ExtMulLowI8x16U:
@@ -295,7 +290,6 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kX64I8x16AddSatS:
     case kX64I8x16Sub:
     case kX64I8x16SubSatS:
-    case kX64I8x16Mul:
     case kX64I8x16MinS:
     case kX64I8x16MaxS:
     case kX64I8x16Eq:
@@ -313,7 +307,6 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kX64I8x16RoundingAverageU:
     case kX64I8x16Abs:
     case kX64I8x16BitMask:
-    case kX64I8x16SignSelect:
     case kX64S128And:
     case kX64S128Or:
     case kX64S128Xor:

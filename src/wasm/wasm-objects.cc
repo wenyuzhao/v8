@@ -816,8 +816,7 @@ void SetInstanceMemory(Handle<WasmInstanceObject> instance,
 }  // namespace
 
 Handle<WasmMemoryObject> WasmMemoryObject::New(
-    Isolate* isolate, MaybeHandle<JSArrayBuffer> maybe_buffer,
-    uint32_t maximum) {
+    Isolate* isolate, MaybeHandle<JSArrayBuffer> maybe_buffer, int maximum) {
   Handle<JSArrayBuffer> buffer;
   if (!maybe_buffer.ToHandle(&buffer)) {
     // If no buffer was provided, create a zero-length one.
@@ -848,18 +847,29 @@ Handle<WasmMemoryObject> WasmMemoryObject::New(
 }
 
 MaybeHandle<WasmMemoryObject> WasmMemoryObject::New(Isolate* isolate,
-                                                    uint32_t initial,
-                                                    uint32_t maximum,
+                                                    int initial, int maximum,
                                                     SharedFlag shared) {
-  auto heuristic_maximum = maximum;
+  bool has_maximum = maximum != kNoMaximum;
+  int heuristic_maximum = maximum;
+  if (!has_maximum) {
+    heuristic_maximum = static_cast<int>(wasm::max_mem_pages());
+  }
+
 #ifdef V8_TARGET_ARCH_32_BIT
-  // TODO(wasm): use a better heuristic for reserving more than the initial
-  // number of pages on 32-bit systems. Being too greedy in reserving capacity
-  // limits the number of memories that can be allocated, causing OOMs in many
-  // tests. For now, on 32-bit we never reserve more than initial, unless the
-  // memory is shared.
-  if (shared == SharedFlag::kNotShared || !FLAG_wasm_grow_shared_memory) {
-    heuristic_maximum = initial;
+  if (shared == SharedFlag::kNotShared) {
+    // On 32-bit platforms we need a heuristic here to balance overall memory
+    // and address space consumption. If a maximum memory size is defined, then
+    // we reserve that maximum size up to 1GB. If no maximum memory size is
+    // defined, we just allocate the initial size and grow with a realloc.
+    constexpr int kGBPages = 1024 * 1024 * 1024 / wasm::kWasmPageSize;
+    if (initial > kGBPages || !has_maximum) {
+      // We allocate at least the initial size. If no maximum is specified we
+      // also start with the initial size.
+      heuristic_maximum = initial;
+    } else {
+      // We reserve the maximum size, but at most 1GB.
+      heuristic_maximum = std::min(maximum, kGBPages);
+    }
   }
 #endif
 
@@ -936,30 +946,27 @@ int32_t WasmMemoryObject::Grow(Isolate* isolate,
 
   // Try to handle shared memory first.
   if (old_buffer->is_shared()) {
-    if (FLAG_wasm_grow_shared_memory) {
-      base::Optional<size_t> result =
-          backing_store->GrowWasmMemoryInPlace(isolate, pages, maximum_pages);
-      // Shared memories can only be grown in place; no copying.
-      if (result.has_value()) {
-        BackingStore::BroadcastSharedWasmMemoryGrow(isolate, backing_store);
-        // Broadcasting the update should update this memory object too.
-        CHECK_NE(*old_buffer, memory_object->array_buffer());
-        size_t new_pages = result.value() + pages;
-        // If the allocation succeeded, then this can't possibly overflow:
-        size_t new_byte_length = new_pages * wasm::kWasmPageSize;
-        // This is a less than check, as it is not guaranteed that the SAB
-        // length here will be equal to the stashed length above as calls to
-        // grow the same memory object can come in from different workers.
-        // It is also possible that a call to Grow was in progress when
-        // handling this call.
-        CHECK_LE(new_byte_length, memory_object->array_buffer().byte_length());
-        // As {old_pages} was read racefully, we return here the synchronized
-        // value provided by {GrowWasmMemoryInPlace}, to provide the atomic
-        // read-modify-write behavior required by the spec.
-        return static_cast<int32_t>(result.value());  // success
-      }
-    }
-    return -1;
+    base::Optional<size_t> result =
+        backing_store->GrowWasmMemoryInPlace(isolate, pages, maximum_pages);
+    // Shared memories can only be grown in place; no copying.
+    if (!result.has_value()) return -1;
+
+    BackingStore::BroadcastSharedWasmMemoryGrow(isolate, backing_store);
+    // Broadcasting the update should update this memory object too.
+    CHECK_NE(*old_buffer, memory_object->array_buffer());
+    size_t new_pages = result.value() + pages;
+    // If the allocation succeeded, then this can't possibly overflow:
+    size_t new_byte_length = new_pages * wasm::kWasmPageSize;
+    // This is a less than check, as it is not guaranteed that the SAB
+    // length here will be equal to the stashed length above as calls to
+    // grow the same memory object can come in from different workers.
+    // It is also possible that a call to Grow was in progress when
+    // handling this call.
+    CHECK_LE(new_byte_length, memory_object->array_buffer().byte_length());
+    // As {old_pages} was read racefully, we return here the synchronized
+    // value provided by {GrowWasmMemoryInPlace}, to provide the atomic
+    // read-modify-write behavior required by the spec.
+    return static_cast<int32_t>(result.value());  // success
   }
 
   base::Optional<size_t> result =
@@ -1023,7 +1030,7 @@ MaybeHandle<WasmGlobalObject> WasmGlobalObject::New(
     global_obj->set_is_mutable(is_mutable);
   }
 
-  if (type.is_reference_type()) {
+  if (type.is_reference()) {
     DCHECK(maybe_untagged_buffer.is_null());
     Handle<FixedArray> tagged_buffer;
     if (!maybe_tagged_buffer.ToHandle(&tagged_buffer)) {
@@ -1559,7 +1566,7 @@ void WasmInstanceObject::ImportWasmJSFunctionIntoTable(
 // static
 uint8_t* WasmInstanceObject::GetGlobalStorage(
     Handle<WasmInstanceObject> instance, const wasm::WasmGlobal& global) {
-  DCHECK(!global.type.is_reference_type());
+  DCHECK(!global.type.is_reference());
   if (global.mutability && global.imported) {
     return reinterpret_cast<byte*>(
         instance->imported_mutable_globals()[global.index]);
@@ -1572,7 +1579,7 @@ uint8_t* WasmInstanceObject::GetGlobalStorage(
 std::pair<Handle<FixedArray>, uint32_t>
 WasmInstanceObject::GetGlobalBufferAndIndex(Handle<WasmInstanceObject> instance,
                                             const wasm::WasmGlobal& global) {
-  DCHECK(global.type.is_reference_type());
+  DCHECK(global.type.is_reference());
   Isolate* isolate = instance->GetIsolate();
   if (global.mutability && global.imported) {
     Handle<FixedArray> buffer(
@@ -1590,7 +1597,7 @@ WasmInstanceObject::GetGlobalBufferAndIndex(Handle<WasmInstanceObject> instance,
 wasm::WasmValue WasmInstanceObject::GetGlobalValue(
     Handle<WasmInstanceObject> instance, const wasm::WasmGlobal& global) {
   Isolate* isolate = instance->GetIsolate();
-  if (global.type.is_reference_type()) {
+  if (global.type.is_reference()) {
     Handle<FixedArray> global_buffer;  // The buffer of the global.
     uint32_t global_index = 0;         // The index into the buffer.
     std::tie(global_buffer, global_index) =
@@ -1601,7 +1608,7 @@ wasm::WasmValue WasmInstanceObject::GetGlobalValue(
   using wasm::Simd128;
   switch (global.type.kind()) {
 #define CASE_TYPE(valuetype, ctype) \
-  case wasm::ValueType::valuetype:  \
+  case wasm::valuetype:             \
     return wasm::WasmValue(base::ReadLittleEndianValue<ctype>(ptr));
     FOREACH_WASMVALUE_CTYPES(CASE_TYPE)
 #undef CASE_TYPE
@@ -1743,30 +1750,30 @@ uint32_t WasmExceptionPackage::GetEncodedSize(
   uint32_t encoded_size = 0;
   for (size_t i = 0; i < sig->parameter_count(); ++i) {
     switch (sig->GetParam(i).kind()) {
-      case wasm::ValueType::kI32:
-      case wasm::ValueType::kF32:
+      case wasm::kI32:
+      case wasm::kF32:
         DCHECK_EQ(2, ComputeEncodedElementSize(sig->GetParam(i)));
         encoded_size += 2;
         break;
-      case wasm::ValueType::kI64:
-      case wasm::ValueType::kF64:
+      case wasm::kI64:
+      case wasm::kF64:
         DCHECK_EQ(4, ComputeEncodedElementSize(sig->GetParam(i)));
         encoded_size += 4;
         break;
-      case wasm::ValueType::kS128:
+      case wasm::kS128:
         DCHECK_EQ(8, ComputeEncodedElementSize(sig->GetParam(i)));
         encoded_size += 8;
         break;
-      case wasm::ValueType::kRef:
-      case wasm::ValueType::kOptRef:
+      case wasm::kRef:
+      case wasm::kOptRef:
         encoded_size += 1;
         break;
-      case wasm::ValueType::kRtt:
-      case wasm::ValueType::kRttWithDepth:
-      case wasm::ValueType::kStmt:
-      case wasm::ValueType::kBottom:
-      case wasm::ValueType::kI8:
-      case wasm::ValueType::kI16:
+      case wasm::kRtt:
+      case wasm::kRttWithDepth:
+      case wasm::kStmt:
+      case wasm::kBottom:
+      case wasm::kI8:
+      case wasm::kI16:
         UNREACHABLE();
     }
   }
@@ -2108,12 +2115,12 @@ namespace wasm {
 bool TypecheckJSObject(Isolate* isolate, const WasmModule* module,
                        Handle<Object> value, ValueType expected,
                        const char** error_message) {
-  DCHECK(expected.is_reference_type());
+  DCHECK(expected.is_reference());
   switch (expected.kind()) {
-    case ValueType::kOptRef:
+    case kOptRef:
       if (value->IsNull(isolate)) return true;
       V8_FALLTHROUGH;
-    case ValueType::kRef:
+    case kRef:
       switch (expected.heap_representation()) {
         case HeapType::kFunc: {
           if (!(WasmExternalFunction::IsWasmExternalFunction(*value) ||
@@ -2207,7 +2214,7 @@ bool TypecheckJSObject(Isolate* isolate, const WasmModule* module,
               "Assigning to struct/array globals not supported yet.";
           return false;
       }
-    case ValueType::kRtt:
+    case kRtt:
       // TODO(7748): Implement when the JS API for rtts is decided on.
       *error_message = "Assigning to rtt globals not supported yet.";
       return false;

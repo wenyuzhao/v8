@@ -412,7 +412,7 @@ class WasmOutOfLineTrap : public OutOfLineCode {
       __ Call(static_cast<Address>(trap_id), RelocInfo::WASM_STUB_CALL);
       ReferenceMap* reference_map =
           gen_->zone()->New<ReferenceMap>(gen_->zone());
-      gen_->RecordSafepoint(reference_map, Safepoint::kNoLazyDeopt);
+      gen_->RecordSafepoint(reference_map);
       __ AssertUnreachable(AbortReason::kUnexpectedReturnFromWasmTrap);
     }
   }
@@ -881,7 +881,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       }
       __ Bind(&return_location);
       if (linkage()->GetIncomingDescriptor()->IsWasmCapiFunction()) {
-        RecordSafepoint(instr->reference_map(), Safepoint::kNoLazyDeopt);
+        RecordSafepoint(instr->reference_map());
       }
       frame_access_state()->SetFrameAccessToDefault();
       // Ideally, we should decrement SP delta to match the change of stack
@@ -2175,6 +2175,11 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       SIMD_BINOP_CASE(kArm64F32x4Min, Fmin, 4S);
       SIMD_BINOP_CASE(kArm64F32x4Max, Fmax, 4S);
       SIMD_BINOP_CASE(kArm64F32x4Eq, Fcmeq, 4S);
+    case kArm64F32x4MulElement: {
+      __ Fmul(i.OutputSimd128Register().V4S(), i.InputSimd128Register(0).V4S(),
+              i.InputSimd128Register(1).S(), i.InputInt8(2));
+      break;
+    }
     case kArm64F32x4Ne: {
       VRegister dst = i.OutputSimd128Register().V4S();
       __ Fcmeq(dst, i.InputSimd128Register(0).V4S(),
@@ -2233,6 +2238,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ Mov(dst, i.InputInt8(1), i.InputRegister64(2));
       break;
     }
+      SIMD_UNOP_CASE(kArm64I64x2Abs, Abs, 2D);
       SIMD_UNOP_CASE(kArm64I64x2Neg, Neg, 2D);
     case kArm64I64x2Shl: {
       ASSEMBLE_SIMD_SHIFT_LEFT(Shl, 6, V2D, Sshl, X);
@@ -2404,66 +2410,6 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ Addp(i.OutputSimd128Register().V4S(), tmp1, tmp2);
       break;
     }
-    case kArm64I32x4WidenI8x16S: {
-      VRegister dst = i.OutputSimd128Register();
-      VRegister src = i.InputSimd128Register(0);
-      uint8_t laneidx = MiscField::decode(instr->opcode());
-      switch (laneidx) {
-        case 0: {
-          __ Sxtl(dst.V8H(), src.V8B());
-          __ Sxtl(dst.V4S(), dst.V4H());
-          break;
-        }
-        case 1: {
-          __ Sxtl(dst.V8H(), src.V8B());
-          __ Sxtl2(dst.V4S(), dst.V8H());
-          break;
-        }
-        case 2: {
-          __ Sxtl2(dst.V8H(), src.V16B());
-          __ Sxtl(dst.V4S(), dst.V4H());
-          break;
-        }
-        case 3: {
-          __ Sxtl2(dst.V8H(), src.V16B());
-          __ Sxtl2(dst.V4S(), dst.V8H());
-          break;
-        }
-        default:
-          UNREACHABLE();
-      }
-      break;
-    }
-    case kArm64I32x4WidenI8x16U: {
-      VRegister dst = i.OutputSimd128Register();
-      VRegister src = i.InputSimd128Register(0);
-      uint8_t laneidx = MiscField::decode(instr->opcode());
-      switch (laneidx) {
-        case 0: {
-          __ Uxtl(dst.V8H(), src.V8B());
-          __ Uxtl(dst.V4S(), dst.V4H());
-          break;
-        }
-        case 1: {
-          __ Uxtl(dst.V8H(), src.V8B());
-          __ Uxtl2(dst.V4S(), dst.V8H());
-          break;
-        }
-        case 2: {
-          __ Uxtl2(dst.V8H(), src.V16B());
-          __ Uxtl(dst.V4S(), dst.V4H());
-          break;
-        }
-        case 3: {
-          __ Uxtl2(dst.V8H(), src.V16B());
-          __ Uxtl2(dst.V4S(), dst.V8H());
-          break;
-        }
-        default:
-          UNREACHABLE();
-      }
-      break;
-    }
     case kArm64I16x8Splat: {
       __ Dup(i.OutputSimd128Register().V8H(), i.InputRegister32(0));
       break;
@@ -2623,7 +2569,6 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       SIMD_BINOP_CASE(kArm64I8x16AddSatS, Sqadd, 16B);
       SIMD_BINOP_CASE(kArm64I8x16Sub, Sub, 16B);
       SIMD_BINOP_CASE(kArm64I8x16SubSatS, Sqsub, 16B);
-      SIMD_BINOP_CASE(kArm64I8x16Mul, Mul, 16B);
       SIMD_DESTRUCTIVE_BINOP_CASE(kArm64I8x16Mla, Mla, 16B);
       SIMD_DESTRUCTIVE_BINOP_CASE(kArm64I8x16Mls, Mls, 16B);
       SIMD_BINOP_CASE(kArm64I8x16MinS, Smin, 16B);
@@ -2680,14 +2625,6 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ Zip1(tmp.V16B(), tmp.V16B(), mask.V16B());
       __ Addv(tmp.H(), tmp.V8H());
       __ Mov(dst.W(), tmp.V8H(), 0);
-      break;
-    }
-    case kArm64SignSelect: {
-      VectorFormat f = VectorFormatFillQ(LaneSizeField::decode(opcode));
-      __ Cmlt(i.OutputSimd128Register().Format(f),
-              i.InputSimd128Register(2).Format(f), 0);
-      __ Bsl(i.OutputSimd128Register().V16B(), i.InputSimd128Register(0).V16B(),
-             i.InputSimd128Register(1).V16B());
       break;
     }
     case kArm64S128Const: {
@@ -3161,7 +3098,7 @@ void CodeGenerator::AssembleConstructFrame() {
       __ Call(wasm::WasmCode::kWasmStackOverflow, RelocInfo::WASM_STUB_CALL);
       // We come from WebAssembly, there are no references for the GC.
       ReferenceMap* reference_map = zone()->New<ReferenceMap>(zone());
-      RecordSafepoint(reference_map, Safepoint::kNoLazyDeopt);
+      RecordSafepoint(reference_map);
       if (FLAG_debug_code) {
         __ Brk(0);
       }

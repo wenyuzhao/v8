@@ -16,10 +16,7 @@ v8_executable("cctest") {
 
   sources = [ "cctest.cc" ]
 
-  deps = [
-    ":cctest_sources",
-    "../..:v8_wrappers",
-  ]
+  deps = [ ":cctest_sources" ]
 
   data_deps = [ "../../tools:v8_testrunner" ]
 
@@ -60,6 +57,12 @@ v8_header_set("cctest_headers") {
     "../..:internal_config_base",
   ]
 
+  deps = [
+    "../..:v8_internal_headers",
+    "../..:v8_libbase",
+    "../..:v8_libplatform",
+  ]
+
   sources = [ "cctest.h" ]
 }
 
@@ -76,9 +79,6 @@ v8_source_set("cctest_sources") {
     ### gcmole(all) ###
     "../common/assembler-tester.h",
     "../common/flag-utils.h",
-    "../common/wasm/flag-utils.h",
-    "../common/wasm/test-signatures.h",
-    "../common/wasm/wasm-macro-gen.h",
     "cctest-utils.h",
     "collector.h",
     "compiler/c-signature.h",
@@ -88,8 +88,6 @@ v8_source_set("cctest_sources") {
     "compiler/codegen-tester.h",
     "compiler/function-tester.cc",
     "compiler/function-tester.h",
-    "compiler/graph-builder-tester.h",
-    "compiler/node-observer-tester.cc",
     "compiler/node-observer-tester.h",
     "compiler/serializer-tester.cc",
     "compiler/serializer-tester.h",
@@ -214,6 +212,7 @@ v8_source_set("cctest_sources") {
     "test-compiler.cc",
     "test-concurrent-descriptor-array.cc",
     "test-concurrent-feedback-vector.cc",
+    "test-concurrent-js-array.cc",
     "test-concurrent-prototype.cc",
     "test-concurrent-script-context-table.cc",
     "test-concurrent-string.cc",
@@ -275,6 +274,7 @@ v8_source_set("cctest_sources") {
     "test-smi-lexicographic-compare.cc",
     "test-strings.cc",
     "test-strtod.cc",
+    "test-swiss-name-dictionary.cc",
     "test-symbols.cc",
     "test-thread-termination.cc",
     "test-threads.cc",
@@ -297,40 +297,6 @@ v8_source_set("cctest_sources") {
     "trace-extension.h",
     "unicode-helpers.cc",
     "unicode-helpers.h",
-    "wasm/test-c-wasm-entry.cc",
-    "wasm/test-compilation-cache.cc",
-    "wasm/test-gc.cc",
-    "wasm/test-grow-memory.cc",
-    "wasm/test-jump-table-assembler.cc",
-    "wasm/test-liftoff-inspection.cc",
-    "wasm/test-run-wasm-64.cc",
-    "wasm/test-run-wasm-asmjs.cc",
-    "wasm/test-run-wasm-atomics.cc",
-    "wasm/test-run-wasm-atomics64.cc",
-    "wasm/test-run-wasm-bulk-memory.cc",
-    "wasm/test-run-wasm-exceptions.cc",
-    "wasm/test-run-wasm-interpreter.cc",
-    "wasm/test-run-wasm-js.cc",
-    "wasm/test-run-wasm-memory64.cc",
-    "wasm/test-run-wasm-module.cc",
-    "wasm/test-run-wasm-sign-extension.cc",
-    "wasm/test-run-wasm-simd-liftoff.cc",
-    "wasm/test-run-wasm-simd-scalar-lowering.cc",
-    "wasm/test-run-wasm-simd.cc",
-    "wasm/test-run-wasm-wrappers.cc",
-    "wasm/test-run-wasm.cc",
-    "wasm/test-streaming-compilation.cc",
-    "wasm/test-wasm-breakpoints.cc",
-    "wasm/test-wasm-codegen.cc",
-    "wasm/test-wasm-import-wrapper-cache.cc",
-    "wasm/test-wasm-metrics.cc",
-    "wasm/test-wasm-serialization.cc",
-    "wasm/test-wasm-shared-engine.cc",
-    "wasm/test-wasm-stack.cc",
-    "wasm/test-wasm-trap-position.cc",
-    "wasm/wasm-atomics-utils.h",
-    "wasm/wasm-run-utils.cc",
-    "wasm/wasm-run-utils.h",
   ]
 
   if (v8_current_cpu == "arm") {
@@ -439,14 +405,58 @@ v8_source_set("cctest_sources") {
     "../..:v8_for_testing",
     "../..:v8_libbase",
     "../..:v8_libplatform",
-    "../..:v8_wrappers",
-    "../..:wasm_test_common",
     "../../tools/debug_helper:v8_debug_helper",
     "//build/win:default_exe_manifest",
   ]
 
+  if (v8_enable_webassembly) {
+    sources += [
+      "../common/wasm/flag-utils.h",
+      "../common/wasm/test-signatures.h",
+      "../common/wasm/wasm-macro-gen.h",
+      "wasm/test-c-wasm-entry.cc",
+      "wasm/test-compilation-cache.cc",
+      "wasm/test-gc.cc",
+      "wasm/test-grow-memory.cc",
+      "wasm/test-jump-table-assembler.cc",
+      "wasm/test-liftoff-inspection.cc",
+      "wasm/test-run-wasm-64.cc",
+      "wasm/test-run-wasm-asmjs.cc",
+      "wasm/test-run-wasm-atomics.cc",
+      "wasm/test-run-wasm-atomics64.cc",
+      "wasm/test-run-wasm-bulk-memory.cc",
+      "wasm/test-run-wasm-exceptions.cc",
+      "wasm/test-run-wasm-interpreter.cc",
+      "wasm/test-run-wasm-js.cc",
+      "wasm/test-run-wasm-memory64.cc",
+      "wasm/test-run-wasm-module.cc",
+      "wasm/test-run-wasm-sign-extension.cc",
+      "wasm/test-run-wasm-simd-liftoff.cc",
+      "wasm/test-run-wasm-simd-scalar-lowering.cc",
+      "wasm/test-run-wasm-simd.cc",
+      "wasm/test-run-wasm-wrappers.cc",
+      "wasm/test-run-wasm.cc",
+      "wasm/test-streaming-compilation.cc",
+      "wasm/test-wasm-breakpoints.cc",
+      "wasm/test-wasm-codegen.cc",
+      "wasm/test-wasm-import-wrapper-cache.cc",
+      "wasm/test-wasm-metrics.cc",
+      "wasm/test-wasm-serialization.cc",
+      "wasm/test-wasm-shared-engine.cc",
+      "wasm/test-wasm-stack.cc",
+      "wasm/test-wasm-trap-position.cc",
+      "wasm/wasm-atomics-utils.h",
+      "wasm/wasm-run-utils.cc",
+      "wasm/wasm-run-utils.h",
+    ]
+    public_deps += [ "../..:wasm_test_common" ]
+  }
+
   defines = []
-  deps = [ "../..:run_torque" ]
+  deps = [
+    "../..:run_torque",
+    "../..:v8_shared_internal_headers",
+  ]
 
   if (v8_enable_i18n_support) {
     defines += [ "V8_INTL_SUPPORT" ]
@@ -511,7 +521,6 @@ v8_executable("generate-bytecode-expectations") {
     "../..:v8",
     "../..:v8_libbase",
     "../..:v8_libplatform",
-    "../..:v8_wrappers",
     "//build/win:default_exe_manifest",
   ]
 

@@ -366,7 +366,8 @@ void TurboAssembler::CallCodeObject(Register code_object) {
   Call(code_object);
 }
 
-void TurboAssembler::JumpCodeObject(Register code_object) {
+void TurboAssembler::JumpCodeObject(Register code_object, JumpMode jump_mode) {
+  DCHECK_EQ(JumpMode::kJump, jump_mode);
   LoadCodeObjectEntry(code_object, code_object);
   Jump(code_object);
 }
@@ -2069,10 +2070,10 @@ void TurboAssembler::LoadMap(Register destination, Register object) {
 }
 
 void MacroAssembler::LoadGlobalProxy(Register dst) {
-  LoadNativeContextSlot(Context::GLOBAL_PROXY_INDEX, dst);
+  LoadNativeContextSlot(dst, Context::GLOBAL_PROXY_INDEX);
 }
 
-void MacroAssembler::LoadNativeContextSlot(int index, Register dst) {
+void MacroAssembler::LoadNativeContextSlot(Register dst, int index) {
   LoadMap(dst, cp);
   ldr(dst, FieldMemOperand(
                dst, Map::kConstructorOrBackPointerOrNativeContextOffset));
@@ -2649,6 +2650,29 @@ void TurboAssembler::I64x2Eq(QwNeonRegister dst, QwNeonRegister src1,
   vand(dst, dst, scratch);
 }
 
+void TurboAssembler::I64x2Ne(QwNeonRegister dst, QwNeonRegister src1,
+                             QwNeonRegister src2) {
+  UseScratchRegisterScope temps(this);
+  Simd128Register tmp = temps.AcquireQ();
+  vceq(Neon32, dst, src1, src2);
+  vrev64(Neon32, tmp, dst);
+  vmvn(dst, dst);
+  vorn(dst, dst, tmp);
+}
+
+void TurboAssembler::I64x2GtS(QwNeonRegister dst, QwNeonRegister src1,
+                              QwNeonRegister src2) {
+  vqsub(NeonS64, dst, src2, src1);
+  vshr(NeonS64, dst, dst, 63);
+}
+
+void TurboAssembler::I64x2GeS(QwNeonRegister dst, QwNeonRegister src1,
+                              QwNeonRegister src2) {
+  vqsub(NeonS64, dst, src1, src2);
+  vshr(NeonS64, dst, dst, 63);
+  vmvn(dst, dst);
+}
+
 void TurboAssembler::V64x2AllTrue(Register dst, QwNeonRegister src) {
   UseScratchRegisterScope temps(this);
   QwNeonRegister tmp = temps.AcquireQ();
@@ -2670,6 +2694,14 @@ void TurboAssembler::V64x2AllTrue(Register dst, QwNeonRegister src) {
   // = max(a,b) != 0 && max(c,d) != 0
   // = (a != 0 || b != 0) && (c != 0 || d != 0)
   // = defintion of i64x2.all_true.
+}
+
+void TurboAssembler::I64x2Abs(QwNeonRegister dst, QwNeonRegister src) {
+  UseScratchRegisterScope temps(this);
+  Simd128Register tmp = temps.AcquireQ();
+  vshr(NeonS64, tmp, src, 63);
+  veor(dst, src, tmp);
+  vsub(Neon64, dst, dst, tmp);
 }
 
 }  // namespace internal
