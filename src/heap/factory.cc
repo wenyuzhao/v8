@@ -2151,8 +2151,8 @@ void Factory::InitializeJSObjectBody(JSObject obj, Map map, int start_offset) {
   // to different elements kind from the initial map on which we track slack.
   bool in_progress = map.IsInobjectSlackTrackingInProgress();
   obj.InitializeBody(map, start_offset, in_progress,
-                      ReadOnlyRoots(isolate()).one_pointer_filler_map_word(),
-                      *undefined_value());
+                     ReadOnlyRoots(isolate()).one_pointer_filler_map_word(),
+                     *undefined_value());
   if (in_progress) {
     map.FindRootMap(isolate()).InobjectSlackTrackingStep(isolate());
   }
