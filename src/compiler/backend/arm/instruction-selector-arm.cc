@@ -112,6 +112,7 @@ void VisitSimdShiftRRR(InstructionSelector* selector, ArchOpcode opcode,
   }
 }
 
+#if V8_ENABLE_WEBASSEMBLY
 void VisitRRRShuffle(InstructionSelector* selector, ArchOpcode opcode,
                      Node* node) {
   ArmOperandGenerator g(selector);
@@ -132,6 +133,7 @@ void VisitRRRShuffle(InstructionSelector* selector, ArchOpcode opcode,
                  g.UseRegister(node->InputAt(0)),
                  g.UseRegister(node->InputAt(1)));
 }
+#endif  // V8_ENABLE_WEBASSEMBLY
 
 void VisitRRI(InstructionSelector* selector, ArchOpcode opcode, Node* node) {
   ArmOperandGenerator g(selector);
@@ -2620,7 +2622,6 @@ void InstructionSelector::VisitWord32AtomicPairCompareExchange(Node* node) {
   V(F64x2Lt, kArmF64x2Lt)                             \
   V(F64x2Le, kArmF64x2Le)                             \
   V(F32x4Add, kArmF32x4Add)                           \
-  V(F32x4AddHoriz, kArmF32x4AddHoriz)                 \
   V(F32x4Sub, kArmF32x4Sub)                           \
   V(F32x4Mul, kArmF32x4Mul)                           \
   V(F32x4Min, kArmF32x4Min)                           \
@@ -2632,7 +2633,6 @@ void InstructionSelector::VisitWord32AtomicPairCompareExchange(Node* node) {
   V(I64x2Add, kArmI64x2Add)                           \
   V(I64x2Sub, kArmI64x2Sub)                           \
   V(I32x4Add, kArmI32x4Add)                           \
-  V(I32x4AddHoriz, kArmI32x4AddHoriz)                 \
   V(I32x4Sub, kArmI32x4Sub)                           \
   V(I32x4Mul, kArmI32x4Mul)                           \
   V(I32x4MinS, kArmI32x4MinS)                         \
@@ -2652,7 +2652,6 @@ void InstructionSelector::VisitWord32AtomicPairCompareExchange(Node* node) {
   V(I16x8SConvertI32x4, kArmI16x8SConvertI32x4)       \
   V(I16x8Add, kArmI16x8Add)                           \
   V(I16x8AddSatS, kArmI16x8AddSatS)                   \
-  V(I16x8AddHoriz, kArmI16x8AddHoriz)                 \
   V(I16x8Sub, kArmI16x8Sub)                           \
   V(I16x8SubSatS, kArmI16x8SubSatS)                   \
   V(I16x8Mul, kArmI16x8Mul)                           \
@@ -2835,6 +2834,7 @@ void InstructionSelector::VisitS128Select(Node* node) {
        g.UseRegister(node->InputAt(2)));
 }
 
+#if V8_ENABLE_WEBASSEMBLY
 namespace {
 
 struct ShuffleEntry {
@@ -2981,6 +2981,9 @@ void InstructionSelector::VisitI8x16Shuffle(Node* node) {
        g.UseImmediate(wasm::SimdShuffle::Pack4Lanes(shuffle + 8)),
        g.UseImmediate(wasm::SimdShuffle::Pack4Lanes(shuffle + 12)));
 }
+#else
+void InstructionSelector::VisitI8x16Shuffle(Node* node) { UNREACHABLE(); }
+#endif  // V8_ENABLE_WEBASSEMBLY
 
 void InstructionSelector::VisitI8x16Swizzle(Node* node) {
   ArmOperandGenerator g(this);
@@ -3148,19 +3151,19 @@ void InstructionSelector::VisitF64x2ConvertLowI32x4U(Node* node) {
 void InstructionSelector::VisitI32x4TruncSatF64x2SZero(Node* node) {
   ArmOperandGenerator g(this);
   Emit(kArmI32x4TruncSatF64x2SZero, g.DefineAsFixed(node, q0),
-       g.UseRegister(node->InputAt(0)));
+       g.UseUniqueRegister(node->InputAt(0)));
 }
 
 void InstructionSelector::VisitI32x4TruncSatF64x2UZero(Node* node) {
   ArmOperandGenerator g(this);
   Emit(kArmI32x4TruncSatF64x2UZero, g.DefineAsFixed(node, q0),
-       g.UseRegister(node->InputAt(0)));
+       g.UseUniqueRegister(node->InputAt(0)));
 }
 
 void InstructionSelector::VisitF32x4DemoteF64x2Zero(Node* node) {
   ArmOperandGenerator g(this);
   Emit(kArmF32x4DemoteF64x2Zero, g.DefineAsFixed(node, q0),
-       g.UseRegister(node->InputAt(0)));
+       g.UseUniqueRegister(node->InputAt(0)));
 }
 
 void InstructionSelector::VisitF64x2PromoteLowF32x4(Node* node) {

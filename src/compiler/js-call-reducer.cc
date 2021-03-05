@@ -3429,8 +3429,9 @@ Reduction JSCallReducer::ReduceArraySome(Node* node,
   return ReplaceWithSubgraph(&a, subgraph);
 }
 
-namespace {
+#if V8_ENABLE_WEBASSEMBLY
 
+namespace {
 bool CanInlineJSToWasmCall(const wasm::FunctionSig* wasm_signature) {
   DCHECK(FLAG_turbo_inline_js_wasm_calls);
   if (wasm_signature->return_count() > 1) {
@@ -3449,7 +3450,6 @@ bool CanInlineJSToWasmCall(const wasm::FunctionSig* wasm_signature) {
 
   return true;
 }
-
 }  // namespace
 
 Reduction JSCallReducer::ReduceCallWasmFunction(
@@ -3500,6 +3500,7 @@ Reduction JSCallReducer::ReduceCallWasmFunction(
   NodeProperties::ChangeOp(node, op);
   return Changed(node);
 }
+#endif  // V8_ENABLE_WEBASSEMBLY
 
 #ifndef V8_ENABLE_FP_PARAMS_IN_C_LINKAGE
 namespace {
@@ -4625,9 +4626,11 @@ Reduction JSCallReducer::ReduceJSCall(Node* node,
     return ReduceCallApiFunction(node, shared);
   }
 
+#if V8_ENABLE_WEBASSEMBLY
   if ((flags() & kInlineJSToWasmCalls) && shared.wasm_function_signature()) {
     return ReduceCallWasmFunction(node, shared);
   }
+#endif  // V8_ENABLE_WEBASSEMBLY
 
   return NoChange();
 }
@@ -7683,7 +7686,7 @@ Reduction JSCallReducer::ReduceRegExpPrototypeTest(Node* node) {
   if (ai_exec.IsInvalid()) return inference.NoChange();
 
   // If "exec" has been modified on {regexp}, we can't do anything.
-  if (ai_exec.IsDataConstant()) {
+  if (ai_exec.IsFastDataConstant()) {
     Handle<JSObject> holder;
     // Do not reduce if the exec method is not on the prototype chain.
     if (!ai_exec.holder().ToHandle(&holder)) return inference.NoChange();
@@ -7691,7 +7694,7 @@ Reduction JSCallReducer::ReduceRegExpPrototypeTest(Node* node) {
     JSObjectRef holder_ref(broker(), holder);
 
     // Bail out if the exec method is not the original one.
-    base::Optional<ObjectRef> constant = holder_ref.GetOwnDataProperty(
+    base::Optional<ObjectRef> constant = holder_ref.GetOwnFastDataProperty(
         ai_exec.field_representation(), ai_exec.field_index());
     if (!constant.has_value() ||
         !constant->equals(native_context().regexp_exec_function())) {

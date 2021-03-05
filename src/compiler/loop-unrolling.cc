@@ -36,28 +36,29 @@ void UnrollLoop(Node* loop_node, ZoneUnorderedSet<Node*>* loop, uint32_t depth,
 
   NodeCopier copier(graph, copied_size, &copies, unrolling_count);
   {
-    std::vector<Node*> loop_nodes(loop->begin(), loop->end());
-    copier.CopyNodes(
-        graph, tmp_zone, graph->NewNode(common->Dead()),
-        NodeRange(loop_nodes.data(), loop_nodes.data() + loop_nodes.size()),
-        source_positions, node_origins);
+    copier.CopyNodes(graph, tmp_zone, graph->NewNode(common->Dead()),
+                     base::make_iterator_range(loop->begin(), loop->end()),
+                     source_positions, node_origins);
   }
 
 #define COPY(node, n) copier.map(node, n)
 #define FOREACH_COPY_INDEX(i) for (uint32_t i = 0; i < unrolling_count; i++)
 
-  for (Node* node : *loop) {
+  for (Node* node : loop_node->uses()) {
     switch (node->opcode()) {
-      case IrOpcode::kStackPointerGreaterThan: {
+      case IrOpcode::kBranch: {
         /*** Step 1: Remove stack checks from all but the first iteration of the
              loop. ***/
-        for (Edge edge : node->use_edges()) {
-          if (edge.from()->opcode() == IrOpcode::kBranch) {
-            FOREACH_COPY_INDEX(i) {
-              COPY(edge.from(), i)
-                  ->ReplaceInput(0, graph->NewNode(common->Int32Constant(1)));
-            }
-          } else if (edge.from()->opcode() == IrOpcode::kEffectPhi) {
+        Node* stack_check = node->InputAt(0);
+        if (stack_check->opcode() != IrOpcode::kStackPointerGreaterThan) {
+          break;
+        }
+        FOREACH_COPY_INDEX(i) {
+          COPY(node, i)->ReplaceInput(0,
+                                      graph->NewNode(common->Int32Constant(1)));
+        }
+        for (Node* use : stack_check->uses()) {
+          if (use->opcode() == IrOpcode::kEffectPhi) {
             // We now need to remove stack check and the related function call
             // from the effect chain.
             // The effect chain looks like this (* stand for irrelevant nodes):
@@ -70,24 +71,22 @@ void UnrollLoop(Node* loop_node, ZoneUnorderedSet<Node*>* loop, uint32_t depth,
             // | | | |
             // ( Load )
             //   |  |
-            // stack check
+            // stack_check
             // |  * | *
             // |  | | |
             // |  (call)
             // |   |     *
             // |   |     |
-            // stack check effect (that we need to replace)
-            Node* stack_check_effect = edge.from();
-            DCHECK_EQ(edge.index(), 0);
-            DCHECK_EQ(stack_check_effect->InputAt(1)->opcode(),
-                      IrOpcode::kCall);
-            DCHECK_EQ(stack_check_effect->InputAt(1)->InputAt(1), node);
-            DCHECK_EQ(node->InputAt(1)->opcode(), IrOpcode::kLoad);
-            DCHECK_EQ(node->InputAt(1)->InputAt(2)->opcode(), IrOpcode::kLoad);
-            Node* replacing_effect = node->InputAt(1)->InputAt(2)->InputAt(2);
+            // {use} (stack check effect that we need to replace)
+            DCHECK_EQ(use->InputAt(1)->opcode(), IrOpcode::kCall);
+            DCHECK_EQ(use->InputAt(1)->InputAt(1), stack_check);
+            DCHECK_EQ(stack_check->InputAt(1)->opcode(), IrOpcode::kLoad);
+            DCHECK_EQ(stack_check->InputAt(1)->InputAt(2)->opcode(),
+                      IrOpcode::kLoad);
+            Node* replacing_effect =
+                stack_check->InputAt(1)->InputAt(2)->InputAt(2);
             FOREACH_COPY_INDEX(i) {
-              COPY(stack_check_effect, i)
-                  ->ReplaceUses(COPY(replacing_effect, i));
+              COPY(use, i)->ReplaceUses(COPY(replacing_effect, i));
             }
           }
         }

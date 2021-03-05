@@ -347,7 +347,7 @@ void CheckBailoutAllowed(LiftoffBailoutReason reason, const char* detail,
     return;
   }
 
-  // TODO(v8:8091): Implement exception handling in Liftoff.
+  // TODO(v8:11453): Implement exception handling in Liftoff.
   if (reason == kExceptionHandling) {
     DCHECK(env->enabled_features.has_eh());
     return;
@@ -369,10 +369,19 @@ class LiftoffCompiler {
     LiftoffAssembler::CacheState state;
   };
 
+  struct TryInfo {
+    TryInfo() = default;
+    LiftoffAssembler::CacheState catch_state;
+    MovableLabel catch_label;
+    bool catch_reached = false;
+    int32_t previous_catch = -1;
+  };
+
   struct Control : public ControlBase<Value, validate> {
     std::unique_ptr<ElseState> else_state;
     LiftoffAssembler::CacheState label_state;
     MovableLabel label;
+    TryInfo* try_info = nullptr;
 
     MOVE_ONLY_NO_DEFAULT_CONSTRUCTOR(Control);
 
@@ -474,7 +483,8 @@ class LiftoffCompiler {
         safepoint_table_builder_(compilation_zone_),
         next_breakpoint_ptr_(breakpoints.begin()),
         next_breakpoint_end_(breakpoints.end()),
-        dead_breakpoint_(dead_breakpoint) {
+        dead_breakpoint_(dead_breakpoint),
+        handlers_(compilation_zone) {
     if (breakpoints.empty()) {
       next_breakpoint_ptr_ = next_breakpoint_end_ = nullptr;
     }
@@ -485,7 +495,7 @@ class LiftoffCompiler {
 
   void GetCode(CodeDesc* desc) {
     asm_.GetCode(nullptr, desc, &safepoint_table_builder_,
-                 Assembler::kNoHandlerTable);
+                 handler_table_offset_);
   }
 
   OwnedVector<uint8_t> GetSourcePositionTable() {
@@ -905,6 +915,14 @@ class LiftoffCompiler {
     __ PatchPrepareStackFrame(pc_offset_stack_frame_construction_);
     __ FinishCode();
     safepoint_table_builder_.Emit(&asm_, __ GetTotalFrameSlotCountForGC());
+    // Emit the handler table.
+    if (!handlers_.empty()) {
+      handler_table_offset_ = HandlerTable::EmitReturnTableStart(&asm_);
+      for (auto& handler : handlers_) {
+        HandlerTable::EmitReturnEntry(&asm_, handler.pc_offset,
+                                      handler.handler.get()->pos());
+      }
+    }
     __ MaybeEmitOutOfLineConstantPool();
     // The previous calls may have also generated a bailout.
     DidAssemblerBailout(decoder);
@@ -1031,7 +1049,9 @@ class LiftoffCompiler {
   }
 
   void Try(FullDecoder* decoder, Control* block) {
-    unsupported(decoder, kExceptionHandling, "try");
+    block->try_info = compilation_zone_->New<TryInfo>();
+    block->try_info->previous_catch = current_catch_;
+    current_catch_ = static_cast<int32_t>(decoder->control_depth() - 1);
   }
 
   void CatchException(FullDecoder* decoder,
@@ -1049,7 +1069,22 @@ class LiftoffCompiler {
   }
 
   void CatchAll(FullDecoder* decoder, Control* block) {
-    unsupported(decoder, kExceptionHandling, "catch-all");
+    DCHECK(block->is_try_catchall() || block->is_try_catch() ||
+           block->is_try_unwind());
+    DCHECK_EQ(decoder->control_at(0), block);
+
+    current_catch_ = block->try_info->previous_catch;  // Pop try scope.
+
+    // The catch block is unreachable if no possible throws in the try block
+    // exist. We only build a landing pad if some node in the try block can
+    // (possibly) throw. Otherwise the catch environments remain empty.
+    if (!block->try_info->catch_reached) {
+      decoder->SetSucceedingCodeDynamicallyUnreachable();
+      return;
+    }
+
+    __ bind(block->try_info->catch_label.get());
+    __ cache_state()->Steal(block->try_info->catch_state);
   }
 
   void If(FullDecoder* decoder, const Value& cond, Control* if_block) {
@@ -1068,11 +1103,12 @@ class LiftoffCompiler {
   }
 
   void FallThruTo(FullDecoder* decoder, Control* c) {
-    if (c->end_merge.reached) {
-      __ MergeFullStackWith(c->label_state, *__ cache_state());
-    } else {
-      c->label_state.Split(*__ cache_state());
+    if (!c->end_merge.reached) {
+      c->label_state.InitMerge(*__ cache_state(), __ num_locals(),
+                               c->end_merge.arity, c->stack_depth);
     }
+    __ MergeFullStackWith(c->label_state, *__ cache_state());
+    __ emit_jump(c->label.get());
     TraceCacheState(decoder);
   }
 
@@ -1874,7 +1910,7 @@ class LiftoffCompiler {
     __ DeallocateStackSlot(sizeof(int64_t));
   }
 
-  void DoReturn(FullDecoder* decoder) {
+  void DoReturn(FullDecoder* decoder, uint32_t /* drop_values */) {
     if (FLAG_trace_wasm) TraceFunctionExit(decoder);
     size_t num_returns = decoder->sig_->return_count();
     if (num_returns > 0) __ MoveToReturnLocations(decoder->sig_, descriptor_);
@@ -2207,9 +2243,10 @@ class LiftoffCompiler {
     __ jmp(target->label.get());
   }
 
-  void BrOrRet(FullDecoder* decoder, uint32_t depth) {
+  void BrOrRet(FullDecoder* decoder, uint32_t depth,
+               uint32_t /* drop_values */) {
     if (depth == decoder->control_depth() - 1) {
-      DoReturn(decoder);
+      DoReturn(decoder, 0);
     } else {
       BrImpl(decoder->control_at(depth));
     }
@@ -2243,7 +2280,7 @@ class LiftoffCompiler {
       outstanding_op_ = kNoOutstandingOp;
     }
 
-    BrOrRet(decoder, depth);
+    BrOrRet(decoder, depth, 0);
     __ bind(&cont_false);
   }
 
@@ -2256,7 +2293,7 @@ class LiftoffCompiler {
       __ jmp(label.get());
     } else {
       __ bind(label.get());
-      BrOrRet(decoder, br_depth);
+      BrOrRet(decoder, br_depth, 0);
     }
   }
 
@@ -2908,7 +2945,7 @@ class LiftoffCompiler {
     __ emit_cond_jump(kUnequal, &cont_false, ref_object.type.kind(), ref.gp(),
                       null);
 
-    BrOrRet(decoder, depth);
+    BrOrRet(decoder, depth, 0);
     __ bind(&cont_false);
     __ PushRegister(kRef, ref);
   }
@@ -3068,6 +3105,8 @@ class LiftoffCompiler {
         return EmitBinOp<kS128, kS128>(&LiftoffAssembler::emit_i32x4_ge_u);
       case wasm::kExprI64x2Eq:
         return EmitBinOp<kS128, kS128>(&LiftoffAssembler::emit_i64x2_eq);
+      case wasm::kExprI64x2Ne:
+        return EmitBinOp<kS128, kS128>(&LiftoffAssembler::emit_i64x2_ne);
       case wasm::kExprI64x2LtS:
         return EmitBinOp<kS128, kS128, true>(
             &LiftoffAssembler::emit_i64x2_gt_s);
@@ -3442,6 +3481,24 @@ class LiftoffCompiler {
         return EmitUnOp<kS128, kS128>(&LiftoffAssembler::emit_i32x4_abs);
       case wasm::kExprI64x2Abs:
         return EmitUnOp<kS128, kS128>(&LiftoffAssembler::emit_i64x2_abs);
+      case wasm::kExprF64x2ConvertLowI32x4S:
+        return EmitUnOp<kS128, kS128>(
+            &LiftoffAssembler::emit_f64x2_convert_low_i32x4_s);
+      case wasm::kExprF64x2ConvertLowI32x4U:
+        return EmitUnOp<kS128, kS128>(
+            &LiftoffAssembler::emit_f64x2_convert_low_i32x4_u);
+      case wasm::kExprF64x2PromoteLowF32x4:
+        return EmitUnOp<kS128, kS128>(
+            &LiftoffAssembler::emit_f64x2_promote_low_f32x4);
+      case wasm::kExprF32x4DemoteF64x2Zero:
+        return EmitUnOp<kS128, kS128>(
+            &LiftoffAssembler::emit_f32x4_demote_f64x2_zero);
+      case wasm::kExprI32x4TruncSatF64x2SZero:
+        return EmitUnOp<kS128, kS128>(
+            &LiftoffAssembler::emit_i32x4_trunc_sat_f64x2_s_zero);
+      case wasm::kExprI32x4TruncSatF64x2UZero:
+        return EmitUnOp<kS128, kS128>(
+            &LiftoffAssembler::emit_i32x4_trunc_sat_f64x2_u_zero);
       default:
         unsupported(decoder, kSimd, "simd");
     }
@@ -3617,6 +3674,34 @@ class LiftoffCompiler {
     Store32BitExceptionValue(values_array, index_in_array, value.gp(), pinned);
   }
 
+  void EmitLandingPad(FullDecoder* decoder) {
+    if (current_catch_ == -1) return;
+    MovableLabel handler;
+    int handler_offset = __ pc_offset();
+
+    // If we return from the throwing code normally, just skip over the handler.
+    Label skip_handler;
+    __ emit_jump(&skip_handler);
+
+    // Handler: merge into the catch state, and jump to the catch body.
+    __ bind(handler.get());
+    __ ExceptionHandler();
+    handlers_.push_back({std::move(handler), handler_offset});
+    Control* current_try =
+        decoder->control_at(decoder->control_depth() - 1 - current_catch_);
+    DCHECK_NOT_NULL(current_try->try_info);
+    if (!current_try->try_info->catch_reached) {
+      current_try->try_info->catch_state.InitMerge(
+          *__ cache_state(), __ num_locals(), 0,
+          current_try->try_info->catch_state.stack_height());
+      current_try->try_info->catch_reached = true;
+    }
+    __ MergeStackWith(current_try->try_info->catch_state, 0);
+    __ emit_jump(current_try->try_info->catch_label.get());
+
+    __ bind(&skip_handler);
+  }
+
   void Throw(FullDecoder* decoder, const ExceptionIndexImmediate<validate>& imm,
              const Vector<Value>& /* args */) {
     LiftoffRegList pinned;
@@ -3693,6 +3778,7 @@ class LiftoffCompiler {
     source_position_table_builder_.AddPosition(
         __ pc_offset(), SourcePosition(decoder->position()), true);
     __ CallRuntimeStub(WasmCode::kWasmThrow);
+    EmitLandingPad(decoder);
     DefineSafepoint();
   }
 
@@ -4741,7 +4827,7 @@ class LiftoffCompiler {
         SubtypeCheck(decoder, obj, rtt, &cont_false, kNullFails);
 
     __ PushRegister(rtt.type.is_bottom() ? kBottom : obj.type.kind(), obj_reg);
-    BrOrRet(decoder, depth);
+    BrOrRet(decoder, depth, 0);
 
     __ bind(&cont_false);
     // Drop the branch's value, restore original value.
@@ -4895,7 +4981,7 @@ class LiftoffCompiler {
 
     __ bind(&match);
     __ PushRegister(result_kind, obj_reg);
-    BrOrRet(decoder, br_depth);
+    BrOrRet(decoder, br_depth, 0);
 
     __ bind(&no_match);
     // Drop the branch's value, restore original value.
@@ -4980,6 +5066,7 @@ class LiftoffCompiler {
         source_position_table_builder_.AddPosition(
             __ pc_offset(), SourcePosition(decoder->position()), true);
         __ CallIndirect(sig, call_descriptor, target);
+        EmitLandingPad(decoder);
       }
     } else {
       // A direct call within this module just gets the current instance.
@@ -4997,6 +5084,7 @@ class LiftoffCompiler {
         source_position_table_builder_.AddPosition(
             __ pc_offset(), SourcePosition(decoder->position()), true);
         __ CallNativeWasmCode(addr);
+        EmitLandingPad(decoder);
       }
     }
 
@@ -5129,6 +5217,7 @@ class LiftoffCompiler {
       source_position_table_builder_.AddPosition(
           __ pc_offset(), SourcePosition(decoder->position()), true);
       __ CallIndirect(sig, call_descriptor, target);
+      EmitLandingPad(decoder);
     }
 
     DefineSafepoint();
@@ -5339,6 +5428,7 @@ class LiftoffCompiler {
       source_position_table_builder_.AddPosition(
           __ pc_offset(), SourcePosition(decoder->position()), true);
       __ CallIndirect(sig, call_descriptor, target_reg);
+      EmitLandingPad(decoder);
     }
     DefineSafepoint();
     RegisterDebugSideTableEntry(decoder, DebugSideTableBuilder::kDidSpill);
@@ -5499,6 +5589,17 @@ class LiftoffCompiler {
   // call" and "break on entry" a.k.a. instrumentation breakpoint). This happens
   // at the first breakable opcode in the function (if compiling for debugging).
   bool did_function_entry_break_checks_ = false;
+
+  // Depth of the current try block.
+  int32_t current_catch_ = -1;
+
+  struct HandlerInfo {
+    MovableLabel handler;
+    int pc_offset;
+  };
+
+  ZoneVector<HandlerInfo> handlers_;
+  int handler_table_offset_ = Assembler::kNoHandlerTable;
 
   bool has_outstanding_op() const {
     return outstanding_op_ != kNoOutstandingOp;

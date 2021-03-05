@@ -963,6 +963,10 @@ void TurboAssembler::F64x2ConvertLowI32x4U(XMMRegister dst, XMMRegister src,
   // dst = [ src_low, 0x43300000, src_high, 0x4330000 ];
   // 0x43300000'00000000 is a special double where the significand bits
   // precisely represents all uint32 numbers.
+  if (!CpuFeatures::IsSupported(AVX) && dst != src) {
+    movaps(dst, src);
+    src = dst;
+  }
   Unpcklps(dst, src,
            ExternalReferenceAsOperand(
                ExternalReference::
@@ -1217,6 +1221,28 @@ void TurboAssembler::I32x4ExtAddPairwiseI16x8U(XMMRegister dst, XMMRegister src,
     psrld(dst, byte{16});
     // dst = |a+b|c+d|e+f|g+h|
     paddd(dst, tmp);
+  }
+}
+
+void TurboAssembler::I8x16Swizzle(XMMRegister dst, XMMRegister src,
+                                  XMMRegister mask, XMMRegister scratch,
+                                  Register tmp) {
+  // Out-of-range indices should return 0, add 112 so that any value > 15
+  // saturates to 128 (top bit set), so pshufb will zero that lane.
+  Operand op = ExternalReferenceAsOperand(
+      ExternalReference::address_of_wasm_i8x16_swizzle_mask(), tmp);
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope avx_scope(this, AVX);
+    vpaddusb(scratch, mask, op);
+    vpshufb(dst, src, scratch);
+  } else {
+    CpuFeatureScope sse_scope(this, SSSE3);
+    movaps(scratch, op);
+    if (dst != src) {
+      movaps(dst, src);
+    }
+    paddusb(scratch, mask);
+    pshufb(dst, scratch);
   }
 }
 

@@ -1491,7 +1491,7 @@ class V8_EXPORT UnboundScript {
    */
   Local<Script> BindToCurrentContext();
 
-  int GetId();
+  int GetId() const;
   Local<Value> GetScriptName();
 
   /**
@@ -1701,7 +1701,7 @@ class V8_EXPORT Module : public Data {
    *
    * The module must be a SourceTextModule and must not have a kErrored status.
    */
-  int ScriptId();
+  int ScriptId() const;
 
   /**
    * Returns whether this module or any of its requested modules is async,
@@ -2167,6 +2167,8 @@ class V8_EXPORT Message {
    */
   Isolate* GetIsolate() const;
 
+  V8_WARN_UNUSED_RESULT MaybeLocal<String> GetSource(
+      Local<Context> context) const;
   V8_WARN_UNUSED_RESULT MaybeLocal<String> GetSourceLine(
       Local<Context> context) const;
 
@@ -2340,6 +2342,17 @@ class V8_EXPORT StackFrame {
    * deprecated //@ sourceURL=... string.
    */
   Local<String> GetScriptNameOrSourceURL() const;
+
+  /**
+   * Returns the source of the script for the function for this StackFrame.
+   */
+  Local<String> GetScriptSource() const;
+
+  /**
+   * Returns the source mapping URL (if one is present) of the script for
+   * the function for this StackFrame.
+   */
+  Local<String> GetScriptSourceMappingURL() const;
 
   /**
    * Returns the name of the function associated with this stack frame.
@@ -3527,12 +3540,12 @@ class V8_EXPORT String : public Name {
   /**
    * Returns true if this string can be made external.
    */
-  bool CanMakeExternal();
+  bool CanMakeExternal() const;
 
   /**
    * Returns true if the strings values are equal. Same as JS ==/===.
    */
-  bool StringEquals(Local<String> str);
+  bool StringEquals(Local<String> str) const;
 
   /**
    * Converts an object to a UTF-8-encoded character array.  Useful if
@@ -4142,7 +4155,7 @@ class V8_EXPORT Object : public Value {
   Maybe<bool> SetIntegrityLevel(Local<Context> context, IntegrityLevel level);
 
   /** Gets the number of internal fields for this Object. */
-  int InternalFieldCount();
+  int InternalFieldCount() const;
 
   /** Same as above, but works for PersistentBase. */
   V8_INLINE static int InternalFieldCount(
@@ -4252,10 +4265,10 @@ class V8_EXPORT Object : public Value {
       Local<Context> context, Local<Name> key);
 
   /** Tests for a named lookup interceptor.*/
-  bool HasNamedLookupInterceptor();
+  bool HasNamedLookupInterceptor() const;
 
   /** Tests for an index lookup interceptor.*/
-  bool HasIndexedLookupInterceptor();
+  bool HasIndexedLookupInterceptor() const;
 
   /**
    * Returns the identity hash for this object. The current implementation
@@ -4295,12 +4308,12 @@ class V8_EXPORT Object : public Value {
    * ObjectTemplate::SetCallAsFunctionHandler method.
    * When an Object is callable this method returns true.
    */
-  bool IsCallable();
+  bool IsCallable() const;
 
   /**
    * True if this object is a constructor.
    */
-  bool IsConstructor();
+  bool IsConstructor() const;
 
   /**
    * True if this object can carry information relevant to the embedder in its
@@ -4309,14 +4322,14 @@ class V8_EXPORT Object : public Value {
    * V8 automatically adds internal fields at compile time, such as e.g.
    * v8::ArrayBuffer.
    */
-  bool IsApiWrapper();
+  bool IsApiWrapper() const;
 
   /**
    * True if this object was created from an object template which was marked
    * as undetectable. See v8::ObjectTemplate::MarkAsUndetectable for more
    * information.
    */
-  bool IsUndetectable();
+  bool IsUndetectable() const;
 
   /**
    * Call an Object as a function if a callback is set by the
@@ -4375,7 +4388,7 @@ class V8_EXPORT Object : public Value {
    *
    * See also: v8::ObjectTemplate::SetCodeLike
    */
-  bool IsCodeLike(Isolate* isolate);
+  bool IsCodeLike(Isolate* isolate) const;
 
  private:
   Object();
@@ -4873,7 +4886,7 @@ class V8_EXPORT Promise : public Object {
    * Returns true if the promise has at least one derived promise, and
    * therefore resolve/reject handlers (including default handler).
    */
-  bool HasHandler();
+  bool HasHandler() const;
 
   /**
    * Returns the content of the [[PromiseResult]] field. The Promise must not
@@ -4981,7 +4994,7 @@ class V8_EXPORT Proxy : public Object {
  public:
   Local<Value> GetTarget();
   Local<Value> GetHandler();
-  bool IsRevoked();
+  bool IsRevoked() const;
   void Revoke();
 
   /**
@@ -7173,7 +7186,7 @@ class V8_EXPORT ObjectTemplate : public Template {
    * Gets the number of internal fields for objects generated from
    * this template.
    */
-  int InternalFieldCount();
+  int InternalFieldCount() const;
 
   /**
    * Sets the number of internal fields for objects generated from
@@ -7184,7 +7197,7 @@ class V8_EXPORT ObjectTemplate : public Template {
   /**
    * Returns true if the object will be an immutable prototype exotic object.
    */
-  bool IsImmutableProto();
+  bool IsImmutableProto() const;
 
   /**
    * Makes the ObjectTemplate for an immutable prototype exotic object, with an
@@ -7202,7 +7215,7 @@ class V8_EXPORT ObjectTemplate : public Template {
    * Reference: https://github.com/tc39/proposal-dynamic-code-brand-checks
    */
   void SetCodeLike();
-  bool IsCodeLike();
+  bool IsCodeLike() const;
 
   V8_INLINE static ObjectTemplate* Cast(Data* data);
 
@@ -10756,7 +10769,7 @@ class V8_EXPORT Context : public Data {
    * Returns true if code generation from strings is allowed for the context.
    * For more details see AllowCodeGenerationFromStrings(bool) documentation.
    */
-  bool IsCodeGenerationFromStringsAllowed();
+  bool IsCodeGenerationFromStringsAllowed() const;
 
   /**
    * Sets the error description for the exception that is thrown when

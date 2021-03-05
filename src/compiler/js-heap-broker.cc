@@ -420,7 +420,7 @@ class JSObjectData : public JSReceiverData {
   ObjectData* GetOwnConstantElement(
       JSHeapBroker* broker, uint32_t index,
       SerializationPolicy policy = SerializationPolicy::kAssumeSerialized);
-  ObjectData* GetOwnDataProperty(
+  ObjectData* GetOwnFastDataProperty(
       JSHeapBroker* broker, Representation representation,
       FieldIndex field_index,
       SerializationPolicy policy = SerializationPolicy::kAssumeSerialized);
@@ -494,10 +494,10 @@ base::Optional<ObjectRef> GetOwnElementFromHeap(JSHeapBroker* broker,
   return base::nullopt;
 }
 
-ObjectRef GetOwnDataPropertyFromHeap(JSHeapBroker* broker,
-                                     Handle<JSObject> receiver,
-                                     Representation representation,
-                                     FieldIndex field_index) {
+ObjectRef GetOwnFastDataPropertyFromHeap(JSHeapBroker* broker,
+                                         Handle<JSObject> receiver,
+                                         Representation representation,
+                                         FieldIndex field_index) {
   Handle<Object> constant =
       JSObject::FastPropertyAt(receiver, representation, field_index);
   return ObjectRef(broker, constant);
@@ -524,21 +524,21 @@ ObjectData* JSObjectData::GetOwnConstantElement(JSHeapBroker* broker,
   return result;
 }
 
-ObjectData* JSObjectData::GetOwnDataProperty(JSHeapBroker* broker,
-                                             Representation representation,
-                                             FieldIndex field_index,
-                                             SerializationPolicy policy) {
+ObjectData* JSObjectData::GetOwnFastDataProperty(JSHeapBroker* broker,
+                                                 Representation representation,
+                                                 FieldIndex field_index,
+                                                 SerializationPolicy policy) {
   auto p = own_properties_.find(field_index.property_index());
   if (p != own_properties_.end()) return p->second;
 
   if (policy == SerializationPolicy::kAssumeSerialized) {
-    TRACE_MISSING(broker, "knowledge about property with index "
+    TRACE_MISSING(broker, "knowledge about fast property with index "
                               << field_index.property_index() << " on "
                               << this);
     return nullptr;
   }
 
-  ObjectRef property = GetOwnDataPropertyFromHeap(
+  ObjectRef property = GetOwnFastDataPropertyFromHeap(
       broker, Handle<JSObject>::cast(object()), representation, field_index);
   ObjectData* result(property.data());
   own_properties_.insert(std::make_pair(field_index.property_index(), result));
@@ -1126,10 +1126,6 @@ class MapData : public HeapObjectData {
                               InternalIndex descriptor_index);
   void SerializeOwnDescriptors(JSHeapBroker* broker);
   ObjectData* GetStrongValue(InternalIndex descriptor_index) const;
-  // TODO(neis, solanes): This code needs to be changed to allow for
-  // kNeverSerialized instance descriptors. However, this is likely to require a
-  // non-trivial refactoring of how maps are serialized because actual instance
-  // descriptors don't contain information about owner maps.
   ObjectData* instance_descriptors() const { return instance_descriptors_; }
 
   void SerializeRootMap(JSHeapBroker* broker);
@@ -1414,7 +1410,9 @@ class DescriptorArrayData : public HeapObjectData {
  public:
   DescriptorArrayData(JSHeapBroker* broker, ObjectData** storage,
                       Handle<DescriptorArray> object)
-      : HeapObjectData(broker, storage, object), contents_(broker->zone()) {}
+      : HeapObjectData(broker, storage, object), contents_(broker->zone()) {
+    DCHECK(!FLAG_turbo_direct_heap_access);
+  }
 
   ObjectData* FindFieldOwner(InternalIndex descriptor_index) const {
     return contents_.at(descriptor_index.as_int()).field_owner;
@@ -2255,7 +2253,23 @@ void MapData::SerializeOwnDescriptor(JSHeapBroker* broker,
         broker->GetOrCreateData(map->instance_descriptors(kRelaxedLoad));
   }
 
-  if (!instance_descriptors()->should_access_heap()) {
+  if (instance_descriptors()->should_access_heap()) {
+    // When accessing the fields concurrently, we still have to recurse on the
+    // owner map if it is different than the current map. This is because
+    // {instance_descriptors_} gets set on SerializeOwnDescriptor and otherwise
+    // we risk the field owner having a null {instance_descriptors_}.
+    Handle<DescriptorArray> descriptors(map->instance_descriptors(kRelaxedLoad),
+                                        broker->isolate());
+    if (descriptors->GetDetails(descriptor_index).location() == kField) {
+      Handle<Map> owner(
+          map->FindFieldOwner(broker->isolate(), descriptor_index),
+          broker->isolate());
+      if (!owner.equals(map)) {
+        broker->GetOrCreateData(owner)->AsMap()->SerializeOwnDescriptor(
+            broker, descriptor_index);
+      }
+    }
+  } else {
     DescriptorArrayData* descriptors =
         instance_descriptors()->AsDescriptorArray();
     descriptors->SerializeDescriptor(broker, map, descriptor_index);
@@ -3227,16 +3241,7 @@ MapRef MapRef::FindFieldOwner(InternalIndex descriptor_index) const {
 
 ObjectRef MapRef::GetFieldType(InternalIndex descriptor_index) const {
   CHECK_LT(descriptor_index.as_int(), NumberOfOwnDescriptors());
-  if (data_->should_access_heap()) {
-    Handle<FieldType> field_type(object()
-                                     ->instance_descriptors(kRelaxedLoad)
-                                     .GetFieldType(descriptor_index),
-                                 broker()->isolate());
-    return ObjectRef(broker(), field_type);
-  }
-  DescriptorArrayData* descriptors =
-      data()->AsMap()->instance_descriptors()->AsDescriptorArray();
-  return ObjectRef(broker(), descriptors->GetFieldType(descriptor_index));
+  return instance_descriptors().GetFieldType(descriptor_index);
 }
 
 base::Optional<ObjectRef> StringRef::GetCharAsStringOrUndefined(
@@ -3922,15 +3927,15 @@ base::Optional<ObjectRef> JSObjectRef::GetOwnConstantElement(
   return ObjectRef(broker(), element);
 }
 
-base::Optional<ObjectRef> JSObjectRef::GetOwnDataProperty(
+base::Optional<ObjectRef> JSObjectRef::GetOwnFastDataProperty(
     Representation field_representation, FieldIndex index,
     SerializationPolicy policy) const {
   if (data_->should_access_heap()) {
-    return GetOwnDataPropertyFromHeap(broker(),
-                                      Handle<JSObject>::cast(object()),
-                                      field_representation, index);
+    return GetOwnFastDataPropertyFromHeap(broker(),
+                                          Handle<JSObject>::cast(object()),
+                                          field_representation, index);
   }
-  ObjectData* property = data()->AsJSObject()->GetOwnDataProperty(
+  ObjectData* property = data()->AsJSObject()->GetOwnFastDataProperty(
       broker(), field_representation, index, policy);
   if (property == nullptr) return base::nullopt;
   return ObjectRef(broker(), property);
@@ -4136,7 +4141,7 @@ Float64 FixedDoubleArrayData::Get(int i) const {
 
 PropertyDetails DescriptorArrayRef::GetPropertyDetails(
     InternalIndex descriptor_index) const {
-  if (data_->should_access_heap() || FLAG_turbo_direct_heap_access) {
+  if (data_->should_access_heap()) {
     return object()->GetDetails(descriptor_index);
   }
   return data()->AsDescriptorArray()->GetPropertyDetails(descriptor_index);
@@ -4144,7 +4149,7 @@ PropertyDetails DescriptorArrayRef::GetPropertyDetails(
 
 NameRef DescriptorArrayRef::GetPropertyKey(
     InternalIndex descriptor_index) const {
-  if (data_->should_access_heap() || FLAG_turbo_direct_heap_access) {
+  if (data_->should_access_heap()) {
     NameRef result(broker(), broker()->CanonicalPersistentHandle(
                                  object()->GetKey(descriptor_index)));
     CHECK(result.IsUniqueName());
@@ -4154,9 +4159,25 @@ NameRef DescriptorArrayRef::GetPropertyKey(
                  data()->AsDescriptorArray()->GetPropertyKey(descriptor_index));
 }
 
+ObjectRef DescriptorArrayRef::GetFieldType(
+    InternalIndex descriptor_index) const {
+  if (data_->should_access_heap()) {
+    // This method only gets called for the creation of FieldTypeDependencies.
+    // These calls happen when the broker is either disabled or serializing,
+    // which means that GetOrCreateData would be able to successfully create the
+    // ObjectRef for the cases where we haven't seen the FieldType before.
+    DCHECK(broker()->mode() == JSHeapBroker::kDisabled ||
+           broker()->mode() == JSHeapBroker::kSerializing);
+    return ObjectRef(broker(), broker()->CanonicalPersistentHandle(
+                                   object()->GetFieldType(descriptor_index)));
+  }
+  return ObjectRef(broker(),
+                   data()->AsDescriptorArray()->GetFieldType(descriptor_index));
+}
+
 base::Optional<ObjectRef> DescriptorArrayRef::GetStrongValue(
     InternalIndex descriptor_index) const {
-  if (data_->should_access_heap() || FLAG_turbo_direct_heap_access) {
+  if (data_->should_access_heap()) {
     HeapObject heap_object;
     if (object()
             ->GetValue(descriptor_index)

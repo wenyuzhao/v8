@@ -3459,7 +3459,6 @@ void InstructionSelector::VisitInt64AbsWithOverflow(Node* node) {
 #define SIMD_BINOP_LIST(V)                              \
   V(F64x2Add, kArm64F64x2Add)                           \
   V(F64x2Sub, kArm64F64x2Sub)                           \
-  V(F64x2Mul, kArm64F64x2Mul)                           \
   V(F64x2Div, kArm64F64x2Div)                           \
   V(F64x2Min, kArm64F64x2Min)                           \
   V(F64x2Max, kArm64F64x2Max)                           \
@@ -3468,7 +3467,6 @@ void InstructionSelector::VisitInt64AbsWithOverflow(Node* node) {
   V(F64x2Lt, kArm64F64x2Lt)                             \
   V(F64x2Le, kArm64F64x2Le)                             \
   V(F32x4Add, kArm64F32x4Add)                           \
-  V(F32x4AddHoriz, kArm64F32x4AddHoriz)                 \
   V(F32x4Sub, kArm64F32x4Sub)                           \
   V(F32x4Div, kArm64F32x4Div)                           \
   V(F32x4Min, kArm64F32x4Min)                           \
@@ -3483,7 +3481,6 @@ void InstructionSelector::VisitInt64AbsWithOverflow(Node* node) {
   V(I64x2Ne, kArm64I64x2Ne)                             \
   V(I64x2GtS, kArm64I64x2GtS)                           \
   V(I64x2GeS, kArm64I64x2GeS)                           \
-  V(I32x4AddHoriz, kArm64I32x4AddHoriz)                 \
   V(I32x4Mul, kArm64I32x4Mul)                           \
   V(I32x4MinS, kArm64I32x4MinS)                         \
   V(I32x4MaxS, kArm64I32x4MaxS)                         \
@@ -3498,7 +3495,6 @@ void InstructionSelector::VisitInt64AbsWithOverflow(Node* node) {
   V(I32x4DotI16x8S, kArm64I32x4DotI16x8S)               \
   V(I16x8SConvertI32x4, kArm64I16x8SConvertI32x4)       \
   V(I16x8AddSatS, kArm64I16x8AddSatS)                   \
-  V(I16x8AddHoriz, kArm64I16x8AddHoriz)                 \
   V(I16x8SubSatS, kArm64I16x8SubSatS)                   \
   V(I16x8Mul, kArm64I16x8Mul)                           \
   V(I16x8MinS, kArm64I16x8MinS)                         \
@@ -3620,11 +3616,23 @@ using ShuffleMatcher =
     ValueMatcher<S128ImmediateParameter, IrOpcode::kI8x16Shuffle>;
 using BinopWithShuffleMatcher = BinopMatcher<ShuffleMatcher, ShuffleMatcher>;
 
-void InstructionSelector::VisitF32x4Mul(Node* node) {
+namespace {
+// Struct holding the result of pattern-matching a mul+dup.
+struct MulWithDupResult {
+  Node* input;     // Node holding the vector elements.
+  Node* dup_node;  // Node holding the lane to multiply.
+  int index;
+  // Pattern-match is successful if dup_node is set.
+  explicit operator bool() const { return dup_node != nullptr; }
+};
+
+template <int LANES>
+MulWithDupResult TryMatchMulWithDup(Node* node) {
   // Pattern match:
   //   f32x4.mul(x, shuffle(x, y, indices)) => f32x4.mul(x, y, laneidx)
+  //   f64x2.mul(x, shuffle(x, y, indices)) => f64x2.mul(x, y, laneidx)
   //   where shuffle(x, y, indices) = dup(x[laneidx]) or dup(y[laneidx])
-  // f32x4.mul is commutative, so use BinopMatcher.
+  // f32x4.mul and f64x2.mul are commutative, so use BinopMatcher.
   BinopWithShuffleMatcher m = BinopWithShuffleMatcher(node);
   ShuffleMatcher left = m.left();
   ShuffleMatcher right = m.right();
@@ -3633,33 +3641,52 @@ void InstructionSelector::VisitF32x4Mul(Node* node) {
   Node* dup_node = nullptr;
 
   int index = 0;
-  // TODO(zhin): We can canonicalize first to avoid checking index < 4.
-  // e.g. shuffle(x, y, [16, 17, 18, 19...]) => shuffle(y, y, [0, 1, 2, 3]...).
-  // But doing so can mutate the inputs of the shuffle node without updating the
-  // shuffle immediates themselves. Fix that before we canonicalize here.
-  // We don't want CanCover here because in many use cases, the shuffle is
-  // generated early in the function, but the f32x4.mul happens in a loop, which
-  // won't cover the shuffle since they are different basic blocks.
-  if (left.HasResolvedValue() && wasm::SimdShuffle::TryMatchSplat<4>(
+  // TODO(zhin): We can canonicalize first to avoid checking index < LANES.
+  // e.g. shuffle(x, y, [16, 17, 18, 19...]) => shuffle(y, y, [0, 1, 2,
+  // 3]...). But doing so can mutate the inputs of the shuffle node without
+  // updating the shuffle immediates themselves. Fix that before we
+  // canonicalize here. We don't want CanCover here because in many use cases,
+  // the shuffle is generated early in the function, but the f32x4.mul happens
+  // in a loop, which won't cover the shuffle since they are different basic
+  // blocks.
+  if (left.HasResolvedValue() && wasm::SimdShuffle::TryMatchSplat<LANES>(
                                      left.ResolvedValue().data(), &index)) {
-    dup_node = left.node()->InputAt(index < 4 ? 0 : 1);
+    dup_node = left.node()->InputAt(index < LANES ? 0 : 1);
     input = right.node();
   } else if (right.HasResolvedValue() &&
-             wasm::SimdShuffle::TryMatchSplat<4>(right.ResolvedValue().data(),
-                                                 &index)) {
-    dup_node = right.node()->InputAt(index < 4 ? 0 : 1);
+             wasm::SimdShuffle::TryMatchSplat<LANES>(
+                 right.ResolvedValue().data(), &index)) {
+    dup_node = right.node()->InputAt(index < LANES ? 0 : 1);
     input = left.node();
   }
 
-  if (dup_node == nullptr) {
+  // Canonicalization would get rid of this too.
+  index %= LANES;
+
+  return {input, dup_node, index};
+}
+}  // namespace
+
+void InstructionSelector::VisitF32x4Mul(Node* node) {
+  if (MulWithDupResult result = TryMatchMulWithDup<4>(node)) {
+    Arm64OperandGenerator g(this);
+    Emit(kArm64F32x4MulElement, g.DefineAsRegister(node),
+         g.UseRegister(result.input), g.UseRegister(result.dup_node),
+         g.UseImmediate(result.index));
+  } else {
     return VisitRRR(this, kArm64F32x4Mul, node);
   }
+}
 
-  // Canonicalization would get rid of this too.
-  index %= 4;
-  Arm64OperandGenerator g(this);
-  Emit(kArm64F32x4MulElement, g.DefineAsRegister(node), g.UseRegister(input),
-       g.UseRegister(dup_node), g.UseImmediate(index));
+void InstructionSelector::VisitF64x2Mul(Node* node) {
+  if (MulWithDupResult result = TryMatchMulWithDup<2>(node)) {
+    Arm64OperandGenerator g(this);
+    Emit(kArm64F64x2MulElement, g.DefineAsRegister(node),
+         g.UseRegister(result.input), g.UseRegister(result.dup_node),
+         g.UseImmediate(result.index));
+  } else {
+    return VisitRRR(this, kArm64F64x2Mul, node);
+  }
 }
 
 void InstructionSelector::VisitI64x2Mul(Node* node) {
@@ -3734,6 +3761,7 @@ VISIT_SIMD_QFMOP(F32x4Qfma)
 VISIT_SIMD_QFMOP(F32x4Qfms)
 #undef VISIT_SIMD_QFMOP
 
+#if V8_ENABLE_WEBASSEMBLY
 namespace {
 
 struct ShuffleEntry {
@@ -3881,6 +3909,9 @@ void InstructionSelector::VisitI8x16Shuffle(Node* node) {
        g.UseImmediate(wasm::SimdShuffle::Pack4Lanes(shuffle + 8)),
        g.UseImmediate(wasm::SimdShuffle::Pack4Lanes(shuffle + 12)));
 }
+#else
+void InstructionSelector::VisitI8x16Shuffle(Node* node) { UNREACHABLE(); }
+#endif  // V8_ENABLE_WEBASSEMBLY
 
 void InstructionSelector::VisitSignExtendWord8ToInt32(Node* node) {
   VisitRR(this, kArm64Sxtb32, node);
