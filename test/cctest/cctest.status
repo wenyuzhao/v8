@@ -708,4 +708,29 @@
   'test-cpu-profiler/TracingCpuProfiler': [PASS, FAIL],
 }], # variant == stress_concurrent_inlining
 
+################################################################################
+['not incremental_marking', {
+  'test-heap/Regress8617': [SKIP],
+  'test-heap/Regress10698': [SKIP],
+  'test-heap/MarkCompactEpochCounter': [SKIP],
+  'test-write-barrier/WriteBarrier_Marking': [SKIP],
+  'test-write-barrier/WriteBarrier_MarkingExtension': [SKIP],
+  'test-serialize/CodeSerializerLargeCodeObjectWithIncrementalMarking': [SKIP],
+  'test-mark-compact/Regress5829': [SKIP],
+  'test-invalidated-slots/InvalidatedSlotsRightTrimLargeFixedArray': [SKIP],
+  'test-invalidated-slots/InvalidatedSlotsRightTrimFixedArray': [SKIP],
+  'test-invalidated-slots/InvalidatedSlotsFastToSlow': [SKIP],
+  'test-invalidated-slots/InvalidatedSlotsLeftTrimFixedArray': [SKIP],
+  'test-embedder-tracing/TracePrologueCallingIntoV8WriteBarrier': [SKIP],
+  'test-embedder-tracing/FinalizeTracingWhenMarking': [SKIP],
+  'test-concurrent-marking/ConcurrentMarkingMarkedBytes': [SKIP],
+  'test-concurrent-marking/ConcurrentMarkingStoppedOnTeardown': [SKIP],
+  'test-concurrent-allocation/ConcurrentBlackAllocation': [SKIP],
+  'test-concurrent-allocation/ConcurrentRecordRelocSlot': [SKIP],
+  'test-concurrent-allocation/ConcurrentWriteBarrier': [SKIP],
+  'test-array-buffer-tracker/ArrayBuffer_ExternalBackingStoreSizeIncreases': [SKIP],
+  'test-heap/MemoryReducerActivationForSmallHeaps': [SKIP],
+  'test-heap/Regress10774': [SKIP],
+}], # incremental_marking
+
 ]
