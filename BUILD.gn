@@ -444,7 +444,8 @@ if (v8_enable_single_generation == true) {
   assert(
       v8_enable_unconditional_write_barriers || v8_disable_write_barriers,
       "Requires unconditional write barriers or none (which disables incremental marking)")
-  assert(!v8_enable_incremental_marking, "Requires disabling incremental marking")
+  assert(!v8_enable_incremental_marking,
+         "Requires disabling incremental marking")
 }
 
 assert(!v8_enable_conservative_stack_scanning || v8_enable_single_generation,
