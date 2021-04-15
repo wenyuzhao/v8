@@ -91,10 +91,4 @@
   'LoggingTest.SourceLocation':[SKIP]  # issue-174
 }],
 
-################################################################################
-['not incremental_marking', {
-  'UnifiedHeapTest.WriteBarrierV8ToCppReference': [SKIP],
-  'UnifiedHeapTest.WriteBarrierCppToV8Reference': [SKIP],
-}], # incremental_marking
-
 ]

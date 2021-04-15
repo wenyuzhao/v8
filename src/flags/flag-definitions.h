@@ -1102,13 +1102,7 @@ DEFINE_BOOL(minor_mc_trace_fragmentation, false,
 DEFINE_BOOL(trace_evacuation, false, "report evacuation statistics")
 DEFINE_BOOL(trace_mutator_utilization, false,
             "print mutator utilization, allocation speed, gc speed")
-#if defined(V8_ENABLE_INCREMENTAL_MARKING)
-#define V8_INCREMENTAL_MARKING_BOOL true
-#else
-#define V8_INCREMENTAL_MARKING_BOOL false
-#endif
-DEFINE_BOOL(incremental_marking, V8_INCREMENTAL_MARKING_BOOL,
-            "use incremental marking")
+DEFINE_BOOL(incremental_marking, true, "use incremental marking")
 DEFINE_BOOL(incremental_marking_wrappers, true,
             "use incremental marking for marking wrappers")
 DEFINE_BOOL(incremental_marking_task, true, "use tasks for incremental marking")
