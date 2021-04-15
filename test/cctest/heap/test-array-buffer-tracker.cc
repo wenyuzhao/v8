@@ -394,7 +394,9 @@ TEST(ArrayBuffer_ExternalBackingStoreSizeIncreases) {
   Heap* heap = reinterpret_cast<Isolate*>(isolate)->heap();
   ExternalBackingStoreType type = ExternalBackingStoreType::kArrayBuffer;
 
-  const Space* space = FLAG_incremental_marking ? static_cast<Space*>(heap->new_space()) : static_cast<Space*>(heap->old_space());
+  const Space* space = FLAG_incremental_marking
+                           ? static_cast<Space*>(heap->new_space())
+                           : static_cast<Space*>(heap->old_space());
   const size_t backing_store_before = space->ExternalBackingStoreBytes(type);
   {
     const size_t kArraybufferSize = 117;
