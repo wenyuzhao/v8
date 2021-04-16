@@ -1480,6 +1480,7 @@
   'regress/regress-4121': [SKIP],
   'packed-elements': [SKIP],
   'const-dict-tracking': [SKIP],
+  'compiler/native-context-specialization-hole-check': [SKIP],
 }], # single_generation
 
 ]
