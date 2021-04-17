@@ -1914,6 +1914,50 @@ TEST_F(FunctionBodyDecoderTest, IndirectCallsWithMismatchedSigs2) {
       "call_indirect: immediate table #1 is not of a function type");
 }
 
+TEST_F(FunctionBodyDecoderTest, TablesWithFunctionSubtyping) {
+  WASM_FEATURE_SCOPE(reftypes);
+  WASM_FEATURE_SCOPE(typed_funcref);
+  WASM_FEATURE_SCOPE(gc);
+  EXPERIMENTAL_FLAG_SCOPE(gc);
+
+  byte empty_struct = builder.AddStruct({});
+  byte super_struct = builder.AddStruct({F(kWasmI32, false)});
+  byte sub_struct = builder.AddStruct({F(kWasmI32, false), F(kWasmF64, false)});
+
+  byte table_type = builder.AddSignature(
+      FunctionSig::Build(zone(), {ValueType::Ref(super_struct, kNullable)},
+                         {ValueType::Ref(sub_struct, kNullable)}));
+  byte table_supertype = builder.AddSignature(
+      FunctionSig::Build(zone(), {ValueType::Ref(empty_struct, kNullable)},
+                         {ValueType::Ref(sub_struct, kNullable)}));
+  auto function_sig =
+      FunctionSig::Build(zone(), {ValueType::Ref(sub_struct, kNullable)},
+                         {ValueType::Ref(super_struct, kNullable)});
+  byte function_type = builder.AddSignature(function_sig);
+
+  byte function = builder.AddFunction(function_sig);
+
+  byte table = builder.InitializeTable(ValueType::Ref(table_type, kNullable));
+
+  // We can call-indirect from a typed function table with an immediate type
+  // that is a subtype of the table type.
+  ExpectValidates(
+      FunctionSig::Build(zone(), {ValueType::Ref(sub_struct, kNullable)}, {}),
+      {WASM_CALL_INDIRECT_TABLE(
+          table, function_type,
+          WASM_STRUCT_NEW_DEFAULT(super_struct, WASM_RTT_CANON(super_struct)),
+          WASM_ZERO)});
+
+  // table.set's subtyping works as expected.
+  ExpectValidates(sigs.v_i(), {WASM_TABLE_SET(0, WASM_LOCAL_GET(0),
+                                              WASM_REF_FUNC(function))});
+  // table.get's subtyping works as expected.
+  ExpectValidates(
+      FunctionSig::Build(zone(), {ValueType::Ref(table_supertype, kNullable)},
+                         {kWasmI32}),
+      {WASM_TABLE_GET(0, WASM_LOCAL_GET(0))});
+}
+
 TEST_F(FunctionBodyDecoderTest, IndirectCallsWithoutTableCrash) {
   const FunctionSig* sig = sigs.i_i();
 
@@ -2598,6 +2642,29 @@ TEST_F(FunctionBodyDecoderTest, BrTable2b) {
   ExpectValidates(sigs.v_v(),
                   {WASM_BLOCK(WASM_BLOCK(WASM_BR_TABLE(
                       WASM_I32V_2(67), 1, BR_TARGET(0), BR_TARGET(1))))});
+}
+
+TEST_F(FunctionBodyDecoderTest, BrTableSubtyping) {
+  WASM_FEATURE_SCOPE(reftypes);
+  WASM_FEATURE_SCOPE(typed_funcref);
+  WASM_FEATURE_SCOPE(gc);
+
+  TestModuleBuilder builder;
+  byte supertype1 = builder.AddStruct({F(kWasmI8, true), F(kWasmI16, false)});
+  byte supertype2 = builder.AddStruct({F(kWasmI8, true)});
+  byte subtype = builder.AddStruct(
+      {F(kWasmI8, true), F(kWasmI16, false), F(kWasmI32, true)});
+  module = builder.module();
+  ExpectValidates(
+      sigs.v_v(),
+      {WASM_BLOCK_R(
+           wasm::ValueType::Ref(supertype1, kNonNullable),
+           WASM_BLOCK_R(
+               wasm::ValueType::Ref(supertype2, kNonNullable),
+               WASM_STRUCT_NEW_DEFAULT(subtype, WASM_RTT_CANON(subtype)),
+               WASM_BR_TABLE(WASM_I32V(5), 1, BR_TARGET(0), BR_TARGET(1))),
+           WASM_UNREACHABLE),
+       WASM_DROP});
 }
 
 TEST_F(FunctionBodyDecoderTest, BrTable_off_end) {

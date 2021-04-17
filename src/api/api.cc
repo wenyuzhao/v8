@@ -1093,9 +1093,13 @@ void Context::SetAlignedPointerInEmbedderData(int index, void* value) {
 
 // --- T e m p l a t e ---
 
-static void InitializeTemplate(i::TemplateInfo that, int type) {
+static void InitializeTemplate(i::TemplateInfo that, int type,
+                               bool do_not_cache) {
   that.set_number_of_properties(0);
   that.set_tag(type);
+  int serial_number =
+      do_not_cache ? i::TemplateInfo::kDoNotCache : i::TemplateInfo::kUncached;
+  that.set_serial_number(serial_number);
 }
 
 void Template::Set(v8::Local<Name> name, v8::Local<Data> value,
@@ -1105,15 +1109,18 @@ void Template::Set(v8::Local<Name> name, v8::Local<Data> value,
   ENTER_V8_NO_SCRIPT_NO_EXCEPTION(isolate);
   i::HandleScope scope(isolate);
   auto value_obj = Utils::OpenHandle(*value);
+
   Utils::ApiCheck(!value_obj->IsJSReceiver() || value_obj->IsTemplateInfo(),
                   "v8::Template::Set",
                   "Invalid value, must be a primitive or a Template");
+
+  // The template cache only performs shallow clones, if we set an
+  // ObjectTemplate as a property value then we can not cache the receiver
+  // template.
   if (value_obj->IsObjectTemplateInfo()) {
-    templ->set_serial_number(0);
-    if (templ->IsFunctionTemplateInfo()) {
-      i::Handle<i::FunctionTemplateInfo>::cast(templ)->set_do_not_cache(true);
-    }
+    templ->set_serial_number(i::TemplateInfo::kDoNotCache);
   }
+
   i::ApiNatives::AddDataProperty(isolate, templ, Utils::OpenHandle(*name),
                                  value_obj,
                                  static_cast<i::PropertyAttributes>(attribute));
@@ -1145,8 +1152,9 @@ void Template::SetAccessorProperty(v8::Local<v8::Name> name,
 }
 
 // --- F u n c t i o n   T e m p l a t e ---
-static void InitializeFunctionTemplate(i::FunctionTemplateInfo info) {
-  InitializeTemplate(info, Consts::FUNCTION_TEMPLATE);
+static void InitializeFunctionTemplate(i::FunctionTemplateInfo info,
+                                       bool do_not_cache) {
+  InitializeTemplate(info, Consts::FUNCTION_TEMPLATE, do_not_cache);
   info.set_flag(0);
 }
 
@@ -1219,14 +1227,8 @@ static Local<FunctionTemplate> FunctionTemplateNew(
     // Disallow GC until all fields of obj have acceptable types.
     i::DisallowGarbageCollection no_gc;
     i::FunctionTemplateInfo raw = *obj;
-    InitializeFunctionTemplate(raw);
+    InitializeFunctionTemplate(raw, do_not_cache);
     raw.set_length(length);
-    raw.set_do_not_cache(do_not_cache);
-    int next_serial_number = i::FunctionTemplateInfo::kInvalidSerialNumber;
-    if (!do_not_cache) {
-      next_serial_number = isolate->heap()->GetNextTemplateSerialNumber();
-    }
-    raw.set_serial_number(next_serial_number);
     raw.set_undetectable(false);
     raw.set_needs_access_check(false);
     raw.set_accept_any_receiver(true);
@@ -1442,13 +1444,8 @@ static Local<ObjectTemplate> ObjectTemplateNew(
     // Disallow GC until all fields of obj have acceptable types.
     i::DisallowGarbageCollection no_gc;
     i::ObjectTemplateInfo raw = *obj;
-    InitializeTemplate(raw, Consts::OBJECT_TEMPLATE);
+    InitializeTemplate(raw, Consts::OBJECT_TEMPLATE, do_not_cache);
     raw.set_data(0);
-    int next_serial_number = 0;
-    if (!do_not_cache) {
-      next_serial_number = isolate->heap()->GetNextTemplateSerialNumber();
-    }
-    raw.set_serial_number(next_serial_number);
     if (!constructor.IsEmpty()) {
       raw.set_constructor(*Utils::OpenHandle(*constructor));
     }
@@ -4071,34 +4068,56 @@ Maybe<bool> v8::Object::CreateDataProperty(v8::Local<v8::Context> context,
                                            v8::Local<Name> key,
                                            v8::Local<Value> value) {
   auto isolate = reinterpret_cast<i::Isolate*>(context->GetIsolate());
-  ENTER_V8(isolate, context, Object, CreateDataProperty, Nothing<bool>(),
-           i::HandleScope);
   i::Handle<i::JSReceiver> self = Utils::OpenHandle(this);
   i::Handle<i::Name> key_obj = Utils::OpenHandle(*key);
   i::Handle<i::Object> value_obj = Utils::OpenHandle(*value);
 
-  Maybe<bool> result = i::JSReceiver::CreateDataProperty(
-      isolate, self, key_obj, value_obj, Just(i::kDontThrow));
-  has_pending_exception = result.IsNothing();
-  RETURN_ON_FAILED_EXECUTION_PRIMITIVE(bool);
-  return result;
+  i::LookupIterator::Key lookup_key(isolate, key_obj);
+  i::LookupIterator it(isolate, self, lookup_key, i::LookupIterator::OWN);
+  if (self->IsJSProxy()) {
+    ENTER_V8(isolate, context, Object, CreateDataProperty, Nothing<bool>(),
+             i::HandleScope);
+    Maybe<bool> result =
+        i::JSReceiver::CreateDataProperty(&it, value_obj, Just(i::kDontThrow));
+    has_pending_exception = result.IsNothing();
+    RETURN_ON_FAILED_EXECUTION_PRIMITIVE(bool);
+    return result;
+  } else {
+    ENTER_V8_NO_SCRIPT(isolate, context, Object, CreateDataProperty,
+                       Nothing<bool>(), i::HandleScope);
+    Maybe<bool> result =
+        i::JSObject::CreateDataProperty(&it, value_obj, Just(i::kDontThrow));
+    has_pending_exception = result.IsNothing();
+    RETURN_ON_FAILED_EXECUTION_PRIMITIVE(bool);
+    return result;
+  }
 }
 
 Maybe<bool> v8::Object::CreateDataProperty(v8::Local<v8::Context> context,
                                            uint32_t index,
                                            v8::Local<Value> value) {
   auto isolate = reinterpret_cast<i::Isolate*>(context->GetIsolate());
-  ENTER_V8(isolate, context, Object, CreateDataProperty, Nothing<bool>(),
-           i::HandleScope);
   i::Handle<i::JSReceiver> self = Utils::OpenHandle(this);
   i::Handle<i::Object> value_obj = Utils::OpenHandle(*value);
 
   i::LookupIterator it(isolate, self, index, self, i::LookupIterator::OWN);
-  Maybe<bool> result =
-      i::JSReceiver::CreateDataProperty(&it, value_obj, Just(i::kDontThrow));
-  has_pending_exception = result.IsNothing();
-  RETURN_ON_FAILED_EXECUTION_PRIMITIVE(bool);
-  return result;
+  if (self->IsJSProxy()) {
+    ENTER_V8(isolate, context, Object, CreateDataProperty, Nothing<bool>(),
+             i::HandleScope);
+    Maybe<bool> result =
+        i::JSReceiver::CreateDataProperty(&it, value_obj, Just(i::kDontThrow));
+    has_pending_exception = result.IsNothing();
+    RETURN_ON_FAILED_EXECUTION_PRIMITIVE(bool);
+    return result;
+  } else {
+    ENTER_V8_NO_SCRIPT(isolate, context, Object, CreateDataProperty,
+                       Nothing<bool>(), i::HandleScope);
+    Maybe<bool> result =
+        i::JSObject::CreateDataProperty(&it, value_obj, Just(i::kDontThrow));
+    has_pending_exception = result.IsNothing();
+    RETURN_ON_FAILED_EXECUTION_PRIMITIVE(bool);
+    return result;
+  }
 }
 
 struct v8::PropertyDescriptor::PrivateData {
@@ -6257,6 +6276,11 @@ metrics::Recorder::ContextId metrics::Recorder::GetContextId(
       handle(i_context->native_context(), isolate));
 }
 
+metrics::LongTaskStats metrics::LongTaskStats::Get(v8::Isolate* isolate) {
+  i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
+  return *i_isolate->GetCurrentLongTaskStats();
+}
+
 namespace {
 i::Address* GetSerializedDataFromFixedArray(i::Isolate* isolate,
                                             i::FixedArray list, size_t index) {
@@ -7988,6 +8012,10 @@ v8::Local<v8::Context> Isolate::GetIncumbentContext() {
   return Utils::ToLocal(context);
 }
 
+v8::Local<Value> Isolate::ThrowError(v8::Local<v8::String> message) {
+  return ThrowException(v8::Exception::Error(message));
+}
+
 v8::Local<Value> Isolate::ThrowException(v8::Local<v8::Value> value) {
   i::Isolate* isolate = reinterpret_cast<i::Isolate*>(this);
   ENTER_V8_DO_NOT_USE(isolate);
@@ -9683,10 +9711,11 @@ void HeapProfiler::ClearObjectIds() {
 
 const HeapSnapshot* HeapProfiler::TakeHeapSnapshot(
     ActivityControl* control, ObjectNameResolver* resolver,
-    bool treat_global_objects_as_roots) {
+    bool treat_global_objects_as_roots, bool capture_numeric_value) {
   return reinterpret_cast<const HeapSnapshot*>(
       reinterpret_cast<i::HeapProfiler*>(this)->TakeSnapshot(
-          control, resolver, treat_global_objects_as_roots));
+          control, resolver, treat_global_objects_as_roots,
+          capture_numeric_value));
 }
 
 void HeapProfiler::StartTrackingHeapObjects(bool track_allocations) {

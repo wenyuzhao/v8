@@ -975,8 +975,6 @@ V8_WARN_UNUSED_RESULT MaybeHandle<Code> GetCodeFromOptimizedCodeCache(
 }
 
 void ClearOptimizedCodeCache(OptimizedCompilationInfo* compilation_info) {
-  DCHECK(!CodeKindIsNativeContextIndependentJSFunction(
-      compilation_info->code_kind()));
   Handle<JSFunction> function = compilation_info->closure();
   if (compilation_info->osr_offset().IsNone()) {
     Handle<FeedbackVector> vector =
@@ -1013,31 +1011,6 @@ void InsertCodeIntoOptimizedCodeCache(
     OSROptimizedCodeCache::AddOptimizedCode(native_context, shared, code,
                                             compilation_info->osr_offset());
   }
-}
-
-void InsertCodeIntoCompilationCache(Isolate* isolate,
-                                    OptimizedCompilationInfo* info) {
-  if (!CodeKindIsNativeContextIndependentJSFunction(info->code_kind())) return;
-
-  DCHECK(info->osr_offset().IsNone());
-
-  Handle<Code> code = info->code();
-  DCHECK(!info->function_context_specializing());
-
-  Handle<SharedFunctionInfo> sfi = info->shared_info();
-  CompilationCache* cache = isolate->compilation_cache();
-  cache->PutCode(sfi, code);
-  DCHECK(!cache->LookupCode(sfi).is_null());
-
-  sfi->set_may_have_cached_code(true);
-
-  if (FLAG_trace_turbo_nci) CompilationCacheCode::TraceInsertion(sfi, code);
-}
-
-V8_WARN_UNUSED_RESULT MaybeHandle<Code> GetCodeFromCompilationCache(
-    Isolate* isolate, Handle<SharedFunctionInfo> shared) {
-  if (!shared->may_have_cached_code()) return {};
-  return shared->TryGetCachedCode(isolate);
 }
 
 // Runs PrepareJob in the proper compilation & canonical scopes. Handles will be
@@ -1132,11 +1105,10 @@ bool GetOptimizedCodeLater(std::unique_ptr<OptimizedCompilationJob> job,
     function->SetOptimizationMarker(OptimizationMarker::kInOptimizationQueue);
   }
 
-  // Note: Usually the active tier is expected to be Ignition or NCI at this
-  // point (in other words we don't expect to optimize if the function is
-  // already TF-optimized). There is a special case for OSR though, for which
-  // we *can* reach this point even if we've already generated non-OSR'd TF
-  // code.
+  // Note: Usually the active tier is expected to be Ignition at this point (in
+  // other words we don't expect to optimize if the function is already
+  // TF-optimized). There is a special case for OSR though, for which we *can*
+  // reach this point even if we've already generated non-OSR'd TF code.
   DCHECK(function->shared().HasBytecodeArray());
   return true;
 }
@@ -1146,13 +1118,7 @@ bool GetOptimizedCodeLater(std::unique_ptr<OptimizedCompilationJob> job,
 Handle<Code> ContinuationForConcurrentOptimization(
     Isolate* isolate, Handle<JSFunction> function) {
   Handle<Code> cached_code;
-  if (FLAG_turbo_nci && function->NextTier() == CodeKindForTopTier() &&
-      GetCodeFromCompilationCache(isolate, handle(function->shared(), isolate))
-          .ToHandle(&cached_code)) {
-    // Tiering up to Turbofan and cached optimized code exists. Continue
-    // execution there until TF optimization has finished.
-    return cached_code;
-  } else if (FLAG_turboprop && function->HasAvailableOptimizedCode()) {
+  if (FLAG_turboprop && function->HasAvailableOptimizedCode()) {
     DCHECK(!FLAG_turboprop_as_toptier);
     DCHECK(function->NextTier() == CodeKind::TURBOFAN);
     // It is possible that we have marked a closure for TurboFan optimization
@@ -1177,10 +1143,19 @@ Handle<Code> ContinuationForConcurrentOptimization(
   return BUILTIN_CODE(isolate, InterpreterEntryTrampoline);
 }
 
+enum class GetOptimizedCodeResultHandling {
+  // Default behavior, i.e. install the result, insert into caches, etc.
+  kDefault,
+  // Used only for stress testing. The compilation result should be discarded.
+  kDiscardForTesting,
+};
+
 MaybeHandle<Code> GetOptimizedCode(
     Handle<JSFunction> function, ConcurrencyMode mode, CodeKind code_kind,
     BytecodeOffset osr_offset = BytecodeOffset::None(),
-    JavaScriptFrame* osr_frame = nullptr) {
+    JavaScriptFrame* osr_frame = nullptr,
+    GetOptimizedCodeResultHandling result_handling =
+        GetOptimizedCodeResultHandling::kDefault) {
   DCHECK(CodeKindIsOptimizedJSFunction(code_kind));
 
   Isolate* isolate = function->GetIsolate();
@@ -1188,12 +1163,7 @@ MaybeHandle<Code> GetOptimizedCode(
 
   // Make sure we clear the optimization marker on the function so that we
   // don't try to re-optimize.
-  // If compiling for NCI (which does not use the optimization marker), don't
-  // touch the marker to avoid interfering with Turbofan compilation.
-  if (!CodeKindIsNativeContextIndependentJSFunction(code_kind) &&
-      function->HasOptimizationMarker()) {
-    function->ClearOptimizationMarker();
-  }
+  if (function->HasOptimizationMarker()) function->ClearOptimizationMarker();
 
   if (shared->optimization_disabled() &&
       shared->disable_optimization_reason() == BailoutReason::kNeverOptimize) {
@@ -1231,21 +1201,6 @@ MaybeHandle<Code> GetOptimizedCode(
   DCHECK(shared->is_compiled());
   function->feedback_vector().set_profiler_ticks(0);
 
-  // Check the compilation cache (stored on the Isolate, shared between native
-  // contexts).
-  if (CodeKindIsNativeContextIndependentJSFunction(code_kind)) {
-    DCHECK(osr_offset.IsNone());
-
-    Handle<Code> cached_code;
-    if (GetCodeFromCompilationCache(isolate, shared).ToHandle(&cached_code)) {
-      CHECK_EQ(cached_code->kind(), CodeKind::NATIVE_CONTEXT_INDEPENDENT);
-      if (FLAG_trace_turbo_nci) {
-        CompilationCacheCode::TraceHit(shared, cached_code);
-      }
-      return cached_code;
-    }
-  }
-
   VMState<COMPILER> state(isolate);
   TimerEventScope<TimerEventOptimizeCode> optimize_code_timer(isolate);
   RCS_SCOPE(isolate, RuntimeCallCounterId::kOptimizeCode);
@@ -1262,6 +1217,10 @@ MaybeHandle<Code> GetOptimizedCode(
                                             has_script, osr_offset, osr_frame));
   OptimizedCompilationInfo* compilation_info = job->compilation_info();
 
+  if (result_handling == GetOptimizedCodeResultHandling::kDiscardForTesting) {
+    compilation_info->set_discard_result_for_testing();
+  }
+
   // Prepare the job and launch concurrent compilation, or compile now.
   if (mode == ConcurrencyMode::kConcurrent) {
     if (GetOptimizedCodeLater(std::move(job), isolate, compilation_info,
@@ -1271,13 +1230,26 @@ MaybeHandle<Code> GetOptimizedCode(
   } else {
     DCHECK_EQ(mode, ConcurrencyMode::kNotConcurrent);
     if (GetOptimizedCodeNow(job.get(), isolate, compilation_info)) {
-      InsertCodeIntoCompilationCache(isolate, compilation_info);
       return compilation_info->code();
     }
   }
 
   if (isolate->has_pending_exception()) isolate->clear_pending_exception();
   return {};
+}
+
+// When --stress-concurrent-inlining is enabled, spawn concurrent jobs in
+// addition to non-concurrent compiles to increase coverage in mjsunit tests
+// (where most interesting compiles are non-concurrent). The result of the
+// compilation is thrown out.
+void SpawnDuplicateConcurrentJobForStressTesting(Handle<JSFunction> function,
+                                                 ConcurrencyMode mode,
+                                                 CodeKind code_kind) {
+  DCHECK(FLAG_stress_concurrent_inlining && FLAG_concurrent_recompilation &&
+         mode == ConcurrencyMode::kNotConcurrent);
+  USE(GetOptimizedCode(function, ConcurrencyMode::kConcurrent, code_kind,
+                       BytecodeOffset::None(), nullptr,
+                       GetOptimizedCodeResultHandling::kDiscardForTesting));
 }
 
 bool FailAndClearPendingException(Isolate* isolate) {
@@ -1552,6 +1524,7 @@ void CompileOnBackgroundThread(ParseInfo* parse_info,
   // Character stream shouldn't be used again.
   parse_info->ResetCharacterStream();
 }
+
 }  // namespace
 
 CompilationHandleScope::~CompilationHandleScope() {
@@ -1992,9 +1965,17 @@ bool Compiler::Compile(Isolate* isolate, Handle<JSFunction> function,
     CompilerTracer::TraceOptimizeForAlwaysOpt(isolate, function,
                                               CodeKindForTopTier());
 
+    const CodeKind code_kind = CodeKindForTopTier();
+    const ConcurrencyMode concurrency_mode = ConcurrencyMode::kNotConcurrent;
+
+    if (FLAG_stress_concurrent_inlining && FLAG_concurrent_recompilation &&
+        concurrency_mode == ConcurrencyMode::kNotConcurrent) {
+      SpawnDuplicateConcurrentJobForStressTesting(function, concurrency_mode,
+                                                  code_kind);
+    }
+
     Handle<Code> maybe_code;
-    if (GetOptimizedCode(function, ConcurrencyMode::kNotConcurrent,
-                         CodeKindForTopTier())
+    if (GetOptimizedCode(function, concurrency_mode, code_kind)
             .ToHandle(&maybe_code)) {
       code = maybe_code;
     }
@@ -2091,6 +2072,11 @@ bool Compiler::CompileOptimized(Isolate* isolate, Handle<JSFunction> function,
   DCHECK(CodeKindIsOptimizedJSFunction(code_kind));
   DCHECK(AllowCompilation::IsAllowed(isolate));
 
+  if (FLAG_stress_concurrent_inlining && FLAG_concurrent_recompilation &&
+      mode == ConcurrencyMode::kNotConcurrent) {
+    SpawnDuplicateConcurrentJobForStressTesting(function, mode, code_kind);
+  }
+
   Handle<Code> code;
   if (!GetOptimizedCode(function, mode, code_kind).ToHandle(&code)) {
     // Optimization failed, get the existing code. We could have optimized code
@@ -2102,23 +2088,18 @@ bool Compiler::CompileOptimized(Isolate* isolate, Handle<JSFunction> function,
     code = ContinuationForConcurrentOptimization(isolate, function);
   }
 
-  if (!CodeKindIsNativeContextIndependentJSFunction(code_kind)) {
-    function->set_code(*code, kReleaseStore);
-  }
+  function->set_code(*code, kReleaseStore);
 
   // Check postconditions on success.
   DCHECK(!isolate->has_pending_exception());
   DCHECK(function->shared().is_compiled());
-  DCHECK(CodeKindIsNativeContextIndependentJSFunction(code_kind) ||
-         function->is_compiled());
-  if (!CodeKindIsNativeContextIndependentJSFunction(code_kind)) {
-    DCHECK_IMPLIES(function->HasOptimizationMarker(),
-                   function->IsInOptimizationQueue());
-    DCHECK_IMPLIES(function->HasOptimizationMarker(),
-                   function->ChecksOptimizationMarker());
-    DCHECK_IMPLIES(function->IsInOptimizationQueue(),
-                   mode == ConcurrencyMode::kConcurrent);
-  }
+  DCHECK(function->is_compiled());
+  DCHECK_IMPLIES(function->HasOptimizationMarker(),
+                 function->IsInOptimizationQueue());
+  DCHECK_IMPLIES(function->HasOptimizationMarker(),
+                 function->ChecksOptimizationMarker());
+  DCHECK_IMPLIES(function->IsInOptimizationQueue(),
+                 mode == ConcurrencyMode::kConcurrent);
   return true;
 }
 
@@ -2883,7 +2864,6 @@ MaybeHandle<SharedFunctionInfo> Compiler::GetSharedFunctionInfoForScript(
         is_compiled_scope = inner_result->is_compiled_scope(isolate);
         DCHECK(is_compiled_scope.is_compiled());
         compilation_cache->PutScript(source, language_mode, inner_result);
-        Handle<Script> script(Script::cast(inner_result->script()), isolate);
         maybe_result = inner_result;
       } else {
         // Deserializer failed. Fall through to compile.
@@ -3226,10 +3206,8 @@ bool Compiler::FinalizeOptimizedCompilationJob(OptimizedCompilationJob* job,
 
   Handle<SharedFunctionInfo> shared = compilation_info->shared_info();
 
-  CodeKind code_kind = compilation_info->code_kind();
-  const bool should_install_code_on_function =
-      !CodeKindIsNativeContextIndependentJSFunction(code_kind);
-  if (should_install_code_on_function) {
+  const bool use_result = !compilation_info->discard_result_for_testing();
+  if (V8_LIKELY(use_result)) {
     // Reset profiler ticks, function is no longer considered hot.
     compilation_info->closure()->feedback_vector().set_profiler_ticks(0);
   }
@@ -3249,10 +3227,9 @@ bool Compiler::FinalizeOptimizedCompilationJob(OptimizedCompilationJob* job,
                                   isolate);
       job->RecordFunctionCompilation(CodeEventListener::LAZY_COMPILE_TAG,
                                      isolate);
-      InsertCodeIntoOptimizedCodeCache(compilation_info);
-      InsertCodeIntoCompilationCache(isolate, compilation_info);
-      CompilerTracer::TraceCompletedJob(isolate, compilation_info);
-      if (should_install_code_on_function) {
+      if (V8_LIKELY(use_result)) {
+        InsertCodeIntoOptimizedCodeCache(compilation_info);
+        CompilerTracer::TraceCompletedJob(isolate, compilation_info);
         compilation_info->closure()->set_code(*compilation_info->code(),
                                               kReleaseStore);
       }
@@ -3262,11 +3239,12 @@ bool Compiler::FinalizeOptimizedCompilationJob(OptimizedCompilationJob* job,
 
   DCHECK_EQ(job->state(), CompilationJob::State::kFailed);
   CompilerTracer::TraceAbortedJob(isolate, compilation_info);
-  compilation_info->closure()->set_code(shared->GetCode(), kReleaseStore);
-  // Clear the InOptimizationQueue marker, if it exists.
-  if (!CodeKindIsNativeContextIndependentJSFunction(code_kind) &&
-      compilation_info->closure()->IsInOptimizationQueue()) {
-    compilation_info->closure()->ClearOptimizationMarker();
+  if (V8_LIKELY(use_result)) {
+    compilation_info->closure()->set_code(shared->GetCode(), kReleaseStore);
+    // Clear the InOptimizationQueue marker, if it exists.
+    if (compilation_info->closure()->IsInOptimizationQueue()) {
+      compilation_info->closure()->ClearOptimizationMarker();
+    }
   }
   return CompilationJob::FAILED;
 }

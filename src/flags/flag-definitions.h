@@ -286,7 +286,6 @@ DEFINE_BOOL(harmony_shipping, true, "enable all shipped harmony features")
 
 // Features that are complete (but still behind --harmony/es-staging flag).
 #define HARMONY_STAGED_BASE(V)                                              \
-  V(harmony_relative_indexing_methods, "harmony relative indexing methods") \
   V(harmony_class_static_blocks, "harmony static initializer blocks")       \
   V(harmony_error_cause, "harmony error cause property")
 
@@ -302,7 +301,8 @@ DEFINE_BOOL(harmony_shipping, true, "enable all shipped harmony features")
   V(harmony_atomics, "harmony atomics")                           \
   V(harmony_regexp_match_indices, "harmony regexp match indices") \
   V(harmony_private_brand_checks, "harmony private brand checks") \
-  V(harmony_top_level_await, "harmony top level await")
+  V(harmony_top_level_await, "harmony top level await")           \
+  V(harmony_relative_indexing_methods, "harmony relative indexing methods")
 
 #ifdef V8_INTL_SUPPORT
 #define HARMONY_SHIPPING(V)             \
@@ -624,10 +624,6 @@ DEFINE_IMPLICATION(always_sparkplug, sparkplug)
 #endif
 DEFINE_STRING(sparkplug_filter, "*", "filter for Sparkplug baseline compiler")
 DEFINE_BOOL(trace_baseline, false, "trace baseline compilation")
-#if !defined(V8_OS_MACOSX) || !defined(V8_HOST_ARCH_ARM64)
-// Don't disable --write-protect-code-memory on Apple Silicon.
-DEFINE_WEAK_VALUE_IMPLICATION(sparkplug, write_protect_code_memory, false)
-#endif
 
 #undef FLAG
 #define FLAG FLAG_FULL
@@ -815,23 +811,12 @@ DEFINE_INT(reuse_opt_code_count, 0,
            "don't discard optimized code for the specified number of deopts.")
 DEFINE_BOOL(turbo_dynamic_map_checks, true,
             "use dynamic map checks when generating code for property accesses "
-            "if all handlers in an IC are the same for turboprop and NCI")
+            "if all handlers in an IC are the same for turboprop")
 DEFINE_BOOL(turbo_compress_translation_arrays, false,
             "compress translation arrays (experimental)")
 DEFINE_BOOL(turbo_inline_js_wasm_calls, false, "inline JS->Wasm calls")
-
-// Native context independent (NCI) code.
-DEFINE_BOOL(turbo_nci, false,
-            "enable experimental native context independent code.")
-// TODO(v8:8888): Temporary until NCI caching is implemented or
-// feedback collection is made unconditional.
-DEFINE_IMPLICATION(turbo_nci, turbo_collect_feedback_in_generic_lowering)
-DEFINE_BOOL(print_nci_code, false, "print native context independent code.")
-DEFINE_BOOL(trace_turbo_nci, false, "trace native context independent code.")
 DEFINE_BOOL(turbo_collect_feedback_in_generic_lowering, true,
             "enable experimental feedback collection in generic lowering.")
-// TODO(jgruber,v8:8888): Remove this flag once we've settled on an ageing
-// strategy.
 DEFINE_BOOL(isolate_script_cache_ageing, true,
             "enable ageing of the isolate script cache.")
 

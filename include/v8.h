@@ -3630,9 +3630,6 @@ class V8_EXPORT Symbol : public Name {
   Local<Value> Description() const;
   Local<Value> Description(Isolate* isolate) const;
 
-  V8_DEPRECATED("Use Symbol::Description()")
-  Local<Value> Name() const { return Description(); }
-
   /**
    * Create a symbol. If description is not empty, it will be used as the
    * description.
@@ -8871,6 +8868,17 @@ class V8_EXPORT Isolate {
    * https://html.spec.whatwg.org/multipage/webappapis.html#incumbent
    */
   Local<Context> GetIncumbentContext();
+
+  /**
+   * Schedules a v8::Exception::Error with the given message.
+   * See ThrowException for more details. Templatized to provide compile-time
+   * errors in case of too long strings (see v8::String::NewFromUtf8Literal).
+   */
+  template <int N>
+  Local<Value> ThrowError(const char (&message)[N]) {
+    return ThrowError(String::NewFromUtf8Literal(this, message));
+  }
+  Local<Value> ThrowError(Local<String> message);
 
   /**
    * Schedules an exception to be thrown when returning to JavaScript.  When an

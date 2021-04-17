@@ -2479,18 +2479,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
                  i.InputSimd128Register(1));
       break;
     }
-    case kPPC_I64x2MinS: {
-      __ vminsd(i.OutputSimd128Register(), i.InputSimd128Register(0),
-                i.InputSimd128Register(1));
-      break;
-    }
     case kPPC_I32x4MinS: {
       __ vminsw(i.OutputSimd128Register(), i.InputSimd128Register(0),
-                i.InputSimd128Register(1));
-      break;
-    }
-    case kPPC_I64x2MinU: {
-      __ vminud(i.OutputSimd128Register(), i.InputSimd128Register(0),
                 i.InputSimd128Register(1));
       break;
     }
@@ -2519,18 +2509,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
                 i.InputSimd128Register(1));
       break;
     }
-    case kPPC_I64x2MaxS: {
-      __ vmaxsd(i.OutputSimd128Register(), i.InputSimd128Register(0),
-                i.InputSimd128Register(1));
-      break;
-    }
     case kPPC_I32x4MaxS: {
       __ vmaxsw(i.OutputSimd128Register(), i.InputSimd128Register(0),
-                i.InputSimd128Register(1));
-      break;
-    }
-    case kPPC_I64x2MaxU: {
-      __ vmaxud(i.OutputSimd128Register(), i.InputSimd128Register(0),
                 i.InputSimd128Register(1));
       break;
     }
@@ -2679,24 +2659,9 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
              kScratchSimd128Reg);
       break;
     }
-    case kPPC_I64x2GtU: {
-      __ vcmpgtud(i.OutputSimd128Register(), i.InputSimd128Register(0),
-                  i.InputSimd128Register(1));
-      break;
-    }
     case kPPC_I32x4GtU: {
       __ vcmpgtuw(i.OutputSimd128Register(), i.InputSimd128Register(0),
                   i.InputSimd128Register(1));
-
-      break;
-    }
-    case kPPC_I64x2GeU: {
-      __ vcmpequd(kScratchSimd128Reg, i.InputSimd128Register(0),
-                  i.InputSimd128Register(1));
-      __ vcmpgtud(i.OutputSimd128Register(), i.InputSimd128Register(0),
-                  i.InputSimd128Register(1));
-      __ vor(i.OutputSimd128Register(), i.OutputSimd128Register(),
-             kScratchSimd128Reg);
 
       break;
     }
@@ -4327,7 +4292,7 @@ void CodeGenerator::AssembleReturn(InstructionOperand* additional_pop_count) {
     __ addi(argc_reg, argc_reg, Operand(1));  // Also pop the receiver.
     if (parameter_slots > 1) {
       Label skip;
-      __ cmpi(argc_reg, Operand(parameter_slots));
+      __ Cmpi(argc_reg, Operand(parameter_slots), r0);
       __ bgt(&skip);
       __ mov(argc_reg, Operand(parameter_slots));
       __ bind(&skip);

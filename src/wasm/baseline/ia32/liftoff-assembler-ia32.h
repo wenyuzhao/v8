@@ -332,6 +332,8 @@ void LiftoffAssembler::SpillInstance(Register instance) {
   mov(liftoff::GetInstanceOperand(), instance);
 }
 
+void LiftoffAssembler::ResetOSRTarget() {}
+
 void LiftoffAssembler::FillInstanceInto(Register dst) {
   mov(dst, liftoff::GetInstanceOperand());
 }
@@ -3896,7 +3898,7 @@ void LiftoffAssembler::emit_i64x2_shr_s(LiftoffRegister dst,
 
   // Set up a mask [0x80000000,0,0x80000000,0].
   Pcmpeqb(tmp, tmp);
-  Psllq(tmp, tmp, 63);
+  Psllq(tmp, tmp, byte{63});
 
   Psrlq(tmp, tmp, shift);
   if (CpuFeatures::IsSupported(AVX)) {
@@ -3919,9 +3921,9 @@ void LiftoffAssembler::emit_i64x2_shri_s(LiftoffRegister dst,
 
   // Set up a mask [0x80000000,0,0x80000000,0].
   Pcmpeqb(tmp, tmp);
-  Psllq(tmp, tmp, 63);
+  Psllq(tmp, tmp, byte{63});
 
-  Psrlq(tmp, tmp, shift);
+  Psrlq(tmp, tmp, byte{shift});
   liftoff::EmitSimdShiftOpImm<&Assembler::vpsrlq, &Assembler::psrlq, 6>(
       this, dst, lhs, rhs);
   Pxor(dst.fp(), tmp);
@@ -3963,13 +3965,13 @@ void LiftoffAssembler::emit_i64x2_mul(LiftoffRegister dst, LiftoffRegister lhs,
   Movaps(tmp1.fp(), lhs.fp());
   Movaps(tmp2.fp(), rhs.fp());
   // Multiply high dword of each qword of left with right.
-  Psrlq(tmp1.fp(), 32);
+  Psrlq(tmp1.fp(), byte{32});
   Pmuludq(tmp1.fp(), tmp1.fp(), rhs.fp());
   // Multiply high dword of each qword of right with left.
-  Psrlq(tmp2.fp(), 32);
+  Psrlq(tmp2.fp(), byte{32});
   Pmuludq(tmp2.fp(), tmp2.fp(), lhs.fp());
   Paddq(tmp2.fp(), tmp2.fp(), tmp1.fp());
-  Psllq(tmp2.fp(), tmp2.fp(), 32);
+  Psllq(tmp2.fp(), tmp2.fp(), byte{32});
   liftoff::EmitSimdCommutativeBinOp<&Assembler::vpmuludq, &Assembler::pmuludq>(
       this, dst, lhs, rhs);
   Paddq(dst.fp(), dst.fp(), tmp2.fp());
@@ -4032,11 +4034,11 @@ void LiftoffAssembler::emit_f32x4_abs(LiftoffRegister dst,
                                       LiftoffRegister src) {
   if (dst.fp() == src.fp()) {
     Pcmpeqd(liftoff::kScratchDoubleReg, liftoff::kScratchDoubleReg);
-    Psrld(liftoff::kScratchDoubleReg, liftoff::kScratchDoubleReg, 1);
+    Psrld(liftoff::kScratchDoubleReg, liftoff::kScratchDoubleReg, byte{1});
     Andps(dst.fp(), liftoff::kScratchDoubleReg);
   } else {
     Pcmpeqd(dst.fp(), dst.fp());
-    Psrld(dst.fp(), dst.fp(), 1);
+    Psrld(dst.fp(), dst.fp(), byte{1});
     Andps(dst.fp(), src.fp());
   }
 }
@@ -4045,11 +4047,11 @@ void LiftoffAssembler::emit_f32x4_neg(LiftoffRegister dst,
                                       LiftoffRegister src) {
   if (dst.fp() == src.fp()) {
     Pcmpeqd(liftoff::kScratchDoubleReg, liftoff::kScratchDoubleReg);
-    Pslld(liftoff::kScratchDoubleReg, liftoff::kScratchDoubleReg, 31);
+    Pslld(liftoff::kScratchDoubleReg, liftoff::kScratchDoubleReg, byte{31});
     Xorps(dst.fp(), liftoff::kScratchDoubleReg);
   } else {
     Pcmpeqd(dst.fp(), dst.fp());
-    Pslld(dst.fp(), dst.fp(), 31);
+    Pslld(dst.fp(), dst.fp(), byte{31});
     Xorps(dst.fp(), src.fp());
   }
 }
@@ -4188,11 +4190,11 @@ void LiftoffAssembler::emit_f64x2_abs(LiftoffRegister dst,
                                       LiftoffRegister src) {
   if (dst.fp() == src.fp()) {
     Pcmpeqd(liftoff::kScratchDoubleReg, liftoff::kScratchDoubleReg);
-    Psrlq(liftoff::kScratchDoubleReg, liftoff::kScratchDoubleReg, 1);
+    Psrlq(liftoff::kScratchDoubleReg, liftoff::kScratchDoubleReg, byte{1});
     Andpd(dst.fp(), liftoff::kScratchDoubleReg);
   } else {
     Pcmpeqd(dst.fp(), dst.fp());
-    Psrlq(dst.fp(), dst.fp(), 1);
+    Psrlq(dst.fp(), dst.fp(), byte{1});
     Andpd(dst.fp(), src.fp());
   }
 }
@@ -4201,11 +4203,11 @@ void LiftoffAssembler::emit_f64x2_neg(LiftoffRegister dst,
                                       LiftoffRegister src) {
   if (dst.fp() == src.fp()) {
     Pcmpeqd(liftoff::kScratchDoubleReg, liftoff::kScratchDoubleReg);
-    Psllq(liftoff::kScratchDoubleReg, liftoff::kScratchDoubleReg, 63);
+    Psllq(liftoff::kScratchDoubleReg, liftoff::kScratchDoubleReg, byte{63});
     Xorpd(dst.fp(), liftoff::kScratchDoubleReg);
   } else {
     Pcmpeqd(dst.fp(), dst.fp());
-    Psllq(dst.fp(), dst.fp(), 63);
+    Psllq(dst.fp(), dst.fp(), byte{63});
     Xorpd(dst.fp(), src.fp());
   }
 }
@@ -4291,7 +4293,7 @@ void LiftoffAssembler::emit_f64x2_min(LiftoffRegister dst, LiftoffRegister lhs,
   // Canonicalize NaNs by quieting and clearing the payload.
   Cmpunordpd(dst.fp(), dst.fp(), liftoff::kScratchDoubleReg);
   Orpd(liftoff::kScratchDoubleReg, dst.fp());
-  Psrlq(dst.fp(), 13);
+  Psrlq(dst.fp(), byte{13});
   Andnpd(dst.fp(), liftoff::kScratchDoubleReg);
 }
 
@@ -4322,7 +4324,7 @@ void LiftoffAssembler::emit_f64x2_max(LiftoffRegister dst, LiftoffRegister lhs,
   Subpd(liftoff::kScratchDoubleReg, liftoff::kScratchDoubleReg, dst.fp());
   // Canonicalize NaNs by clearing the payload. Sign is non-deterministic.
   Cmpunordpd(dst.fp(), dst.fp(), liftoff::kScratchDoubleReg);
-  Psrlq(dst.fp(), 13);
+  Psrlq(dst.fp(), byte{13});
   Andnpd(dst.fp(), liftoff::kScratchDoubleReg);
 }
 
@@ -4632,13 +4634,7 @@ void LiftoffAssembler::emit_f32x4_extract_lane(LiftoffRegister dst,
 void LiftoffAssembler::emit_f64x2_extract_lane(LiftoffRegister dst,
                                                LiftoffRegister lhs,
                                                uint8_t imm_lane_idx) {
-  if (CpuFeatures::IsSupported(AVX)) {
-    CpuFeatureScope scope(this, AVX);
-    vshufpd(dst.fp(), lhs.fp(), lhs.fp(), imm_lane_idx);
-  } else {
-    if (dst.fp() != lhs.fp()) movaps(dst.fp(), lhs.fp());
-    if (imm_lane_idx != 0) shufpd(dst.fp(), dst.fp(), imm_lane_idx);
-  }
+  F64x2ExtractLane(dst.fp(), lhs.fp(), imm_lane_idx);
 }
 
 void LiftoffAssembler::emit_i8x16_replace_lane(LiftoffRegister dst,
@@ -4909,6 +4905,8 @@ void LiftoffAssembler::AllocateStackSlot(Register addr, uint32_t size) {
 void LiftoffAssembler::DeallocateStackSlot(uint32_t size) {
   add(esp, Immediate(size));
 }
+
+void LiftoffAssembler::MaybeOSR() {}
 
 void LiftoffStackSlots::Construct(int param_slots) {
   DCHECK_LT(0, slots_.size());

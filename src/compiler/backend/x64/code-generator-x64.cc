@@ -1478,7 +1478,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       // TODO(bmeurer): Use RIP relative 128-bit constants.
       XMMRegister tmp = i.ToDoubleRegister(instr->TempAt(0));
       __ Pcmpeqd(tmp, tmp);
-      __ Psrlq(tmp, 33);
+      __ Psrlq(tmp, byte{33});
       __ Andps(i.OutputDoubleRegister(), tmp);
       break;
     }
@@ -1486,7 +1486,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       // TODO(bmeurer): Use RIP relative 128-bit constants.
       XMMRegister tmp = i.ToDoubleRegister(instr->TempAt(0));
       __ Pcmpeqd(tmp, tmp);
-      __ Psllq(tmp, 31);
+      __ Psllq(tmp, byte{31});
       __ Xorps(i.OutputDoubleRegister(), tmp);
       break;
     }
@@ -2390,21 +2390,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kX64F64x2ExtractLane: {
-      DoubleRegister dst = i.OutputDoubleRegister();
-      XMMRegister src = i.InputSimd128Register(0);
-      uint8_t lane = i.InputUint8(1);
-      if (lane == 0) {
-        __ Move(dst, src);
-      } else {
-        DCHECK_EQ(1, lane);
-        if (CpuFeatures::IsSupported(AVX)) {
-          CpuFeatureScope avx_scope(tasm(), AVX);
-          // Pass src as operand to avoid false-dependency on dst.
-          __ vmovhlps(dst, src, src);
-        } else {
-          __ movhlps(dst, src);
-        }
-      }
+      __ F64x2ExtractLane(i.OutputDoubleRegister(), i.InputDoubleRegister(0),
+                          i.InputUint8(1));
       break;
     }
     case kX64F64x2Sqrt: {
@@ -2439,9 +2426,9 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       // propagate -0's and NaNs, which may be non-canonical.
       __ Orpd(kScratchDoubleReg, dst);
       // Canonicalize NaNs by quieting and clearing the payload.
-      __ Cmppd(dst, kScratchDoubleReg, int8_t{3});
+      __ Cmpunordpd(dst, kScratchDoubleReg);
       __ Orpd(kScratchDoubleReg, dst);
-      __ Psrlq(dst, 13);
+      __ Psrlq(dst, byte{13});
       __ Andnpd(dst, kScratchDoubleReg);
       break;
     }
@@ -2461,8 +2448,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       // Propagate sign discrepancy and (subtle) quiet NaNs.
       __ Subpd(kScratchDoubleReg, dst);
       // Canonicalize NaNs by clearing the payload. Sign is non-deterministic.
-      __ Cmppd(dst, kScratchDoubleReg, int8_t{3});
-      __ Psrlq(dst, 13);
+      __ Cmpunordpd(dst, kScratchDoubleReg);
+      __ Psrlq(dst, byte{13});
       __ Andnpd(dst, kScratchDoubleReg);
       break;
     }
@@ -2671,7 +2658,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       // propagate -0's and NaNs, which may be non-canonical.
       __ Orps(kScratchDoubleReg, dst);
       // Canonicalize NaNs by quieting and clearing the payload.
-      __ Cmpps(dst, kScratchDoubleReg, int8_t{3});
+      __ Cmpunordps(dst, kScratchDoubleReg);
       __ Orps(kScratchDoubleReg, dst);
       __ Psrld(dst, byte{10});
       __ Andnps(dst, kScratchDoubleReg);
@@ -2693,7 +2680,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       // Propagate sign discrepancy and (subtle) quiet NaNs.
       __ Subps(kScratchDoubleReg, dst);
       // Canonicalize NaNs by clearing the payload. Sign is non-deterministic.
-      __ Cmpps(dst, kScratchDoubleReg, int8_t{3});
+      __ Cmpunordps(dst, kScratchDoubleReg);
       __ Psrld(dst, byte{10});
       __ Andnps(dst, kScratchDoubleReg);
       break;
@@ -2843,15 +2830,15 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ Movdqa(tmp2, right);
 
       // Multiply high dword of each qword of left with right.
-      __ Psrlq(tmp1, 32);
+      __ Psrlq(tmp1, byte{32});
       __ Pmuludq(tmp1, right);
 
       // Multiply high dword of each qword of right with left.
-      __ Psrlq(tmp2, 32);
+      __ Psrlq(tmp2, byte{32});
       __ Pmuludq(tmp2, left);
 
       __ Paddq(tmp2, tmp1);
-      __ Psllq(tmp2, 32);
+      __ Psllq(tmp2, byte{32});
 
       __ Pmuludq(left, right);
       __ Paddq(left, tmp2);  // left == dst

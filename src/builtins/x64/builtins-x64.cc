@@ -2063,6 +2063,7 @@ void Builtins::Generate_ReflectConstruct(MacroAssembler* masm) {
 }
 
 // static
+// TODO(v8:11615): Observe Code::kMaxArguments in CallOrConstructVarargs
 void Builtins::Generate_CallOrConstructVarargs(MacroAssembler* masm,
                                                Handle<Code> code) {
   // ----------- S t a t e -------------
@@ -3526,6 +3527,13 @@ void Builtins::Generate_GenericJSToWasmWrapper(MacroAssembler* masm) {
   __ popq(function_data);
   __ popq(wasm_instance);
   __ jmp(&compile_wrapper_done);
+}
+
+void Builtins::Generate_WasmOnStackReplace(MacroAssembler* masm) {
+  MemOperand OSRTargetSlot(rbp, -wasm::kOSRTargetOffset);
+  __ movq(kScratchRegister, OSRTargetSlot);
+  __ movq(OSRTargetSlot, Immediate(0));
+  __ jmp(kScratchRegister);
 }
 
 #endif  // V8_ENABLE_WEBASSEMBLY

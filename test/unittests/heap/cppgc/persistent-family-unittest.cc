@@ -12,6 +12,7 @@
 #include "include/cppgc/persistent.h"
 #include "include/cppgc/source-location.h"
 #include "include/cppgc/type-traits.h"
+#include "src/base/logging.h"
 #include "src/heap/cppgc/heap.h"
 #include "src/heap/cppgc/liveness-broker.h"
 #include "src/heap/cppgc/visitor.h"
@@ -108,7 +109,7 @@ class RootVisitor final : public VisitorBase {
   std::vector<std::pair<WeakCallback, const void*>> weak_callbacks_;
 };
 
-class PersistentTest : public testing::TestSupportingAllocationOnly {};
+class PersistentTest : public testing::TestWithHeap {};
 
 }  // namespace
 
@@ -926,6 +927,59 @@ TEST_F(PersistentTest, EmptyPersistentConstructDestructWithoutCompleteType) {
 TEST_F(PersistentTest, Lock) {
   subtle::WeakCrossThreadPersistent<GCed> weak;
   auto strong = weak.Lock();
+}
+
+namespace {
+
+class TraceCounter final : public GarbageCollected<TraceCounter> {
+ public:
+  void Trace(cppgc::Visitor* visitor) const {
+    trace_calls_++;
+  }
+
+  size_t trace_calls() const { return trace_calls_; }
+
+ private:
+  mutable size_t trace_calls_ = 0;
+};
+
+class DestructionCounter final : public GarbageCollected<DestructionCounter> {
+ public:
+  static size_t destructor_calls_;
+
+  ~DestructionCounter() { destructor_calls_++; }
+
+  void Trace(cppgc::Visitor*) const {}
+};
+size_t DestructionCounter::destructor_calls_;
+
+}  // namespace
+
+TEST_F(PersistentTest, PersistentRetainsObject) {
+  Persistent<TraceCounter> trace_counter =
+      MakeGarbageCollected<TraceCounter>(GetAllocationHandle());
+  WeakPersistent<TraceCounter> weak_trace_counter(trace_counter.Get());
+  EXPECT_EQ(0u, trace_counter->trace_calls());
+  PreciseGC();
+  size_t saved_trace_count = trace_counter->trace_calls();
+  EXPECT_LT(0u, saved_trace_count);
+  PreciseGC();
+  EXPECT_LT(saved_trace_count, trace_counter->trace_calls());
+  EXPECT_TRUE(weak_trace_counter);
+}
+
+TEST_F(PersistentTest, ObjectReclaimedAfterClearedPersistent) {
+  {
+    DestructionCounter::destructor_calls_ = 0;
+    Persistent<DestructionCounter> finalized =
+        MakeGarbageCollected<DestructionCounter>(GetAllocationHandle());
+    EXPECT_EQ(0u, DestructionCounter::destructor_calls_);
+    PreciseGC();
+    EXPECT_EQ(0u, DestructionCounter::destructor_calls_);
+    USE(finalized);
+  }
+  PreciseGC();
+  EXPECT_EQ(1u, DestructionCounter::destructor_calls_);
 }
 
 }  // namespace internal
