@@ -1481,6 +1481,7 @@
   'packed-elements': [SKIP],
   'const-dict-tracking': [SKIP],
   'compiler/native-context-specialization-hole-check': [SKIP],
+  'compiler/test-literal-map-migration': [SKIP],
 }], # single_generation
 
 ]

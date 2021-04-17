@@ -1326,6 +1326,7 @@ TEST(Regress10774) {
 #ifndef V8_LITE_MODE
 
 TEST(TestOptimizeAfterBytecodeFlushingCandidate) {
+  if (FLAG_single_generation) return;
   FLAG_opt = true;
   FLAG_always_opt = false;
 #if ENABLE_SPARKPLUG
