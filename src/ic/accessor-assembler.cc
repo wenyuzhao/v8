@@ -2683,7 +2683,7 @@ void AccessorAssembler::LoadIC_BytecodeHandler(const LazyLoadICParameters* p,
 
   // Inlined fast path.
   {
-    Comment("LoadIC_BytecodeHandler_fast");
+    Print("LoadIC_BytecodeHandler_fast");
 
     TVARIABLE(MaybeObject, var_handler);
     Label try_polymorphic(this), if_handler(this, &var_handler);
@@ -2707,7 +2707,7 @@ void AccessorAssembler::LoadIC_BytecodeHandler(const LazyLoadICParameters* p,
 
   BIND(&stub_call);
   {
-    Comment("LoadIC_BytecodeHandler_noninlined");
+    Print("LoadIC_BytecodeHandler_noninlined");
 
     // Call into the stub that implements the non-inlined parts of LoadIC.
     Callable ic =
@@ -2720,7 +2720,10 @@ void AccessorAssembler::LoadIC_BytecodeHandler(const LazyLoadICParameters* p,
 
   BIND(&no_feedback);
   {
-    Comment("LoadIC_BytecodeHandler_nofeedback");
+    Print("LoadIC_BytecodeHandler_nofeedback");
+    Print("LoadIC_BytecodeHandler_nofeedback ctx", p->context());
+    Print("LoadIC_BytecodeHandler_nofeedback rec", p->receiver());
+    Print("LoadIC_BytecodeHandler_nofeedback n", p->name());
     // Call into the stub that implements the non-inlined parts of LoadIC.
     exit_point->ReturnCallStub(
         Builtins::CallableFor(isolate(), Builtins::kLoadIC_NoFeedback),
@@ -2730,7 +2733,7 @@ void AccessorAssembler::LoadIC_BytecodeHandler(const LazyLoadICParameters* p,
 
   BIND(&miss);
   {
-    Comment("LoadIC_BytecodeHandler_miss");
+    Print("LoadIC_BytecodeHandler_miss");
 
     exit_point->ReturnCallRuntime(Runtime::kLoadIC_Miss, p->context(),
                                   p->receiver(), p->name(), p->slot(),
@@ -2874,14 +2877,15 @@ void AccessorAssembler::LoadIC_Noninlined(const LoadICParameters* p,
 
 void AccessorAssembler::LoadIC_NoFeedback(const LoadICParameters* p,
                                           TNode<Smi> ic_kind) {
+  Print("LoadIC_NoFeedback 0");
   Label miss(this, Label::kDeferred);
   TNode<Object> lookup_start_object = p->receiver_and_lookup_start_object();
   GotoIf(TaggedIsSmi(lookup_start_object), &miss);
   TNode<Map> lookup_start_object_map = LoadMap(CAST(lookup_start_object));
   GotoIf(IsDeprecatedMap(lookup_start_object_map), &miss);
-
+  Print("LoadIC_NoFeedback 1");
   TNode<Uint16T> instance_type = LoadMapInstanceType(lookup_start_object_map);
-
+Print("LoadIC_NoFeedback 2");
   {
     // Special case for Function.prototype load, because it's very common
     // for ICs that are only executed once (MyFunc.prototype.foo = ...).
@@ -2895,12 +2899,13 @@ void AccessorAssembler::LoadIC_NoFeedback(const LoadICParameters* p,
     Return(LoadJSFunctionPrototype(CAST(lookup_start_object), &miss));
     BIND(&not_function_prototype);
   }
-
+Print("LoadIC_NoFeedback 3");
   GenericPropertyLoad(CAST(lookup_start_object), lookup_start_object_map,
                       instance_type, p, &miss, kDontUseStubCache);
 
   BIND(&miss);
   {
+    Print("LoadIC_NoFeedback miss");
     TailCallRuntime(Runtime::kLoadNoFeedbackIC_Miss, p->context(),
                     p->receiver(), p->name(), ic_kind);
   }
@@ -3803,7 +3808,6 @@ void AccessorAssembler::GenerateLoadIC_Noninlined() {
 
 void AccessorAssembler::GenerateLoadIC_NoFeedback() {
   using Descriptor = LoadNoFeedbackDescriptor;
-
   auto receiver = Parameter<Object>(Descriptor::kReceiver);
   auto name = Parameter<Object>(Descriptor::kName);
   auto context = Parameter<Context>(Descriptor::kContext);

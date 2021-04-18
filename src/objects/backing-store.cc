@@ -53,7 +53,7 @@ constexpr size_t kAddressSpaceLimit = 0xC0000000;  // 3 GiB
 constexpr uint64_t kNegativeGuardSize = uint64_t{2} * GB;
 
 #if V8_TARGET_ARCH_64_BIT
-constexpr uint64_t kFullGuardSize = uint64_t{10} * GB;
+constexpr uint64_t kFullGuardSize = uint64_t{5} * GB;
 #endif
 
 std::atomic<uint64_t> reserved_address_space_{0};
