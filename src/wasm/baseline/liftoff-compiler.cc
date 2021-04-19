@@ -10,7 +10,7 @@
 #include "src/codegen/assembler-inl.h"
 // TODO(clemensb): Remove dependences on compiler stuff.
 #include "src/codegen/external-reference.h"
-#include "src/codegen/interface-descriptors.h"
+#include "src/codegen/interface-descriptors-inl.h"
 #include "src/codegen/machine-type.h"
 #include "src/codegen/macro-assembler-inl.h"
 #include "src/compiler/linkage.h"
@@ -1077,10 +1077,10 @@ class LiftoffCompiler {
     // Save the current cache state for the merge when jumping to this loop.
     loop->label_state.Split(*__ cache_state());
 
+    PushControl(loop);
+
     // Execute a stack check in the loop header.
     StackCheck(decoder, decoder->position());
-
-    PushControl(loop);
   }
 
   void Try(FullDecoder* decoder, Control* block) {
@@ -1347,8 +1347,6 @@ class LiftoffCompiler {
 
     if (!c->label.get()->is_bound()) __ bind(c->label.get());
   }
-
-  void EndControl(FullDecoder* decoder, Control* c) {}
 
   void GenerateCCall(const LiftoffRegister* result_regs,
                      const ValueKindSig* sig, ValueKind out_argument_kind,
@@ -4074,6 +4072,7 @@ class LiftoffCompiler {
     __ emit_jump(&skip_handler);
 
     // Handler: merge into the catch state, and jump to the catch body.
+    DEBUG_CODE_COMMENT("-- landing pad --");
     __ bind(handler.get());
     __ ExceptionHandler();
     __ PushException();

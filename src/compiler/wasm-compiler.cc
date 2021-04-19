@@ -16,7 +16,7 @@
 #include "src/codegen/assembler.h"
 #include "src/codegen/code-factory.h"
 #include "src/codegen/compiler.h"
-#include "src/codegen/interface-descriptors.h"
+#include "src/codegen/interface-descriptors-inl.h"
 #include "src/codegen/machine-type.h"
 #include "src/codegen/optimized-compilation-info.h"
 #include "src/compiler/backend/code-generator.h"
@@ -5206,21 +5206,8 @@ Node* WasmGraphBuilder::SimdLaneOp(wasm::WasmOpcode opcode, uint8_t lane,
 Node* WasmGraphBuilder::Simd8x16ShuffleOp(const uint8_t shuffle[16],
                                           Node* const* inputs) {
   has_simd_ = true;
-  uint8_t canonicalized_shuffle[16];
-  base::Memcpy(canonicalized_shuffle, shuffle, kSimd128Size);
-  bool needs_swap;
-  bool inputs_equal = inputs[0]->id() == inputs[1]->id();
-  bool is_swizzle;
-  wasm::SimdShuffle::CanonicalizeShuffle(inputs_equal, canonicalized_shuffle,
-                                         &needs_swap, &is_swizzle);
-  Node* lhs = needs_swap ? inputs[1] : inputs[0];
-  Node* rhs = needs_swap ? inputs[0] : inputs[1];
-  if (is_swizzle) {
-    rhs = lhs;
-  }
-  return graph()->NewNode(
-      mcgraph()->machine()->I8x16Shuffle(canonicalized_shuffle, is_swizzle),
-      lhs, rhs);
+  return graph()->NewNode(mcgraph()->machine()->I8x16Shuffle(shuffle),
+                          inputs[0], inputs[1]);
 }
 
 Node* WasmGraphBuilder::AtomicOp(wasm::WasmOpcode opcode, Node* const* inputs,
