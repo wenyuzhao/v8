@@ -8,18 +8,19 @@
 #include "src/base/bits-iterator.h"
 #include "src/base/iterator.h"
 #include "src/codegen/code-factory.h"
-#include "src/common/globals.h"
-#include "src/objects/code.h"
+#include "src/codegen/interface-descriptors-inl.h"
 // For interpreter_entry_return_pc_offset. TODO(jkummerow): Drop.
 #include "src/codegen/macro-assembler-inl.h"
 #include "src/codegen/register-configuration.h"
 #include "src/codegen/x64/assembler-x64.h"
+#include "src/common/globals.h"
 #include "src/deoptimizer/deoptimizer.h"
 #include "src/execution/frame-constants.h"
 #include "src/execution/frames.h"
 #include "src/heap/heap-inl.h"
 #include "src/logging/counters.h"
 #include "src/objects/cell.h"
+#include "src/objects/code.h"
 #include "src/objects/debug-objects.h"
 #include "src/objects/foreign.h"
 #include "src/objects/heap-number.h"
@@ -384,7 +385,8 @@ void Generate_JSEntryVariant(MacroAssembler* masm, StackFrame::Type type,
 #ifdef V8_COMPRESS_POINTERS_IN_SHARED_CAGE
     // Initialize the pointer cage base register.
     // TODO(syg): Actually make a cage.
-    __ movq(kPtrComprCageBaseRegister, arg_reg_1);
+    __ LoadRootRelative(kPtrComprCageBaseRegister,
+                        IsolateData::cage_base_offset());
 #endif
   }
 
@@ -2062,6 +2064,7 @@ void Builtins::Generate_ReflectConstruct(MacroAssembler* masm) {
 }
 
 // static
+// TODO(v8:11615): Observe Code::kMaxArguments in CallOrConstructVarargs
 void Builtins::Generate_CallOrConstructVarargs(MacroAssembler* masm,
                                                Handle<Code> code) {
   // ----------- S t a t e -------------
@@ -2079,7 +2082,7 @@ void Builtins::Generate_CallOrConstructVarargs(MacroAssembler* masm,
     Label ok, fail;
     __ AssertNotSmi(rbx);
     Register map = r9;
-    __ LoadTaggedPointerField(map, FieldOperand(rbx, HeapObject::kMapOffset));
+    __ LoadMap(map, rbx);
     __ CmpInstanceType(map, FIXED_ARRAY_TYPE);
     __ j(equal, &ok);
     __ CmpInstanceType(map, FIXED_DOUBLE_ARRAY_TYPE);
@@ -2166,7 +2169,7 @@ void Builtins::Generate_CallOrConstructForwardVarargs(MacroAssembler* masm,
   if (mode == CallOrConstructMode::kConstruct) {
     Label new_target_constructor, new_target_not_constructor;
     __ JumpIfSmi(rdx, &new_target_not_constructor, Label::kNear);
-    __ LoadTaggedPointerField(rbx, FieldOperand(rdx, HeapObject::kMapOffset));
+    __ LoadMap(rbx, rdx);
     __ testb(FieldOperand(rbx, Map::kBitFieldOffset),
              Immediate(Map::Bits1::IsConstructorBit::kMask));
     __ j(not_zero, &new_target_constructor, Label::kNear);
@@ -2592,7 +2595,7 @@ void Builtins::Generate_Construct(MacroAssembler* masm) {
   __ JumpIfSmi(rdi, &non_constructor);
 
   // Check if target has a [[Construct]] internal method.
-  __ LoadTaggedPointerField(rcx, FieldOperand(rdi, HeapObject::kMapOffset));
+  __ LoadMap(rcx, rdi);
   __ testb(FieldOperand(rcx, Map::kBitFieldOffset),
            Immediate(Map::Bits1::IsConstructorBit::kMask));
   __ j(zero, &non_constructor);
@@ -3527,6 +3530,13 @@ void Builtins::Generate_GenericJSToWasmWrapper(MacroAssembler* masm) {
   __ jmp(&compile_wrapper_done);
 }
 
+void Builtins::Generate_WasmOnStackReplace(MacroAssembler* masm) {
+  MemOperand OSRTargetSlot(rbp, -wasm::kOSRTargetOffset);
+  __ movq(kScratchRegister, OSRTargetSlot);
+  __ movq(OSRTargetSlot, Immediate(0));
+  __ jmp(kScratchRegister);
+}
+
 #endif  // V8_ENABLE_WEBASSEMBLY
 
 void Builtins::Generate_CEntry(MacroAssembler* masm, int result_size,
@@ -3866,9 +3876,7 @@ void CallApiFunctionAndReturn(MacroAssembler* masm, Register function_address,
   Register map = rcx;
 
   __ JumpIfSmi(return_value, &ok, Label::kNear);
-  __ LoadTaggedPointerField(map,
-                            FieldOperand(return_value, HeapObject::kMapOffset));
-
+  __ LoadMap(map, return_value);
   __ CmpInstanceType(map, LAST_NAME_TYPE);
   __ j(below_equal, &ok, Label::kNear);
 

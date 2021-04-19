@@ -53,6 +53,7 @@
 #include "src/heap/read-only-heap.h"
 #include "src/ic/stub-cache.h"
 #include "src/init/bootstrapper.h"
+#include "src/init/ptr-compr-cage.h"
 #include "src/init/setup-isolate.h"
 #include "src/init/v8.h"
 #include "src/interpreter/interpreter.h"
@@ -1471,8 +1472,7 @@ void Isolate::RequestInterrupt(InterruptCallback callback, void* data) {
 }
 
 void Isolate::InvokeApiInterruptCallbacks() {
-  RuntimeCallTimerScope runtimeTimer(
-      this, RuntimeCallCounterId::kInvokeApiInterruptCallbacks);
+  RCS_SCOPE(this, RuntimeCallCounterId::kInvokeApiInterruptCallbacks);
   // Note: callback below should be called outside of execution access lock.
   while (true) {
     InterruptEntry entry;
@@ -1672,10 +1672,36 @@ Object Isolate::ReThrow(Object exception) {
   return ReadOnlyRoots(heap()).exception();
 }
 
+namespace {
+// This scope will set the thread-in-wasm flag after the execution of all
+// destructors. The thread-in-wasm flag is only set when the scope gets enabled.
+class SetThreadInWasmFlagScope {
+ public:
+  SetThreadInWasmFlagScope() {
+    DCHECK_IMPLIES(trap_handler::IsTrapHandlerEnabled(),
+                   !trap_handler::IsThreadInWasm());
+  }
+
+  ~SetThreadInWasmFlagScope() {
+    if (enabled_) trap_handler::SetThreadInWasm();
+  }
+
+  void Enable() { enabled_ = true; }
+
+ private:
+  bool enabled_ = false;
+};
+}  // namespace
+
 Object Isolate::UnwindAndFindHandler() {
+  // Create the {SetThreadInWasmFlagScope} first in this function so that its
+  // destructor gets called after all the other destructors. It is important
+  // that the destructor sets the thread-in-wasm flag after all other
+  // destructors. The other destructors may cause exceptions, e.g. ASan on
+  // Windows, which would invalidate the thread-in-wasm flag when the wasm trap
+  // handler handles such non-wasm exceptions.
+  SetThreadInWasmFlagScope set_thread_in_wasm_flag_scope;
   Object exception = pending_exception();
-  DCHECK_IMPLIES(trap_handler::IsTrapHandlerEnabled(),
-                 !trap_handler::IsThreadInWasm());
 
   auto FoundHandler = [&](Context context, Address instruction_start,
                           intptr_t handler_offset,
@@ -1768,9 +1794,10 @@ Object Isolate::UnwindAndFindHandler() {
                             StandardFrameConstants::kFixedFrameSizeAboveFp -
                             wasm_code->stack_slots() * kSystemPointerSize;
 
-        // This is going to be handled by Wasm, so we need to set the TLS flag.
-        trap_handler::SetThreadInWasm();
-
+        // This is going to be handled by WebAssembly, so we need to set the TLS
+        // flag. The {SetThreadInWasmFlagScope} will set the flag after all
+        // destructors have been executed.
+        set_thread_in_wasm_flag_scope.Enable();
         return FoundHandler(Context(), wasm_code->instruction_start(), offset,
                             wasm_code->constant_pool(), return_sp, frame->fp());
       }
@@ -2861,6 +2888,7 @@ Isolate* Isolate::New() {
   Isolate* isolate = new (isolate_ptr) Isolate(std::move(isolate_allocator));
 #ifdef V8_COMPRESS_POINTERS_IN_ISOLATE_CAGE
   DCHECK(IsAligned(isolate->isolate_root(), kPtrComprCageBaseAlignment));
+  DCHECK_EQ(isolate->isolate_root(), isolate->cage_base());
 #endif
 
 #ifdef DEBUG
@@ -2916,12 +2944,12 @@ void Isolate::SetUpFromReadOnlyArtifacts(
   heap_.SetUpFromReadOnlyHeap(read_only_heap_);
 }
 
-v8::PageAllocator* Isolate::page_allocator() {
+v8::PageAllocator* Isolate::page_allocator() const {
   return isolate_allocator_->page_allocator();
 }
 
 Isolate::Isolate(std::unique_ptr<i::IsolateAllocator> isolate_allocator)
-    : isolate_data_(this),
+    : isolate_data_(this, isolate_allocator->GetPtrComprCageBaseAddress()),
       isolate_allocator_(std::move(isolate_allocator)),
       id_(isolate_counter.fetch_add(1, std::memory_order_relaxed)),
       allocator_(new TracingAccountingAllocator(this)),
@@ -2976,6 +3004,11 @@ void Isolate::CheckIsolateLayout() {
   CHECK_EQ(static_cast<int>(
                OFFSET_OF(Isolate, isolate_data_.fast_c_call_caller_pc_)),
            Internals::kIsolateFastCCallCallerPcOffset);
+  CHECK_EQ(static_cast<int>(OFFSET_OF(Isolate, isolate_data_.cage_base_)),
+           Internals::kIsolateCageBaseOffset);
+  CHECK_EQ(static_cast<int>(
+               OFFSET_OF(Isolate, isolate_data_.long_task_stats_counter_)),
+           Internals::kIsolateLongTaskStatsCounterOffset);
   CHECK_EQ(static_cast<int>(OFFSET_OF(Isolate, isolate_data_.stack_guard_)),
            Internals::kIsolateStackGuardOffset);
   CHECK_EQ(static_cast<int>(OFFSET_OF(Isolate, isolate_data_.roots_)),
@@ -3842,6 +3875,7 @@ void Isolate::DumpAndResetStats() {
     wasm_engine()->DumpAndResetTurboStatistics();
   }
 #endif  // V8_ENABLE_WEBASSEMBLY
+#if V8_RUNTIME_CALL_STATS
   if (V8_UNLIKELY(TracingFlags::runtime_stats.load(std::memory_order_relaxed) ==
                   v8::tracing::TracingCategoryObserver::ENABLED_BY_NATIVE)) {
     counters()->worker_thread_runtime_call_stats()->AddToMainTable(
@@ -3849,6 +3883,7 @@ void Isolate::DumpAndResetStats() {
     counters()->runtime_call_stats()->Print();
     counters()->runtime_call_stats()->Reset();
   }
+#endif  // V8_RUNTIME_CALL_STATS
   if (BasicBlockProfiler::Get()->HasData(this)) {
     StdoutStream out;
     BasicBlockProfiler::Get()->Print(out, this);
@@ -4872,6 +4907,18 @@ MaybeLocal<v8::Context> Isolate::GetContextFromRecorderContextId(
   if (result == recorder_context_id_map_.end() || result->second.IsEmpty())
     return MaybeLocal<v8::Context>();
   return result->second.Get(reinterpret_cast<v8::Isolate*>(this));
+}
+
+void Isolate::UpdateLongTaskStats() {
+  if (last_long_task_stats_counter_ != isolate_data_.long_task_stats_counter_) {
+    last_long_task_stats_counter_ = isolate_data_.long_task_stats_counter_;
+    long_task_stats_ = v8::metrics::LongTaskStats{};
+  }
+}
+
+v8::metrics::LongTaskStats* Isolate::GetCurrentLongTaskStats() {
+  UpdateLongTaskStats();
+  return &long_task_stats_;
 }
 
 void Isolate::RemoveContextIdCallback(const v8::WeakCallbackInfo<void>& data) {

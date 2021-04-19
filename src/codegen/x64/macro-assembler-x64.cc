@@ -12,6 +12,7 @@
 #include "src/codegen/code-factory.h"
 #include "src/codegen/cpu-features.h"
 #include "src/codegen/external-reference-table.h"
+#include "src/codegen/interface-descriptors-inl.h"
 #include "src/codegen/macro-assembler.h"
 #include "src/codegen/register-configuration.h"
 #include "src/codegen/string-constants.h"
@@ -194,6 +195,9 @@ void TurboAssembler::CompareRoot(Operand with, RootIndex index) {
 void TurboAssembler::LoadMap(Register destination, Register object) {
   LoadTaggedPointerField(destination,
                          FieldOperand(object, HeapObject::kMapOffset));
+#ifdef V8_MAP_PACKING
+  UnpackMapWord(destination);
+#endif
 }
 
 void TurboAssembler::LoadTaggedPointerField(Register destination,
@@ -204,6 +208,16 @@ void TurboAssembler::LoadTaggedPointerField(Register destination,
     mov_tagged(destination, field_operand);
   }
 }
+
+#ifdef V8_MAP_PACKING
+void TurboAssembler::UnpackMapWord(Register r) {
+  // Clear the top two bytes (which may include metadata). Must be in sync with
+  // MapWord::Unpack, and vice versa.
+  shlq(r, Immediate(16));
+  shrq(r, Immediate(16));
+  xorq(r, Immediate(Internals::kMapWordXorMask));
+}
+#endif
 
 void TurboAssembler::LoadTaggedSignedField(Register destination,
                                            Operand field_operand) {
@@ -713,6 +727,24 @@ int TurboAssembler::PopCallerSaved(SaveFPRegsMode fp_mode, Register exclusion1,
   }
 
   return bytes;
+}
+
+void TurboAssembler::Movq(XMMRegister dst, Register src) {
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope avx_scope(this, AVX);
+    vmovq(dst, src);
+  } else {
+    movq(dst, src);
+  }
+}
+
+void TurboAssembler::Movq(Register dst, XMMRegister src) {
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope avx_scope(this, AVX);
+    vmovq(dst, src);
+  } else {
+    movq(dst, src);
+  }
 }
 
 void TurboAssembler::Movdqa(XMMRegister dst, Operand src) {
@@ -1854,16 +1886,6 @@ void TurboAssembler::Pmaddubsw(XMMRegister dst, XMMRegister src1,
   }
 }
 
-void TurboAssembler::Unpcklps(XMMRegister dst, XMMRegister src1, Operand src2) {
-  if (CpuFeatures::IsSupported(AVX)) {
-    CpuFeatureScope avx_scope(this, AVX);
-    vunpcklps(dst, src1, src2);
-  } else {
-    DCHECK_EQ(dst, src1);
-    unpcklps(dst, src2);
-  }
-}
-
 void TurboAssembler::Shufps(XMMRegister dst, XMMRegister src1, XMMRegister src2,
                             byte imm8) {
   if (CpuFeatures::IsSupported(AVX)) {
@@ -2006,36 +2028,6 @@ void TurboAssembler::Pinsrq(XMMRegister dst, XMMRegister src1, Operand src2,
                             uint8_t imm8) {
   PinsrHelper(this, &Assembler::vpinsrq, &Assembler::pinsrq, dst, src1, src2,
               imm8, base::Optional<CpuFeature>(SSE4_1));
-}
-
-void TurboAssembler::Psllq(XMMRegister dst, byte imm8) {
-  if (CpuFeatures::IsSupported(AVX)) {
-    CpuFeatureScope scope(this, AVX);
-    vpsllq(dst, dst, imm8);
-  } else {
-    DCHECK(!IsEnabled(AVX));
-    psllq(dst, imm8);
-  }
-}
-
-void TurboAssembler::Psrlq(XMMRegister dst, byte imm8) {
-  if (CpuFeatures::IsSupported(AVX)) {
-    CpuFeatureScope scope(this, AVX);
-    vpsrlq(dst, dst, imm8);
-  } else {
-    DCHECK(!IsEnabled(AVX));
-    psrlq(dst, imm8);
-  }
-}
-
-void TurboAssembler::Pslld(XMMRegister dst, byte imm8) {
-  if (CpuFeatures::IsSupported(AVX)) {
-    CpuFeatureScope scope(this, AVX);
-    vpslld(dst, dst, imm8);
-  } else {
-    DCHECK(!IsEnabled(AVX));
-    pslld(dst, imm8);
-  }
 }
 
 void TurboAssembler::Pblendvb(XMMRegister dst, XMMRegister src1,
@@ -2342,7 +2334,7 @@ void TurboAssembler::I8x16Swizzle(XMMRegister dst, XMMRegister src,
   if (omit_add) {
     // We have determined that the indices are immediates, and they are either
     // within bounds, or the top bit is set, so we can omit the add.
-    Pshufb(dst, src, kScratchDoubleReg);
+    Pshufb(dst, src, mask);
     return;
   }
 
@@ -2373,21 +2365,6 @@ void TurboAssembler::Abspd(XMMRegister dst) {
 void TurboAssembler::Negpd(XMMRegister dst) {
   Xorps(dst, ExternalReferenceAsOperand(
                  ExternalReference::address_of_double_neg_constant()));
-}
-
-void TurboAssembler::Psrld(XMMRegister dst, byte imm8) {
-  Psrld(dst, dst, imm8);
-}
-
-void TurboAssembler::Psrld(XMMRegister dst, XMMRegister src, byte imm8) {
-  if (CpuFeatures::IsSupported(AVX)) {
-    CpuFeatureScope scope(this, AVX);
-    vpsrld(dst, src, imm8);
-  } else {
-    DCHECK(!IsEnabled(AVX));
-    DCHECK_EQ(dst, src);
-    psrld(dst, imm8);
-  }
 }
 
 void TurboAssembler::Lzcntl(Register dst, Register src) {
@@ -2692,7 +2669,11 @@ void MacroAssembler::AssertUndefinedOrAllocationSite(Register object) {
     AssertNotSmi(object);
     Cmp(object, isolate()->factory()->undefined_value());
     j(equal, &done_checking);
-    Cmp(FieldOperand(object, 0), isolate()->factory()->allocation_site_map());
+    Register map = object;
+    Push(object);
+    LoadMap(map, object);
+    Cmp(map, isolate()->factory()->allocation_site_map());
+    Pop(object);
     Assert(equal, AbortReason::kExpectedUndefinedOrCell);
     bind(&done_checking);
   }
@@ -3043,11 +3024,11 @@ void TurboAssembler::LeaveFrame(StackFrame::Type type) {
   popq(rbp);
 }
 
-#ifdef V8_TARGET_OS_WIN
+#if defined(V8_TARGET_OS_WIN) || defined(V8_TARGET_OS_MACOSX)
 void TurboAssembler::AllocateStackSpace(Register bytes_scratch) {
-  // In windows, we cannot increment the stack size by more than one page
-  // (minimum page size is 4KB) without accessing at least one byte on the
-  // page. Check this:
+  // On Windows and on macOS, we cannot increment the stack size by more than
+  // one page (minimum page size is 4KB) without accessing at least one byte on
+  // the page. Check this:
   // https://msdn.microsoft.com/en-us/library/aa227153(v=vs.60).aspx.
   Label check_offset;
   Label touch_next_page;

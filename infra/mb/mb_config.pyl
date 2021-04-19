@@ -139,6 +139,7 @@
       'V8 Clusterfuzz Linux64 ASAN - debug builder': 'debug_x64_asan',
       'V8 Clusterfuzz Linux64 ASAN arm64 - debug builder':
           'debug_simulate_arm64_asan',
+      'V8 Clusterfuzz Linux - debug builder': 'debug_x86',
       'V8 Clusterfuzz Linux ASAN arm - debug builder':
           'debug_simulate_arm_asan',
       'V8 Clusterfuzz Linux64 CFI - release builder':
@@ -202,6 +203,7 @@
       'v8_linux_gcc_compile_rel': 'release_x86_gcc_minimal_symbols',
       'v8_linux_gcc_rel_ng': 'release_x86_gcc_minimal_symbols',
       'v8_linux_shared_compile_rel': 'release_x86_shared_verify_heap',
+      'v8_linux_vtunejit': 'debug_x86_vtunejit',
       'v8_linux64_arm64_pointer_compression_rel_ng':
           'release_simulate_arm64_pointer_compression',
       'v8_linux64_dbg_ng': 'debug_x64_trybot',

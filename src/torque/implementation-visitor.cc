@@ -658,8 +658,8 @@ void ImplementationVisitor::Visit(Builtin* builtin) {
   } else {
     DCHECK(builtin->IsStub());
 
-    bool has_context_parameter = signature.HasContextParameter();
     for (size_t i = 0; i < signature.parameter_names.size(); ++i) {
+      const std::string& parameter_name = signature.parameter_names[i]->value;
       const Type* type = signature.types()[i];
       const bool mark_as_used = signature.implicit_count > i;
       std::string var = AddParameter(i, builtin, &parameters, &parameter_types,
@@ -667,14 +667,8 @@ void ImplementationVisitor::Visit(Builtin* builtin) {
       csa_ccfile() << "  " << type->GetGeneratedTypeName() << " " << var
                    << " = "
                    << "UncheckedParameter<" << type->GetGeneratedTNodeTypeName()
-                   << ">(";
-      if (i == 0 && has_context_parameter) {
-        csa_ccfile() << "Descriptor::kContext";
-      } else {
-        csa_ccfile() << "Descriptor::ParameterIndex<"
-                     << (has_context_parameter ? i - 1 : i) << ">()";
-      }
-      csa_ccfile() << ");\n";
+                   << ">(Descriptor::k" << CamelifyString(parameter_name)
+                   << ");\n";
       csa_ccfile() << "  USE(" << var << ");\n";
     }
   }
@@ -3437,40 +3431,40 @@ void ImplementationVisitor::GenerateBuiltinDefinitionsAndInterfaceDescriptors(
         std::string descriptor_name = builtin->ExternalName() + "Descriptor";
         bool has_context_parameter = builtin->signature().HasContextParameter();
         size_t kFirstNonContextParameter = has_context_parameter ? 1 : 0;
-        size_t parameter_count =
-            builtin->parameter_names().size() - kFirstNonContextParameter;
         TypeVector return_types = LowerType(builtin->signature().return_type);
 
-        interface_descriptors
-            << "class " << descriptor_name
-            << " : public TorqueInterfaceDescriptor<" << return_types.size()
-            << ", " << parameter_count << ", "
-            << (has_context_parameter ? "true" : "false") << "> {\n";
-        interface_descriptors << "  DECLARE_DESCRIPTOR_WITH_BASE("
-                              << descriptor_name
-                              << ", TorqueInterfaceDescriptor)\n";
+        interface_descriptors << "class " << descriptor_name
+                              << " : public StaticCallInterfaceDescriptor<"
+                              << descriptor_name << "> {\n";
 
-        interface_descriptors
-            << "  std::vector<MachineType> ReturnType() override {\n";
-        interface_descriptors << "    return {{";
-        PrintCommaSeparatedList(interface_descriptors, return_types,
-                                MachineTypeString);
-        interface_descriptors << "}};\n";
-        interface_descriptors << "  }\n";
+        interface_descriptors << " public:\n";
 
-        interface_descriptors << "  std::array<MachineType, " << parameter_count
-                              << "> ParameterTypes() override {\n";
-        interface_descriptors << "    return {";
+        if (has_context_parameter) {
+          interface_descriptors << "  DEFINE_RESULT_AND_PARAMETERS(";
+        } else {
+          interface_descriptors << "  DEFINE_RESULT_AND_PARAMETERS_NO_CONTEXT(";
+        }
+        interface_descriptors << return_types.size();
         for (size_t i = kFirstNonContextParameter;
              i < builtin->parameter_names().size(); ++i) {
-          bool last = i + 1 == builtin->parameter_names().size();
-          const Type* type = builtin->signature().parameter_types.types[i];
-          interface_descriptors << MachineTypeString(type)
-                                << (last ? "" : ", ");
+          Identifier* parameter = builtin->parameter_names()[i];
+          interface_descriptors << ", k" << CamelifyString(parameter->value);
         }
-        interface_descriptors << "};\n";
+        interface_descriptors << ")\n";
 
-        interface_descriptors << "  }\n";
+        interface_descriptors << "  DEFINE_RESULT_AND_PARAMETER_TYPES(";
+        PrintCommaSeparatedList(interface_descriptors, return_types,
+                                MachineTypeString);
+        for (size_t i = kFirstNonContextParameter;
+             i < builtin->parameter_names().size(); ++i) {
+          const Type* type = builtin->signature().parameter_types.types[i];
+          interface_descriptors << ", " << MachineTypeString(type);
+        }
+        interface_descriptors << ")\n";
+
+        interface_descriptors << "  DECLARE_DEFAULT_DESCRIPTOR("
+                              << descriptor_name << ")\n";
+
         interface_descriptors << "};\n\n";
       } else {
         builtin_definitions << "TFJ(" << builtin->ExternalName();
@@ -4864,7 +4858,7 @@ namespace {
 void GenerateFieldValueVerifier(const std::string& class_name, bool indexed,
                                 std::string offset, const Field& leaf_field,
                                 std::string indexed_field_size,
-                                std::ostream& cc_contents) {
+                                std::ostream& cc_contents, bool is_map) {
   const Type* field_type = leaf_field.name_and_type.type;
 
   bool maybe_object =
@@ -4879,8 +4873,12 @@ void GenerateFieldValueVerifier(const std::string& class_name, bool indexed,
   const std::string value = leaf_field.name_and_type.name + "__value";
 
   // Read the field.
-  cc_contents << "    " << object_type << " " << value << " = TaggedField<"
-              << object_type << ">::load(o, " << offset << ");\n";
+  if (is_map) {
+    cc_contents << "    " << object_type << " " << value << " = o.map();\n";
+  } else {
+    cc_contents << "    " << object_type << " " << value << " = TaggedField<"
+                << object_type << ">::load(o, " << offset << ");\n";
+  }
 
   // Call VerifyPointer or VerifyMaybeObjectPointer on it.
   cc_contents << "    " << object_type << "::" << verify_fn << "(isolate, "
@@ -4947,13 +4945,13 @@ void GenerateClassFieldVerifier(const std::string& class_name,
             class_name, f.index.has_value(),
             field_start_offset + " + " + std::to_string(*struct_field.offset),
             struct_field, std::to_string((*struct_type)->PackedSize()),
-            cc_contents);
+            cc_contents, f.name_and_type.name == "map");
       }
     }
   } else {
     GenerateFieldValueVerifier(class_name, f.index.has_value(),
                                field_start_offset, f, "kTaggedSize",
-                               cc_contents);
+                               cc_contents, f.name_and_type.name == "map");
   }
 
   cc_contents << "  }\n";

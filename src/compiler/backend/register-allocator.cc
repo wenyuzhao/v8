@@ -1792,7 +1792,7 @@ void ConstraintBuilder::MeetConstraintsBefore(int instr_index) {
     if (!second_output->HasSameAsInputPolicy()) continue;
     DCHECK_EQ(0, i);  // Only valid for first output.
     UnallocatedOperand* cur_input =
-        UnallocatedOperand::cast(second->InputAt(0));
+        UnallocatedOperand::cast(second->InputAt(second_output->input_index()));
     int output_vreg = second_output->virtual_register();
     int input_vreg = cur_input->virtual_register();
     UnallocatedOperand input_copy(UnallocatedOperand::REGISTER_OR_SLOT,
@@ -3958,7 +3958,8 @@ void LinearScanAllocator::FindFreeRegistersForRange(
       // interesting to this range anyway.
       // TODO(mtrofin): extend to aliased ranges, too.
       if ((kSimpleFPAliasing || !check_fp_aliasing()) &&
-          positions[cur_reg] <= cur_inactive->NextStart()) {
+          (positions[cur_reg] <= cur_inactive->NextStart() ||
+           range->End() <= cur_inactive->NextStart())) {
         break;
       }
       LifetimePosition next_intersection =

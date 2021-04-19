@@ -299,11 +299,12 @@ bool Code::IsIsolateIndependent(Isolate* isolate) {
                  RelocInfo::ModeMask(RelocInfo::WASM_STUB_CALL)));
 
 #if defined(V8_TARGET_ARCH_PPC) || defined(V8_TARGET_ARCH_PPC64) || \
-    defined(V8_TARGET_ARCH_MIPS64) || defined(V8_TARGET_ARCH_RISCV64)
+    defined(V8_TARGET_ARCH_MIPS64)
   return RelocIterator(*this, kModeMask).done();
 #elif defined(V8_TARGET_ARCH_X64) || defined(V8_TARGET_ARCH_ARM64) || \
     defined(V8_TARGET_ARCH_ARM) || defined(V8_TARGET_ARCH_MIPS) ||    \
-    defined(V8_TARGET_ARCH_S390) || defined(V8_TARGET_ARCH_IA32)
+    defined(V8_TARGET_ARCH_S390) || defined(V8_TARGET_ARCH_IA32) ||   \
+    defined(V8_TARGET_ARCH_RISCV64)
   for (RelocIterator it(*this, kModeMask); !it.done(); it.next()) {
     // On these platforms we emit relative builtin-to-builtin
     // jumps for isolate independent builtins in the snapshot. They are later
@@ -323,67 +324,6 @@ bool Code::IsIsolateIndependent(Isolate* isolate) {
 #error Unsupported architecture.
 #endif
   return true;
-}
-
-// Multiple native contexts live on the same heap, and V8 currently
-// draws no clear distinction between native-context-dependent and
-// independent objects. A good guideline is "objects embedded into
-// bytecode are nc-independent", since bytecode is shared between
-// native contexts. Among others, this is the case for ScopeInfo,
-// SharedFunctionInfo, String, etc.
-bool Code::IsNativeContextIndependent(Isolate* isolate) {
-  static constexpr int kModeMask =
-      RelocInfo::AllRealModesMask() &
-      ~RelocInfo::ModeMask(RelocInfo::CONST_POOL) &
-      ~RelocInfo::ModeMask(RelocInfo::EXTERNAL_REFERENCE) &
-      ~RelocInfo::ModeMask(RelocInfo::INTERNAL_REFERENCE) &
-      ~RelocInfo::ModeMask(RelocInfo::INTERNAL_REFERENCE_ENCODED) &
-      ~RelocInfo::ModeMask(RelocInfo::OFF_HEAP_TARGET) &
-      ~RelocInfo::ModeMask(RelocInfo::RUNTIME_ENTRY) &
-      ~RelocInfo::ModeMask(RelocInfo::VENEER_POOL);
-  STATIC_ASSERT(kModeMask ==
-                (RelocInfo::ModeMask(RelocInfo::CODE_TARGET) |
-                 RelocInfo::ModeMask(RelocInfo::RELATIVE_CODE_TARGET) |
-                 RelocInfo::ModeMask(RelocInfo::COMPRESSED_EMBEDDED_OBJECT) |
-                 RelocInfo::ModeMask(RelocInfo::FULL_EMBEDDED_OBJECT) |
-                 RelocInfo::ModeMask(RelocInfo::DATA_EMBEDDED_OBJECT) |
-                 RelocInfo::ModeMask(RelocInfo::WASM_CALL) |
-                 RelocInfo::ModeMask(RelocInfo::WASM_STUB_CALL)));
-
-  bool is_independent = true;
-  for (RelocIterator it(*this, kModeMask); !it.done(); it.next()) {
-    if (RelocInfo::IsEmbeddedObjectMode(it.rinfo()->rmode())) {
-      HeapObject o = it.rinfo()->target_object();
-      // TODO(jgruber,v8:8888): Extend this with further NCI objects,
-      // and define a more systematic
-      // IsNativeContextIndependent<T>() predicate.
-      if (o.IsString()) continue;
-      if (o.IsScopeInfo()) continue;
-      if (o.IsHeapNumber()) continue;
-      if (o.IsBigInt()) continue;
-      if (o.IsSharedFunctionInfo()) continue;
-      if (o.IsArrayBoilerplateDescription()) continue;
-      if (o.IsObjectBoilerplateDescription()) continue;
-      if (o.IsTemplateObjectDescription()) continue;
-      if (o.IsFixedArray()) {
-        // Some uses of FixedArray are valid.
-        // 1. Passed as arg to %DeclareGlobals, contains only strings
-        //    and SFIs.
-        // 2. Passed as arg to %DefineClass. No well defined contents.
-        // .. ?
-        // TODO(jgruber): Consider assigning dedicated instance
-        //    types instead of assuming fixed arrays are okay.
-        continue;
-      }
-      // Other objects are expected to be context-dependent.
-      PrintF("Found native-context-dependent object:\n");
-      o.Print();
-      o.map().Print();
-    }
-    is_independent = false;
-  }
-
-  return is_independent;
 }
 
 bool Code::Inlines(SharedFunctionInfo sfi) {

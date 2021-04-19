@@ -115,7 +115,7 @@ namespace internal {
   }
 
 void Object::ObjectVerify(Isolate* isolate) {
-  RuntimeCallTimerScope timer(isolate, RuntimeCallCounterId::kObjectVerify);
+  RCS_SCOPE(isolate, RuntimeCallCounterId::kObjectVerify);
   if (IsSmi()) {
     Smi::cast(*this).SmiVerify(isolate);
   } else {
@@ -137,7 +137,7 @@ void MaybeObject::VerifyMaybeObjectPointer(Isolate* isolate, MaybeObject p) {
   if (p->GetHeapObject(&heap_object)) {
     HeapObject::VerifyHeapPointer(isolate, heap_object);
   } else {
-    CHECK(p->IsSmi() || p->IsCleared());
+    CHECK(p->IsSmi() || p->IsCleared() || MapWord::IsPacked(p->ptr()));
   }
 }
 
@@ -828,7 +828,6 @@ void JSFunction::JSFunctionVerify(Isolate* isolate) {
 
 void SharedFunctionInfo::SharedFunctionInfoVerify(Isolate* isolate) {
   // TODO(leszeks): Add a TorqueGeneratedClassVerifier for LocalIsolate.
-  TorqueGeneratedClassVerifiers::SharedFunctionInfoVerify(*this, isolate);
   this->SharedFunctionInfoVerify(ReadOnlyRoots(isolate));
 }
 
@@ -1685,7 +1684,13 @@ void AllocationSite::AllocationSiteVerify(Isolate* isolate) {
 
 void Script::ScriptVerify(Isolate* isolate) {
   TorqueGeneratedClassVerifiers::ScriptVerify(*this, isolate);
-  for (int i = 0; i < shared_function_infos().length(); ++i) {
+  if V8_UNLIKELY (type() == Script::TYPE_WEB_SNAPSHOT) {
+    CHECK_LE(shared_function_info_count(), shared_function_infos().length());
+  } else {
+    // No overallocating shared_function_infos.
+    CHECK_EQ(shared_function_info_count(), shared_function_infos().length());
+  }
+  for (int i = 0; i < shared_function_info_count(); ++i) {
     MaybeObject maybe_object = shared_function_infos().Get(i);
     HeapObject heap_object;
     CHECK(maybe_object->IsWeak() || maybe_object->IsCleared() ||

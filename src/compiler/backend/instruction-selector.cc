@@ -9,6 +9,7 @@
 #include "src/base/iterator.h"
 #include "src/base/platform/wrappers.h"
 #include "src/codegen/assembler-inl.h"
+#include "src/codegen/interface-descriptors-inl.h"
 #include "src/codegen/tick-counter.h"
 #include "src/compiler/backend/instruction-selector-impl.h"
 #include "src/compiler/compiler-source-position-table.h"
@@ -880,8 +881,16 @@ Instruction* InstructionSelector::EmitWithContinuation(
     AppendDeoptimizeArguments(&continuation_inputs_, cont->kind(),
                               cont->reason(), cont->feedback(),
                               FrameState{cont->frame_state()});
-  } else if (cont->IsSet() || cont->IsSelect()) {
+  } else if (cont->IsSet()) {
     continuation_outputs_.push_back(g.DefineAsRegister(cont->result()));
+  } else if (cont->IsSelect()) {
+    // The {Select} should put one of two values into the output register,
+    // depending on the result of the condition. The two result values are in
+    // the last two input slots, the {false_value} in {input_count - 2}, and the
+    // true_value in {input_count - 1}. The other inputs are used for the
+    // condition.
+    AddOutputToSelectContinuation(&g, static_cast<int>(input_count) - 2,
+                                  cont->result());
   } else if (cont->IsTrap()) {
     int trap_id = static_cast<int>(cont->trap_id());
     continuation_inputs_.push_back(g.UseImmediate(trap_id));
@@ -1554,6 +1563,8 @@ void InstructionSelector::VisitNode(Node* node) {
       return MarkAsWord32(node), VisitWord32Popcnt(node);
     case IrOpcode::kWord64Popcnt:
       return MarkAsWord32(node), VisitWord64Popcnt(node);
+    case IrOpcode::kWord32Select:
+      return MarkAsWord32(node), VisitSelect(node);
     case IrOpcode::kWord64And:
       return MarkAsWord64(node), VisitWord64And(node);
     case IrOpcode::kWord64Or:
@@ -1584,6 +1595,8 @@ void InstructionSelector::VisitNode(Node* node) {
       return MarkAsWord64(node), VisitInt64AbsWithOverflow(node);
     case IrOpcode::kWord64Equal:
       return VisitWord64Equal(node);
+    case IrOpcode::kWord64Select:
+      return MarkAsWord64(node), VisitSelect(node);
     case IrOpcode::kInt32Add:
       return MarkAsWord32(node), VisitInt32Add(node);
     case IrOpcode::kInt32AddWithOverflow:
@@ -3358,6 +3371,26 @@ FrameStateDescriptor* InstructionSelector::GetFrameStateDescriptor(
 }
 
 #if V8_ENABLE_WEBASSEMBLY
+void InstructionSelector::CanonicalizeShuffle(Node* node, uint8_t* shuffle,
+                                              bool* is_swizzle) {
+  // Get raw shuffle indices.
+  base::Memcpy(shuffle, S128ImmediateParameterOf(node->op()).data(),
+               kSimd128Size);
+  bool needs_swap;
+  bool inputs_equal = GetVirtualRegister(node->InputAt(0)) ==
+                      GetVirtualRegister(node->InputAt(1));
+  wasm::SimdShuffle::CanonicalizeShuffle(inputs_equal, shuffle, &needs_swap,
+                                         is_swizzle);
+  if (needs_swap) {
+    SwapShuffleInputs(node);
+  }
+  // Duplicate the first input; for some shuffles on some architectures, it's
+  // easiest to implement a swizzle as a shuffle so it might be used.
+  if (*is_swizzle) {
+    node->ReplaceInput(1, node->InputAt(0));
+  }
+}
+
 // static
 void InstructionSelector::SwapShuffleInputs(Node* node) {
   Node* input0 = node->InputAt(0);

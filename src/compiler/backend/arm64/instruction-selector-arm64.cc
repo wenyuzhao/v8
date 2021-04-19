@@ -452,7 +452,7 @@ void VisitBinop(InstructionSelector* selector, Node* node,
                 InstructionCode opcode, ImmediateMode operand_mode,
                 FlagsContinuation* cont) {
   Arm64OperandGenerator g(selector);
-  InstructionOperand inputs[4];
+  InstructionOperand inputs[5];
   size_t input_count = 0;
   InstructionOperand outputs[1];
   size_t output_count = 0;
@@ -827,6 +827,7 @@ void InstructionSelector::VisitLoad(Node* node) {
       opcode = kArm64LdrQ;
       immediate_mode = kNoImmediate;
       break;
+    case MachineRepresentation::kMapWord:  // Fall through.
     case MachineRepresentation::kNone:
       UNREACHABLE();
   }
@@ -936,6 +937,7 @@ void InstructionSelector::VisitStore(Node* node) {
         opcode = kArm64StrQ;
         immediate_mode = kNoImmediate;
         break;
+      case MachineRepresentation::kMapWord:  // Fall through.
       case MachineRepresentation::kNone:
         UNREACHABLE();
     }
@@ -3865,9 +3867,8 @@ void ArrangeShuffleTable(Arm64OperandGenerator* g, Node* input0, Node* input1,
 
 void InstructionSelector::VisitI8x16Shuffle(Node* node) {
   uint8_t shuffle[kSimd128Size];
-  auto param = ShuffleParameterOf(node->op());
-  bool is_swizzle = param.is_swizzle();
-  base::Memcpy(shuffle, param.imm().data(), kSimd128Size);
+  bool is_swizzle;
+  CanonicalizeShuffle(node, shuffle, &is_swizzle);
   uint8_t shuffle32x4[4];
   Arm64OperandGenerator g(this);
   ArchOpcode opcode;
@@ -4033,6 +4034,12 @@ void InstructionSelector::VisitI8x16Popcnt(Node* node) {
   InstructionCode code = kArm64Cnt;
   code |= LaneSizeField::encode(8);
   VisitRR(this, code, node);
+}
+
+void InstructionSelector::AddOutputToSelectContinuation(OperandGenerator* g,
+                                                        int first_input_index,
+                                                        Node* node) {
+  continuation_outputs_.push_back(g->DefineAsRegister(node));
 }
 
 // static

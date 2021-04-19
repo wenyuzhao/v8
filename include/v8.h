@@ -3626,10 +3626,9 @@ class V8_EXPORT Symbol : public Name {
   /**
    * Returns the description string of the symbol, or undefined if none.
    */
+  V8_DEPRECATE_SOON("Use Symbol::Description(isolate)")
   Local<Value> Description() const;
-
-  V8_DEPRECATED("Use Symbol::Description()")
-  Local<Value> Name() const { return Description(); }
+  Local<Value> Description(Isolate* isolate) const;
 
   /**
    * Create a symbol. If description is not empty, it will be used as the
@@ -4769,17 +4768,6 @@ class V8_EXPORT Function : public Object {
    * function name, otherwise inferred name.
    */
   Local<Value> GetDebugName() const;
-
-  /**
-   * User-defined name assigned to the "displayName" property of this function.
-   * Used to facilitate debugging and profiling of JavaScript code.
-   */
-  V8_DEPRECATED(
-      "Use v8::Object::Get() instead to look up \"displayName\". "
-      "V8 and DevTools no longer use \"displayName\" in stack "
-      "traces, but the standard \"name\" property. "
-      "See http://crbug.com/1177685.")
-  Local<Value> GetDisplayName() const;
 
   /**
    * Returns zero based line number of function body and
@@ -8880,6 +8868,17 @@ class V8_EXPORT Isolate {
    * https://html.spec.whatwg.org/multipage/webappapis.html#incumbent
    */
   Local<Context> GetIncumbentContext();
+
+  /**
+   * Schedules a v8::Exception::Error with the given message.
+   * See ThrowException for more details. Templatized to provide compile-time
+   * errors in case of too long strings (see v8::String::NewFromUtf8Literal).
+   */
+  template <int N>
+  Local<Value> ThrowError(const char (&message)[N]) {
+    return ThrowError(String::NewFromUtf8Literal(this, message));
+  }
+  Local<Value> ThrowError(Local<String> message);
 
   /**
    * Schedules an exception to be thrown when returning to JavaScript.  When an

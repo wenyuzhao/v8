@@ -33,12 +33,20 @@ const int kApiSystemPointerSize = sizeof(void*);
 const int kApiDoubleSize = sizeof(double);
 const int kApiInt32Size = sizeof(int32_t);
 const int kApiInt64Size = sizeof(int64_t);
+const int kApiSizetSize = sizeof(size_t);
 
 // Tag information for HeapObject.
 const int kHeapObjectTag = 1;
 const int kWeakHeapObjectTag = 3;
 const int kHeapObjectTagSize = 2;
 const intptr_t kHeapObjectTagMask = (1 << kHeapObjectTagSize) - 1;
+
+// Tag information for fowarding pointers stored in object headers.
+// 0b00 at the lowest 2 bits in the header indicates that the map word is a
+// forwarding pointer.
+const int kForwardingTag = 0;
+const int kForwardingTagSize = 2;
+const intptr_t kForwardingTagMask = (1 << kForwardingTagSize) - 1;
 
 // Tag information for Smi.
 const int kSmiTag = 0;
@@ -177,6 +185,14 @@ V8_EXPORT bool ShouldThrowOnError(v8::internal::Isolate* isolate);
  * depend on functions and constants defined here.
  */
 class Internals {
+#ifdef V8_MAP_PACKING
+  V8_INLINE static constexpr internal::Address UnpackMapWord(
+      internal::Address mapword) {
+    // TODO(wenyuzhao): Clear header metadata.
+    return mapword ^ kMapWordXorMask;
+  }
+#endif
+
  public:
   // These values match non-compiler-dependent values defined within
   // the implementation of v8.
@@ -209,8 +225,12 @@ class Internals {
       kIsolateFastCCallCallerFpOffset + kApiSystemPointerSize;
   static const int kIsolateFastApiCallTargetOffset =
       kIsolateFastCCallCallerPcOffset + kApiSystemPointerSize;
-  static const int kIsolateStackGuardOffset =
+  static const int kIsolateCageBaseOffset =
       kIsolateFastApiCallTargetOffset + kApiSystemPointerSize;
+  static const int kIsolateLongTaskStatsCounterOffset =
+      kIsolateCageBaseOffset + kApiSystemPointerSize;
+  static const int kIsolateStackGuardOffset =
+      kIsolateLongTaskStatsCounterOffset + kApiSizetSize;
   static const int kIsolateRootsOffset =
       kIsolateStackGuardOffset + 7 * kApiSystemPointerSize;
 
@@ -253,6 +273,17 @@ class Internals {
   // incremental GC once the external memory reaches this limit.
   static constexpr int kExternalAllocationSoftLimit = 64 * 1024 * 1024;
 
+#ifdef V8_MAP_PACKING
+  static const uintptr_t kMapWordMetadataMask = 0xffffULL << 48;
+  // The lowest two bits of mapwords are always `0b10`
+  static const uintptr_t kMapWordSignature = 0b10;
+  // XORing a (non-compressed) map with this mask ensures that the two
+  // low-order bits are 0b10. The 0 at the end makes this look like a Smi,
+  // although real Smis have all lower 32 bits unset. We only rely on these
+  // values passing as Smis in very few places.
+  static const int kMapWordXorMask = 0b11;
+#endif
+
   V8_EXPORT static void CheckInitializedImpl(v8::Isolate* isolate);
   V8_INLINE static void CheckInitialized(v8::Isolate* isolate) {
 #ifdef V8_ENABLE_CHECKS
@@ -279,6 +310,9 @@ class Internals {
   V8_INLINE static int GetInstanceType(const internal::Address obj) {
     typedef internal::Address A;
     A map = ReadTaggedPointerField(obj, kHeapObjectMapOffset);
+#ifdef V8_MAP_PACKING
+    map = UnpackMapWord(map);
+#endif
     return ReadRawField<uint16_t>(map, kMapInstanceTypeOffset);
   }
 
@@ -327,6 +361,12 @@ class Internals {
                              kIsolateEmbedderDataOffset +
                              slot * kApiSystemPointerSize;
     return *reinterpret_cast<void* const*>(addr);
+  }
+
+  V8_INLINE static void IncrementLongTasksStatsCounter(v8::Isolate* isolate) {
+    internal::Address addr = reinterpret_cast<internal::Address>(isolate) +
+                             kIsolateLongTaskStatsCounterOffset;
+    ++(*reinterpret_cast<size_t*>(addr));
   }
 
   V8_INLINE static internal::Address* GetRoot(v8::Isolate* isolate, int index) {

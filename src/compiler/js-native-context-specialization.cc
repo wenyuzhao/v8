@@ -10,6 +10,7 @@
 #include "src/codegen/string-constants.h"
 #include "src/compiler/access-builder.h"
 #include "src/compiler/access-info.h"
+#include "src/compiler/allocation-builder-inl.h"
 #include "src/compiler/allocation-builder.h"
 #include "src/compiler/compilation-dependencies.h"
 #include "src/compiler/js-graph.h"
@@ -234,6 +235,11 @@ Reduction JSNativeContextSpecialization::ReduceJSAsyncFunctionEnter(
   DCHECK(shared.is_compiled());
   int register_count = shared.internal_formal_parameter_count() +
                        shared.GetBytecodeArray().register_count();
+  MapRef fixed_array_map(broker(), factory()->fixed_array_map());
+  AllocationBuilder ab(jsgraph(), effect, control);
+  if (!ab.CanAllocateArray(register_count, fixed_array_map)) {
+    return NoChange();
+  }
   Node* value = effect =
       graph()->NewNode(javascript()->CreateAsyncFunctionObject(register_count),
                        closure, receiver, promise, context, effect, control);
@@ -2606,6 +2612,7 @@ JSNativeContextSpecialization::BuildPropertyStore(
       case MachineRepresentation::kWord64:
       case MachineRepresentation::kFloat32:
       case MachineRepresentation::kSimd128:
+      case MachineRepresentation::kMapWord:
         UNREACHABLE();
         break;
     }

@@ -459,6 +459,7 @@ void InstructionSelector::VisitLoad(Node* node) {
       break;
     case MachineRepresentation::kCompressedPointer:  // Fall through.
     case MachineRepresentation::kCompressed:         // Fall through.
+    case MachineRepresentation::kMapWord:            // Fall through.
     case MachineRepresentation::kNone:
       UNREACHABLE();
   }
@@ -533,6 +534,7 @@ void InstructionSelector::VisitStore(Node* node) {
         break;
       case MachineRepresentation::kCompressedPointer:  // Fall through.
       case MachineRepresentation::kCompressed:         // Fall through.
+      case MachineRepresentation::kMapWord:            // Fall through.
       case MachineRepresentation::kNone:
         UNREACHABLE();
     }
@@ -1598,6 +1600,7 @@ void InstructionSelector::VisitUnalignedLoad(Node* node) {
     case MachineRepresentation::kBit:                // Fall through.
     case MachineRepresentation::kCompressedPointer:  // Fall through.
     case MachineRepresentation::kCompressed:         // Fall through.
+    case MachineRepresentation::kMapWord:            // Fall through.
     case MachineRepresentation::kNone:
       UNREACHABLE();
   }
@@ -1651,6 +1654,7 @@ void InstructionSelector::VisitUnalignedStore(Node* node) {
     case MachineRepresentation::kBit:                // Fall through.
     case MachineRepresentation::kCompressedPointer:  // Fall through.
     case MachineRepresentation::kCompressed:         // Fall through.
+    case MachineRepresentation::kMapWord:            // Fall through.
     case MachineRepresentation::kNone:
       UNREACHABLE();
   }
@@ -1878,8 +1882,7 @@ void VisitWord64Compare(InstructionSelector* selector, Node* node,
 void EmitWordCompareZero(InstructionSelector* selector, Node* value,
                          FlagsContinuation* cont) {
   RiscvOperandGenerator g(selector);
-  selector->EmitWithContinuation(kRiscvCmp, g.UseRegister(value),
-                                 g.TempImmediate(0), cont);
+  selector->EmitWithContinuation(kRiscvCmpZero, g.UseRegister(value), cont);
 }
 
 void VisitAtomicLoad(InstructionSelector* selector, Node* node,
@@ -3015,6 +3018,12 @@ VISIT_EXT_MUL(I32x4, I16x8U)
 VISIT_EXT_MUL(I16x8, I8x16S)
 VISIT_EXT_MUL(I16x8, I8x16U)
 #undef VISIT_EXT_MUL
+
+void InstructionSelector::AddOutputToSelectContinuation(OperandGenerator* g,
+                                                        int first_input_index,
+                                                        Node* node) {
+  UNREACHABLE();
+}
 
 // static
 MachineOperatorBuilder::Flags

@@ -324,9 +324,6 @@
 
   # BUG(v8:11240)
   'regress/regress-v8-9267-1': [SKIP],
-
-  # TODO(mslekova): Make independent from GC timing.
-  'compiler/fast-api-calls': [SKIP],
 }],  # 'gc_stress'
 
 ##############################################################################
@@ -844,12 +841,10 @@
   'regress/wasm/regress-1187831': [SKIP],
   'regress/regress-1172797': [SKIP],
   'regress/wasm/regress-1179025': [SKIP],
-  'wasm/simd-errors': [SKIP],
-  'wasm/simd-globals': [SKIP],
   'wasm/multi-value-simd': [SKIP],
-  'wasm/simd-call': [SKIP],
   'wasm/liftoff-simd-params': [SKIP],
   'wasm/exceptions-simd': [SKIP],
+  'wasm/simd-*': [SKIP],
 
 }],  # 'arch == riscv64'
 
@@ -958,7 +953,6 @@
   'deopt-recursive-lazy-once': [SKIP],
   'deopt-recursive-soft-once': [SKIP],
   'code-coverage-block-opt': [SKIP],
-  'compiler/fast-api-calls': [SKIP],
   'compiler/serializer-apply': [SKIP],
   'compiler/serializer-call': [SKIP],
   'compiler/serializer-dead-after-jump': [SKIP],
@@ -1467,5 +1461,12 @@
 ['variant == concurrent_inlining', {
   'concurrent-initial-prototype-change-1': [SKIP],
 }],  # variant == concurrent_inlining
+
+##############################################################################
+['pointer_compression_shared_cage', {
+   # kMaximalCodeRangeSize causing VM exhaustion with 50 workers when sharing a
+   # pointer cage.
+  'regress/wasm/regress-1010272': [SKIP],
+}],
 
 ]

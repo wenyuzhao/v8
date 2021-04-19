@@ -551,6 +551,7 @@ void InstructionSelector::VisitLoad(Node* node) {
     case MachineRepresentation::kCompressed:         // Fall through.
     case MachineRepresentation::kWord64:             // Fall through.
     case MachineRepresentation::kNone:
+    case MachineRepresentation::kMapWord:
       UNREACHABLE();
   }
 
@@ -633,6 +634,7 @@ void InstructionSelector::VisitStore(Node* node) {
       case MachineRepresentation::kCompressedPointer:  // Fall through.
       case MachineRepresentation::kCompressed:         // Fall through.
       case MachineRepresentation::kWord64:             // Fall through.
+      case MachineRepresentation::kMapWord:            // Fall through.
       case MachineRepresentation::kNone:
         UNREACHABLE();
     }
@@ -2378,7 +2380,7 @@ void InstructionSelector::VisitF64x2Splat(Node* node) {
 }
 
 void InstructionSelector::VisitF64x2ExtractLane(Node* node) {
-  VisitRRISimd(this, node, kAVXF64x2ExtractLane, kSSEF64x2ExtractLane);
+  VisitRRISimd(this, node, kF64x2ExtractLane, kF64x2ExtractLane);
 }
 
 void InstructionSelector::VisitI64x2SplatI32Pair(Node* node) {
@@ -2847,9 +2849,8 @@ bool TryMatchArchShuffle(const uint8_t* shuffle, const ShuffleEntry* table,
 
 void InstructionSelector::VisitI8x16Shuffle(Node* node) {
   uint8_t shuffle[kSimd128Size];
-  auto param = ShuffleParameterOf(node->op());
-  bool is_swizzle = param.is_swizzle();
-  base::Memcpy(shuffle, param.imm().data(), kSimd128Size);
+  bool is_swizzle;
+  CanonicalizeShuffle(node, shuffle, &is_swizzle);
 
   int imm_count = 0;
   static const int kMaxImms = 6;
@@ -3158,6 +3159,12 @@ void InstructionSelector::VisitI64x2GeS(Node* node) {
 
 void InstructionSelector::VisitI64x2Abs(Node* node) {
   VisitRRSimd(this, node, kIA32I64x2Abs, kIA32I64x2Abs);
+}
+
+void InstructionSelector::AddOutputToSelectContinuation(OperandGenerator* g,
+                                                        int first_input_index,
+                                                        Node* node) {
+  UNREACHABLE();
 }
 
 // static

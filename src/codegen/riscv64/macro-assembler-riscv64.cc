@@ -884,6 +884,7 @@ void TurboAssembler::Sll64(Register rd, Register rs, const Operand& rt) {
 void TurboAssembler::Ror(Register rd, Register rs, const Operand& rt) {
   UseScratchRegisterScope temps(this);
   Register scratch = temps.Acquire();
+  BlockTrampolinePoolScope block_trampoline_pool(this);
   if (rt.is_reg()) {
     negw(scratch, rt.rm());
     sllw(scratch, rs, scratch);
@@ -908,6 +909,7 @@ void TurboAssembler::Ror(Register rd, Register rs, const Operand& rt) {
 void TurboAssembler::Dror(Register rd, Register rs, const Operand& rt) {
   UseScratchRegisterScope temps(this);
   Register scratch = temps.Acquire();
+  BlockTrampolinePoolScope block_trampoline_pool(this);
   if (rt.is_reg()) {
     negw(scratch, rt.rm());
     sll(scratch, rs, scratch);
@@ -1866,6 +1868,28 @@ void TurboAssembler::RoundHelper(FPURegister dst, FPURegister src,
     } else {
       fmv_s(dst, src);
     }
+  }
+  {
+    Label not_NaN;
+    UseScratchRegisterScope temps2(this);
+    Register scratch = temps2.Acquire();
+    // According to the wasm spec
+    // (https://webassembly.github.io/spec/core/exec/numerics.html#aux-nans)
+    // if input is canonical NaN, then output is canonical NaN, and if input is
+    // any other NaN, then output is any NaN with most significant bit of
+    // payload is 1. In RISC-V, feq_d will set scratch to 0 if src is a NaN. If
+    // src is not a NaN, branch to the label and do nothing, but if it is,
+    // fmin_d will set dst to the canonical NaN.
+    if (std::is_same<F, double>::value) {
+      feq_d(scratch, src, src);
+      bnez(scratch, &not_NaN);
+      fmin_d(dst, src, src);
+    } else {
+      feq_s(scratch, src, src);
+      bnez(scratch, &not_NaN);
+      fmin_s(dst, src, src);
+    }
+    bind(&not_NaN);
   }
 
   // If real exponent (i.e., t6 - kFloatExponentBias) is greater than
@@ -2952,9 +2976,20 @@ void TurboAssembler::Jump(Handle<Code> code, RelocInfo::Mode rmode,
   bool target_is_isolate_independent_builtin =
       isolate()->builtins()->IsBuiltinHandle(code, &builtin_index) &&
       Builtins::IsIsolateIndependent(builtin_index);
-
-  if (root_array_available_ && options().isolate_independent_code &&
-      target_is_isolate_independent_builtin) {
+  if (target_is_isolate_independent_builtin &&
+      options().use_pc_relative_calls_and_jumps) {
+    int32_t code_target_index = AddCodeTarget(code);
+    Label skip;
+    BlockTrampolinePoolScope block_trampoline_pool(this);
+    if (cond != al) {
+      Branch(&skip, NegateCondition(cond), rs, rt);
+    }
+    RecordRelocInfo(RelocInfo::RELATIVE_CODE_TARGET);
+    GenPCRelativeJump(t6, code_target_index);
+    bind(&skip);
+    return;
+  } else if (root_array_available_ && options().isolate_independent_code &&
+             target_is_isolate_independent_builtin) {
     int offset = code->builtin_index() * kSystemPointerSize +
                  IsolateData::builtin_entry_table_offset();
     Ld(t6, MemOperand(kRootRegister, offset));
@@ -3020,8 +3055,22 @@ void TurboAssembler::Call(Handle<Code> code, RelocInfo::Mode rmode,
   bool target_is_isolate_independent_builtin =
       isolate()->builtins()->IsBuiltinHandle(code, &builtin_index) &&
       Builtins::IsIsolateIndependent(builtin_index);
-  if (root_array_available_ && options().isolate_independent_code &&
-      target_is_isolate_independent_builtin) {
+  if (target_is_isolate_independent_builtin &&
+      options().use_pc_relative_calls_and_jumps) {
+    int32_t code_target_index = AddCodeTarget(code);
+    Label skip;
+    BlockTrampolinePoolScope block_trampoline_pool(this);
+    RecordCommentForOffHeapTrampoline(builtin_index);
+    if (cond != al) {
+      Branch(&skip, NegateCondition(cond), rs, rt);
+    }
+    RecordRelocInfo(RelocInfo::RELATIVE_CODE_TARGET);
+    GenPCRelativeJumpAndLink(t6, code_target_index);
+    bind(&skip);
+    RecordComment("]");
+    return;
+  } else if (root_array_available_ && options().isolate_independent_code &&
+             target_is_isolate_independent_builtin) {
     int offset = code->builtin_index() * kSystemPointerSize +
                  IsolateData::builtin_entry_table_offset();
     LoadRootRelative(t6, offset);
@@ -3158,16 +3207,28 @@ void TurboAssembler::Ret(Condition cond, Register rs, const Operand& rt) {
   }
 }
 
+void TurboAssembler::GenPCRelativeJump(Register rd, int64_t imm32) {
+  DCHECK(is_int32(imm32));
+  int32_t Hi20 = (((int32_t)imm32 + 0x800) >> 12);
+  int32_t Lo12 = (int32_t)imm32 << 20 >> 20;
+  auipc(rd, Hi20);  // Read PC + Hi20 into scratch.
+  jr(rd, Lo12);     // jump PC + Hi20 + Lo12
+}
+
+void TurboAssembler::GenPCRelativeJumpAndLink(Register rd, int64_t imm32) {
+  DCHECK(is_int32(imm32));
+  int32_t Hi20 = (((int32_t)imm32 + 0x800) >> 12);
+  int32_t Lo12 = (int32_t)imm32 << 20 >> 20;
+  auipc(rd, Hi20);  // Read PC + Hi20 into scratch.
+  jalr(rd, Lo12);   // jump PC + Hi20 + Lo12
+}
+
 void TurboAssembler::BranchLong(Label* L) {
   // Generate position independent long branch.
   BlockTrampolinePoolScope block_trampoline_pool(this);
   int64_t imm64;
   imm64 = branch_long_offset(L);
-  DCHECK(is_int32(imm64));
-  int32_t Hi20 = (((int32_t)imm64 + 0x800) >> 12);
-  int32_t Lo12 = (int32_t)imm64 << 20 >> 20;
-  auipc(t6, Hi20);  // Read PC + Hi20 into scratch.
-  jr(t6, Lo12);     // jump PC + Hi20 + Lo12
+  GenPCRelativeJump(t6, imm64);
   EmitConstPoolWithJumpIfNeeded();
 }
 
@@ -3176,11 +3237,7 @@ void TurboAssembler::BranchAndLinkLong(Label* L) {
   BlockTrampolinePoolScope block_trampoline_pool(this);
   int64_t imm64;
   imm64 = branch_long_offset(L);
-  DCHECK(is_int32(imm64));
-  int32_t Hi20 = (((int32_t)imm64 + 0x800) >> 12);
-  int32_t Lo12 = (int32_t)imm64 << 20 >> 20;
-  auipc(t6, Hi20);  // Read PC + Hi20 into scratch.
-  jalr(t6, Lo12);   // jump PC + Hi20 + Lo12 and read PC + 4 to ra
+  GenPCRelativeJumpAndLink(t6, imm64);
 }
 
 void TurboAssembler::DropAndRet(int drop) {
@@ -3337,16 +3394,10 @@ void MacroAssembler::PopStackHandler() {
 
 void TurboAssembler::FPUCanonicalizeNaN(const DoubleRegister dst,
                                         const DoubleRegister src) {
-  UseScratchRegisterScope temps(this);
-  Register scratch = temps.Acquire();
-  Label NotNaN;
-
-  fmv_d(dst, src);
-  feq_d(scratch, src, src);
-  bne(scratch, zero_reg, &NotNaN);
-  RV_li(scratch, 0x7ff8000000000000ULL);  // This is the canonical NaN
-  fmv_d_x(dst, scratch);
-  bind(&NotNaN);
+  // Subtracting 0.0 preserves all inputs except for signalling NaNs, which
+  // become quiet NaNs. We use fsub rather than fadd because fsub preserves -0.0
+  // inputs: -0.0 + 0.0 = 0.0, but -0.0 - 0.0 = -0.0.
+  fsub_d(dst, src, kDoubleRegZero);
 }
 
 void TurboAssembler::MovFromFloatResult(const DoubleRegister dst) {

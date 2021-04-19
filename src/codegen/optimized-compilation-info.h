@@ -70,7 +70,9 @@ class V8_EXPORT_PRIVATE OptimizedCompilationInfo final {
   V(TraceTurboAllocation, trace_turbo_allocation, 16)                \
   V(TraceHeapBroker, trace_heap_broker, 17)                          \
   V(WasmRuntimeExceptionSupport, wasm_runtime_exception_support, 18) \
-  V(ConcurrentInlining, concurrent_inlining, 19)
+  V(ConcurrentInlining, concurrent_inlining, 19)                     \
+  V(DiscardResultForTesting, discard_result_for_testing, 20)         \
+  V(InlineJSWasmCalls, inline_js_wasm_calls, 21)
 
   enum Flag {
 #define DEF_ENUM(Camel, Lower, Bit) k##Camel = 1 << Bit,
@@ -159,9 +161,6 @@ class V8_EXPORT_PRIVATE OptimizedCompilationInfo final {
   // Accessors for the different compilation modes.
   bool IsOptimizing() const {
     return CodeKindIsOptimizedJSFunction(code_kind());
-  }
-  bool IsNativeContextIndependent() const {
-    return code_kind() == CodeKind::NATIVE_CONTEXT_INDEPENDENT;
   }
   bool IsTurboprop() const { return code_kind() == CodeKind::TURBOPROP; }
 #if V8_ENABLE_WEBASSEMBLY

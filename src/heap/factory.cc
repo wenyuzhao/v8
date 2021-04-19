@@ -413,7 +413,8 @@ MaybeHandle<FixedArray> Factory::TryNewFixedArray(
 Handle<FixedArray> Factory::NewUninitializedFixedArray(int length) {
   if (length == 0) return empty_fixed_array();
   if (length < 0 || length > FixedArray::kMaxLength) {
-    isolate()->heap()->FatalProcessOutOfMemory("invalid array length");
+    FATAL("Fatal JavaScript invalid array length %d error", length);
+    UNREACHABLE();
   }
 
   // TODO(ulan): As an experiment this temporarily returns an initialized fixed
@@ -1311,8 +1312,8 @@ Handle<Script> Factory::CloneScript(Handle<Script> script) {
     new_script.set_context_data(old_script.context_data());
     new_script.set_type(old_script.type());
     new_script.set_line_ends(*undefined_value(), SKIP_WRITE_BARRIER);
-    new_script.set_eval_from_shared_or_wrapped_arguments(
-        script->eval_from_shared_or_wrapped_arguments());
+    new_script.set_eval_from_shared_or_wrapped_arguments_or_sfi_table(
+        script->eval_from_shared_or_wrapped_arguments_or_sfi_table());
     new_script.set_shared_function_infos(*empty_weak_fixed_array(),
                                          SKIP_WRITE_BARRIER);
     new_script.set_eval_from_position(old_script.eval_from_position());
@@ -1572,9 +1573,7 @@ Map Factory::InitializeMap(Map map, InstanceType type, int instance_size,
   map.SetInstanceDescriptors(isolate(), *empty_descriptor_array(), 0);
   // Must be called only after |instance_type| and |instance_size| are set.
   map.set_visitor_id(Map::GetVisitorId(map));
-  // TODO(solanes, v8:7790, v8:11353): set_relaxed_bit_field could be an atomic
-  // set if TSAN could see the transitions happening in StoreIC.
-  map.set_relaxed_bit_field(0);
+  map.set_bit_field(0);
   map.set_bit_field2(Map::Bits2::NewTargetIsBaseBit::encode(true));
   int bit_field3 =
       Map::Bits3::EnumLengthBits::encode(kInvalidEnumCacheSentinel) |
@@ -2218,13 +2217,9 @@ void Factory::InitializeJSObjectBody(JSObject obj, Map map, int start_offset) {
   // In case of Array subclassing the |map| could already be transitioned
   // to different elements kind from the initial map on which we track slack.
   bool in_progress = map.IsInobjectSlackTrackingInProgress();
-  Object filler;
-  if (in_progress) {
-    filler = *one_pointer_filler_map();
-  } else {
-    filler = *undefined_value();
-  }
-  obj.InitializeBody(map, start_offset, *undefined_value(), filler);
+  obj.InitializeBody(map, start_offset, in_progress,
+                     ReadOnlyRoots(isolate()).one_pointer_filler_map_word(),
+                     *undefined_value());
   if (in_progress) {
     map.FindRootMap(isolate()).InobjectSlackTrackingStep(isolate());
   }
@@ -3544,20 +3539,12 @@ Handle<JSFunction> Factory::JSFunctionBuilder::Build() {
   PrepareMap();
   PrepareFeedbackCell();
 
-  // Determine the associated Code object.
-  Handle<Code> code;
-  const bool have_cached_code =
-      sfi_->TryGetCachedCode(isolate_).ToHandle(&code);
-  if (!have_cached_code) code = handle(sfi_->GetCode(), isolate_);
-
+  Handle<Code> code = handle(sfi_->GetCode(), isolate_);
   Handle<JSFunction> result = BuildRaw(code);
 
-  if (have_cached_code || code->kind() == CodeKind::BASELINE) {
+  if (code->kind() == CodeKind::BASELINE) {
     IsCompiledScope is_compiled_scope(sfi_->is_compiled_scope(isolate_));
     JSFunction::EnsureFeedbackVector(result, &is_compiled_scope);
-    if (FLAG_trace_turbo_nci && have_cached_code) {
-      CompilationCacheCode::TraceHit(sfi_, code);
-    }
   }
 
   Compiler::PostInstantiation(result);

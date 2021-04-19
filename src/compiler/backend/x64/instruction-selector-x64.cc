@@ -298,6 +298,7 @@ ArchOpcode GetLoadOpcode(LoadRepresentation load_rep) {
       opcode = kX64Movdqu;
       break;
     case MachineRepresentation::kNone:
+    case MachineRepresentation::kMapWord:
       UNREACHABLE();
   }
   return opcode;
@@ -332,6 +333,7 @@ ArchOpcode GetStoreOpcode(StoreRepresentation store_rep) {
     case MachineRepresentation::kSimd128:  // Fall through.
       return kX64Movdqu;
     case MachineRepresentation::kNone:
+    case MachineRepresentation::kMapWord:
       UNREACHABLE();
   }
   UNREACHABLE();
@@ -465,6 +467,7 @@ void InstructionSelector::VisitLoad(Node* node, Node* value,
 
 void InstructionSelector::VisitLoad(Node* node) {
   LoadRepresentation load_rep = LoadRepresentationOf(node->op());
+  DCHECK(!load_rep.IsMapWord());
   VisitLoad(node, node, GetLoadOpcode(load_rep));
 }
 
@@ -479,6 +482,7 @@ void InstructionSelector::VisitStore(Node* node) {
   Node* value = node->InputAt(2);
 
   StoreRepresentation store_rep = StoreRepresentationOf(node->op());
+  DCHECK_NE(store_rep.representation(), MachineRepresentation::kMapWord);
   WriteBarrierKind write_barrier_kind = store_rep.write_barrier_kind();
 
   if (FLAG_enable_unconditional_write_barriers &&
@@ -1376,7 +1380,9 @@ void InstructionSelector::VisitChangeInt32ToInt64(Node* node) {
         opcode = load_rep.IsSigned() ? kX64Movsxwq : kX64Movzxwq;
         break;
       case MachineRepresentation::kWord32:
-        opcode = load_rep.IsSigned() ? kX64Movsxlq : kX64Movl;
+        // ChangeInt32ToInt64 must interpret its input as a _signed_ 32-bit
+        // integer, so here we must sign-extend the loaded value in any case.
+        opcode = kX64Movsxlq;
         break;
       default:
         UNREACHABLE();
@@ -1871,11 +1877,15 @@ void VisitCompareWithMemoryOperand(InstructionSelector* selector,
   DCHECK_EQ(IrOpcode::kLoad, left->opcode());
   X64OperandGenerator g(selector);
   size_t input_count = 0;
-  InstructionOperand inputs[4];
+  InstructionOperand inputs[6];
   AddressingMode addressing_mode =
       g.GetEffectiveAddressMemoryOperand(left, inputs, &input_count);
   opcode |= AddressingModeField::encode(addressing_mode);
   inputs[input_count++] = right;
+  if (cont->IsSelect()) {
+    inputs[input_count++] = g.UseRegister(cont->false_value());
+    inputs[input_count++] = g.Use(cont->true_value());
+  }
 
   selector->EmitWithContinuation(opcode, 0, nullptr, input_count, inputs, cont);
 }
@@ -1884,6 +1894,14 @@ void VisitCompareWithMemoryOperand(InstructionSelector* selector,
 void VisitCompare(InstructionSelector* selector, InstructionCode opcode,
                   InstructionOperand left, InstructionOperand right,
                   FlagsContinuation* cont) {
+  if (cont->IsSelect()) {
+    X64OperandGenerator g(selector);
+    InstructionOperand inputs[] = {left, right,
+                                   g.UseRegister(cont->false_value()),
+                                   g.Use(cont->true_value())};
+    selector->EmitWithContinuation(opcode, 0, nullptr, 4, inputs, cont);
+    return;
+  }
   selector->EmitWithContinuation(opcode, left, right, cont);
 }
 
@@ -3379,9 +3397,8 @@ bool TryMatchShufps(const uint8_t* shuffle32x4) {
 
 void InstructionSelector::VisitI8x16Shuffle(Node* node) {
   uint8_t shuffle[kSimd128Size];
-  auto param = ShuffleParameterOf(node->op());
-  bool is_swizzle = param.is_swizzle();
-  base::Memcpy(shuffle, param.imm().data(), kSimd128Size);
+  bool is_swizzle;
+  CanonicalizeShuffle(node, shuffle, &is_swizzle);
 
   int imm_count = 0;
   static const int kMaxImms = 6;
@@ -3706,13 +3723,22 @@ void InstructionSelector::VisitI64x2Abs(Node* node) {
   }
 }
 
+void InstructionSelector::AddOutputToSelectContinuation(OperandGenerator* g,
+                                                        int first_input_index,
+                                                        Node* node) {
+  continuation_outputs_.push_back(
+      g->DefineSameAsInput(node, first_input_index));
+}
+
 // static
 MachineOperatorBuilder::Flags
 InstructionSelector::SupportedMachineOperatorFlags() {
   MachineOperatorBuilder::Flags flags =
       MachineOperatorBuilder::kWord32ShiftIsSafe |
       MachineOperatorBuilder::kWord32Ctz | MachineOperatorBuilder::kWord64Ctz |
-      MachineOperatorBuilder::kWord32Rol | MachineOperatorBuilder::kWord64Rol;
+      MachineOperatorBuilder::kWord32Rol | MachineOperatorBuilder::kWord64Rol |
+      MachineOperatorBuilder::kWord32Select |
+      MachineOperatorBuilder::kWord64Select;
   if (CpuFeatures::IsSupported(POPCNT)) {
     flags |= MachineOperatorBuilder::kWord32Popcnt |
              MachineOperatorBuilder::kWord64Popcnt;

@@ -19,7 +19,7 @@
 #include "src/codegen/external-reference.h"
 #include "src/codegen/ia32/assembler-ia32.h"
 #include "src/codegen/ia32/register-ia32.h"
-#include "src/codegen/interface-descriptors.h"
+#include "src/codegen/interface-descriptors-inl.h"
 #include "src/codegen/label.h"
 #include "src/codegen/macro-assembler.h"
 #include "src/codegen/register.h"
@@ -913,7 +913,7 @@ void TurboAssembler::I8x16Swizzle(XMMRegister dst, XMMRegister src,
                                   XMMRegister mask, XMMRegister scratch,
                                   Register tmp, bool omit_add) {
   if (omit_add) {
-    Pshufb(dst, src, scratch);
+    Pshufb(dst, src, mask);
     return;
   }
 
@@ -1850,34 +1850,6 @@ void TurboAssembler::Pshufb(XMMRegister dst, XMMRegister src, Operand mask) {
     movaps(dst, src);
   }
   pshufb(dst, mask);
-}
-
-void TurboAssembler::Pblendw(XMMRegister dst, Operand src, uint8_t imm8) {
-  if (CpuFeatures::IsSupported(AVX)) {
-    CpuFeatureScope scope(this, AVX);
-    vpblendw(dst, dst, src, imm8);
-    return;
-  }
-  if (CpuFeatures::IsSupported(SSE4_1)) {
-    CpuFeatureScope sse_scope(this, SSE4_1);
-    pblendw(dst, src, imm8);
-    return;
-  }
-  FATAL("no AVX or SSE4.1 support");
-}
-
-void TurboAssembler::Palignr(XMMRegister dst, Operand src, uint8_t imm8) {
-  if (CpuFeatures::IsSupported(AVX)) {
-    CpuFeatureScope scope(this, AVX);
-    vpalignr(dst, dst, src, imm8);
-    return;
-  }
-  if (CpuFeatures::IsSupported(SSSE3)) {
-    CpuFeatureScope sse_scope(this, SSSE3);
-    palignr(dst, src, imm8);
-    return;
-  }
-  FATAL("no AVX or SSE3 support");
 }
 
 void TurboAssembler::Pextrd(Register dst, XMMRegister src, uint8_t imm8) {

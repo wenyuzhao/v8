@@ -841,7 +841,7 @@ void Assembler::target_at_put(int pos, int target_pos) {
     //      orr dst, dst, #target8_2 << 16
 
     uint32_t target24 = target_pos + (Code::kHeaderSize - kHeapObjectTag);
-    DCHECK(is_uint24(target24));
+    CHECK(is_uint24(target24));
     if (is_uint8(target24)) {
       // If the target fits in a byte then only patch with a mov
       // instruction.
@@ -897,7 +897,7 @@ void Assembler::target_at_put(int pos, int target_pos) {
     instr &= ~kImm24Mask;
   }
   int imm24 = imm26 >> 2;
-  DCHECK(is_int24(imm24));
+  CHECK(is_int24(imm24));
   instr_at_put(pos, instr | (imm24 & kImm24Mask));
 }
 
@@ -1030,10 +1030,53 @@ namespace {
 bool FitsShifter(uint32_t imm32, uint32_t* rotate_imm, uint32_t* immed_8,
                  Instr* instr) {
   // imm32 must be unsigned.
-  for (int rot = 0; rot < 16; rot++) {
-    uint32_t imm8 = base::bits::RotateLeft32(imm32, 2 * rot);
-    if ((imm8 <= 0xFF)) {
-      *rotate_imm = rot;
+  {
+    // 32-bit immediates can be encoded as:
+    //   (8-bit value, 2*N bit left rotation)
+    // e.g. 0xab00 can be encoded as 0xab shifted left by 8 == 2*4, i.e.
+    //   (0xab, 4)
+    //
+    // Check three categories which cover all possible shifter fits:
+    //   1. 0x000000FF: The value is already 8-bit (no shifting necessary),
+    //   2. 0x000FF000: The 8-bit value is somewhere in the middle of the 32-bit
+    //                  value, and
+    //   3. 0xF000000F: The 8-bit value is split over the beginning and end of
+    //                  the 32-bit value.
+
+    // For 0x000000FF.
+    if (imm32 <= 0xFF) {
+      *rotate_imm = 0;
+      *immed_8 = imm32;
+      return true;
+    }
+    // For 0x000FF000, count trailing zeros and shift down to 0x000000FF. Note
+    // that we have to round the trailing zeros down to the nearest multiple of
+    // two, since we can only encode shifts of 2*N. Note also that we know that
+    // imm32 isn't zero, since we already checked if it's less than 0xFF.
+    int half_trailing_zeros = base::bits::CountTrailingZerosNonZero(imm32) / 2;
+    uint32_t imm8 = imm32 >> (half_trailing_zeros * 2);
+    if (imm8 <= 0xFF) {
+      DCHECK_GT(half_trailing_zeros, 0);
+      // Rotating right by trailing_zeros is equivalent to rotating left by
+      // 32 - trailing_zeros. We return rotate_right / 2, so calculate
+      // (32 - trailing_zeros)/2 == 16 - trailing_zeros/2.
+      *rotate_imm = (16 - half_trailing_zeros);
+      *immed_8 = imm8;
+      return true;
+    }
+    // For 0xF000000F, rotate by 16 to get 0x000FF000 and continue as if it
+    // were that case.
+    uint32_t imm32_rot16 = base::bits::RotateLeft32(imm32, 16);
+    half_trailing_zeros =
+        base::bits::CountTrailingZerosNonZero(imm32_rot16) / 2;
+    imm8 = imm32_rot16 >> (half_trailing_zeros * 2);
+    if (imm8 <= 0xFF) {
+      // We've rotated left by 2*8, so we can't have more than that many
+      // trailing zeroes.
+      DCHECK_LT(half_trailing_zeros, 8);
+      // We've already rotated by 2*8, before calculating trailing_zeros/2,
+      // so we need (32 - (16 + trailing_zeros))/2 == 8 - trailing_zeros/2.
+      *rotate_imm = 8 - half_trailing_zeros;
       *immed_8 = imm8;
       return true;
     }
@@ -2258,7 +2301,7 @@ void Assembler::bkpt(uint32_t imm16) {
 }
 
 void Assembler::svc(uint32_t imm24, Condition cond) {
-  DCHECK(is_uint24(imm24));
+  CHECK(is_uint24(imm24));
   emit(cond | 15 * B24 | imm24);
 }
 

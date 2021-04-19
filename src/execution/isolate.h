@@ -559,7 +559,7 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   void set_read_only_heap(ReadOnlyHeap* ro_heap) { read_only_heap_ = ro_heap; }
 
   // Page allocator that must be used for allocating V8 heap pages.
-  v8::PageAllocator* page_allocator();
+  v8::PageAllocator* page_allocator() const;
 
   // Returns the PerIsolateThreadData for the current thread (or nullptr if one
   // is not currently set).
@@ -659,12 +659,12 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   base::SharedMutex* map_updater_access() { return &map_updater_access_; }
 
   // The isolate's string table.
-  StringTable* string_table() { return string_table_.get(); }
+  StringTable* string_table() const { return string_table_.get(); }
 
   Address get_address_from_id(IsolateAddressId id);
 
   // Access to top context (where the current function object was created).
-  Context context() { return thread_local_top()->context_; }
+  Context context() const { return thread_local_top()->context_; }
   inline void set_context(Context context);
   Context* context_address() { return &thread_local_top()->context_; }
 
@@ -1021,6 +1021,16 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   const IsolateData* isolate_data() const { return &isolate_data_; }
   IsolateData* isolate_data() { return &isolate_data_; }
 
+  // When pointer compression is on, this is the base address of the pointer
+  // compression cage, and the kPtrComprCageBaseRegister is set to this
+  // value. When pointer compression is off, this is always kNullAddress.
+  Address cage_base() const {
+    DCHECK_IMPLIES(!COMPRESS_POINTERS_IN_ISOLATE_CAGE_BOOL &&
+                       !COMPRESS_POINTERS_IN_SHARED_CAGE_BOOL,
+                   isolate_data()->cage_base() == kNullAddress);
+    return isolate_data()->cage_base();
+  }
+
   // Generated code can embed this address to get access to the isolate-specific
   // data (for example, roots, external references, builtins, etc.).
   // The kRootRegister is set to this value.
@@ -1047,7 +1057,7 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
                                sizeof(IsolateData));
   }
 
-  Object root(RootIndex index) { return Object(roots_table()[index]); }
+  Object root(RootIndex index) const { return Object(roots_table()[index]); }
 
   Handle<Object> root_handle(RootIndex index) {
     return Handle<Object>(&roots_table()[index]);
@@ -1063,8 +1073,8 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
 
   bool IsBuiltinsTableHandleLocation(Address* handle_location);
 
-  StubCache* load_stub_cache() { return load_stub_cache_; }
-  StubCache* store_stub_cache() { return store_stub_cache_; }
+  StubCache* load_stub_cache() const { return load_stub_cache_; }
+  StubCache* store_stub_cache() const { return store_stub_cache_; }
   Deoptimizer* GetAndClearCurrentDeoptimizer() {
     Deoptimizer* result = current_deoptimizer_;
     CHECK_NOT_NULL(result);
@@ -1101,32 +1111,32 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
 
   THREAD_LOCAL_TOP_ADDRESS(Address, thread_in_wasm_flag_address)
 
-  MaterializedObjectStore* materialized_object_store() {
+  MaterializedObjectStore* materialized_object_store() const {
     return materialized_object_store_;
   }
 
-  DescriptorLookupCache* descriptor_lookup_cache() {
+  DescriptorLookupCache* descriptor_lookup_cache() const {
     return descriptor_lookup_cache_;
   }
 
   HandleScopeData* handle_scope_data() { return &handle_scope_data_; }
 
-  HandleScopeImplementer* handle_scope_implementer() {
+  HandleScopeImplementer* handle_scope_implementer() const {
     DCHECK(handle_scope_implementer_);
     return handle_scope_implementer_;
   }
 
-  UnicodeCache* unicode_cache() { return unicode_cache_; }
+  UnicodeCache* unicode_cache() const { return unicode_cache_; }
 
   InnerPointerToCodeCache* inner_pointer_to_code_cache() {
     return inner_pointer_to_code_cache_;
   }
 
-  GlobalHandles* global_handles() { return global_handles_; }
+  GlobalHandles* global_handles() const { return global_handles_; }
 
-  EternalHandles* eternal_handles() { return eternal_handles_; }
+  EternalHandles* eternal_handles() const { return eternal_handles_; }
 
-  ThreadManager* thread_manager() { return thread_manager_; }
+  ThreadManager* thread_manager() const { return thread_manager_; }
 
 #ifndef V8_INTL_SUPPORT
   unibrow::Mapping<unibrow::Ecma262UnCanonicalize>* jsregexp_uncanonicalize() {
@@ -1147,14 +1157,16 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
 
   Builtins* builtins() { return &builtins_; }
 
-  RegExpStack* regexp_stack() { return regexp_stack_; }
+  RegExpStack* regexp_stack() const { return regexp_stack_; }
 
-  size_t total_regexp_code_generated() { return total_regexp_code_generated_; }
+  size_t total_regexp_code_generated() const {
+    return total_regexp_code_generated_;
+  }
   void IncreaseTotalRegexpCodeGenerated(Handle<HeapObject> code);
 
   std::vector<int>* regexp_indices() { return &regexp_indices_; }
 
-  Debug* debug() { return debug_; }
+  Debug* debug() const { return debug_; }
 
   void* is_profiling_address() { return &is_profiling_; }
 
@@ -1192,7 +1204,7 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
     DCHECK_LT(slot, Internals::kNumIsolateDataSlots);
     isolate_data_.embedder_data_[slot] = data;
   }
-  void* GetData(uint32_t slot) {
+  void* GetData(uint32_t slot) const {
     DCHECK_LT(slot, Internals::kNumIsolateDataSlots);
     return isolate_data_.embedder_data_[slot];
   }
@@ -1205,7 +1217,7 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
     return snapshot_blob_ != nullptr && snapshot_blob_->raw_size != 0;
   }
 
-  bool IsDead() { return has_fatal_error_; }
+  bool IsDead() const { return has_fatal_error_; }
   void SignalFatalError() { has_fatal_error_ = true; }
 
   bool use_optimizer();
@@ -1261,11 +1273,11 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
 
   void MaybeInitializeVectorListFromHeap();
 
-  double time_millis_since_init() {
+  double time_millis_since_init() const {
     return heap_.MonotonicallyIncreasingTimeInMs() - time_millis_at_init_;
   }
 
-  DateCache* date_cache() { return date_cache_; }
+  DateCache* date_cache() const { return date_cache_; }
 
   void set_date_cache(DateCache* date_cache);
 
@@ -1319,7 +1331,7 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
 
   std::unique_ptr<PersistentHandles> NewPersistentHandles();
 
-  PersistentHandlesList* persistent_handles_list() {
+  PersistentHandlesList* persistent_handles_list() const {
     return persistent_handles_list_.get();
   }
 
@@ -1692,6 +1704,9 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   MaybeLocal<v8::Context> GetContextFromRecorderContextId(
       v8::metrics::Recorder::ContextId id);
 
+  void UpdateLongTaskStats();
+  v8::metrics::LongTaskStats* GetCurrentLongTaskStats();
+
   LocalIsolate* main_thread_local_isolate() {
     return main_thread_local_isolate_.get();
   }
@@ -2020,6 +2035,9 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
       uintptr_t,
       Persistent<v8::Context, v8::CopyablePersistentTraits<v8::Context>>>
       recorder_context_id_map_;
+
+  size_t last_long_task_stats_counter_;
+  v8::metrics::LongTaskStats long_task_stats_;
 
   std::vector<Object> startup_object_cache_;
 

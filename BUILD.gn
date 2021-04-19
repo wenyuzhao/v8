@@ -300,6 +300,9 @@ declare_args() {
   # meaning that they are not switched to fast mode.
   # Sets -DV8_DICT_PROPERTY_CONST_TRACKING
   v8_dict_property_const_tracking = false
+
+  # Enable map packing & unpacking (sets -dV8_MAP_PACKING).
+  v8_enable_map_packing = false
 }
 
 # Derived defaults.
@@ -380,9 +383,10 @@ if (v8_multi_arch_build &&
   v8_enable_pointer_compression_shared_cage = v8_enable_pointer_compression
 }
 if (v8_enable_short_builtin_calls &&
-    (!v8_enable_pointer_compression || v8_control_flow_integrity)) {
-  # Disable short calls when pointer compression is not enabled.
-  # Or when CFI is enabled (until the CFI-related issues are fixed).
+    (!v8_enable_pointer_compression ||
+     v8_enable_pointer_compression_shared_cage || v8_control_flow_integrity)) {
+  # Disable short calls when pointer compression in a per-Isolate cage is not
+  # enabled. Or when CFI is enabled (until the CFI-related issues are fixed).
   v8_enable_short_builtin_calls = false
 }
 if (v8_enable_shared_ro_heap == "") {
@@ -403,6 +407,12 @@ if (v8_enable_shared_ro_heap && v8_enable_pointer_compression) {
       is_linux || is_chromeos || is_android,
       "Sharing read-only heap with pointer compression is only supported on Linux or Android")
 }
+
+assert(!v8_enable_map_packing || !v8_enable_pointer_compression,
+       "Map packing does not support pointer compression")
+
+assert(!v8_enable_map_packing || v8_current_cpu == "x64",
+       "Map packing is only supported on x64")
 
 assert(
     !v8_enable_pointer_compression_shared_cage || !v8_enable_shared_ro_heap,
@@ -566,6 +576,7 @@ external_v8_defines = [
   "V8_IMMINENT_DEPRECATION_WARNINGS",
   "V8_NO_ARGUMENTS_ADAPTOR",
   "V8_USE_PERFETTO",
+  "V8_MAP_PACKING",
 ]
 
 enabled_external_v8_defines = []
@@ -575,11 +586,11 @@ if (v8_enable_v8_checks) {
 }
 if (v8_enable_pointer_compression) {
   enabled_external_v8_defines += [ "V8_COMPRESS_POINTERS" ]
-}
-if (v8_enable_pointer_compression_shared_cage) {
-  enabled_external_v8_defines += [ "V8_COMPRESS_POINTERS_IN_SHARED_CAGE" ]
-} else if (v8_enable_pointer_compression) {
-  enabled_external_v8_defines += [ "V8_COMPRESS_POINTERS_IN_ISOLATE_CAGE" ]
+  if (v8_enable_pointer_compression_shared_cage) {
+    enabled_external_v8_defines += [ "V8_COMPRESS_POINTERS_IN_SHARED_CAGE" ]
+  } else {
+    enabled_external_v8_defines += [ "V8_COMPRESS_POINTERS_IN_ISOLATE_CAGE" ]
+  }
 }
 if (v8_enable_pointer_compression || v8_enable_31bit_smis_on_64bit_arch) {
   enabled_external_v8_defines += [ "V8_31BIT_SMIS_ON_64BIT_ARCH" ]
@@ -598,6 +609,9 @@ if (v8_imminent_deprecation_warnings) {
 }
 if (v8_use_perfetto) {
   enabled_external_v8_defines += [ "V8_USE_PERFETTO" ]
+}
+if (v8_enable_map_packing) {
+  enabled_external_v8_defines += [ "V8_MAP_PACKING" ]
 }
 
 disabled_external_v8_defines = external_v8_defines - enabled_external_v8_defines
@@ -1036,6 +1050,10 @@ config("toolchain") {
 
   if (v8_enable_verify_csa) {
     defines += [ "ENABLE_VERIFY_CSA" ]
+  }
+
+  if (v8_enable_runtime_call_stats) {
+    defines += [ "V8_RUNTIME_CALL_STATS" ]
   }
 
   if (!v8_untrusted_code_mitigations) {
@@ -1515,44 +1533,37 @@ template("run_torque") {
 
     destination_folder = "$target_gen_dir/torque-generated$suffix"
 
-    files = [
-      "$target_gen_dir/torque-generated/bit-fields.h",
-      "$target_gen_dir/torque-generated/builtin-definitions.h",
-      "$target_gen_dir/torque-generated/class-debug-readers.cc",
-      "$target_gen_dir/torque-generated/class-debug-readers.h",
-      "$target_gen_dir/torque-generated/class-forward-declarations.h",
-      "$target_gen_dir/torque-generated/class-verifiers.cc",
-      "$target_gen_dir/torque-generated/class-verifiers.h",
-      "$target_gen_dir/torque-generated/csa-types.h",
-      "$target_gen_dir/torque-generated/debug-macros.cc",
-      "$target_gen_dir/torque-generated/debug-macros.h",
-      "$target_gen_dir/torque-generated/enum-verifiers.cc",
-      "$target_gen_dir/torque-generated/exported-macros-assembler.cc",
-      "$target_gen_dir/torque-generated/exported-macros-assembler.h",
-      "$target_gen_dir/torque-generated/factory.cc",
-      "$target_gen_dir/torque-generated/factory.inc",
-      "$target_gen_dir/torque-generated/field-offsets.h",
-      "$target_gen_dir/torque-generated/instance-types.h",
-      "$target_gen_dir/torque-generated/interface-descriptors.inc",
-      "$target_gen_dir/torque-generated/objects-body-descriptors-inl.inc",
-      "$target_gen_dir/torque-generated/objects-printer.cc",
+    outputs = [
+      "$destination_folder/bit-fields.h",
+      "$destination_folder/builtin-definitions.h",
+      "$destination_folder/class-debug-readers.cc",
+      "$destination_folder/class-debug-readers.h",
+      "$destination_folder/class-forward-declarations.h",
+      "$destination_folder/class-verifiers.cc",
+      "$destination_folder/class-verifiers.h",
+      "$destination_folder/csa-types.h",
+      "$destination_folder/debug-macros.cc",
+      "$destination_folder/debug-macros.h",
+      "$destination_folder/enum-verifiers.cc",
+      "$destination_folder/exported-macros-assembler.cc",
+      "$destination_folder/exported-macros-assembler.h",
+      "$destination_folder/factory.cc",
+      "$destination_folder/factory.inc",
+      "$destination_folder/field-offsets.h",
+      "$destination_folder/instance-types.h",
+      "$destination_folder/interface-descriptors.inc",
+      "$destination_folder/objects-body-descriptors-inl.inc",
+      "$destination_folder/objects-printer.cc",
     ]
-
-    outputs = []
-    foreach(file, files) {
-      outputs += [ string_replace(file,
-                                  "$target_gen_dir/torque-generated",
-                                  destination_folder) ]
-    }
 
     foreach(file, torque_files) {
       filetq = string_replace(file, ".tq", "-tq")
       outputs += [
-        "$target_gen_dir/torque-generated/$filetq-csa.cc",
-        "$target_gen_dir/torque-generated/$filetq-csa.h",
-        "$target_gen_dir/torque-generated/$filetq-inl.inc",
-        "$target_gen_dir/torque-generated/$filetq.cc",
-        "$target_gen_dir/torque-generated/$filetq.inc",
+        "$destination_folder/$filetq-csa.cc",
+        "$destination_folder/$filetq-csa.h",
+        "$destination_folder/$filetq-inl.inc",
+        "$destination_folder/$filetq.cc",
+        "$destination_folder/$filetq.inc",
       ]
     }
 
@@ -1896,7 +1907,11 @@ action("v8_dump_build_config") {
     "v8_enable_verify_predictable=$v8_enable_verify_predictable",
     "v8_enable_verify_csa=$v8_enable_verify_csa",
     "v8_enable_lite_mode=$v8_enable_lite_mode",
+    "v8_enable_runtime_call_stats=$v8_enable_runtime_call_stats",
     "v8_enable_pointer_compression=$v8_enable_pointer_compression",
+    "v8_enable_pointer_compression_shared_cage=" +
+        "$v8_enable_pointer_compression_shared_cage",
+    "v8_enable_third_party_heap=$v8_enable_third_party_heap",
     "v8_enable_webassembly=$v8_enable_webassembly",
     "v8_control_flow_integrity=$v8_control_flow_integrity",
     "v8_target_cpu=\"$v8_target_cpu\"",
@@ -2289,6 +2304,7 @@ v8_header_set("v8_internal_headers") {
     "src/baseline/baseline-assembler-inl.h",
     "src/baseline/baseline-assembler.h",
     "src/baseline/baseline-compiler.h",
+    "src/baseline/baseline-osr-inl.h",
     "src/baseline/baseline.h",
     "src/baseline/bytecode-offset-iterator.h",
     "src/builtins/accessors.h",
@@ -2321,6 +2337,7 @@ v8_header_set("v8_internal_headers") {
     "src/codegen/external-reference.h",
     "src/codegen/flush-instruction-cache.h",
     "src/codegen/handler-table.h",
+    "src/codegen/interface-descriptors-inl.h",
     "src/codegen/interface-descriptors.h",
     "src/codegen/label.h",
     "src/codegen/machine-type.h",
@@ -2647,6 +2664,7 @@ v8_header_set("v8_internal_headers") {
     "src/init/heap-symbols.h",
     "src/init/icu_util.h",
     "src/init/isolate-allocator.h",
+    "src/init/ptr-compr-cage.h",
     "src/init/setup-isolate.h",
     "src/init/startup-data-util.h",
     "src/init/v8.h",
@@ -2679,13 +2697,13 @@ v8_header_set("v8_internal_headers") {
     "src/libsampler/sampler.h",
     "src/logging/code-events.h",
     "src/logging/counters-definitions.h",
-    "src/logging/counters-inl.h",
     "src/logging/counters.h",
     "src/logging/local-logger.h",
     "src/logging/log-inl.h",
     "src/logging/log-utils.h",
     "src/logging/log.h",
     "src/logging/metrics.h",
+    "src/logging/runtime-call-stats.h",
     "src/logging/tracing-flags.h",
     "src/numbers/bignum-dtoa.h",
     "src/numbers/bignum.h",
@@ -3734,6 +3752,7 @@ v8_source_set("v8_base_without_compiler") {
     "src/init/bootstrapper.cc",
     "src/init/icu_util.cc",
     "src/init/isolate-allocator.cc",
+    "src/init/ptr-compr-cage.cc",
     "src/init/startup-data-util.cc",
     "src/init/v8.cc",
     "src/interpreter/bytecode-array-builder.cc",
@@ -3763,6 +3782,7 @@ v8_source_set("v8_base_without_compiler") {
     "src/logging/log-utils.cc",
     "src/logging/log.cc",
     "src/logging/metrics.cc",
+    "src/logging/runtime-call-stats.cc",
     "src/logging/tracing-flags.cc",
     "src/numbers/bignum-dtoa.cc",
     "src/numbers/bignum.cc",
@@ -4038,7 +4058,7 @@ v8_source_set("v8_base_without_compiler") {
     sources += [  ### gcmole(arch:ia32) ###
       "src/codegen/ia32/assembler-ia32.cc",
       "src/codegen/ia32/cpu-ia32.cc",
-      "src/codegen/ia32/interface-descriptors-ia32.cc",
+      "src/codegen/ia32/interface-descriptors-ia32-inl.h",
       "src/codegen/ia32/macro-assembler-ia32.cc",
       "src/codegen/shared-ia32-x64/macro-assembler-shared-ia32-x64.cc",
       "src/compiler/backend/ia32/code-generator-ia32.cc",
@@ -4056,7 +4076,7 @@ v8_source_set("v8_base_without_compiler") {
       "src/codegen/shared-ia32-x64/macro-assembler-shared-ia32-x64.cc",
       "src/codegen/x64/assembler-x64.cc",
       "src/codegen/x64/cpu-x64.cc",
-      "src/codegen/x64/interface-descriptors-x64.cc",
+      "src/codegen/x64/interface-descriptors-x64-inl.h",
       "src/codegen/x64/macro-assembler-x64.cc",
       "src/compiler/backend/x64/code-generator-x64.cc",
       "src/compiler/backend/x64/instruction-scheduler-x64.cc",
@@ -4091,7 +4111,7 @@ v8_source_set("v8_base_without_compiler") {
       "src/codegen/arm/assembler-arm.cc",
       "src/codegen/arm/constants-arm.cc",
       "src/codegen/arm/cpu-arm.cc",
-      "src/codegen/arm/interface-descriptors-arm.cc",
+      "src/codegen/arm/interface-descriptors-arm-inl.h",
       "src/codegen/arm/macro-assembler-arm.cc",
       "src/compiler/backend/arm/code-generator-arm.cc",
       "src/compiler/backend/arm/instruction-scheduler-arm.cc",
@@ -4113,7 +4133,7 @@ v8_source_set("v8_base_without_compiler") {
       "src/codegen/arm64/decoder-arm64.cc",
       "src/codegen/arm64/instructions-arm64-constants.cc",
       "src/codegen/arm64/instructions-arm64.cc",
-      "src/codegen/arm64/interface-descriptors-arm64.cc",
+      "src/codegen/arm64/interface-descriptors-arm64-inl.h",
       "src/codegen/arm64/macro-assembler-arm64.cc",
       "src/codegen/arm64/register-arm64.cc",
       "src/codegen/arm64/utils-arm64.cc",
@@ -4774,7 +4794,7 @@ v8_component("v8_libplatform") {
   } else if (is_win) {
     sources -= [ "src/libplatform/tracing/recorder-default.cc" ]
     sources += [ "src/libplatform/tracing/recorder-win.cc" ]
-  } else if (is_mac) {
+  } else if (target_os == "mac") {
     sources -= [ "src/libplatform/tracing/recorder-default.cc" ]
     sources += [ "src/libplatform/tracing/recorder-mac.cc" ]
   }

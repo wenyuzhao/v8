@@ -51,10 +51,10 @@ class FastCApiObject {
     HandleScope handle_scope(isolate);
 
     double sum = 0;
-    if (args.Length() > 1 && args[1]->IsInt32()) {
+    if (args.Length() > 1 && args[1]->IsNumber()) {
       sum += args[1]->Int32Value(isolate->GetCurrentContext()).FromJust();
     }
-    if (args.Length() > 2 && args[2]->IsUint32()) {
+    if (args.Length() > 2 && args[2]->IsNumber()) {
       sum += args[2]->Uint32Value(isolate->GetCurrentContext()).FromJust();
     }
     if (args.Length() > 3 && args[3]->IsNumber()) {
@@ -101,10 +101,10 @@ class FastCApiObject {
     HandleScope handle_scope(isolate);
 
     double sum = 0;
-    if (args.Length() > 1 && args[1]->IsInt32()) {
+    if (args.Length() > 1 && args[1]->IsNumber()) {
       sum += args[1]->Int32Value(isolate->GetCurrentContext()).FromJust();
     }
-    if (args.Length() > 2 && args[2]->IsUint32()) {
+    if (args.Length() > 2 && args[2]->IsNumber()) {
       sum += args[2]->Uint32Value(isolate->GetCurrentContext()).FromJust();
     }
 
@@ -170,10 +170,8 @@ thread_local FastCApiObject kFastCApiObject;
 // TODO(mslekova): Rename the fast_c_api helper to FastCAPI.
 void CreateObject(const FunctionCallbackInfo<Value>& info) {
   if (!info.IsConstructCall()) {
-    info.GetIsolate()->ThrowException(
-        v8::Exception::Error(String::NewFromUtf8Literal(
-            info.GetIsolate(),
-            "FastCAPI helper must be constructed with new.")));
+    info.GetIsolate()->ThrowError(
+        "FastCAPI helper must be constructed with new.");
     return;
   }
   Local<Object> api_object = info.Holder();

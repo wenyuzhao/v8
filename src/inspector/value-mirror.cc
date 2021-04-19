@@ -165,10 +165,11 @@ String16 abbreviateString(const String16& value, AbbreviateMode mode) {
 
 String16 descriptionForSymbol(v8::Local<v8::Context> context,
                               v8::Local<v8::Symbol> symbol) {
-  return String16::concat("Symbol(",
-                          toProtocolStringWithTypeCheck(context->GetIsolate(),
-                                                        symbol->Description()),
-                          ")");
+  v8::Isolate* isolate = context->GetIsolate();
+  return String16::concat(
+      "Symbol(",
+      toProtocolStringWithTypeCheck(isolate, symbol->Description(isolate)),
+      ")");
 }
 
 String16 descriptionForBigInt(v8::Local<v8::Context> context,
@@ -1216,7 +1217,6 @@ bool ValueMirror::getProperties(v8::Local<v8::Context> context,
       return false;
     }
   }
-  bool shouldSkipProto = internalType == V8InternalValueType::kScopeList;
 
   bool formatAccessorsAsProperties =
       clientFor(context)->formatAccessorsAsProperties(object);
@@ -1321,7 +1321,6 @@ bool ValueMirror::getProperties(v8::Local<v8::Context> context,
       }
     }
     if (accessorPropertiesOnly && !isAccessorProperty) continue;
-    if (name == "__proto__") shouldSkipProto = true;
     auto mirror = PropertyMirror{name,
                                  writable,
                                  configurable,
@@ -1338,16 +1337,6 @@ bool ValueMirror::getProperties(v8::Local<v8::Context> context,
     if (!iterator->Advance().FromMaybe(false)) {
       CHECK(tryCatch.HasCaught());
       return false;
-    }
-  }
-  if (!shouldSkipProto && ownProperties && !object->IsProxy() &&
-      !accessorPropertiesOnly) {
-    v8::Local<v8::Value> prototype = object->GetPrototype();
-    if (prototype->IsObject()) {
-      accumulator->Add(PropertyMirror{String16("__proto__"), true, true, false,
-                                      true, false,
-                                      ValueMirror::create(context, prototype),
-                                      nullptr, nullptr, nullptr, nullptr});
     }
   }
   return true;

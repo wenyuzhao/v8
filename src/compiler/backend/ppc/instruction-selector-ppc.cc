@@ -224,6 +224,7 @@ void InstructionSelector::VisitLoad(Node* node) {
       // Vectors do not support MRI mode, only MRR is available.
       mode = kNoImmediate;
       break;
+    case MachineRepresentation::kMapWord:  // Fall through.
     case MachineRepresentation::kNone:
       UNREACHABLE();
   }
@@ -356,6 +357,7 @@ void InstructionSelector::VisitStore(Node* node) {
         // Vectors do not support MRI mode, only MRR is available.
         mode = kNoImmediate;
         break;
+      case MachineRepresentation::kMapWord:  // Fall through.
       case MachineRepresentation::kNone:
         UNREACHABLE();
     }
@@ -2452,8 +2454,8 @@ SIMD_VISIT_PMIN_MAX(F32x4Pmax)
 #if V8_ENABLE_WEBASSEMBLY
 void InstructionSelector::VisitI8x16Shuffle(Node* node) {
   uint8_t shuffle[kSimd128Size];
-  auto param = ShuffleParameterOf(node->op());
-  base::Memcpy(shuffle, param.imm().data(), kSimd128Size);
+  bool is_swizzle;
+  CanonicalizeShuffle(node, shuffle, &is_swizzle);
   PPCOperandGenerator g(this);
   Node* input0 = node->InputAt(0);
   Node* input1 = node->InputAt(1);
@@ -2640,6 +2642,12 @@ void InstructionSelector::VisitStoreLane(Node* node) {
   inputs[2] = g.UseRegister(node->InputAt(1));
   inputs[3] = g.UseImmediate(params.laneidx);
   Emit(opcode | AddressingModeField::encode(kMode_MRR), 0, nullptr, 4, inputs);
+}
+
+void InstructionSelector::AddOutputToSelectContinuation(OperandGenerator* g,
+                                                        int first_input_index,
+                                                        Node* node) {
+  UNREACHABLE();
 }
 
 // static

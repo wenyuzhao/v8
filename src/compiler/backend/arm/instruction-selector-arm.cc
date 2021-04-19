@@ -626,6 +626,7 @@ void InstructionSelector::VisitLoad(Node* node) {
     case MachineRepresentation::kCompressedPointer:  // Fall through.
     case MachineRepresentation::kCompressed:         // Fall through.
     case MachineRepresentation::kWord64:             // Fall through.
+    case MachineRepresentation::kMapWord:            // Fall through.
     case MachineRepresentation::kNone:
       UNREACHABLE();
   }
@@ -709,6 +710,7 @@ void InstructionSelector::VisitStore(Node* node) {
       case MachineRepresentation::kCompressedPointer:  // Fall through.
       case MachineRepresentation::kCompressed:         // Fall through.
       case MachineRepresentation::kWord64:             // Fall through.
+      case MachineRepresentation::kMapWord:            // Fall through.
       case MachineRepresentation::kNone:
         UNREACHABLE();
     }
@@ -2922,9 +2924,8 @@ void ArrangeShuffleTable(ArmOperandGenerator* g, Node* input0, Node* input1,
 
 void InstructionSelector::VisitI8x16Shuffle(Node* node) {
   uint8_t shuffle[kSimd128Size];
-  auto param = ShuffleParameterOf(node->op());
-  bool is_swizzle = param.is_swizzle();
-  base::Memcpy(shuffle, param.imm().data(), kSimd128Size);
+  bool is_swizzle;
+  CanonicalizeShuffle(node, shuffle, &is_swizzle);
   Node* input0 = node->InputAt(0);
   Node* input1 = node->InputAt(1);
   uint8_t shuffle32x4[4];
@@ -3169,6 +3170,12 @@ void InstructionSelector::VisitF64x2PromoteLowF32x4(Node* node) {
   ArmOperandGenerator g(this);
   Emit(kArmF64x2PromoteLowF32x4, g.DefineAsRegister(node),
        g.UseFixed(node->InputAt(0), q0));
+}
+
+void InstructionSelector::AddOutputToSelectContinuation(OperandGenerator* g,
+                                                        int first_input_index,
+                                                        Node* node) {
+  UNREACHABLE();
 }
 
 // static

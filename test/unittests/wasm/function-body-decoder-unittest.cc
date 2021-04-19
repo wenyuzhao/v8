@@ -1796,7 +1796,6 @@ TEST_F(FunctionBodyDecoderTest, IncompleteIndirectReturnCall) {
 }
 
 TEST_F(FunctionBodyDecoderTest, MultiReturn) {
-  WASM_FEATURE_SCOPE(mv);
   ValueType storage[] = {kWasmI32, kWasmI32};
   FunctionSig sig_ii_v(2, 0, storage);
   FunctionSig sig_v_ii(0, 2, storage);
@@ -1810,7 +1809,6 @@ TEST_F(FunctionBodyDecoderTest, MultiReturn) {
 }
 
 TEST_F(FunctionBodyDecoderTest, MultiReturnType) {
-  WASM_FEATURE_SCOPE(mv);
   for (size_t a = 0; a < arraysize(kValueTypes); a++) {
     for (size_t b = 0; b < arraysize(kValueTypes); b++) {
       for (size_t c = 0; c < arraysize(kValueTypes); c++) {
@@ -1914,6 +1912,50 @@ TEST_F(FunctionBodyDecoderTest, IndirectCallsWithMismatchedSigs2) {
                                 WASM_I32V_1(42), WASM_ZERO)},
       kAppendEnd,
       "call_indirect: immediate table #1 is not of a function type");
+}
+
+TEST_F(FunctionBodyDecoderTest, TablesWithFunctionSubtyping) {
+  WASM_FEATURE_SCOPE(reftypes);
+  WASM_FEATURE_SCOPE(typed_funcref);
+  WASM_FEATURE_SCOPE(gc);
+  EXPERIMENTAL_FLAG_SCOPE(gc);
+
+  byte empty_struct = builder.AddStruct({});
+  byte super_struct = builder.AddStruct({F(kWasmI32, false)});
+  byte sub_struct = builder.AddStruct({F(kWasmI32, false), F(kWasmF64, false)});
+
+  byte table_type = builder.AddSignature(
+      FunctionSig::Build(zone(), {ValueType::Ref(super_struct, kNullable)},
+                         {ValueType::Ref(sub_struct, kNullable)}));
+  byte table_supertype = builder.AddSignature(
+      FunctionSig::Build(zone(), {ValueType::Ref(empty_struct, kNullable)},
+                         {ValueType::Ref(sub_struct, kNullable)}));
+  auto function_sig =
+      FunctionSig::Build(zone(), {ValueType::Ref(sub_struct, kNullable)},
+                         {ValueType::Ref(super_struct, kNullable)});
+  byte function_type = builder.AddSignature(function_sig);
+
+  byte function = builder.AddFunction(function_sig);
+
+  byte table = builder.InitializeTable(ValueType::Ref(table_type, kNullable));
+
+  // We can call-indirect from a typed function table with an immediate type
+  // that is a subtype of the table type.
+  ExpectValidates(
+      FunctionSig::Build(zone(), {ValueType::Ref(sub_struct, kNullable)}, {}),
+      {WASM_CALL_INDIRECT_TABLE(
+          table, function_type,
+          WASM_STRUCT_NEW_DEFAULT(super_struct, WASM_RTT_CANON(super_struct)),
+          WASM_ZERO)});
+
+  // table.set's subtyping works as expected.
+  ExpectValidates(sigs.v_i(), {WASM_TABLE_SET(0, WASM_LOCAL_GET(0),
+                                              WASM_REF_FUNC(function))});
+  // table.get's subtyping works as expected.
+  ExpectValidates(
+      FunctionSig::Build(zone(), {ValueType::Ref(table_supertype, kNullable)},
+                         {kWasmI32}),
+      {WASM_TABLE_GET(0, WASM_LOCAL_GET(0))});
 }
 
 TEST_F(FunctionBodyDecoderTest, IndirectCallsWithoutTableCrash) {
@@ -2602,6 +2644,29 @@ TEST_F(FunctionBodyDecoderTest, BrTable2b) {
                       WASM_I32V_2(67), 1, BR_TARGET(0), BR_TARGET(1))))});
 }
 
+TEST_F(FunctionBodyDecoderTest, BrTableSubtyping) {
+  WASM_FEATURE_SCOPE(reftypes);
+  WASM_FEATURE_SCOPE(typed_funcref);
+  WASM_FEATURE_SCOPE(gc);
+
+  TestModuleBuilder builder;
+  byte supertype1 = builder.AddStruct({F(kWasmI8, true), F(kWasmI16, false)});
+  byte supertype2 = builder.AddStruct({F(kWasmI8, true)});
+  byte subtype = builder.AddStruct(
+      {F(kWasmI8, true), F(kWasmI16, false), F(kWasmI32, true)});
+  module = builder.module();
+  ExpectValidates(
+      sigs.v_v(),
+      {WASM_BLOCK_R(
+           wasm::ValueType::Ref(supertype1, kNonNullable),
+           WASM_BLOCK_R(
+               wasm::ValueType::Ref(supertype2, kNonNullable),
+               WASM_STRUCT_NEW_DEFAULT(subtype, WASM_RTT_CANON(subtype)),
+               WASM_BR_TABLE(WASM_I32V(5), 1, BR_TARGET(0), BR_TARGET(1))),
+           WASM_UNREACHABLE),
+       WASM_DROP});
+}
+
 TEST_F(FunctionBodyDecoderTest, BrTable_off_end) {
   static byte code[] = {B1(WASM_BR_TABLE(WASM_LOCAL_GET(0), 0, BR_TARGET(0)))};
   for (size_t len = 1; len < sizeof(code); len++) {
@@ -2957,7 +3022,6 @@ TEST_F(FunctionBodyDecoderTest, TryDelegate) {
 #undef WASM_TRY_OP
 
 TEST_F(FunctionBodyDecoderTest, MultiValBlock1) {
-  WASM_FEATURE_SCOPE(mv);
   byte sig0 = builder.AddSignature(sigs.ii_v());
   ExpectValidates(
       sigs.i_ii(),
@@ -2975,7 +3039,6 @@ TEST_F(FunctionBodyDecoderTest, MultiValBlock1) {
 }
 
 TEST_F(FunctionBodyDecoderTest, MultiValBlock2) {
-  WASM_FEATURE_SCOPE(mv);
   byte sig0 = builder.AddSignature(sigs.ii_v());
   ExpectValidates(sigs.i_ii(),
                   {WASM_BLOCK_X(sig0, WASM_LOCAL_GET(0), WASM_LOCAL_GET(1)),
@@ -2994,7 +3057,6 @@ TEST_F(FunctionBodyDecoderTest, MultiValBlock2) {
 }
 
 TEST_F(FunctionBodyDecoderTest, MultiValBlockBr) {
-  WASM_FEATURE_SCOPE(mv);
   byte sig0 = builder.AddSignature(sigs.ii_v());
   ExpectFailure(sigs.i_ii(), {WASM_BLOCK_X(sig0, WASM_LOCAL_GET(0), WASM_BR(0)),
                               kExprI32Add});
@@ -3004,7 +3066,6 @@ TEST_F(FunctionBodyDecoderTest, MultiValBlockBr) {
 }
 
 TEST_F(FunctionBodyDecoderTest, MultiValLoop1) {
-  WASM_FEATURE_SCOPE(mv);
   byte sig0 = builder.AddSignature(sigs.ii_v());
   ExpectValidates(
       sigs.i_ii(),
@@ -3021,7 +3082,6 @@ TEST_F(FunctionBodyDecoderTest, MultiValLoop1) {
 }
 
 TEST_F(FunctionBodyDecoderTest, MultiValIf) {
-  WASM_FEATURE_SCOPE(mv);
   byte sig0 = builder.AddSignature(sigs.ii_v());
   ExpectValidates(
       sigs.i_ii(),
@@ -3081,7 +3141,6 @@ TEST_F(FunctionBodyDecoderTest, MultiValIf) {
 }
 
 TEST_F(FunctionBodyDecoderTest, BlockParam) {
-  WASM_FEATURE_SCOPE(mv);
   byte sig1 = builder.AddSignature(sigs.i_i());
   byte sig2 = builder.AddSignature(sigs.i_ii());
   ExpectValidates(
@@ -3108,7 +3167,6 @@ TEST_F(FunctionBodyDecoderTest, BlockParam) {
 }
 
 TEST_F(FunctionBodyDecoderTest, LoopParam) {
-  WASM_FEATURE_SCOPE(mv);
   byte sig1 = builder.AddSignature(sigs.i_i());
   byte sig2 = builder.AddSignature(sigs.i_ii());
   ExpectValidates(sigs.i_ii(), {WASM_LOCAL_GET(0),
@@ -3134,7 +3192,6 @@ TEST_F(FunctionBodyDecoderTest, LoopParam) {
 }
 
 TEST_F(FunctionBodyDecoderTest, LoopParamBr) {
-  WASM_FEATURE_SCOPE(mv);
   byte sig1 = builder.AddSignature(sigs.i_i());
   byte sig2 = builder.AddSignature(sigs.i_ii());
   ExpectValidates(sigs.i_ii(),
@@ -3156,7 +3213,6 @@ TEST_F(FunctionBodyDecoderTest, LoopParamBr) {
 }
 
 TEST_F(FunctionBodyDecoderTest, IfParam) {
-  WASM_FEATURE_SCOPE(mv);
   byte sig1 = builder.AddSignature(sigs.i_i());
   byte sig2 = builder.AddSignature(sigs.i_ii());
   ExpectValidates(sigs.i_ii(),
