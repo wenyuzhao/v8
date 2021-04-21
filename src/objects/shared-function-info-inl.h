@@ -126,7 +126,6 @@ UINT8_ACCESSORS(SharedFunctionInfo, flags2, kFlags2Offset)
 
 bool SharedFunctionInfo::HasSharedName() const {
   Object value = name_or_scope_info(kAcquireLoad);
-  printf("HasSharedName this=%p, kNameOrScopeInfoOffset=%d, value=%p\n", (void*) this->ptr(), kNameOrScopeInfoOffset, (void*) value.ptr());
   if (value.IsScopeInfo()) {
     return ScopeInfo::cast(value).HasSharedFunctionName();
   }

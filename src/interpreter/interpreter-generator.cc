@@ -514,12 +514,11 @@ IGNITION_HANDLER(StaLookupSlot, InterpreterAssembler) {
 // Calls the LoadIC at FeedBackVector slot <slot> for <object> and the name at
 // constant pool entry <name_index>.
 IGNITION_HANDLER(LdaNamedProperty, InterpreterAssembler) {
-  Print(">LdaNamedProperty 1\n");
   TNode<HeapObject> feedback_vector = LoadFeedbackVector();
-  Print(">LdaNamedProperty 2\n");
+
   // Load receiver.
   TNode<Object> recv = LoadRegisterAtOperandIndex(0);
-  Print(">LdaNamedProperty 3\n");
+
   // Load the name and context lazily.
   LazyNode<TaggedIndex> lazy_slot = [=] {
     return BytecodeOperandIdxTaggedIndex(2);
@@ -537,10 +536,9 @@ IGNITION_HANDLER(LdaNamedProperty, InterpreterAssembler) {
                                                  lazy_slot, feedback_vector);
   AccessorAssembler accessor_asm(state());
   accessor_asm.LoadIC_BytecodeHandler(&params, &exit_point);
-  // Print(">LdaNamedProperty 4\n");
+
   BIND(&done);
   {
-    Print(">LdaNamedProperty done\n");
     SetAccumulator(var_result.value());
     Dispatch();
   }
