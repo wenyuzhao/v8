@@ -1487,6 +1487,7 @@
 ################################################################################
 ['third_party_heap', {
   # Performs GC
+  'regress/wasm/regress-827806': [SKIP],
   'allocation-folding': [SKIP],
   'apply-arguments-gc-safepoint': [SKIP],
   'array-bounds-check-removal': [SKIP],
