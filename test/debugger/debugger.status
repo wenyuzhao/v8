@@ -160,6 +160,10 @@
 
 ################################################################################
 ['third_party_heap', {
+  # Requires --concurrent_recompilation
+  'debug/regress/regress-opt-after-debug-deopt': [SKIP],
+  'debug/regress/regress-prepare-break-while-recompile': [SKIP],
+  'regress/regress-7421': [SKIP],
   # Requires a second isolate
   'debug/debug-step': [SKIP],
   'debug/deserialize-script-id': [SKIP],

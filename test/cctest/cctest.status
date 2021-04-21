@@ -718,6 +718,8 @@
 
 ################################################################################
 ['third_party_heap', {
+  # Requires --concurrent_recompilation
+  'test-debug/BreakPointBuiltinConcurrentOpt': [SKIP],
   # Requires a second isolate
   'test-api-array-buffer/BackingStore_HoldAllocatorAlive_AfterIsolateShutdown': [SKIP],
   'test-api-array-buffer/BackingStore_HoldAllocatorAlive_UntilIsolateShutdown': [SKIP],

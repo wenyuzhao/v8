@@ -1486,6 +1486,17 @@
 
 ################################################################################
 ['third_party_heap', {
+  # Requires --concurrent_recompilation
+  'compiler/concurrent-invalidate-transition-map': [SKIP],
+  'compiler/concurrent-proto-change': [SKIP],
+  'compiler/manual-concurrent-recompile': [SKIP],
+  'compiler/regress-905555': [SKIP],
+  'compiler/regress-905555-2': [SKIP],
+  'compiler/regress-9945-1': [SKIP],
+  'concurrent-initial-prototype-change-1': [SKIP],
+  'concurrent-initial-prototype-change-2': [SKIP],
+  'regress/regress-356053': [SKIP],
+  'regress/regress-embedded-cons-string': [SKIP],
   # Requires a second isolate
   'compiler/regress-725743': [SKIP],
   'd8/d8-fuzzable-worker': [SKIP],
