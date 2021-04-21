@@ -91,4 +91,10 @@
   'LoggingTest.SourceLocation':[SKIP]  # issue-174
 }],
 
+################################################################################
+['third_party_heap', {
+  # Requires a second isolate
+  'ValueSerializerTest.DecodeArrayBufferOOM': [SKIP],
+}], # third_party_heap
+
 ]

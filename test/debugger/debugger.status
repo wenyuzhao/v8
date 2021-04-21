@@ -158,4 +158,12 @@
   '*': [SKIP],  # only relevant for mjsunit tests.
 }],
 
+################################################################################
+['third_party_heap', {
+  # Requires a second isolate
+  'debug/debug-step': [SKIP],
+  'debug/deserialize-script-id': [SKIP],
+  'regress/regress-crbug-507070': [SKIP],
+}], # third_party_heap
+
 ]
