@@ -943,10 +943,12 @@ void Heap::RemoveAllocationObserversFromAllSpaces(
 }
 
 void Heap::PublishPendingAllocations() {
+  if (FLAG_enable_third_party_heap) return;
   new_space_->MarkLabStartInitialized();
   PagedSpaceIterator spaces(this);
   for (PagedSpace* space = spaces.Next(); space != nullptr;
        space = spaces.Next()) {
+    DCHECK_NE((PagedSpace*) new_space_, space);
     space->MoveOriginalTopForward();
   }
   lo_space_->ResetPendingObject();
