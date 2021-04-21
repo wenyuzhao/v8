@@ -93,6 +93,27 @@
 
 ################################################################################
 ['third_party_heap', {
+  # Performs GC
+  'APIExceptionTest.ExceptionMessageDoesNotKeepContextAlive': [SKIP],
+  'IsolateTest.MemoryPressureNotificationBackground': [SKIP],
+  'IsolateTest.MemoryPressureNotificationForeground': [SKIP],
+  'LocalHeapTest.GCEpilogue': [SKIP],
+  'RuntimeCallStatsTest.GarbageCollection': [SKIP],
+  'UnifiedHeapDetachedTest.AllocationBeforeConfigureHeap': [SKIP],
+  'UnifiedHeapSnapshotTest.EmptySnapshot': [SKIP],
+  'UnifiedHeapSnapshotTest.JSReferenceForcesVisibleObject': [SKIP],
+  'UnifiedHeapSnapshotTest.MergedWrapperNode': [SKIP],
+  'UnifiedHeapSnapshotTest.NoTriggerForClassIdZero': [SKIP],
+  'UnifiedHeapSnapshotTest.PendingCallStack': [SKIP],
+  'UnifiedHeapSnapshotTest.ReferenceToFinishedSCC': [SKIP],
+  'UnifiedHeapSnapshotTest.RetainedByCppCrossThreadRoot': [SKIP],
+  'UnifiedHeapSnapshotTest.RetainedByCppRoot': [SKIP],
+  'UnifiedHeapSnapshotTest.RetainingNamedThroughUnnamed': [SKIP],
+  'UnifiedHeapSnapshotTest.RetainingUnnamedType': [SKIP],
+  'UnifiedHeapSnapshotTest.TriggerDetachednessCallbackSettingAttached': [SKIP],
+  'UnifiedHeapSnapshotTest.TriggerDetachednessCallbackSettingDetached': [SKIP],
+  'UnifiedHeapTest.FindingV8ToBlinkReference': [SKIP],
+  'UnifiedHeapTest.OnlyGC': [SKIP],
   # Requires a second isolate
   'ValueSerializerTest.DecodeArrayBufferOOM': [SKIP],
 }], # third_party_heap

@@ -79,4 +79,11 @@
   # Tests that require Simd enabled.
   'wasm-trace-memory': [SKIP],
 }],
+
+################################################################################
+['third_party_heap', {
+  # Performs GC
+  'weakref-finalizationregistry-error': [SKIP],
+}], # third_party_heap
+
 ]

@@ -184,4 +184,13 @@
   'proposals/simd/*': [SKIP],
 }],  # no_simd_sse == True
 
+################################################################################
+['third_party_heap', {
+  # Performs GC
+  'memory_grow': [SKIP],
+  'proposals/js-types/memory_grow': [SKIP],
+  'proposals/memory64/memory_grow': [SKIP],
+  'proposals/memory64/memory_grow64': [SKIP],
+}], # third_party_heap
+
 ]

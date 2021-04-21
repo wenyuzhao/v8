@@ -119,6 +119,9 @@ Isolate* Heap::GetIsolateFromWritableObject(HeapObject object) {
 }
 #endif
 
+
+bool Heap::inSnapshot = false;
+
 // These are outside the Heap class so they can be forward-declared
 // in heap-write-barrier-inl.h.
 bool Heap_PageFlagsAreConsistent(HeapObject object) {
@@ -1536,6 +1539,7 @@ Heap::DevToolsTraceEventScope::~DevToolsTraceEventScope() {
 bool Heap::CollectGarbage(AllocationSpace space,
                           GarbageCollectionReason gc_reason,
                           const v8::GCCallbackFlags gc_callback_flags) {
+  DCHECK_IMPLIES(!inSnapshot, !FLAG_enable_third_party_heap);
   if (V8_UNLIKELY(!deserialization_complete_)) {
     // During isolate initialization heap always grows. GC is only requested
     // if a new page allocation fails. In such a case we should crash with

@@ -253,6 +253,7 @@ using CollectionEpoch = uint32_t;
 
 class Heap {
  public:
+  static bool inSnapshot;
   // Stores ephemeron entries where the EphemeronHashTable is in old-space,
   // and the key of the entry is in new-space. Such keys do not appear in the
   // usual OLD_TO_NEW remembered set.

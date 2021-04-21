@@ -160,6 +160,14 @@
 
 ################################################################################
 ['third_party_heap', {
+  # Performs GC
+  'debug/debug-evaluate-locals-optimized': [SKIP],
+  'debug/debug-evaluate-locals-optimized-double': [SKIP],
+  'debug/es6/generators-relocation': [SKIP],
+  'debug/lazy-deopt-then-flush-bytecode': [SKIP],
+  'debug/regress/debug-prepare-step-in': [SKIP],
+  'debug/regress/regress-617882': [SKIP],
+  'debug/regress/regress-9067': [SKIP],
   # Requires --concurrent_recompilation
   'debug/regress/regress-opt-after-debug-deopt': [SKIP],
   'debug/regress/regress-prepare-break-while-recompile': [SKIP],
