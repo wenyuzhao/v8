@@ -1823,7 +1823,7 @@ TEST(CodeSerializerLargeCodeObject) {
       isolate, source_str, Handle<String>(), &cache,
       v8::ScriptCompiler::kNoCompileOptions);
 
-  CHECK(isolate->heap()->InSpace(orig->abstract_code(isolate), LO_SPACE));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap, isolate->heap()->InSpace(orig->abstract_code(isolate), LO_SPACE));
 
   Handle<SharedFunctionInfo> copy;
   {
@@ -1890,7 +1890,7 @@ TEST(CodeSerializerLargeCodeObjectWithIncrementalMarking) {
       isolate, source_str, Handle<String>(), &cache,
       v8::ScriptCompiler::kNoCompileOptions);
 
-  CHECK(heap->InSpace(orig->abstract_code(isolate), LO_SPACE));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap, heap->InSpace(orig->abstract_code(isolate), LO_SPACE));
 
   // Pretend that incremental marking is on when deserialization begins.
   heap::ForceEvacuationCandidate(ec_page);
@@ -1973,10 +1973,10 @@ TEST(CodeSerializerLargeStrings) {
   CHECK_EQ(6 * 1999999, Handle<String>::cast(copy_result)->length());
   Handle<Object> property = JSReceiver::GetDataProperty(
       isolate->global_object(), f->NewStringFromAsciiChecked("s"));
-  CHECK(isolate->heap()->InSpace(HeapObject::cast(*property), LO_SPACE));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap, isolate->heap()->InSpace(HeapObject::cast(*property), LO_SPACE));
   property = JSReceiver::GetDataProperty(isolate->global_object(),
                                          f->NewStringFromAsciiChecked("t"));
-  CHECK(isolate->heap()->InSpace(HeapObject::cast(*property), LO_SPACE));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap, isolate->heap()->InSpace(HeapObject::cast(*property), LO_SPACE));
   // Make sure we do not serialize too much, e.g. include the source string.
   CHECK_LT(cache->length(), 13000000);
 
@@ -2055,16 +2055,16 @@ TEST(CodeSerializerThreeBigStrings) {
       CompileRun("a")
           ->ToString(CcTest::isolate()->GetCurrentContext())
           .ToLocalChecked();
-  CHECK(heap->InSpace(*v8::Utils::OpenHandle(*result_str), LO_SPACE));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap, heap->InSpace(*v8::Utils::OpenHandle(*result_str), LO_SPACE));
   result_str = CompileRun("b")
                    ->ToString(CcTest::isolate()->GetCurrentContext())
                    .ToLocalChecked();
-  CHECK(heap->InSpace(*v8::Utils::OpenHandle(*result_str), OLD_SPACE));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap, heap->InSpace(*v8::Utils::OpenHandle(*result_str), OLD_SPACE));
 
   result_str = CompileRun("c")
                    ->ToString(CcTest::isolate()->GetCurrentContext())
                    .ToLocalChecked();
-  CHECK(heap->InSpace(*v8::Utils::OpenHandle(*result_str), OLD_SPACE));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap, heap->InSpace(*v8::Utils::OpenHandle(*result_str), OLD_SPACE));
 
   delete cache;
   source_a.Dispose();
@@ -2193,7 +2193,7 @@ TEST(CodeSerializerLargeExternalString) {
   name->MakeExternal(&one_byte_resource);
   CHECK(name->IsExternalOneByteString());
   CHECK(name->IsInternalizedString());
-  CHECK(isolate->heap()->InSpace(*name, LO_SPACE));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap, isolate->heap()->InSpace(*name, LO_SPACE));
 
   // Create the source, which is "var <literal> = 42; <literal>".
   Handle<String> source_str =

@@ -718,6 +718,10 @@
 
 ################################################################################
 ['third_party_heap', {
+  # Tests on V8 stock GC
+  'test-spaces/*': [SKIP],
+  'test-compaction/*': [SKIP],
+  'test-mark-compact/*': [SKIP],
   # Requires --concurrent_recompilation
   'test-debug/BreakPointBuiltinConcurrentOpt': [SKIP],
   # Requires a second isolate

@@ -674,7 +674,7 @@ TEST(PCIsInV8_LargeCodeObject_CodePagesAPI) {
   Handle<Code> foo_code =
       Factory::CodeBuilder(i_isolate, desc, CodeKind::WASM_FUNCTION).Build();
 
-  CHECK(i_isolate->heap()->InSpace(*foo_code, CODE_LO_SPACE));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap, i_isolate->heap()->InSpace(*foo_code, CODE_LO_SPACE));
   byte* start = reinterpret_cast<byte*>(foo_code->InstructionStart());
 
   MemoryRange code_pages[v8::Isolate::kMinCodePagesBufferSize];

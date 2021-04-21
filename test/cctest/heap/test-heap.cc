@@ -1953,7 +1953,7 @@ TEST(HeapNumberAlignment) {
     Handle<Object> number_old =
         factory->NewNumber<AllocationType::kOld>(1.000321);
     CHECK(number_old->IsHeapNumber());
-    CHECK(heap->InOldSpace(*number_old));
+    CHECK_IMPLIES(!FLAG_enable_third_party_heap, heap->InOldSpace(*number_old));
     CHECK_EQ(0, Heap::GetFillToAlign(HeapObject::cast(*number_old).address(),
                                      required_alignment));
   }
@@ -2532,11 +2532,11 @@ TEST(OptimizedPretenuringAllocationFolding) {
 
   i::Handle<JSReceiver> o =
       v8::Utils::OpenHandle(*v8::Local<v8::Object>::Cast(res));
-  CHECK(CcTest::heap()->InOldSpace(*o));
-  CHECK(CcTest::heap()->InOldSpace(*int_array_handle));
-  CHECK(CcTest::heap()->InOldSpace(int_array_handle->elements()));
-  CHECK(CcTest::heap()->InOldSpace(*double_array_handle));
-  CHECK(CcTest::heap()->InOldSpace(double_array_handle->elements()));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(*o));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(*int_array_handle));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(int_array_handle->elements()));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(*double_array_handle));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(double_array_handle->elements()));
 }
 
 
@@ -2575,8 +2575,8 @@ TEST(OptimizedPretenuringObjectArrayLiterals) {
   i::Handle<JSObject> o = Handle<JSObject>::cast(
       v8::Utils::OpenHandle(*v8::Local<v8::Object>::Cast(res)));
 
-  CHECK(CcTest::heap()->InOldSpace(o->elements()));
-  CHECK(CcTest::heap()->InOldSpace(*o));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(o->elements()));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(*o));
 }
 
 TEST(OptimizedPretenuringNestedInObjectProperties) {
@@ -2655,16 +2655,16 @@ TEST(OptimizedPretenuringMixedInObjectProperties) {
   i::Handle<JSObject> o = Handle<JSObject>::cast(
       v8::Utils::OpenHandle(*v8::Local<v8::Object>::Cast(res)));
 
-  CHECK(CcTest::heap()->InOldSpace(*o));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(*o));
   FieldIndex idx1 = FieldIndex::ForPropertyIndex(o->map(), 0);
   FieldIndex idx2 = FieldIndex::ForPropertyIndex(o->map(), 1);
-  CHECK(CcTest::heap()->InOldSpace(o->RawFastPropertyAt(idx1)));
-  CHECK(CcTest::heap()->InOldSpace(o->RawFastPropertyAt(idx2)));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(o->RawFastPropertyAt(idx1)));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(o->RawFastPropertyAt(idx2)));
 
   JSObject inner_object = JSObject::cast(o->RawFastPropertyAt(idx1));
-  CHECK(CcTest::heap()->InOldSpace(inner_object));
-  CHECK(CcTest::heap()->InOldSpace(inner_object.RawFastPropertyAt(idx1)));
-  CHECK(CcTest::heap()->InOldSpace(inner_object.RawFastPropertyAt(idx2)));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(inner_object));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(inner_object.RawFastPropertyAt(idx1)));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(inner_object.RawFastPropertyAt(idx2)));
 }
 
 
@@ -2702,7 +2702,7 @@ TEST(OptimizedPretenuringDoubleArrayProperties) {
   i::Handle<JSObject> o = Handle<JSObject>::cast(
       v8::Utils::OpenHandle(*v8::Local<v8::Object>::Cast(res)));
 
-  CHECK(CcTest::heap()->InOldSpace(*o));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(*o));
   CHECK_EQ(o->property_array(),
            ReadOnlyRoots(CcTest::heap()).empty_property_array());
 }
@@ -2741,8 +2741,8 @@ TEST(OptimizedPretenuringDoubleArrayLiterals) {
   i::Handle<JSObject> o = Handle<JSObject>::cast(
       v8::Utils::OpenHandle(*v8::Local<v8::Object>::Cast(res)));
 
-  CHECK(CcTest::heap()->InOldSpace(o->elements()));
-  CHECK(CcTest::heap()->InOldSpace(*o));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(o->elements()));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(*o));
 }
 
 TEST(OptimizedPretenuringNestedMixedArrayLiterals) {
@@ -2787,11 +2787,11 @@ TEST(OptimizedPretenuringNestedMixedArrayLiterals) {
 
   Handle<JSObject> o = Handle<JSObject>::cast(
       v8::Utils::OpenHandle(*v8::Local<v8::Object>::Cast(res)));
-  CHECK(CcTest::heap()->InOldSpace(*o));
-  CHECK(CcTest::heap()->InOldSpace(*int_array_handle));
-  CHECK(CcTest::heap()->InOldSpace(int_array_handle->elements()));
-  CHECK(CcTest::heap()->InOldSpace(*double_array_handle));
-  CHECK(CcTest::heap()->InOldSpace(double_array_handle->elements()));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(*o));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(*int_array_handle));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(int_array_handle->elements()));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(*double_array_handle));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(double_array_handle->elements()));
 }
 
 
@@ -2837,11 +2837,11 @@ TEST(OptimizedPretenuringNestedObjectLiterals) {
 
   Handle<JSObject> o = Handle<JSObject>::cast(
       v8::Utils::OpenHandle(*v8::Local<v8::Object>::Cast(res)));
-  CHECK(CcTest::heap()->InOldSpace(*o));
-  CHECK(CcTest::heap()->InOldSpace(*int_array_handle_1));
-  CHECK(CcTest::heap()->InOldSpace(int_array_handle_1->elements()));
-  CHECK(CcTest::heap()->InOldSpace(*int_array_handle_2));
-  CHECK(CcTest::heap()->InOldSpace(int_array_handle_2->elements()));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(*o));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(*int_array_handle_1));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(int_array_handle_1->elements()));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(*int_array_handle_2));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(int_array_handle_2->elements()));
 }
 
 
@@ -2887,11 +2887,11 @@ TEST(OptimizedPretenuringNestedDoubleLiterals) {
 
   i::Handle<JSObject> o = Handle<JSObject>::cast(
       v8::Utils::OpenHandle(*v8::Local<v8::Object>::Cast(res)));
-  CHECK(CcTest::heap()->InOldSpace(*o));
-  CHECK(CcTest::heap()->InOldSpace(*double_array_handle_1));
-  CHECK(CcTest::heap()->InOldSpace(double_array_handle_1->elements()));
-  CHECK(CcTest::heap()->InOldSpace(*double_array_handle_2));
-  CHECK(CcTest::heap()->InOldSpace(double_array_handle_2->elements()));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(*o));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(*double_array_handle_1));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(double_array_handle_1->elements()));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(*double_array_handle_2));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(double_array_handle_2->elements()));
 }
 
 
@@ -3844,9 +3844,9 @@ static void TestFillersFromPersistentHandles(bool promote) {
   // GC should retain the trimmed array but drop all of the three fillers.
   CcTest::CollectGarbage(NEW_SPACE);
   if (promote) {
-    CHECK(heap->InOldSpace(*tail));
+    CHECK_IMPLIES(!FLAG_enable_third_party_heap, heap->InOldSpace(*tail));
   } else {
-    CHECK(Heap::InYoungGeneration(*tail));
+    CHECK_IMPLIES(!FLAG_enable_third_party_heap, Heap::InYoungGeneration(*tail));
   }
   CHECK_EQ(n - 6, (*tail).length());
   CHECK(!filler_1->IsHeapObject());
@@ -6343,7 +6343,7 @@ TEST(RememberedSet_InsertOnPromotingObjectToOld) {
   // refs are inserted into the remembered sets during GC.
   CcTest::CollectGarbage(i::NEW_SPACE);
 
-  CHECK(heap->InOldSpace(*arr));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap, heap->InOldSpace(*arr));
   CHECK_EQ(1, GetRememberedSetSize<OLD_TO_NEW>(*arr));
 }
 
