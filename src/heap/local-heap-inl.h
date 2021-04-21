@@ -36,7 +36,9 @@ AllocationResult LocalHeap::AllocateRaw(int size_in_bytes, AllocationType type,
   bool large_object = size_in_bytes > Heap::MaxRegularHeapObjectSize(type);
   CHECK_EQ(type, AllocationType::kOld);
 
-  if (large_object)
+  if (FLAG_enable_third_party_heap)
+    return heap()->tp_heap_->Allocate(size_in_bytes, type, alignment);
+  else if (large_object)
     return heap()->lo_space()->AllocateRawBackground(this, size_in_bytes);
   else
     return old_space_allocator()->AllocateRaw(size_in_bytes, alignment, origin);
