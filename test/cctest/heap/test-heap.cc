@@ -6248,7 +6248,7 @@ TEST(UncommitUnusedLargeObjectMemory) {
   Handle<FixedArray> array =
       isolate->factory()->NewFixedArray(200000, AllocationType::kOld);
   MemoryChunk* chunk = MemoryChunk::FromHeapObject(*array);
-  CHECK(chunk->owner_identity() == LO_SPACE);
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap, chunk->owner_identity() == LO_SPACE);
 
   intptr_t size_before = array->Size();
   size_t committed_memory_before = chunk->CommittedPhysicalMemory();
@@ -6447,7 +6447,7 @@ TEST(RememberedSetRemoveRange) {
   Handle<FixedArray> array = isolate->factory()->NewFixedArray(
       Page::kPageSize / kTaggedSize, AllocationType::kOld);
   MemoryChunk* chunk = MemoryChunk::FromHeapObject(*array);
-  CHECK(chunk->owner_identity() == LO_SPACE);
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap, chunk->owner_identity() == LO_SPACE);
   Address start = array->address();
   // Maps slot to boolean indicator of whether the slot should be in the set.
   std::map<Address, bool> slots;
@@ -7223,7 +7223,7 @@ HEAP_TEST(CodeLargeObjectSpace) {
                                ClearRecordedSlots::kNo);
   }
 
-  CHECK(Heap::IsLargeObject(obj));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap, Heap::IsLargeObject(obj));
   heap->RemoveHeapObjectAllocationTracker(&allocation_tracker);
 }
 
@@ -7279,7 +7279,7 @@ UNINITIALIZED_HEAP_TEST(CodeLargeObjectSpace64k) {
                                  ClearRecordedSlots::kNo);
     }
 
-    CHECK(Heap::IsLargeObject(obj));
+    CHECK_IMPLIES(!FLAG_enable_third_party_heap, Heap::IsLargeObject(obj));
     heap->RemoveHeapObjectAllocationTracker(&allocation_tracker);
   }
 
@@ -7293,7 +7293,7 @@ TEST(IsPendingAllocationNewSpace) {
   Factory* factory = isolate->factory();
   HandleScope handle_scope(isolate);
   Handle<FixedArray> object = factory->NewFixedArray(5, AllocationType::kYoung);
-  CHECK(heap->IsPendingAllocation(*object));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap, heap->IsPendingAllocation(*object));
   heap->PublishPendingAllocations();
   CHECK(!heap->IsPendingAllocation(*object));
 }
@@ -7306,7 +7306,7 @@ TEST(IsPendingAllocationNewLOSpace) {
   HandleScope handle_scope(isolate);
   Handle<FixedArray> object = factory->NewFixedArray(
       FixedArray::kMaxRegularLength + 1, AllocationType::kYoung);
-  CHECK(heap->IsPendingAllocation(*object));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap, heap->IsPendingAllocation(*object));
   heap->PublishPendingAllocations();
   CHECK(!heap->IsPendingAllocation(*object));
 }
@@ -7318,7 +7318,7 @@ TEST(IsPendingAllocationOldSpace) {
   Factory* factory = isolate->factory();
   HandleScope handle_scope(isolate);
   Handle<FixedArray> object = factory->NewFixedArray(5, AllocationType::kOld);
-  CHECK(heap->IsPendingAllocation(*object));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap, heap->IsPendingAllocation(*object));
   heap->PublishPendingAllocations();
   CHECK(!heap->IsPendingAllocation(*object));
 }
@@ -7331,7 +7331,7 @@ TEST(IsPendingAllocationLOSpace) {
   HandleScope handle_scope(isolate);
   Handle<FixedArray> object = factory->NewFixedArray(
       FixedArray::kMaxRegularLength + 1, AllocationType::kOld);
-  CHECK(heap->IsPendingAllocation(*object));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap, heap->IsPendingAllocation(*object));
   heap->PublishPendingAllocations();
   CHECK(!heap->IsPendingAllocation(*object));
 }
