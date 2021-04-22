@@ -720,6 +720,31 @@
 
 ################################################################################
 ['third_party_heap', {
+  # Requires --concurrent_inlining / --finalize_streaming_on_background:
+  'serializer-tester/ArrowFunctionInlined': [SKIP],
+  'serializer-tester/BoundFunctionArguments': [SKIP],
+  'serializer-tester/BoundFunctionResult': [SKIP],
+  'serializer-tester/BoundFunctionTarget': [SKIP],
+  'serializer-tester/MergeJumpTargetEnvironment': [SKIP],
+  'serializer-tester/MultipleFunctionCalls': [SKIP],
+  'serializer-tester/SerializeCallAnyReceiver': [SKIP],
+  'serializer-tester/SerializeCallArguments': [SKIP],
+  'serializer-tester/SerializeCallProperty': [SKIP],
+  'serializer-tester/SerializeCallProperty2': [SKIP],
+  'serializer-tester/SerializeCallUndefinedReceiver': [SKIP],
+  'serializer-tester/SerializeCallUndefinedReceiver2': [SKIP],
+  'serializer-tester/SerializeCallWithSpread': [SKIP],
+  'serializer-tester/SerializeConditionalJump': [SKIP],
+  'serializer-tester/SerializeConstruct': [SKIP],
+  'serializer-tester/SerializeConstructSuper': [SKIP],
+  'serializer-tester/SerializeConstructWithSpread': [SKIP],
+  'serializer-tester/SerializeEmptyFunction': [SKIP],
+  'serializer-tester/SerializeInlinedClosure': [SKIP],
+  'serializer-tester/SerializeInlinedFunction': [SKIP],
+  'serializer-tester/SerializeUnconditionalJump': [SKIP],
+  'test-concurrent-allocation/ConcurrentAllocationWhileMainThreadIsParked': [SKIP],
+  'test-concurrent-allocation/ConcurrentAllocationWhileMainThreadParksAndUnparks': [SKIP],
+  'test-concurrent-allocation/ConcurrentAllocationWhileMainThreadRunsWithSafepoints': [SKIP],
   # Performs GC
   'test-cpu-profiler/ContextFilterMovedNativeContext': [SKIP],
   'test-run-wasm/RunWasmInterpreter_I32AddOnDifferentRegisters': [SKIP],
