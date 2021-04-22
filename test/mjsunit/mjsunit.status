@@ -1506,6 +1506,10 @@
 
 ################################################################################
 ['third_party_heap', {
+  # Asserts %InLargeObjectSpace
+  'regress/regress-542823': [SKIP],
+  # Requires --allocation_site_pretenuring
+  'compiler/deopt-pretenure': [SKIP],
   # Performs GC
   'regress/wasm/regress-827806': [SKIP],
   'allocation-folding': [SKIP],

@@ -87,6 +87,10 @@
 
 ################################################################################
 ['third_party_heap', {
+  # Requires write barriers
+  'SpacesTest.WriteBarrierFromHeapObject': [SKIP],
+  'SpacesTest.WriteBarrierInYoungGenerationToSpace': [SKIP],
+  'SpacesTest.WriteBarrierInYoungGenerationFromSpace': [SKIP],
   # Performs GC
   'APIExceptionTest.ExceptionMessageDoesNotKeepContextAlive': [SKIP],
   'IsolateTest.MemoryPressureNotificationBackground': [SKIP],

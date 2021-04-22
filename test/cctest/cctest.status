@@ -721,6 +721,7 @@
 ################################################################################
 ['third_party_heap', {
   # Performs GC
+  'test-cpu-profiler/ContextFilterMovedNativeContext': [SKIP],
   'test-run-wasm/RunWasmInterpreter_I32AddOnDifferentRegisters': [SKIP],
   'test-run-wasm/RunWasmInterpreter_I32DivSOnDifferentRegisters': [SKIP],
   'test-run-wasm/RunWasmInterpreter_I32DivUOnDifferentRegisters': [SKIP],
