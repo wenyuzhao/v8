@@ -720,6 +720,16 @@
 
 ################################################################################
 ['third_party_heap', {
+  # Requires heap::SimulateFullSpace
+  'test-invalidated-slots/InvalidatedSlotsAfterTrimming': [SKIP],
+  'test-invalidated-slots/InvalidatedSlotsAllInvalidatedRanges': [SKIP],
+  'test-invalidated-slots/InvalidatedSlotsCleanupEachObject': [SKIP],
+  'test-invalidated-slots/InvalidatedSlotsCleanupFull': [SKIP],
+  'test-invalidated-slots/InvalidatedSlotsCleanupRightTrim': [SKIP],
+  'test-invalidated-slots/InvalidatedSlotsEvacuationCandidate': [SKIP],
+  'test-invalidated-slots/InvalidatedSlotsNoInvalidatedRanges': [SKIP],
+  'test-invalidated-slots/InvalidatedSlotsResetObjectRegression': [SKIP],
+  'test-invalidated-slots/InvalidatedSlotsSomeInvalidatedRanges': [SKIP],
   # Requires --concurrent_inlining / --finalize_streaming_on_background:
   'serializer-tester/ArrowFunctionInlined': [SKIP],
   'serializer-tester/BoundFunctionArguments': [SKIP],
@@ -746,6 +756,7 @@
   'test-concurrent-allocation/ConcurrentAllocationWhileMainThreadParksAndUnparks': [SKIP],
   'test-concurrent-allocation/ConcurrentAllocationWhileMainThreadRunsWithSafepoints': [SKIP],
   # Performs GC
+  'test-heap/UncommitUnusedLargeObjectMemory': [SKIP],
   'test-cpu-profiler/ContextFilterMovedNativeContext': [SKIP],
   'test-run-wasm/RunWasmInterpreter_I32AddOnDifferentRegisters': [SKIP],
   'test-run-wasm/RunWasmInterpreter_I32DivSOnDifferentRegisters': [SKIP],
