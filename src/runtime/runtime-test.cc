@@ -1028,6 +1028,21 @@ RUNTIME_FUNCTION(Runtime_InYoungGeneration) {
   return isolate->heap()->ToBoolean(ObjectInYoungGeneration(obj));
 }
 
+// Force pretenuring for the allocation site the passed object belongs to.
+RUNTIME_FUNCTION(Runtime_PretenureAllocationSite) {
+  DisallowGarbageCollection no_gc;
+
+  DCHECK_EQ(1, args.length());
+  CONVERT_ARG_CHECKED(JSObject, object, 0);
+  Heap* heap = object.GetHeap();
+  AllocationMemento memento =
+      heap->FindAllocationMemento<Heap::kForRuntime>(object.map(), object);
+  if (memento.is_null()) return ReadOnlyRoots(isolate).false_value();
+  AllocationSite site = memento.GetAllocationSite();
+  heap->PretenureAllocationSiteOnNextCollection(site);
+  return ReadOnlyRoots(isolate).true_value();
+}
+
 namespace {
 
 v8::ModifyCodeGenerationFromStringsResult DisallowCodegenFromStringsCallback(
@@ -1295,6 +1310,7 @@ RUNTIME_FUNCTION(Runtime_EnableCodeLoggingForTesting) {
                                Handle<String> source) final {}
     void CodeMoveEvent(AbstractCode from, AbstractCode to) final {}
     void SharedFunctionInfoMoveEvent(Address from, Address to) final {}
+    void NativeContextMoveEvent(Address from, Address to) final {}
     void CodeMovingGCEvent() final {}
     void CodeDisableOptEvent(Handle<AbstractCode> code,
                              Handle<SharedFunctionInfo> shared) final {}

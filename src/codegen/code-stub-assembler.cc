@@ -103,7 +103,7 @@ void CodeStubAssembler::Check(const BranchGenerator& branch,
                               std::initializer_list<ExtraNode> extra_nodes) {
   Label ok(this);
   Label not_ok(this, Label::kDeferred);
-  if (message != nullptr && FLAG_code_comments) {
+  if (message != nullptr) {
     Comment("[ Assert: ", message);
   } else {
     Comment("[ Assert");
@@ -5319,6 +5319,10 @@ TNode<FixedArrayBase> CodeStubAssembler::GrowElementsCapacity(
   return new_elements;
 }
 
+template TNode<FixedArrayBase> CodeStubAssembler::GrowElementsCapacity<IntPtrT>(
+    TNode<HeapObject>, TNode<FixedArrayBase>, ElementsKind, ElementsKind,
+    TNode<IntPtrT>, TNode<IntPtrT>, compiler::CodeAssemblerLabel*);
+
 void CodeStubAssembler::InitializeAllocationMemento(
     TNode<HeapObject> base, TNode<IntPtrT> base_allocation_size,
     TNode<AllocationSite> allocation_site) {
@@ -6061,6 +6065,13 @@ TNode<BoolT> CodeStubAssembler::IsNoElementsProtectorCellInvalid() {
   return TaggedEqual(cell_value, invalid);
 }
 
+TNode<BoolT> CodeStubAssembler::IsMegaDOMProtectorCellInvalid() {
+  TNode<Smi> invalid = SmiConstant(Protectors::kProtectorInvalid);
+  TNode<PropertyCell> cell = MegaDOMProtectorConstant();
+  TNode<Object> cell_value = LoadObjectField(cell, PropertyCell::kValueOffset);
+  return TaggedEqual(cell_value, invalid);
+}
+
 TNode<BoolT> CodeStubAssembler::IsArrayIteratorProtectorCellInvalid() {
   TNode<Smi> invalid = SmiConstant(Protectors::kProtectorInvalid);
   TNode<PropertyCell> cell = ArrayIteratorProtectorConstant();
@@ -6310,12 +6321,25 @@ TNode<BoolT> CodeStubAssembler::IsJSObjectInstanceType(
                                  Int32Constant(FIRST_JS_OBJECT_TYPE));
 }
 
+TNode<BoolT> CodeStubAssembler::IsJSApiObjectInstanceType(
+    TNode<Int32T> instance_type) {
+  return InstanceTypeEqual(instance_type, JS_API_OBJECT_TYPE);
+}
+
 TNode<BoolT> CodeStubAssembler::IsJSObjectMap(TNode<Map> map) {
   return IsJSObjectInstanceType(LoadMapInstanceType(map));
 }
 
+TNode<BoolT> CodeStubAssembler::IsJSApiObjectMap(TNode<Map> map) {
+  return IsJSApiObjectInstanceType(LoadMapInstanceType(map));
+}
+
 TNode<BoolT> CodeStubAssembler::IsJSObject(TNode<HeapObject> object) {
   return IsJSObjectMap(LoadMap(object));
+}
+
+TNode<BoolT> CodeStubAssembler::IsJSApiObject(TNode<HeapObject> object) {
+  return IsJSApiObjectMap(LoadMap(object));
 }
 
 TNode<BoolT> CodeStubAssembler::IsJSFinalizationRegistryMap(TNode<Map> map) {
@@ -13832,35 +13856,56 @@ TNode<BoolT> CodeStubAssembler::IsDebugActive() {
   return Word32NotEqual(is_debug_active, Int32Constant(0));
 }
 
-TNode<BoolT> CodeStubAssembler::IsPromiseHookEnabled() {
-  const TNode<RawPtrT> promise_hook = Load<RawPtrT>(
-      ExternalConstant(ExternalReference::promise_hook_address(isolate())));
-  return WordNotEqual(promise_hook, IntPtrConstant(0));
-}
-
 TNode<BoolT> CodeStubAssembler::HasAsyncEventDelegate() {
   const TNode<RawPtrT> async_event_delegate = Load<RawPtrT>(ExternalConstant(
       ExternalReference::async_event_delegate_address(isolate())));
   return WordNotEqual(async_event_delegate, IntPtrConstant(0));
 }
 
-TNode<BoolT> CodeStubAssembler::IsPromiseHookEnabledOrHasAsyncEventDelegate() {
-  const TNode<Uint8T> promise_hook_or_async_event_delegate =
-      Load<Uint8T>(ExternalConstant(
-          ExternalReference::promise_hook_or_async_event_delegate_address(
-              isolate())));
-  return Word32NotEqual(promise_hook_or_async_event_delegate, Int32Constant(0));
+TNode<Uint32T> CodeStubAssembler::PromiseHookFlags() {
+  return Load<Uint32T>(ExternalConstant(
+    ExternalReference::promise_hook_flags_address(isolate())));
+}
+
+TNode<BoolT> CodeStubAssembler::IsAnyPromiseHookEnabled(TNode<Uint32T> flags) {
+  uint32_t mask = Isolate::PromiseHookFields::HasContextPromiseHook::kMask |
+                  Isolate::PromiseHookFields::HasIsolatePromiseHook::kMask;
+  return IsSetWord32(flags, mask);
+}
+
+TNode<BoolT> CodeStubAssembler::IsContextPromiseHookEnabled(
+    TNode<Uint32T> flags) {
+  return IsSetWord32<Isolate::PromiseHookFields::HasContextPromiseHook>(flags);
 }
 
 TNode<BoolT> CodeStubAssembler::
-    IsPromiseHookEnabledOrDebugIsActiveOrHasAsyncEventDelegate() {
-  const TNode<Uint8T> promise_hook_or_debug_is_active_or_async_event_delegate =
-      Load<Uint8T>(ExternalConstant(
-          ExternalReference::
-              promise_hook_or_debug_is_active_or_async_event_delegate_address(
-                  isolate())));
-  return Word32NotEqual(promise_hook_or_debug_is_active_or_async_event_delegate,
-                        Int32Constant(0));
+    IsIsolatePromiseHookEnabledOrHasAsyncEventDelegate(TNode<Uint32T> flags) {
+  uint32_t mask = Isolate::PromiseHookFields::HasIsolatePromiseHook::kMask |
+                  Isolate::PromiseHookFields::HasAsyncEventDelegate::kMask;
+  return IsSetWord32(flags, mask);
+}
+
+TNode<BoolT> CodeStubAssembler::
+    IsIsolatePromiseHookEnabledOrDebugIsActiveOrHasAsyncEventDelegate(
+        TNode<Uint32T> flags) {
+  uint32_t mask = Isolate::PromiseHookFields::HasIsolatePromiseHook::kMask |
+                  Isolate::PromiseHookFields::HasAsyncEventDelegate::kMask |
+                  Isolate::PromiseHookFields::IsDebugActive::kMask;
+  return IsSetWord32(flags, mask);
+}
+
+TNode<BoolT> CodeStubAssembler::
+    IsAnyPromiseHookEnabledOrDebugIsActiveOrHasAsyncEventDelegate(
+        TNode<Uint32T> flags) {
+  return Word32NotEqual(flags, Int32Constant(0));
+}
+
+TNode<BoolT> CodeStubAssembler::
+    IsAnyPromiseHookEnabledOrHasAsyncEventDelegate(TNode<Uint32T> flags) {
+  uint32_t mask = Isolate::PromiseHookFields::HasContextPromiseHook::kMask |
+                  Isolate::PromiseHookFields::HasIsolatePromiseHook::kMask |
+                  Isolate::PromiseHookFields::HasAsyncEventDelegate::kMask;
+  return IsSetWord32(flags, mask);
 }
 
 TNode<Code> CodeStubAssembler::LoadBuiltin(TNode<Smi> builtin_id) {

@@ -122,13 +122,13 @@ void BaselineAssembler::JumpIfNotSmi(Register value, Label* target,
 void BaselineAssembler::CallBuiltin(Builtins::Name builtin) {
   __ RecordCommentForOffHeapTrampoline(builtin);
   __ Call(__ EntryFromBuiltinIndexAsOperand(builtin));
-  if (FLAG_code_comments) __ RecordComment("]");
+  __ RecordComment("]");
 }
 
 void BaselineAssembler::TailCallBuiltin(Builtins::Name builtin) {
   __ RecordCommentForOffHeapTrampoline(builtin);
   __ jmp(__ EntryFromBuiltinIndexAsOperand(builtin));
-  if (FLAG_code_comments) __ RecordComment("]");
+  __ RecordComment("]");
 }
 
 void BaselineAssembler::Test(Register value, int mask) {
@@ -147,7 +147,7 @@ void BaselineAssembler::CmpObjectType(Register object,
 }
 void BaselineAssembler::CmpInstanceType(Register map,
                                         InstanceType instance_type) {
-  if (emit_debug_code()) {
+  if (FLAG_debug_code) {
     __ movd(xmm0, eax);
     __ AssertNotSmi(map);
     __ CmpObjectType(map, MAP_TYPE, eax);

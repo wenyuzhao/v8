@@ -1161,7 +1161,6 @@ DEFINE_GENERIC_IMPLICATION(
     TracingFlags::gc_stats.store(
         v8::tracing::TracingCategoryObserver::ENABLED_BY_NATIVE))
 DEFINE_NEG_IMPLICATION(trace_gc_object_stats, incremental_marking)
-DEFINE_NEG_IMPLICATION(track_retaining_path, incremental_marking)
 DEFINE_NEG_IMPLICATION(track_retaining_path, parallel_marking)
 DEFINE_NEG_IMPLICATION(track_retaining_path, concurrent_marking)
 DEFINE_BOOL(track_detached_contexts, true,
@@ -1250,11 +1249,19 @@ DEFINE_BOOL_READONLY(
     "object space")
 
 // assembler-ia32.cc / assembler-arm.cc / assembler-arm64.cc / assembler-x64.cc
+#ifdef V8_ENABLE_DEBUG_CODE
 DEFINE_BOOL(debug_code, DEBUG_BOOL,
             "generate extra code (assertions) for debugging")
+#else
+DEFINE_BOOL_READONLY(debug_code, false, "")
+#endif
+#ifdef V8_CODE_COMMENTS
 DEFINE_BOOL(code_comments, false,
             "emit comments in code disassembly; for more readable source "
             "positions you should add --no-concurrent_recompilation")
+#else
+DEFINE_BOOL_READONLY(code_comments, false, "")
+#endif
 DEFINE_BOOL(enable_sse3, true, "enable use of SSE3 instructions if available")
 DEFINE_BOOL(enable_ssse3, true, "enable use of SSSE3 instructions if available")
 DEFINE_BOOL(enable_sse4_1, true,
@@ -1460,6 +1467,8 @@ DEFINE_BOOL(native_code_counters, DEBUG_BOOL,
             "generate extra code for manipulating stats counters")
 
 DEFINE_BOOL(super_ic, true, "use an IC for super property loads")
+
+DEFINE_BOOL(enable_mega_dom_ic, false, "use MegaDOM IC state for API objects")
 
 // objects.cc
 DEFINE_BOOL(thin_strings, true, "Enable ThinString support")

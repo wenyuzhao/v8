@@ -1398,9 +1398,19 @@ void LiftoffAssembler::FillStackSlotsWithZero(int start, int size) {
     LFR_TO_REG, LFR_TO_REG, USE, , void)                                       \
   V(i64_ctz, CountTrailingZerosU64, LiftoffRegister, LiftoffRegister,          \
     LFR_TO_REG, LFR_TO_REG, USE, , void)                                       \
+  V(f32_ceil, CeilF32, DoubleRegister, DoubleRegister, , , USE, true, bool)    \
+  V(f32_floor, FloorF32, DoubleRegister, DoubleRegister, , , USE, true, bool)  \
+  V(f32_trunc, TruncF32, DoubleRegister, DoubleRegister, , , USE, true, bool)  \
+  V(f32_nearest_int, NearestIntF32, DoubleRegister, DoubleRegister, , , USE,   \
+    true, bool)                                                                \
   V(f32_abs, lpebr, DoubleRegister, DoubleRegister, , , USE, , void)           \
   V(f32_neg, lcebr, DoubleRegister, DoubleRegister, , , USE, , void)           \
   V(f32_sqrt, sqebr, DoubleRegister, DoubleRegister, , , USE, , void)          \
+  V(f64_ceil, CeilF64, DoubleRegister, DoubleRegister, , , USE, true, bool)    \
+  V(f64_floor, FloorF64, DoubleRegister, DoubleRegister, , , USE, true, bool)  \
+  V(f64_trunc, TruncF64, DoubleRegister, DoubleRegister, , , USE, true, bool)  \
+  V(f64_nearest_int, NearestIntF64, DoubleRegister, DoubleRegister, , , USE,   \
+    true, bool)                                                                \
   V(f64_abs, lpdbr, DoubleRegister, DoubleRegister, , , USE, , void)           \
   V(f64_neg, lcdbr, DoubleRegister, DoubleRegister, , , USE, , void)           \
   V(f64_sqrt, sqdbr, DoubleRegister, DoubleRegister, , , USE, , void)
@@ -1421,6 +1431,14 @@ UNOP_LIST(EMIT_UNOP_FUNCTION)
 // V(name, instr, dtype, stype1, stype2, dcast, scast1, scast2, rcast,
 // return_val, return_type)
 #define BINOP_LIST(V)                                                          \
+  V(f32_min, FloatMin, DoubleRegister, DoubleRegister, DoubleRegister, , , ,   \
+    USE, , void)                                                               \
+  V(f32_max, FloatMax, DoubleRegister, DoubleRegister, DoubleRegister, , , ,   \
+    USE, , void)                                                               \
+  V(f64_min, DoubleMin, DoubleRegister, DoubleRegister, DoubleRegister, , , ,  \
+    USE, , void)                                                               \
+  V(f64_max, DoubleMax, DoubleRegister, DoubleRegister, DoubleRegister, , , ,  \
+    USE, , void)                                                               \
   V(f64_add, AddF64, DoubleRegister, DoubleRegister, DoubleRegister, , , ,     \
     USE, , void)                                                               \
   V(f64_sub, SubF64, DoubleRegister, DoubleRegister, DoubleRegister, , , ,     \
@@ -1514,84 +1532,6 @@ BINOP_LIST(EMIT_BINOP_FUNCTION)
 #undef INT32_AND_WITH_1F
 #undef REGISTER_AND_WITH_1F
 #undef LFR_TO_REG
-
-bool LiftoffAssembler::emit_f32_ceil(DoubleRegister dst, DoubleRegister src) {
-  fiebra(ROUND_TOWARD_POS_INF, dst, src);
-  return true;
-}
-
-bool LiftoffAssembler::emit_f32_floor(DoubleRegister dst, DoubleRegister src) {
-  fiebra(ROUND_TOWARD_NEG_INF, dst, src);
-  return true;
-}
-
-bool LiftoffAssembler::emit_f32_trunc(DoubleRegister dst, DoubleRegister src) {
-  fiebra(ROUND_TOWARD_0, dst, src);
-  return true;
-}
-
-bool LiftoffAssembler::emit_f32_nearest_int(DoubleRegister dst,
-                                            DoubleRegister src) {
-  fiebra(ROUND_TO_NEAREST_TO_EVEN, dst, src);
-  return true;
-}
-
-void LiftoffAssembler::emit_f64_min(DoubleRegister dst, DoubleRegister lhs,
-                                    DoubleRegister rhs) {
-  if (CpuFeatures::IsSupported(VECTOR_ENHANCE_FACILITY_1)) {
-    vfmin(dst, lhs, rhs, Condition(1), Condition(8), Condition(3));
-    return;
-  }
-  DoubleMin(dst, lhs, rhs);
-}
-
-void LiftoffAssembler::emit_f32_min(DoubleRegister dst, DoubleRegister lhs,
-                                    DoubleRegister rhs) {
-  if (CpuFeatures::IsSupported(VECTOR_ENHANCE_FACILITY_1)) {
-    vfmin(dst, lhs, rhs, Condition(1), Condition(8), Condition(2));
-    return;
-  }
-  FloatMin(dst, lhs, rhs);
-}
-
-bool LiftoffAssembler::emit_f64_ceil(DoubleRegister dst, DoubleRegister src) {
-  fidbra(ROUND_TOWARD_POS_INF, dst, src);
-  return true;
-}
-
-bool LiftoffAssembler::emit_f64_floor(DoubleRegister dst, DoubleRegister src) {
-  fidbra(ROUND_TOWARD_NEG_INF, dst, src);
-  return true;
-}
-
-bool LiftoffAssembler::emit_f64_trunc(DoubleRegister dst, DoubleRegister src) {
-  fidbra(ROUND_TOWARD_0, dst, src);
-  return true;
-}
-
-bool LiftoffAssembler::emit_f64_nearest_int(DoubleRegister dst,
-                                            DoubleRegister src) {
-  fidbra(ROUND_TO_NEAREST_TO_EVEN, dst, src);
-  return true;
-}
-
-void LiftoffAssembler::emit_f64_max(DoubleRegister dst, DoubleRegister lhs,
-                                    DoubleRegister rhs) {
-  if (CpuFeatures::IsSupported(VECTOR_ENHANCE_FACILITY_1)) {
-    vfmax(dst, lhs, rhs, Condition(1), Condition(8), Condition(3));
-    return;
-  }
-  DoubleMax(dst, lhs, rhs);
-}
-
-void LiftoffAssembler::emit_f32_max(DoubleRegister dst, DoubleRegister lhs,
-                                    DoubleRegister rhs) {
-  if (CpuFeatures::IsSupported(VECTOR_ENHANCE_FACILITY_1)) {
-    vfmax(dst, lhs, rhs, Condition(1), Condition(8), Condition(2));
-    return;
-  }
-  FloatMax(dst, lhs, rhs);
-}
 
 void LiftoffAssembler::emit_i32_divs(Register dst, Register lhs, Register rhs,
                                      Label* trap_div_by_zero,

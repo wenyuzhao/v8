@@ -790,6 +790,58 @@ void Heap::PrintRetainingPath(HeapObject target, RetainingPathOption option) {
   PrintF("-------------------------------------------------\n");
 }
 
+void UpdateRetainersMapAfterScavenge(
+    std::unordered_map<HeapObject, HeapObject, Object::Hasher>* map) {
+  std::unordered_map<HeapObject, HeapObject, Object::Hasher> updated_map;
+
+  for (auto pair : *map) {
+    HeapObject object = pair.first;
+    HeapObject retainer = pair.second;
+
+    if (Heap::InFromPage(object)) {
+      MapWord map_word = object.map_word();
+      if (!map_word.IsForwardingAddress()) continue;
+      object = map_word.ToForwardingAddress();
+    }
+
+    if (Heap::InFromPage(retainer)) {
+      MapWord map_word = retainer.map_word();
+      if (!map_word.IsForwardingAddress()) continue;
+      retainer = map_word.ToForwardingAddress();
+    }
+
+    updated_map[object] = retainer;
+  }
+
+  *map = std::move(updated_map);
+}
+
+void Heap::UpdateRetainersAfterScavenge() {
+  if (!incremental_marking()->IsMarking()) return;
+
+  // This isn't supported for Minor MC.
+  DCHECK(!FLAG_minor_mc);
+
+  UpdateRetainersMapAfterScavenge(&retainer_);
+  UpdateRetainersMapAfterScavenge(&ephemeron_retainer_);
+
+  std::unordered_map<HeapObject, Root, Object::Hasher> updated_retaining_root;
+
+  for (auto pair : retaining_root_) {
+    HeapObject object = pair.first;
+
+    if (Heap::InFromPage(object)) {
+      MapWord map_word = object.map_word();
+      if (!map_word.IsForwardingAddress()) continue;
+      object = map_word.ToForwardingAddress();
+    }
+
+    updated_retaining_root[object] = pair.second;
+  }
+
+  retaining_root_ = std::move(updated_retaining_root);
+}
+
 void Heap::AddRetainer(HeapObject retainer, HeapObject object) {
   if (retainer_.count(object)) return;
   retainer_[object] = retainer;
@@ -985,6 +1037,12 @@ inline bool MakePretenureDecision(
   return false;
 }
 
+// Clear feedback calculation fields until the next gc.
+inline void ResetPretenuringFeedback(AllocationSite site) {
+  site.set_memento_found_count(0);
+  site.set_memento_create_count(0);
+}
+
 inline bool DigestPretenuringFeedback(Isolate* isolate, AllocationSite site,
                                       bool maximum_size_scavenge) {
   bool deopt = false;
@@ -1012,11 +1070,34 @@ inline bool DigestPretenuringFeedback(Isolate* isolate, AllocationSite site,
                  site.PretenureDecisionName(site.pretenure_decision()));
   }
 
-  // Clear feedback calculation fields until the next gc.
-  site.set_memento_found_count(0);
-  site.set_memento_create_count(0);
+  ResetPretenuringFeedback(site);
   return deopt;
 }
+
+bool PretenureAllocationSiteManually(Isolate* isolate, AllocationSite site) {
+  AllocationSite::PretenureDecision current_decision =
+      site.pretenure_decision();
+  bool deopt = true;
+  if (current_decision == AllocationSite::kUndecided ||
+      current_decision == AllocationSite::kMaybeTenure) {
+    site.set_deopt_dependent_code(true);
+    site.set_pretenure_decision(AllocationSite::kTenure);
+  } else {
+    deopt = false;
+  }
+  if (FLAG_trace_pretenuring_statistics) {
+    PrintIsolate(isolate,
+                 "pretenuring manually requested: AllocationSite(%p): "
+                 "%s => %s\n",
+                 reinterpret_cast<void*>(site.ptr()),
+                 site.PretenureDecisionName(current_decision),
+                 site.PretenureDecisionName(site.pretenure_decision()));
+  }
+
+  ResetPretenuringFeedback(site);
+  return deopt;
+}
+
 }  // namespace
 
 void Heap::RemoveAllocationSitePretenuringFeedback(AllocationSite site) {
@@ -1064,7 +1145,18 @@ void Heap::ProcessPretenuringFeedback() {
       }
     }
 
-    // Step 2: Deopt maybe tenured allocation sites if necessary.
+    // Step 2: Pretenure allocation sites for manual requests.
+    if (allocation_sites_to_pretenure_) {
+      while (!allocation_sites_to_pretenure_->empty()) {
+        auto site = allocation_sites_to_pretenure_->Pop();
+        if (PretenureAllocationSiteManually(isolate_, site)) {
+          trigger_deoptimization = true;
+        }
+      }
+      allocation_sites_to_pretenure_.reset();
+    }
+
+    // Step 3: Deopt maybe tenured allocation sites if necessary.
     bool deopt_maybe_tenured = DeoptMaybeTenuredAllocationSites();
     if (deopt_maybe_tenured) {
       ForeachAllocationSite(
@@ -1098,6 +1190,14 @@ void Heap::ProcessPretenuringFeedback() {
     global_pretenuring_feedback_.clear();
     global_pretenuring_feedback_.reserve(kInitialFeedbackCapacity);
   }
+}
+
+void Heap::PretenureAllocationSiteOnNextCollection(AllocationSite site) {
+  if (!allocation_sites_to_pretenure_) {
+    allocation_sites_to_pretenure_.reset(
+        new GlobalHandleVector<AllocationSite>(this));
+  }
+  allocation_sites_to_pretenure_->Push(site);
 }
 
 void Heap::InvalidateCodeDeoptimizationData(Code code) {
@@ -3101,6 +3201,9 @@ void Heap::OnMoveEvent(HeapObject target, HeapObject source,
   if (target.IsSharedFunctionInfo()) {
     LOG_CODE_EVENT(isolate_, SharedFunctionInfoMoveEvent(source.address(),
                                                          target.address()));
+  } else if (target.IsNativeContext()) {
+    PROFILE(isolate_,
+            NativeContextMoveEvent(source.address(), target.address()));
   }
 
   if (FLAG_verify_predictable) {
@@ -4499,8 +4602,10 @@ void Heap::IterateRoots(RootVisitor* v, base::EnumSet<SkipRoot> options) {
     // Iterate over local handles in handle scopes.
     FixStaleLeftTrimmedHandlesVisitor left_trim_visitor(this);
 #ifndef V8_ENABLE_CONSERVATIVE_STACK_SCANNING
-    isolate_->handle_scope_implementer()->Iterate(&left_trim_visitor);
-    isolate_->handle_scope_implementer()->Iterate(v);
+    if (!options.contains(SkipRoot::kMainThreadHandles)) {
+      isolate_->handle_scope_implementer()->Iterate(&left_trim_visitor);
+      isolate_->handle_scope_implementer()->Iterate(v);
+    }
 #endif
 
     safepoint_->Iterate(&left_trim_visitor);
@@ -5583,6 +5688,8 @@ void Heap::TearDown() {
   external_string_table_.TearDown();
 
   tracer_.reset();
+
+  allocation_sites_to_pretenure_.reset();
 
   for (int i = FIRST_MUTABLE_SPACE; i <= LAST_MUTABLE_SPACE; i++) {
     delete space_[i];

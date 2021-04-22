@@ -128,7 +128,7 @@ void BaselineAssembler::CallBuiltin(Builtins::Name builtin) {
   } else {
     __ RecordCommentForOffHeapTrampoline(builtin);
     __ Call(__ EntryFromBuiltinIndexAsOperand(builtin));
-    if (FLAG_code_comments) __ RecordComment("]");
+    __ RecordComment("]");
   }
 }
 
@@ -139,7 +139,7 @@ void BaselineAssembler::TailCallBuiltin(Builtins::Name builtin) {
   } else {
     __ RecordCommentForOffHeapTrampoline(builtin);
     __ Jump(__ EntryFromBuiltinIndexAsOperand(builtin));
-    if (FLAG_code_comments) __ RecordComment("]");
+    __ RecordComment("]");
   }
 }
 
@@ -159,7 +159,7 @@ void BaselineAssembler::CmpObjectType(Register object,
 }
 void BaselineAssembler::CmpInstanceType(Register map,
                                         InstanceType instance_type) {
-  if (emit_debug_code()) {
+  if (FLAG_debug_code) {
     __ AssertNotSmi(map);
     __ CmpObjectType(map, MAP_TYPE, kScratchRegister);
     __ Assert(equal, AbortReason::kUnexpectedValue);

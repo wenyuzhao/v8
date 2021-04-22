@@ -29,6 +29,19 @@ void SharedTurboAssembler::Movapd(XMMRegister dst, XMMRegister src) {
   }
 }
 
+void SharedTurboAssembler::Shufps(XMMRegister dst, XMMRegister src1,
+                                  XMMRegister src2, uint8_t imm8) {
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope avx_scope(this, AVX);
+    vshufps(dst, src1, src2, imm8);
+  } else {
+    if (dst != src1) {
+      movaps(dst, src1);
+    }
+    shufps(dst, src2, imm8);
+  }
+}
+
 void SharedTurboAssembler::F64x2ExtractLane(DoubleRegister dst, XMMRegister src,
                                             uint8_t lane) {
   if (lane == 0) {
@@ -44,6 +57,44 @@ void SharedTurboAssembler::F64x2ExtractLane(DoubleRegister dst, XMMRegister src,
     } else {
       movhlps(dst, src);
     }
+  }
+}
+
+void SharedTurboAssembler::F32x4Splat(XMMRegister dst, DoubleRegister src) {
+  if (CpuFeatures::IsSupported(AVX2)) {
+    CpuFeatureScope avx2_scope(this, AVX2);
+    vbroadcastss(dst, src);
+  } else if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope avx_scope(this, AVX);
+    vshufps(dst, src, src, 0);
+  } else {
+    if (dst == src) {
+      // 1 byte shorter than pshufd.
+      shufps(dst, src, 0);
+    } else {
+      pshufd(dst, src, 0);
+    }
+  }
+}
+
+void SharedTurboAssembler::F32x4ExtractLane(FloatRegister dst, XMMRegister src,
+                                            uint8_t lane) {
+  DCHECK_LT(lane, 4);
+  // These instructions are shorter than insertps, but will leave junk in
+  // the top lanes of dst.
+  if (lane == 0) {
+    if (dst != src) {
+      Movaps(dst, src);
+    }
+  } else if (lane == 1) {
+    Movshdup(dst, src);
+  } else if (lane == 2 && dst == src) {
+    // Check dst == src to avoid false dependency on dst.
+    Movhlps(dst, src);
+  } else if (dst == src) {
+    Shufps(dst, src, src, lane);
+  } else {
+    Pshufd(dst, src, lane);
   }
 }
 
@@ -248,6 +299,22 @@ void SharedTurboAssembler::I32x4UConvertI16x8High(XMMRegister dst,
       pshufd(dst, src, 0xEE);
       pmovzxwd(dst, dst);
     }
+  }
+}
+
+void SharedTurboAssembler::I64x2Neg(XMMRegister dst, XMMRegister src,
+                                    XMMRegister scratch) {
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope scope(this, AVX);
+    vpxor(scratch, scratch, scratch);
+    vpsubq(dst, scratch, src);
+  } else {
+    if (dst == src) {
+      movaps(scratch, src);
+      std::swap(src, scratch);
+    }
+    pxor(dst, dst);
+    psubq(dst, src);
   }
 }
 

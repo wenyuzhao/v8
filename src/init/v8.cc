@@ -151,7 +151,7 @@ void V8::InitializeOncePerProcessImpl() {
 #if defined(V8_USE_PERFETTO)
   if (perfetto::Tracing::IsInitialized()) TrackEvent::Register();
 #endif
-  PtrComprCage::InitializeOncePerProcess();
+  IsolateAllocator::InitializeOncePerProcess();
   Isolate::InitializeOncePerProcess();
 
 #if defined(USE_SIMULATOR)
@@ -164,6 +164,8 @@ void V8::InitializeOncePerProcessImpl() {
 #if V8_ENABLE_WEBASSEMBLY
   wasm::WasmEngine::InitializeOncePerProcess();
 #endif  // V8_ENABLE_WEBASSEMBLY
+
+  ExternalReferenceTable::InitializeOncePerProcess();
 }
 
 void V8::InitializeOncePerProcess() {

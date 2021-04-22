@@ -95,7 +95,18 @@ declare_args() {
   v8_win64_unwinding_info = true
 
   # Enable code comments for builtins in the snapshot (impacts performance).
+  # This also enables v8_code_comments.
   v8_enable_snapshot_code_comments = false
+
+  # Allow runtime-enabled code comments (with --code-comments). Enabled by
+  # default in debug builds.
+  # Sets -dV8_CODE_COMMENTS
+  v8_code_comments = ""
+
+  # Allow runtime-enabled debug code (with --debug-code). Enabled by default in
+  # debug builds.
+  # Sets -dV8_ENABLE_DEBUG_CODE
+  v8_enable_debug_code = ""
 
   # Enable native counters from the snapshot (impacts performance, sets
   # -dV8_SNAPSHOT_NATIVE_CODE_COUNTERS).
@@ -303,6 +314,9 @@ declare_args() {
 
   # Enable map packing & unpacking (sets -dV8_MAP_PACKING).
   v8_enable_map_packing = false
+
+  # Allow for JS promise hooks (instead of just C++).
+  v8_allow_javascript_in_promise_hooks = false
 }
 
 # Derived defaults.
@@ -323,6 +337,16 @@ if (v8_enable_test_features == "") {
 }
 if (v8_enable_v8_checks == "") {
   v8_enable_v8_checks = v8_enable_debugging_features
+}
+if (v8_enable_snapshot_code_comments) {
+  assert(v8_code_comments == true || v8_code_comments == "",
+         "v8_enable_snapshot_code_comments conflicts with v8_code_comments.")
+  v8_code_comments = true
+} else if (v8_code_comments == "") {
+  v8_code_comments = v8_enable_debugging_features
+}
+if (v8_enable_debug_code == "") {
+  v8_enable_debug_code = v8_enable_debugging_features
 }
 if (v8_check_microtasks_scopes_consistency == "") {
   v8_check_microtasks_scopes_consistency =
@@ -743,6 +767,12 @@ config("features") {
   if (v8_enable_handle_zapping) {
     defines += [ "ENABLE_HANDLE_ZAPPING" ]
   }
+  if (v8_code_comments == true) {
+    defines += [ "V8_CODE_COMMENTS" ]
+  }
+  if (v8_enable_debug_code) {
+    defines += [ "V8_ENABLE_DEBUG_CODE" ]
+  }
   if (v8_enable_snapshot_native_code_counters) {
     defines += [ "V8_SNAPSHOT_NATIVE_CODE_COUNTERS" ]
   }
@@ -820,6 +850,9 @@ config("features") {
   }
   if (v8_dict_property_const_tracking) {
     defines += [ "V8_DICT_PROPERTY_CONST_TRACKING" ]
+  }
+  if (v8_allow_javascript_in_promise_hooks) {
+    defines += [ "V8_ALLOW_JAVASCRIPT_IN_PROMISE_HOOKS" ]
   }
 }
 
@@ -1262,6 +1295,8 @@ action("postmortem-metadata") {
     "src/objects/map.cc",
     "src/objects/map.h",
     "src/objects/map-inl.h",
+    "src/objects/megadom-handler.h",
+    "src/objects/megadom-handler-inl.h",
     "src/objects/name.h",
     "src/objects/name-inl.h",
     "src/objects/objects.h",
@@ -1450,6 +1485,7 @@ torque_files = [
   "src/objects/js-weak-refs.tq",
   "src/objects/literal-objects.tq",
   "src/objects/map.tq",
+  "src/objects/megadom-handler.tq",
   "src/objects/microtask.tq",
   "src/objects/module.tq",
   "src/objects/name.tq",
@@ -2477,7 +2513,6 @@ v8_header_set("v8_internal_headers") {
     "src/compiler/select-lowering.h",
     "src/compiler/serializer-for-background-compilation.h",
     "src/compiler/serializer-hints.h",
-    "src/compiler/simd-scalar-lowering.h",
     "src/compiler/simplified-lowering.h",
     "src/compiler/simplified-operator-reducer.h",
     "src/compiler/simplified-operator.h",
@@ -2665,7 +2700,6 @@ v8_header_set("v8_internal_headers") {
     "src/init/heap-symbols.h",
     "src/init/icu_util.h",
     "src/init/isolate-allocator.h",
-    "src/init/ptr-compr-cage.h",
     "src/init/setup-isolate.h",
     "src/init/startup-data-util.h",
     "src/init/v8.h",
@@ -2816,6 +2850,8 @@ v8_header_set("v8_internal_headers") {
     "src/objects/map.h",
     "src/objects/maybe-object-inl.h",
     "src/objects/maybe-object.h",
+    "src/objects/megadom-handler-inl.h",
+    "src/objects/megadom-handler.h",
     "src/objects/microtask-inl.h",
     "src/objects/microtask.h",
     "src/objects/module-inl.h",
@@ -3159,6 +3195,7 @@ v8_header_set("v8_internal_headers") {
       "src/codegen/ia32/assembler-ia32-inl.h",
       "src/codegen/ia32/assembler-ia32.h",
       "src/codegen/ia32/constants-ia32.h",
+      "src/codegen/ia32/interface-descriptors-ia32-inl.h",
       "src/codegen/ia32/macro-assembler-ia32.h",
       "src/codegen/ia32/register-ia32.h",
       "src/codegen/ia32/sse-instr.h",
@@ -3177,6 +3214,7 @@ v8_header_set("v8_internal_headers") {
       "src/codegen/x64/assembler-x64.h",
       "src/codegen/x64/constants-x64.h",
       "src/codegen/x64/fma-instr.h",
+      "src/codegen/x64/interface-descriptors-x64-inl.h",
       "src/codegen/x64/macro-assembler-x64.h",
       "src/codegen/x64/register-x64.h",
       "src/codegen/x64/sse-instr.h",
@@ -3206,6 +3244,7 @@ v8_header_set("v8_internal_headers") {
       "src/codegen/arm/assembler-arm-inl.h",
       "src/codegen/arm/assembler-arm.h",
       "src/codegen/arm/constants-arm.h",
+      "src/codegen/arm/interface-descriptors-arm-inl.h",
       "src/codegen/arm/macro-assembler-arm.h",
       "src/codegen/arm/register-arm.h",
       "src/compiler/backend/arm/instruction-codes-arm.h",
@@ -3225,6 +3264,7 @@ v8_header_set("v8_internal_headers") {
       "src/codegen/arm64/decoder-arm64-inl.h",
       "src/codegen/arm64/decoder-arm64.h",
       "src/codegen/arm64/instructions-arm64.h",
+      "src/codegen/arm64/interface-descriptors-arm64-inl.h",
       "src/codegen/arm64/macro-assembler-arm64-inl.h",
       "src/codegen/arm64/macro-assembler-arm64.h",
       "src/codegen/arm64/register-arm64.h",
@@ -3283,6 +3323,7 @@ v8_header_set("v8_internal_headers") {
       "src/codegen/ppc/assembler-ppc-inl.h",
       "src/codegen/ppc/assembler-ppc.h",
       "src/codegen/ppc/constants-ppc.h",
+      "src/codegen/ppc/interface-descriptors-ppc-inl.h",
       "src/codegen/ppc/macro-assembler-ppc.h",
       "src/codegen/ppc/register-ppc.h",
       "src/compiler/backend/ppc/instruction-codes-ppc.h",
@@ -3299,6 +3340,7 @@ v8_header_set("v8_internal_headers") {
       "src/codegen/ppc/assembler-ppc-inl.h",
       "src/codegen/ppc/assembler-ppc.h",
       "src/codegen/ppc/constants-ppc.h",
+      "src/codegen/ppc/interface-descriptors-ppc-inl.h",
       "src/codegen/ppc/macro-assembler-ppc.h",
       "src/codegen/ppc/register-ppc.h",
       "src/compiler/backend/ppc/instruction-codes-ppc.h",
@@ -3315,6 +3357,7 @@ v8_header_set("v8_internal_headers") {
       "src/codegen/s390/assembler-s390-inl.h",
       "src/codegen/s390/assembler-s390.h",
       "src/codegen/s390/constants-s390.h",
+      "src/codegen/s390/interface-descriptors-s390-inl.h",
       "src/codegen/s390/macro-assembler-s390.h",
       "src/codegen/s390/register-s390.h",
       "src/compiler/backend/s390/instruction-codes-s390.h",
@@ -3403,6 +3446,7 @@ v8_compiler_sources = [
   "src/compiler/graph-trimmer.cc",
   "src/compiler/graph-visualizer.cc",
   "src/compiler/graph.cc",
+  "src/compiler/heap-refs.cc",
   "src/compiler/js-call-reducer.cc",
   "src/compiler/js-context-specialization.cc",
   "src/compiler/js-create-lowering.cc",
@@ -3471,7 +3515,6 @@ v8_compiler_sources = [
 if (v8_enable_webassembly) {
   v8_compiler_sources += [
     "src/compiler/int64-lowering.cc",
-    "src/compiler/simd-scalar-lowering.cc",
     "src/compiler/wasm-compiler.cc",
   ]
 }
@@ -3753,7 +3796,6 @@ v8_source_set("v8_base_without_compiler") {
     "src/init/bootstrapper.cc",
     "src/init/icu_util.cc",
     "src/init/isolate-allocator.cc",
-    "src/init/ptr-compr-cage.cc",
     "src/init/startup-data-util.cc",
     "src/init/v8.cc",
     "src/interpreter/bytecode-array-builder.cc",
@@ -4059,7 +4101,6 @@ v8_source_set("v8_base_without_compiler") {
     sources += [  ### gcmole(arch:ia32) ###
       "src/codegen/ia32/assembler-ia32.cc",
       "src/codegen/ia32/cpu-ia32.cc",
-      "src/codegen/ia32/interface-descriptors-ia32-inl.h",
       "src/codegen/ia32/macro-assembler-ia32.cc",
       "src/codegen/shared-ia32-x64/macro-assembler-shared-ia32-x64.cc",
       "src/compiler/backend/ia32/code-generator-ia32.cc",
@@ -4077,7 +4118,6 @@ v8_source_set("v8_base_without_compiler") {
       "src/codegen/shared-ia32-x64/macro-assembler-shared-ia32-x64.cc",
       "src/codegen/x64/assembler-x64.cc",
       "src/codegen/x64/cpu-x64.cc",
-      "src/codegen/x64/interface-descriptors-x64-inl.h",
       "src/codegen/x64/macro-assembler-x64.cc",
       "src/compiler/backend/x64/code-generator-x64.cc",
       "src/compiler/backend/x64/instruction-scheduler-x64.cc",
@@ -4112,7 +4152,6 @@ v8_source_set("v8_base_without_compiler") {
       "src/codegen/arm/assembler-arm.cc",
       "src/codegen/arm/constants-arm.cc",
       "src/codegen/arm/cpu-arm.cc",
-      "src/codegen/arm/interface-descriptors-arm-inl.h",
       "src/codegen/arm/macro-assembler-arm.cc",
       "src/compiler/backend/arm/code-generator-arm.cc",
       "src/compiler/backend/arm/instruction-scheduler-arm.cc",
@@ -4134,7 +4173,6 @@ v8_source_set("v8_base_without_compiler") {
       "src/codegen/arm64/decoder-arm64.cc",
       "src/codegen/arm64/instructions-arm64-constants.cc",
       "src/codegen/arm64/instructions-arm64.cc",
-      "src/codegen/arm64/interface-descriptors-arm64-inl.h",
       "src/codegen/arm64/macro-assembler-arm64.cc",
       "src/codegen/arm64/register-arm64.cc",
       "src/codegen/arm64/utils-arm64.cc",
@@ -4167,7 +4205,7 @@ v8_source_set("v8_base_without_compiler") {
       "src/codegen/mips/assembler-mips.cc",
       "src/codegen/mips/constants-mips.cc",
       "src/codegen/mips/cpu-mips.cc",
-      "src/codegen/mips/interface-descriptors-mips.cc",
+      "src/codegen/mips/interface-descriptors-mips-inl.h",
       "src/codegen/mips/macro-assembler-mips.cc",
       "src/compiler/backend/mips/code-generator-mips.cc",
       "src/compiler/backend/mips/instruction-scheduler-mips.cc",
@@ -4185,7 +4223,7 @@ v8_source_set("v8_base_without_compiler") {
       "src/codegen/mips64/assembler-mips64.cc",
       "src/codegen/mips64/constants-mips64.cc",
       "src/codegen/mips64/cpu-mips64.cc",
-      "src/codegen/mips64/interface-descriptors-mips64.cc",
+      "src/codegen/mips64/interface-descriptors-mips64-inl.h",
       "src/codegen/mips64/macro-assembler-mips64.cc",
       "src/compiler/backend/mips64/code-generator-mips64.cc",
       "src/compiler/backend/mips64/instruction-scheduler-mips64.cc",
@@ -4203,7 +4241,6 @@ v8_source_set("v8_base_without_compiler") {
       "src/codegen/ppc/assembler-ppc.cc",
       "src/codegen/ppc/constants-ppc.cc",
       "src/codegen/ppc/cpu-ppc.cc",
-      "src/codegen/ppc/interface-descriptors-ppc.cc",
       "src/codegen/ppc/macro-assembler-ppc.cc",
       "src/compiler/backend/ppc/code-generator-ppc.cc",
       "src/compiler/backend/ppc/instruction-scheduler-ppc.cc",
@@ -4223,7 +4260,6 @@ v8_source_set("v8_base_without_compiler") {
       "src/codegen/ppc/assembler-ppc.cc",
       "src/codegen/ppc/constants-ppc.cc",
       "src/codegen/ppc/cpu-ppc.cc",
-      "src/codegen/ppc/interface-descriptors-ppc.cc",
       "src/codegen/ppc/macro-assembler-ppc.cc",
       "src/compiler/backend/ppc/code-generator-ppc.cc",
       "src/compiler/backend/ppc/instruction-scheduler-ppc.cc",
@@ -4243,7 +4279,6 @@ v8_source_set("v8_base_without_compiler") {
       "src/codegen/s390/assembler-s390.cc",
       "src/codegen/s390/constants-s390.cc",
       "src/codegen/s390/cpu-s390.cc",
-      "src/codegen/s390/interface-descriptors-s390.cc",
       "src/codegen/s390/macro-assembler-s390.cc",
       "src/compiler/backend/s390/code-generator-s390.cc",
       "src/compiler/backend/s390/instruction-scheduler-s390.cc",
@@ -4266,7 +4301,7 @@ v8_source_set("v8_base_without_compiler") {
       "src/codegen/riscv64/assembler-riscv64.cc",
       "src/codegen/riscv64/constants-riscv64.cc",
       "src/codegen/riscv64/cpu-riscv64.cc",
-      "src/codegen/riscv64/interface-descriptors-riscv64.cc",
+      "src/codegen/riscv64/interface-descriptors-riscv64-inl.h",
       "src/codegen/riscv64/macro-assembler-riscv64.cc",
       "src/compiler/backend/riscv64/code-generator-riscv64.cc",
       "src/compiler/backend/riscv64/instruction-scheduler-riscv64.cc",
@@ -4821,8 +4856,13 @@ v8_source_set("fuzzer_support") {
 
 v8_source_set("v8_bigint") {
   sources = [
+    "src/bigint/bigint-internal.cc",
+    "src/bigint/bigint-internal.h",
     "src/bigint/bigint.h",
+    "src/bigint/digit-arithmetic.h",
+    "src/bigint/mul-schoolbook.cc",
     "src/bigint/vector-arithmetic.cc",
+    "src/bigint/vector-arithmetic.h",
   ]
 
   configs = [ ":internal_config" ]

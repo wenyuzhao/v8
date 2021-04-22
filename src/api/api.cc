@@ -1925,10 +1925,10 @@ MaybeLocal<Value> Script::Run(Local<Context> context) {
   // TODO(crbug.com/1193459): remove once ablation study is completed
   base::ElapsedTimer timer;
   base::TimeDelta delta;
-  if (i::FLAG_script_delay) {
+  if (i::FLAG_script_delay > 0) {
     delta = v8::base::TimeDelta::FromMillisecondsD(i::FLAG_script_delay);
   }
-  if (i::FLAG_script_delay_once && !isolate->did_run_script_delay()) {
+  if (i::FLAG_script_delay_once > 0 && !isolate->did_run_script_delay()) {
     delta = v8::base::TimeDelta::FromMillisecondsD(i::FLAG_script_delay_once);
     isolate->set_did_run_script_delay(true);
   }
@@ -6262,6 +6262,45 @@ void Context::SetContinuationPreservedEmbedderData(Local<Value> data) {
       *i::Handle<i::HeapObject>::cast(Utils::OpenHandle(*data)));
 }
 
+void v8::Context::SetPromiseHooks(Local<Function> init_hook,
+                                  Local<Function> before_hook,
+                                  Local<Function> after_hook,
+                                  Local<Function> resolve_hook) {
+  i::Handle<i::Context> context = Utils::OpenHandle(this);
+  i::Isolate* isolate = context->GetIsolate();
+
+  i::Handle<i::Object> init = isolate->factory()->undefined_value();
+  i::Handle<i::Object> before = isolate->factory()->undefined_value();
+  i::Handle<i::Object> after = isolate->factory()->undefined_value();
+  i::Handle<i::Object> resolve = isolate->factory()->undefined_value();
+
+  bool has_hook = false;
+
+  if (!init_hook.IsEmpty()) {
+    init = Utils::OpenHandle(*init_hook);
+    has_hook = true;
+  }
+  if (!before_hook.IsEmpty()) {
+    before = Utils::OpenHandle(*before_hook);
+    has_hook = true;
+  }
+  if (!after_hook.IsEmpty()) {
+    after = Utils::OpenHandle(*after_hook);
+    has_hook = true;
+  }
+  if (!resolve_hook.IsEmpty()) {
+    resolve = Utils::OpenHandle(*resolve_hook);
+    has_hook = true;
+  }
+
+  isolate->SetHasContextPromiseHooks(has_hook);
+
+  context->native_context().set_promise_hook_init_function(*init);
+  context->native_context().set_promise_hook_before_function(*before);
+  context->native_context().set_promise_hook_after_function(*after);
+  context->native_context().set_promise_hook_resolve_function(*resolve);
+}
+
 MaybeLocal<Context> metrics::Recorder::GetContext(
     Isolate* isolate, metrics::Recorder::ContextId id) {
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
@@ -6397,6 +6436,15 @@ bool FunctionTemplate::HasInstance(v8::Local<v8::Value> value) {
     return self->IsTemplateFor(iter.GetCurrent<i::JSObject>());
   }
   return false;
+}
+
+bool FunctionTemplate::IsLeafTemplateForApiObject(v8::Value* value) const {
+  i::DisallowGarbageCollection no_gc;
+
+  i::Object object = *Utils::OpenHandle(value);
+
+  auto self = Utils::OpenHandle(this);
+  return self->IsLeafTemplateForApiObject(object);
 }
 
 Local<External> v8::External::New(Isolate* isolate, void* value) {
@@ -9430,7 +9478,21 @@ CpuProfilingOptions::CpuProfilingOptions(CpuProfilingMode mode,
                                          MaybeLocal<Context> filter_context)
     : mode_(mode),
       max_samples_(max_samples),
-      sampling_interval_us_(sampling_interval_us) {}
+      sampling_interval_us_(sampling_interval_us) {
+  if (!filter_context.IsEmpty()) {
+    Local<Context> local_filter_context = filter_context.ToLocalChecked();
+    filter_context_.Reset(local_filter_context->GetIsolate(),
+                          local_filter_context);
+    filter_context_.SetWeak();
+  }
+}
+
+void* CpuProfilingOptions::raw_filter_context() const {
+  return reinterpret_cast<void*>(
+      i::Context::cast(*Utils::OpenPersistent(filter_context_))
+          .native_context()
+          .address());
+}
 
 void CpuProfiler::Dispose() { delete reinterpret_cast<i::CpuProfiler*>(this); }
 

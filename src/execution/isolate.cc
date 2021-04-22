@@ -22,6 +22,7 @@
 #include "src/base/platform/platform.h"
 #include "src/base/sys-info.h"
 #include "src/base/utils/random-number-generator.h"
+#include "src/bigint/bigint.h"
 #include "src/builtins/builtins-promise.h"
 #include "src/builtins/constants-table-builder.h"
 #include "src/codegen/assembler-inl.h"
@@ -53,7 +54,6 @@
 #include "src/heap/read-only-heap.h"
 #include "src/ic/stub-cache.h"
 #include "src/init/bootstrapper.h"
-#include "src/init/ptr-compr-cage.h"
 #include "src/init/setup-isolate.h"
 #include "src/init/v8.h"
 #include "src/interpreter/interpreter.h"
@@ -1910,7 +1910,7 @@ Object Isolate::UnwindAndFindHandler() {
               static_cast<int>(offset));
 
           Code code =
-              builtins()->builtin(Builtins::kInterpreterEnterBytecodeDispatch);
+              builtins()->builtin(Builtins::kInterpreterEnterAtBytecode);
           return FoundHandler(context, code.InstructionStart(), 0,
                               code.constant_pool(), return_sp, frame->fp());
         }
@@ -2949,7 +2949,7 @@ v8::PageAllocator* Isolate::page_allocator() const {
 }
 
 Isolate::Isolate(std::unique_ptr<i::IsolateAllocator> isolate_allocator)
-    : isolate_data_(this, isolate_allocator->GetPtrComprCageBaseAddress()),
+    : isolate_data_(this, isolate_allocator->GetPtrComprCageBase()),
       isolate_allocator_(std::move(isolate_allocator)),
       id_(isolate_counter.fetch_add(1, std::memory_order_relaxed)),
       allocator_(new TracingAccountingAllocator(this)),
@@ -3211,6 +3211,8 @@ Isolate::~Isolate() {
 
   delete thread_manager_;
   thread_manager_ = nullptr;
+
+  bigint_processor_->Destroy();
 
   delete global_handles_;
   global_handles_ = nullptr;
@@ -3504,6 +3506,21 @@ using MapOfLoadsAndStoresPerFunction =
     std::map<std::string /* function_name */,
              std::pair<uint64_t /* loads */, uint64_t /* stores */>>;
 MapOfLoadsAndStoresPerFunction* stack_access_count_map = nullptr;
+
+class BigIntPlatform : public bigint::Platform {
+ public:
+  explicit BigIntPlatform(Isolate* isolate) : isolate_(isolate) {}
+  ~BigIntPlatform() override = default;
+
+  bool InterruptRequested() override {
+    StackLimitCheck interrupt_check(isolate_);
+    return (interrupt_check.InterruptRequested() &&
+            isolate_->stack_guard()->HasTerminationRequest());
+  }
+
+ private:
+  Isolate* isolate_;
+};
 }  // namespace
 
 bool Isolate::Init(SnapshotData* startup_snapshot_data,
@@ -3552,6 +3569,7 @@ bool Isolate::Init(SnapshotData* startup_snapshot_data,
   heap_profiler_ = new HeapProfiler(heap());
   interpreter_ = new interpreter::Interpreter(this);
   string_table_.reset(new StringTable(this));
+  bigint_processor_ = bigint::Processor::New(new BigIntPlatform(this));
 
   compiler_dispatcher_ =
       new CompilerDispatcher(this, V8::GetCurrentPlatform(), FLAG_stack_size);
@@ -4153,19 +4171,23 @@ void Isolate::FireCallCompletedCallback(MicrotaskQueue* microtask_queue) {
   }
 }
 
-void Isolate::PromiseHookStateUpdated() {
-  bool promise_hook_or_async_event_delegate =
-      promise_hook_ || async_event_delegate_;
-  bool promise_hook_or_debug_is_active_or_async_event_delegate =
-      promise_hook_or_async_event_delegate || debug()->is_active();
-  if (promise_hook_or_debug_is_active_or_async_event_delegate &&
-      Protectors::IsPromiseHookIntact(this)) {
+void Isolate::UpdatePromiseHookProtector() {
+  if (Protectors::IsPromiseHookIntact(this)) {
     HandleScope scope(this);
     Protectors::InvalidatePromiseHook(this);
   }
-  promise_hook_or_async_event_delegate_ = promise_hook_or_async_event_delegate;
-  promise_hook_or_debug_is_active_or_async_event_delegate_ =
-      promise_hook_or_debug_is_active_or_async_event_delegate;
+}
+
+void Isolate::PromiseHookStateUpdated() {
+  promise_hook_flags_ =
+    (promise_hook_flags_ & PromiseHookFields::HasContextPromiseHook::kMask) |
+    PromiseHookFields::HasIsolatePromiseHook::encode(promise_hook_) |
+    PromiseHookFields::HasAsyncEventDelegate::encode(async_event_delegate_) |
+    PromiseHookFields::IsDebugActive::encode(debug()->is_active());
+
+  if (promise_hook_flags_ != 0) {
+    UpdatePromiseHookProtector();
+  }
 }
 
 namespace {
@@ -4465,17 +4487,30 @@ void Isolate::SetPromiseHook(PromiseHook hook) {
   PromiseHookStateUpdated();
 }
 
+void Isolate::RunAllPromiseHooks(PromiseHookType type,
+                                 Handle<JSPromise> promise,
+                                 Handle<Object> parent) {
+  if (HasContextPromiseHooks()) {
+    native_context()->RunPromiseHook(type, promise, parent);
+  }
+  if (HasIsolatePromiseHooks() || HasAsyncEventDelegate()) {
+    RunPromiseHook(type, promise, parent);
+  }
+}
+
 void Isolate::RunPromiseHook(PromiseHookType type, Handle<JSPromise> promise,
                              Handle<Object> parent) {
   RunPromiseHookForAsyncEventDelegate(type, promise);
-  if (promise_hook_ == nullptr) return;
+  if (!HasIsolatePromiseHooks()) return;
+  DCHECK(promise_hook_ != nullptr);
   promise_hook_(type, v8::Utils::PromiseToLocal(promise),
                 v8::Utils::ToLocal(parent));
 }
 
 void Isolate::RunPromiseHookForAsyncEventDelegate(PromiseHookType type,
                                                   Handle<JSPromise> promise) {
-  if (!async_event_delegate_) return;
+  if (!HasAsyncEventDelegate()) return;
+  DCHECK(async_event_delegate_ != nullptr);
   switch (type) {
     case PromiseHookType::kResolve:
       return;

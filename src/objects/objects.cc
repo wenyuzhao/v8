@@ -101,6 +101,7 @@
 #include "src/objects/literal-objects-inl.h"
 #include "src/objects/map-inl.h"
 #include "src/objects/map.h"
+#include "src/objects/megadom-handler-inl.h"
 #include "src/objects/microtask-inl.h"
 #include "src/objects/module-inl.h"
 #include "src/objects/promise-inl.h"
@@ -1319,7 +1320,7 @@ Handle<SharedFunctionInfo> FunctionTemplateInfo::GetOrCreateSharedFunctionInfo(
   return result;
 }
 
-bool FunctionTemplateInfo::IsTemplateFor(Map map) {
+bool FunctionTemplateInfo::IsTemplateFor(Map map) const {
   RCS_SCOPE(
       LocalHeap::Current() == nullptr
           ? GetIsolate()->counters()->runtime_call_stats()
@@ -1347,6 +1348,26 @@ bool FunctionTemplateInfo::IsTemplateFor(Map map) {
   }
   // Didn't find the required type in the inheritance chain.
   return false;
+}
+
+bool FunctionTemplateInfo::IsLeafTemplateForApiObject(Object object) const {
+  i::DisallowGarbageCollection no_gc;
+
+  if (!object.IsJSApiObject()) {
+    return false;
+  }
+
+  bool result = false;
+  Map map = HeapObject::cast(object).map();
+  Object constructor_obj = map.GetConstructor();
+  if (constructor_obj.IsJSFunction()) {
+    JSFunction fun = JSFunction::cast(constructor_obj);
+    result = (*this == fun.shared().function_data(kAcquireLoad));
+  } else if (constructor_obj.IsFunctionTemplateInfo()) {
+    result = (*this == constructor_obj);
+  }
+  DCHECK_IMPLIES(result, IsTemplateFor(map));
+  return result;
 }
 
 // static
@@ -2197,6 +2218,10 @@ void Struct::BriefPrintDetails(std::ostream& os) {}
 
 void Tuple2::BriefPrintDetails(std::ostream& os) {
   os << " " << Brief(value1()) << ", " << Brief(value2());
+}
+
+void MegaDomHandler::BriefPrintDetails(std::ostream& os) {
+  os << " " << Brief(accessor()) << ", " << Brief(context());
 }
 
 void ClassPositions::BriefPrintDetails(std::ostream& os) {
@@ -5368,8 +5393,8 @@ Handle<Object> JSPromise::Reject(Handle<JSPromise> promise,
   if (isolate->debug()->is_active()) MoveMessageToPromise(isolate, promise);
 
   if (debug_event) isolate->debug()->OnPromiseReject(promise, reason);
-  isolate->RunPromiseHook(PromiseHookType::kResolve, promise,
-                          isolate->factory()->undefined_value());
+  isolate->RunAllPromiseHooks(PromiseHookType::kResolve, promise,
+                              isolate->factory()->undefined_value());
 
   // 1. Assert: The value of promise.[[PromiseState]] is "pending".
   CHECK_EQ(Promise::kPending, promise->status());
@@ -5404,8 +5429,8 @@ MaybeHandle<Object> JSPromise::Resolve(Handle<JSPromise> promise,
   DCHECK(
       !reinterpret_cast<v8::Isolate*>(isolate)->GetCurrentContext().IsEmpty());
 
-  isolate->RunPromiseHook(PromiseHookType::kResolve, promise,
-                          isolate->factory()->undefined_value());
+  isolate->RunAllPromiseHooks(PromiseHookType::kResolve, promise,
+                              isolate->factory()->undefined_value());
 
   // 7. If SameValue(resolution, promise) is true, then
   if (promise.is_identical_to(resolution)) {

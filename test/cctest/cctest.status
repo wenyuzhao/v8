@@ -384,8 +384,9 @@
 
   # SIMD not fully implemented yet
   'test-run-wasm-simd-liftoff/*': [SKIP],
-  'test-run-wasm-simd-scalar-lowering/*':[SKIP],
   'test-run-wasm-simd/*':[SKIP],
+  'test-gc/RunWasmLiftoff_RefTrivialCasts': [SKIP],
+  'test-gc/RunWasmTurbofan_RefTrivialCasts': [SKIP],
 
   # Some wasm functionality is not implemented yet
   'test-run-wasm-atomics64/*': [SKIP],
@@ -700,20 +701,21 @@
 ['no_simd_sse == True', {
   'test-run-wasm-simd/*': [SKIP],
   'test-run-wasm-simd-liftoff/*': [SKIP],
-  'test-run-wasm-simd-scalar-lowering/*': [SKIP],
 }],  # no_simd_sse == True
 
 ################################################################################
 ['variant == stress_concurrent_inlining', {
+  # crbug.com/v8/11649: Improper access to BreakInfo and friends.
+  'test-debug/BreakPointInlinedBuiltin': [PASS, FAIL],
+  'test-debug/BreakPointInlining': [PASS, FAIL],
   # BUG(11524): Crashing flakily.
   'test-cpu-profiler/TracingCpuProfiler': [PASS, FAIL],
   # crbug.com/v8/11513: Flakily failing due to the additional compile task.
+  'test-heap/CellsInOptimizedCodeAreWeak': [PASS, FAIL],
   'test-heap/EnsureAllocationSiteDependentCodesProcessed': [PASS, FAIL],
   'test-heap/LeakNativeContextVia*': [PASS, FAIL],
   'test-heap/NewSpaceObjectsInOptimizedCode': [PASS, FAIL],
   'test-heap/ObjectsInEagerlyDeoptimizedCodeAreWeak': [PASS, FAIL],
-  # crbug.com/v8/11650: Flakily failing after increased coverage.
-  'test-js-to-wasm/*': [PASS, FAIL],
 }], # variant == stress_concurrent_inlining
 
 ################################################################################

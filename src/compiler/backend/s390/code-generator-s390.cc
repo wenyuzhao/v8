@@ -1692,16 +1692,13 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       ASSEMBLE_UNARY_OP(D_DInstr(sqdbr), nullInstr, nullInstr);
       break;
     case kS390_FloorFloat:
-      __ fiebra(ROUND_TOWARD_NEG_INF, i.OutputDoubleRegister(),
-                i.InputDoubleRegister(0));
+      __ FloorF32(i.OutputDoubleRegister(), i.InputDoubleRegister(0));
       break;
     case kS390_CeilFloat:
-      __ fiebra(ROUND_TOWARD_POS_INF, i.OutputDoubleRegister(),
-                i.InputDoubleRegister(0));
+      __ CeilF32(i.OutputDoubleRegister(), i.InputDoubleRegister(0));
       break;
     case kS390_TruncateFloat:
-      __ fiebra(ROUND_TOWARD_0, i.OutputDoubleRegister(),
-                i.InputDoubleRegister(0));
+      __ TruncF32(i.OutputDoubleRegister(), i.InputDoubleRegister(0));
       break;
     //  Double operations
     case kS390_ModDouble:
@@ -1797,16 +1794,13 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ lpdbr(i.OutputDoubleRegister(), i.InputDoubleRegister(0));
       break;
     case kS390_FloorDouble:
-      __ fidbra(ROUND_TOWARD_NEG_INF, i.OutputDoubleRegister(),
-                i.InputDoubleRegister(0));
+      __ FloorF64(i.OutputDoubleRegister(), i.InputDoubleRegister(0));
       break;
     case kS390_CeilDouble:
-      __ fidbra(ROUND_TOWARD_POS_INF, i.OutputDoubleRegister(),
-                i.InputDoubleRegister(0));
+      __ CeilF64(i.OutputDoubleRegister(), i.InputDoubleRegister(0));
       break;
     case kS390_TruncateDouble:
-      __ fidbra(ROUND_TOWARD_0, i.OutputDoubleRegister(),
-                i.InputDoubleRegister(0));
+      __ TruncF64(i.OutputDoubleRegister(), i.InputDoubleRegister(0));
       break;
     case kS390_RoundDouble:
       __ fidbra(ROUND_TO_NEAREST_AWAY_FROM_0, i.OutputDoubleRegister(),
@@ -4149,7 +4143,7 @@ void CodeGenerator::AssembleConstructFrame() {
     // frame is still on the stack. Optimized code uses OSR values directly from
     // the unoptimized frame. Thus, all that needs to be done is to allocate the
     // remaining stack slots.
-    if (FLAG_code_comments) __ RecordComment("-- OSR entrypoint --");
+    __ RecordComment("-- OSR entrypoint --");
     osr_pc_offset_ = __ pc_offset();
     required_slots -= osr_helper()->UnoptimizedFrameSlots();
     ResetSpeculationPoison();
@@ -4254,7 +4248,7 @@ void CodeGenerator::AssembleReturn(InstructionOperand* additional_pop_count) {
   if (parameter_slots != 0) {
     if (additional_pop_count->IsImmediate()) {
       DCHECK_EQ(g.ToConstant(additional_pop_count).ToInt32(), 0);
-    } else if (__ emit_debug_code()) {
+    } else if (FLAG_debug_code) {
       __ CmpS64(g.ToRegister(additional_pop_count), Operand(0));
       __ Assert(eq, AbortReason::kUnexpectedAdditionalPopValue);
     }

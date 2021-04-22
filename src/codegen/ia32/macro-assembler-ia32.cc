@@ -374,7 +374,7 @@ void MacroAssembler::RecordWriteField(Register object, int offset,
   DCHECK(IsAligned(offset, kTaggedSize));
 
   lea(dst, FieldOperand(object, offset));
-  if (emit_debug_code()) {
+  if (FLAG_debug_code) {
     Label ok;
     test_b(dst, Immediate(kTaggedSize - 1));
     j(zero, &ok, Label::kNear);
@@ -389,7 +389,7 @@ void MacroAssembler::RecordWriteField(Register object, int offset,
 
   // Clobber clobbered input registers when running with the debug-code flag
   // turned on to provoke errors.
-  if (emit_debug_code()) {
+  if (FLAG_debug_code) {
     mov(value, Immediate(bit_cast<int32_t>(kZapValue)));
     mov(dst, Immediate(bit_cast<int32_t>(kZapValue)));
   }
@@ -517,7 +517,7 @@ void MacroAssembler::RecordWrite(Register object, Register address,
     return;
   }
 
-  if (emit_debug_code()) {
+  if (FLAG_debug_code) {
     Label ok;
     cmp(value, Operand(address, 0));
     j(equal, &ok, Label::kNear);
@@ -549,7 +549,7 @@ void MacroAssembler::RecordWrite(Register object, Register address,
 
   // Clobber clobbered registers when running with the debug-code flag
   // turned on to provoke errors.
-  if (emit_debug_code()) {
+  if (FLAG_debug_code) {
     mov(address, Immediate(bit_cast<int32_t>(kZapValue)));
     mov(value, Immediate(bit_cast<int32_t>(kZapValue)));
   }
@@ -1029,14 +1029,14 @@ void MacroAssembler::CmpInstanceTypeRange(Register map, Register scratch,
 }
 
 void MacroAssembler::AssertSmi(Register object) {
-  if (emit_debug_code()) {
+  if (FLAG_debug_code) {
     test(object, Immediate(kSmiTagMask));
     Check(equal, AbortReason::kOperandIsNotASmi);
   }
 }
 
 void MacroAssembler::AssertConstructor(Register object) {
-  if (emit_debug_code()) {
+  if (FLAG_debug_code) {
     test(object, Immediate(kSmiTagMask));
     Check(not_equal, AbortReason::kOperandIsASmiAndNotAConstructor);
     Push(object);
@@ -1049,7 +1049,7 @@ void MacroAssembler::AssertConstructor(Register object) {
 }
 
 void MacroAssembler::AssertFunction(Register object, Register scratch) {
-  if (emit_debug_code()) {
+  if (FLAG_debug_code) {
     test(object, Immediate(kSmiTagMask));
     Check(not_equal, AbortReason::kOperandIsASmiAndNotAFunction);
     Push(object);
@@ -1062,7 +1062,7 @@ void MacroAssembler::AssertFunction(Register object, Register scratch) {
 }
 
 void MacroAssembler::AssertBoundFunction(Register object) {
-  if (emit_debug_code()) {
+  if (FLAG_debug_code) {
     test(object, Immediate(kSmiTagMask));
     Check(not_equal, AbortReason::kOperandIsASmiAndNotABoundFunction);
     Push(object);
@@ -1073,7 +1073,7 @@ void MacroAssembler::AssertBoundFunction(Register object) {
 }
 
 void MacroAssembler::AssertGeneratorObject(Register object) {
-  if (!emit_debug_code()) return;
+  if (!FLAG_debug_code) return;
 
   test(object, Immediate(kSmiTagMask));
   Check(not_equal, AbortReason::kOperandIsASmiAndNotAGeneratorObject);
@@ -1105,7 +1105,7 @@ void MacroAssembler::AssertGeneratorObject(Register object) {
 
 void MacroAssembler::AssertUndefinedOrAllocationSite(Register object,
                                                      Register scratch) {
-  if (emit_debug_code()) {
+  if (FLAG_debug_code) {
     Label done_checking;
     AssertNotSmi(object);
     CompareRoot(object, scratch, RootIndex::kUndefinedValue);
@@ -1118,7 +1118,7 @@ void MacroAssembler::AssertUndefinedOrAllocationSite(Register object,
 }
 
 void MacroAssembler::AssertNotSmi(Register object) {
-  if (emit_debug_code()) {
+  if (FLAG_debug_code) {
     test(object, Immediate(kSmiTagMask));
     Check(not_equal, AbortReason::kOperandIsASmi);
   }
@@ -1147,7 +1147,7 @@ void TurboAssembler::EnterFrame(StackFrame::Type type) {
 }
 
 void TurboAssembler::LeaveFrame(StackFrame::Type type) {
-  if (emit_debug_code() && !StackFrame::IsJavaScript(type)) {
+  if (FLAG_debug_code && !StackFrame::IsJavaScript(type)) {
     cmp(Operand(ebp, CommonFrameConstants::kContextOrFrameTypeOffset),
         Immediate(StackFrame::TypeToMarker(type)));
     Check(equal, AbortReason::kStackFrameTypesMustMatch);
@@ -1966,19 +1966,6 @@ void TurboAssembler::Vbroadcastss(XMMRegister dst, Operand src) {
   shufps(dst, dst, static_cast<byte>(0));
 }
 
-void TurboAssembler::Shufps(XMMRegister dst, XMMRegister src1, XMMRegister src2,
-                            uint8_t imm8) {
-  if (CpuFeatures::IsSupported(AVX)) {
-    CpuFeatureScope avx_scope(this, AVX);
-    vshufps(dst, src1, src2, imm8);
-  } else {
-    if (dst != src1) {
-      movaps(dst, src1);
-    }
-    shufps(dst, src2, imm8);
-  }
-}
-
 void TurboAssembler::Lzcnt(Register dst, Operand src) {
   if (CpuFeatures::IsSupported(LZCNT)) {
     CpuFeatureScope scope(this, LZCNT);
@@ -2051,11 +2038,11 @@ void MacroAssembler::DecrementCounter(StatsCounter* counter, int value,
 }
 
 void TurboAssembler::Assert(Condition cc, AbortReason reason) {
-  if (emit_debug_code()) Check(cc, reason);
+  if (FLAG_debug_code) Check(cc, reason);
 }
 
 void TurboAssembler::AssertUnreachable(AbortReason reason) {
-  if (emit_debug_code()) Abort(reason);
+  if (FLAG_debug_code) Abort(reason);
 }
 
 void TurboAssembler::Check(Condition cc, AbortReason reason) {
@@ -2081,11 +2068,11 @@ void TurboAssembler::CheckStackAlignment() {
 }
 
 void TurboAssembler::Abort(AbortReason reason) {
-#ifdef DEBUG
-  const char* msg = GetAbortReason(reason);
-  RecordComment("Abort message: ");
-  RecordComment(msg);
-#endif
+  if (FLAG_code_comments) {
+    const char* msg = GetAbortReason(reason);
+    RecordComment("Abort message: ");
+    RecordComment(msg);
+  }
 
   // Avoid emitting call to builtin if requested.
   if (trap_on_abort()) {
@@ -2143,7 +2130,7 @@ void TurboAssembler::CallCFunction(Register function, int num_arguments) {
   DCHECK_LE(num_arguments, kMaxCParameters);
   DCHECK(has_frame());
   // Check stack alignment.
-  if (emit_debug_code()) {
+  if (FLAG_debug_code) {
     CheckStackAlignment();
   }
 

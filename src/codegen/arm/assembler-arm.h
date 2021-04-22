@@ -45,6 +45,7 @@
 #include <memory>
 #include <vector>
 
+#include "src/base/small-vector.h"
 #include "src/codegen/arm/constants-arm.h"
 #include "src/codegen/arm/register-arm.h"
 #include "src/codegen/assembler.h"
@@ -1153,8 +1154,8 @@ class V8_EXPORT_PRIVATE Assembler : public AssemblerBase {
   // PC-relative loads, thereby defining a maximum distance between the
   // instruction and the accessed constant.
   static constexpr int kMaxDistToIntPool = 4 * KB;
-  // All relocations could be integer, it therefore acts as the limit.
-  static constexpr int kMinNumPendingConstants = 4;
+  // Experimentally derived as sufficient for ~95% of compiles.
+  static constexpr int kTypicalNumPending32Constants = 32;
   static constexpr int kMaxNumPending32Constants =
       kMaxDistToIntPool / kInstrSize;
 
@@ -1165,8 +1166,8 @@ class V8_EXPORT_PRIVATE Assembler : public AssemblerBase {
   // Check if is time to emit a constant pool.
   void CheckConstPool(bool force_emit, bool require_jump);
 
-  void MaybeCheckConstPool() {
-    if (pc_offset() >= next_buffer_check_) {
+  V8_INLINE void MaybeCheckConstPool() {
+    if (V8_UNLIKELY(pc_offset() >= next_buffer_check_)) {
       CheckConstPool(false, true);
     }
   }
@@ -1258,7 +1259,8 @@ class V8_EXPORT_PRIVATE Assembler : public AssemblerBase {
   // pending relocation entry per instruction.
 
   // The buffers of pending constant pool entries.
-  std::vector<ConstantPoolEntry> pending_32_bit_constants_;
+  base::SmallVector<ConstantPoolEntry, kTypicalNumPending32Constants>
+      pending_32_bit_constants_;
 
   // Scratch registers available for use by the Assembler.
   RegList scratch_register_list_;
@@ -1298,7 +1300,7 @@ class V8_EXPORT_PRIVATE Assembler : public AssemblerBase {
   // The bound position, before this we cannot do instruction elimination.
   int last_bound_pos_;
 
-  inline void CheckBuffer();
+  V8_INLINE void CheckBuffer();
   void GrowBuffer();
 
   // Instruction generation

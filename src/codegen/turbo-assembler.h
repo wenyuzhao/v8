@@ -124,7 +124,12 @@ class V8_EXPORT_PRIVATE TurboAssemblerBase : public Assembler {
   static constexpr int kStackPageSize = 4 * KB;
 #endif
 
-  void RecordCommentForOffHeapTrampoline(int builtin_index);
+  V8_INLINE void RecordCommentForOffHeapTrampoline(int builtin_index) {
+    if (!FLAG_code_comments) return;
+    std::ostringstream str;
+    str << "[ Inlined Trampoline to " << Builtins::name(builtin_index);
+    RecordComment(str.str().c_str());
+  }
 
  protected:
   Isolate* const isolate_ = nullptr;
@@ -150,8 +155,7 @@ class V8_EXPORT_PRIVATE TurboAssemblerBase : public Assembler {
 };
 
 // Avoids emitting calls to the {Builtins::kAbort} builtin when emitting debug
-// code during the lifetime of this scope object. For disabling debug code
-// entirely use the {DontEmitDebugCodeScope} instead.
+// code during the lifetime of this scope object.
 class V8_NODISCARD HardAbortScope {
  public:
   explicit HardAbortScope(TurboAssemblerBase* assembler)

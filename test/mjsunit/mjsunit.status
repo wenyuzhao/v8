@@ -150,6 +150,7 @@
   'wasm/atomics64-stress': [PASS, SLOW, NO_VARIANTS, ['mode != release or dcheck_always_on', SKIP], ['tsan', SKIP]],
   'wasm/compare-exchange-stress': [PASS, SLOW, NO_VARIANTS],
   'wasm/compare-exchange64-stress': [PASS, SLOW, NO_VARIANTS],
+  'tools/tickprocessor-test-large': [PASS, SLOW, NO_VARIANTS, ['mode != release', SKIP]],
 
   # Very slow on ARM and MIPS, contains no architecture dependent code.
   'unicode-case-overoptimization0': [PASS, NO_VARIANTS, ['arch in (arm, arm64, mipsel, mips64el, mips64, mips, riscv64)', SKIP]],
@@ -351,8 +352,12 @@
   'regexp-tier-up-multiple': [SKIP],
   'regress/regress-996234': [SKIP],
 
-  # This test relies on TurboFan being enabled.
+  # These tests rely on TurboFan being enabled.
   'compiler/fast-api-calls': [SKIP],
+  'compiler/fast-api-interface-types': [SKIP],
+  'compiler/regress-crbug-1201011': [SKIP],
+  'compiler/regress-crbug-1201057': [SKIP],
+  'compiler/regress-crbug-1201082': [SKIP],
 
   # These tests check that we can trace the compiler.
   'tools/compiler-trace-flags': [SKIP],
@@ -839,6 +844,7 @@
   'regress/wasm/regress-1161555': [SKIP],
   'regress/wasm/regress-1161954': [SKIP],
   'regress/wasm/regress-1187831': [SKIP],
+  'regress/wasm/regress-1199662': [SKIP],
   'regress/regress-1172797': [SKIP],
   'regress/wasm/regress-1179025': [SKIP],
   'wasm/multi-value-simd': [SKIP],
@@ -1319,9 +1325,13 @@
 
 ##############################################################################
 ['variant == stress_snapshot', {
-  # This test initializes an embedder object that never needs to be serialized
+  # These tests initialize an embedder object that never needs to be serialized
   # to the snapshot, so we don't have a SerializeInternalFieldsCallback for it.
   'compiler/fast-api-calls': [SKIP],
+  'compiler/fast-api-interface-types': [SKIP],
+  'compiler/regress-crbug-1201011': [SKIP],
+  'compiler/regress-crbug-1201057': [SKIP],
+  'compiler/regress-crbug-1201082': [SKIP],
 }],  # variant == stress_snapshot
 
 ##############################################################################
@@ -1424,6 +1434,14 @@
 }],  # variant == stress_incremental_marking
 
 ##############################################################################
+['variant == stress_concurrent_allocation', {
+  # This test manually forces pretenuring of allocation sites.
+  # stress-concurrent-allocation reverts the pretenuring decision due to low
+  # survival rate in old generation.
+  'compiler/deopt-pretenure': [SKIP],
+}],  # variant == stress_concurrent_allocation
+
+##############################################################################
 ['no_simd_sse == True', {
   'wasm/exceptions-simd': [SKIP],
   'wasm/liftoff-simd-params': [SKIP],
@@ -1444,6 +1462,7 @@
   'regress/wasm/regress-1161954': [SKIP],
   'regress/wasm/regress-1165966': [SKIP],
   'regress/wasm/regress-1187831': [SKIP],
+  'regress/wasm/regress-1199662': [SKIP],
 }],  # no_simd_sse == True
 
 ##############################################################################
@@ -1471,6 +1490,7 @@
 
 ################################################################################
 ['single_generation', {
+  # These tests rely on allocation site tracking which only works in the young generation.
   'array-constructor-feedback': [SKIP],
   'wasm/generic-wrapper': [SKIP],
   'regress/regress-trap-allocation-memento': [SKIP],

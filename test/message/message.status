@@ -80,6 +80,12 @@
   'wasm-trace-memory': [SKIP],
 }],
 
+##############################################################################
+['no_simd_sse == True', {
+  'wasm-trace-memory': [SKIP],
+  'wasm-trace-memory-liftoff': [SKIP],
+}],  # no_simd_sse == True
+
 ################################################################################
 ['third_party_heap', {
   # Performs GC

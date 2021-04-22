@@ -180,7 +180,6 @@ AssemblerBase::AssemblerBase(const AssemblerOptions& options,
     : buffer_(std::move(buffer)),
       options_(options),
       enabled_cpu_features_(0),
-      emit_debug_code_(FLAG_debug_code),
       predictable_code_size_(false),
       constant_pool_available_(false),
       jump_optimization_info_(nullptr) {
@@ -298,6 +297,7 @@ Handle<HeapObject> AssemblerBase::GetEmbeddedObject(
 
 
 int Assembler::WriteCodeComments() {
+  if (!FLAG_code_comments) return 0;
   CHECK_IMPLIES(code_comments_writer_.entry_count() > 0,
                 options().emit_code_comments);
   if (code_comments_writer_.entry_count() == 0) return 0;

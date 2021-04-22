@@ -53,29 +53,20 @@ FactoryBase<LocalFactory>::NewHeapNumber<AllocationType::kOld>();
 template <typename Impl>
 Handle<Struct> FactoryBase<Impl>::NewStruct(InstanceType type,
                                             AllocationType allocation) {
-  return handle(NewStructInternal(type, allocation), isolate());
-}
-
-template <typename Impl>
-Struct FactoryBase<Impl>::NewStructInternal(InstanceType type,
-                                            AllocationType allocation) {
-  Map map = Map::GetInstanceTypeMap(read_only_roots(), type);
+  ReadOnlyRoots roots = read_only_roots();
+  Map map = Map::GetInstanceTypeMap(roots, type);
   int size = map.instance_size();
-  HeapObject result = AllocateRawWithImmortalMap(size, allocation, map);
-  Struct str = Struct::cast(result);
-  str.InitializeBody(size);
-  return str;
+  return handle(NewStructInternal(roots, map, size, allocation), isolate());
 }
 
 template <typename Impl>
 Handle<AccessorPair> FactoryBase<Impl>::NewAccessorPair() {
-  Handle<AccessorPair> accessors = Handle<AccessorPair>::cast(
-      NewStruct(ACCESSOR_PAIR_TYPE, AllocationType::kOld));
-  AccessorPair raw = *accessors;
+  auto accessors =
+      NewStructInternal<AccessorPair>(ACCESSOR_PAIR_TYPE, AllocationType::kOld);
   DisallowGarbageCollection no_gc;
-  raw.set_getter(read_only_roots().null_value(), SKIP_WRITE_BARRIER);
-  raw.set_setter(read_only_roots().null_value(), SKIP_WRITE_BARRIER);
-  return accessors;
+  accessors.set_getter(read_only_roots().null_value(), SKIP_WRITE_BARRIER);
+  accessors.set_setter(read_only_roots().null_value(), SKIP_WRITE_BARRIER);
+  return handle(accessors, isolate());
 }
 
 template <typename Impl>
@@ -128,7 +119,7 @@ Handle<FixedArrayBase> FactoryBase<Impl>::NewFixedDoubleArray(
     int length, AllocationType allocation) {
   if (length == 0) return impl()->empty_fixed_array();
   if (length < 0 || length > FixedDoubleArray::kMaxLength) {
-    FATAL("Fatal JavaScript invalid array length %d error", length);
+    FATAL("Fatal JavaScript invalid size error %d", length);
     UNREACHABLE();
   }
   int size = FixedDoubleArray::SizeFor(length);
@@ -173,7 +164,7 @@ template <typename Impl>
 Handle<ByteArray> FactoryBase<Impl>::NewByteArray(int length,
                                                   AllocationType allocation) {
   if (length < 0 || length > ByteArray::kMaxLength) {
-    FATAL("Fatal JavaScript invalid array length %d error", length);
+    FATAL("Fatal JavaScript invalid size error %d", length);
     UNREACHABLE();
   }
   int size = ByteArray::SizeFor(length);
@@ -191,7 +182,7 @@ Handle<BytecodeArray> FactoryBase<Impl>::NewBytecodeArray(
     int length, const byte* raw_bytecodes, int frame_size, int parameter_count,
     Handle<FixedArray> constant_pool) {
   if (length < 0 || length > BytecodeArray::kMaxLength) {
-    FATAL("Fatal JavaScript invalid array length %d error", length);
+    FATAL("Fatal JavaScript invalid size error %d", length);
     UNREACHABLE();
   }
   // Bytecode array is AllocationType::kOld, so constant pool array should be
@@ -233,8 +224,8 @@ Handle<Script> FactoryBase<Impl>::NewScriptWithId(
   DCHECK(source->IsString() || source->IsUndefined());
   // Create and initialize script object.
   ReadOnlyRoots roots = read_only_roots();
-  Handle<Script> script =
-      Handle<Script>::cast(NewStruct(SCRIPT_TYPE, AllocationType::kOld));
+  Handle<Script> script = handle(
+      NewStructInternal<Script>(SCRIPT_TYPE, AllocationType::kOld), isolate());
   {
     DisallowGarbageCollection no_gc;
     Script raw = *script;
@@ -397,14 +388,12 @@ template <typename Impl>
 Handle<ArrayBoilerplateDescription>
 FactoryBase<Impl>::NewArrayBoilerplateDescription(
     ElementsKind elements_kind, Handle<FixedArrayBase> constant_values) {
-  Handle<ArrayBoilerplateDescription> result =
-      Handle<ArrayBoilerplateDescription>::cast(
-          NewStruct(ARRAY_BOILERPLATE_DESCRIPTION_TYPE, AllocationType::kOld));
+  auto result = NewStructInternal<ArrayBoilerplateDescription>(
+      ARRAY_BOILERPLATE_DESCRIPTION_TYPE, AllocationType::kOld);
   DisallowGarbageCollection no_gc;
-  ArrayBoilerplateDescription raw = *result;
-  raw.set_elements_kind(elements_kind);
-  raw.set_constant_elements(*constant_values);
-  return result;
+  result.set_elements_kind(elements_kind);
+  result.set_constant_elements(*constant_values);
+  return handle(result, isolate());
 }
 
 template <typename Impl>
@@ -412,15 +401,13 @@ Handle<RegExpBoilerplateDescription>
 FactoryBase<Impl>::NewRegExpBoilerplateDescription(Handle<FixedArray> data,
                                                    Handle<String> source,
                                                    Smi flags) {
-  Handle<RegExpBoilerplateDescription> result =
-      Handle<RegExpBoilerplateDescription>::cast(NewStruct(
-          REG_EXP_BOILERPLATE_DESCRIPTION_TYPE, AllocationType::kOld));
+  auto result = NewStructInternal<RegExpBoilerplateDescription>(
+      REG_EXP_BOILERPLATE_DESCRIPTION_TYPE, AllocationType::kOld);
   DisallowGarbageCollection no_gc;
-  RegExpBoilerplateDescription raw = *result;
-  raw.set_data(*data);
-  raw.set_source(*source);
-  raw.set_flags(flags.value());
-  return result;
+  result.set_data(*data);
+  result.set_source(*source);
+  result.set_flags(flags.value());
+  return handle(result, isolate());
 }
 
 template <typename Impl>
@@ -429,14 +416,12 @@ FactoryBase<Impl>::NewTemplateObjectDescription(
     Handle<FixedArray> raw_strings, Handle<FixedArray> cooked_strings) {
   DCHECK_EQ(raw_strings->length(), cooked_strings->length());
   DCHECK_LT(0, raw_strings->length());
-  Handle<TemplateObjectDescription> result =
-      Handle<TemplateObjectDescription>::cast(
-          NewStruct(TEMPLATE_OBJECT_DESCRIPTION_TYPE, AllocationType::kOld));
+  auto result = NewStructInternal<TemplateObjectDescription>(
+      TEMPLATE_OBJECT_DESCRIPTION_TYPE, AllocationType::kOld);
   DisallowGarbageCollection no_gc;
-  TemplateObjectDescription raw = *result;
-  raw.set_raw_strings(*raw_strings);
-  raw.set_cooked_strings(*cooked_strings);
-  return result;
+  result.set_raw_strings(*raw_strings);
+  result.set_cooked_strings(*cooked_strings);
+  return handle(result, isolate());
 }
 
 template <typename Impl>
@@ -694,7 +679,7 @@ template <typename Impl>
 Handle<FreshlyAllocatedBigInt> FactoryBase<Impl>::NewBigInt(
     int length, AllocationType allocation) {
   if (length < 0 || length > BigInt::kMaxLength) {
-    FATAL("Fatal JavaScript invalid BigInt length %d error", length);
+    FATAL("Fatal JavaScript invalid size error %d", length);
     UNREACHABLE();
   }
   HeapObject result = AllocateRawWithImmortalMap(
@@ -764,11 +749,11 @@ Handle<DescriptorArray> FactoryBase<Impl>::NewDescriptorArray(
 template <typename Impl>
 Handle<ClassPositions> FactoryBase<Impl>::NewClassPositions(int start,
                                                             int end) {
-  Handle<ClassPositions> class_positions = Handle<ClassPositions>::cast(
-      NewStruct(CLASS_POSITIONS_TYPE, AllocationType::kOld));
-  class_positions->set_start(start);
-  class_positions->set_end(end);
-  return class_positions;
+  auto result = NewStructInternal<ClassPositions>(CLASS_POSITIONS_TYPE,
+                                                  AllocationType::kOld);
+  result.set_start(start);
+  result.set_end(end);
+  return handle(result, isolate());
 }
 
 template <typename Impl>
@@ -829,7 +814,7 @@ template <typename Impl>
 HeapObject FactoryBase<Impl>::AllocateRawFixedArray(int length,
                                                     AllocationType allocation) {
   if (length < 0 || length > FixedArray::kMaxLength) {
-    FATAL("Fatal JavaScript invalid array length %d error", length);
+    FATAL("Fatal JavaScript invalid size error %d", length);
     UNREACHABLE();
   }
   return AllocateRawArray(FixedArray::SizeFor(length), allocation);
@@ -839,7 +824,7 @@ template <typename Impl>
 HeapObject FactoryBase<Impl>::AllocateRawWeakArrayList(
     int capacity, AllocationType allocation) {
   if (capacity < 0 || capacity > WeakArrayList::kMaxCapacity) {
-    FATAL("Fatal JavaScript invalid WeakArray capacity %d error", capacity);
+    FATAL("Fatal JavaScript invalid size error %d", capacity);
     UNREACHABLE();
   }
   return AllocateRawArray(WeakArrayList::SizeForCapacity(capacity), allocation);
@@ -885,7 +870,7 @@ FactoryBase<Impl>::NewSwissNameDictionaryWithCapacity(
   }
 
   if (capacity < 0 || capacity > SwissNameDictionary::MaxCapacity()) {
-    FATAL("Fatal JavaScript invalid dictionary capacity %d error", capacity);
+    FATAL("Fatal JavaScript invalid size error %d", capacity);
     UNREACHABLE();
   }
 

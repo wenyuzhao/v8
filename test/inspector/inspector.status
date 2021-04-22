@@ -26,7 +26,7 @@
   'regress/regress-crbug-1080638': [SKIP],
 
   # https://crbug.com/v8/11338
-  'runtime-call-stats/enable-disable': [PASS, ['verify_csa', SKIP]],
+  'runtime-call-stats/enable-disable': [SKIP],
 }],  # ALWAYS
 
 ##############################################################################

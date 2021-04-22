@@ -2424,7 +2424,7 @@ struct SampleInfo {
   StateTag vm_state;              // Current VM state.
   void* external_callback_entry;  // External callback address if VM is
                                   // executing an external callback.
-  void* top_context;              // Incumbent native context address.
+  void* context;                  // Incumbent native context address.
 };
 
 struct MemoryRange {
@@ -6590,6 +6590,15 @@ class V8_EXPORT FunctionTemplate : public Template {
    */
   bool HasInstance(Local<Value> object);
 
+  /**
+   * Returns true if the given value is an API object that was constructed by an
+   * instance of this function template (without checking for inheriting
+   * function templates).
+   *
+   * This is an experimental feature and may still change significantly.
+   */
+  bool IsLeafTemplateForApiObject(Value* value) const;
+
   V8_INLINE static FunctionTemplate* Cast(Data* data);
 
  private:
@@ -8534,6 +8543,7 @@ class V8_EXPORT Isolate {
     kWasmBulkMemory = 109,  // Unused.
     kWasmMultiValue = 110,
     kWasmExceptionHandling = 111,
+    kInvalidatedMegaDOMProtector = 112,
 
     // If you add new values here, you'll also need to update Chromium's:
     // web_feature.mojom, use_counter_callback.cc, and enums.xml. V8 changes to
@@ -10578,6 +10588,18 @@ class V8_EXPORT Context : public Data {
    * continuation runs.
    */
   void SetContinuationPreservedEmbedderData(Local<Value> context);
+
+  /**
+   * Set or clear hooks to be invoked for promise lifecycle operations.
+   * To clear a hook, set it to an empty v8::Function. Each function will
+   * receive the observed promise as the first argument. If a chaining
+   * operation is used on a promise, the init will additionally receive
+   * the parent promise as the second argument.
+   */
+  void SetPromiseHooks(Local<Function> init_hook,
+                       Local<Function> before_hook,
+                       Local<Function> after_hook,
+                       Local<Function> resolve_hook);
 
   /**
    * Stack-allocated class which sets the execution context for all

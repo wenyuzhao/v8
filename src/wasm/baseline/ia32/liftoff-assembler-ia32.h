@@ -2938,15 +2938,7 @@ void LiftoffAssembler::emit_i64x2_splat(LiftoffRegister dst,
 
 void LiftoffAssembler::emit_f32x4_splat(LiftoffRegister dst,
                                         LiftoffRegister src) {
-  if (CpuFeatures::IsSupported(AVX)) {
-    CpuFeatureScope scope(this, AVX);
-    vshufps(dst.fp(), src.fp(), src.fp(), 0);
-  } else {
-    if (dst.fp() != src.fp()) {
-      movss(dst.fp(), src.fp());
-    }
-    shufps(dst.fp(), src.fp(), 0);
-  }
+  F32x4Splat(dst.fp(), src.fp());
 }
 
 void LiftoffAssembler::emit_f64x2_splat(LiftoffRegister dst,
@@ -3855,16 +3847,7 @@ void LiftoffAssembler::emit_i32x4_extmul_high_i16x8_u(LiftoffRegister dst,
 
 void LiftoffAssembler::emit_i64x2_neg(LiftoffRegister dst,
                                       LiftoffRegister src) {
-  DoubleRegister reg =
-      dst.fp() == src.fp() ? liftoff::kScratchDoubleReg : dst.fp();
-  Pxor(reg, reg);
-  if (CpuFeatures::IsSupported(AVX)) {
-    CpuFeatureScope scope(this, AVX);
-    vpsubq(dst.fp(), reg, src.fp());
-  } else {
-    psubq(reg, src.fp());
-    if (dst.fp() != reg) movaps(dst.fp(), reg);
-  }
+  I64x2Neg(dst.fp(), src.fp(), liftoff::kScratchDoubleReg);
 }
 
 void LiftoffAssembler::emit_i64x2_alltrue(LiftoffRegister dst,
@@ -4622,13 +4605,7 @@ void LiftoffAssembler::emit_i64x2_extract_lane(LiftoffRegister dst,
 void LiftoffAssembler::emit_f32x4_extract_lane(LiftoffRegister dst,
                                                LiftoffRegister lhs,
                                                uint8_t imm_lane_idx) {
-  if (CpuFeatures::IsSupported(AVX)) {
-    CpuFeatureScope scope(this, AVX);
-    vshufps(dst.fp(), lhs.fp(), lhs.fp(), imm_lane_idx);
-  } else {
-    if (dst.fp() != lhs.fp()) movaps(dst.fp(), lhs.fp());
-    if (imm_lane_idx != 0) shufps(dst.fp(), dst.fp(), imm_lane_idx);
-  }
+  F32x4ExtractLane(dst.fp(), lhs.fp(), imm_lane_idx);
 }
 
 void LiftoffAssembler::emit_f64x2_extract_lane(LiftoffRegister dst,

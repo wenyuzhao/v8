@@ -67,8 +67,6 @@ struct SsaEnv : public ZoneObject {
   }
 };
 
-constexpr uint32_t kNullCatch = static_cast<uint32_t>(-1);
-
 class WasmGraphBuildingInterface {
  public:
   static constexpr Decoder::ValidateFlag validate = Decoder::kFullValidation;
@@ -97,7 +95,7 @@ class WasmGraphBuildingInterface {
   };
 
   struct Control : public ControlBase<Value, validate> {
-    SsaEnv* end_env = nullptr;    // end environment for the construct.
+    SsaEnv* merge_env = nullptr;  // merge environment for the construct.
     SsaEnv* false_env = nullptr;  // false environment (only for if).
     TryInfo* try_info = nullptr;  // information about try statements.
     int32_t previous_catch = -1;  // previous Control with a catch.
@@ -156,15 +154,15 @@ class WasmGraphBuildingInterface {
 
   void Block(FullDecoder* decoder, Control* block) {
     // The branch environment is the outer environment.
-    block->end_env = ssa_env_;
+    block->merge_env = ssa_env_;
     SetEnv(Steal(decoder->zone(), ssa_env_));
   }
 
   void Loop(FullDecoder* decoder, Control* block) {
-    SsaEnv* finish_try_env = Steal(decoder->zone(), ssa_env_);
-    block->end_env = finish_try_env;
-    SetEnv(finish_try_env);
-    // The continue environment is the inner environment.
+    // This is the merge environment at the beginning of the loop.
+    SsaEnv* merge_env = Steal(decoder->zone(), ssa_env_);
+    block->merge_env = merge_env;
+    SetEnv(merge_env);
 
     ssa_env_->state = SsaEnv::kMerged;
 
@@ -216,15 +214,15 @@ class WasmGraphBuildingInterface {
                                             control());
     }
 
+    // Now we setup a new environment for the inside of the loop.
     SetEnv(Split(decoder->zone(), ssa_env_));
     builder_->StackCheck(decoder->position());
-
     ssa_env_->SetNotMerged();
-    if (!decoder->ok()) return;
+
     // Wrap input merge into phis.
     for (uint32_t i = 0; i < block->start_merge.arity; ++i) {
       Value& val = block->start_merge[i];
-      TFNode* inputs[] = {val.node, block->end_env->control};
+      TFNode* inputs[] = {val.node, block->merge_env->control};
       val.node = builder_->Phi(val.type, 1, inputs);
     }
   }
@@ -238,22 +236,20 @@ class WasmGraphBuildingInterface {
     SsaEnv* try_env = Steal(decoder->zone(), outer_env);
     SetEnv(try_env);
     TryInfo* try_info = decoder->zone()->New<TryInfo>(catch_env);
-    block->end_env = outer_env;
+    block->merge_env = outer_env;
     block->try_info = try_info;
-    block->previous_catch = current_catch_;
-    current_catch_ = static_cast<int32_t>(decoder->control_depth() - 1);
   }
 
   void If(FullDecoder* decoder, const Value& cond, Control* if_block) {
     TFNode* if_true = nullptr;
     TFNode* if_false = nullptr;
     builder_->BranchNoHint(cond.node, &if_true, &if_false);
-    SsaEnv* end_env = ssa_env_;
+    SsaEnv* merge_env = ssa_env_;
     SsaEnv* false_env = Split(decoder->zone(), ssa_env_);
     false_env->control = if_false;
     SsaEnv* true_env = Steal(decoder->zone(), ssa_env_);
     true_env->control = if_true;
-    if_block->end_env = end_env;
+    if_block->merge_env = merge_env;
     if_block->false_env = false_env;
     SetEnv(true_env);
   }
@@ -294,7 +290,7 @@ class WasmGraphBuildingInterface {
       MergeValuesInto(decoder, block, &block->end_merge, values);
     }
     // Now continue with the merged environment.
-    SetEnv(block->end_env);
+    SetEnv(block->merge_env);
   }
 
   void UnOp(FullDecoder* decoder, WasmOpcode opcode, const Value& value,
@@ -687,9 +683,6 @@ class WasmGraphBuildingInterface {
                       const ExceptionIndexImmediate<validate>& imm,
                       Control* block, Vector<Value> values) {
     DCHECK(block->is_try_catch());
-
-    current_catch_ = block->previous_catch;  // Pop try scope.
-
     // The catch block is unreachable if no possible throws in the try block
     // exist. We only build a landing pad if some node in the try block can
     // (possibly) throw. Otherwise the catch environments remain empty.
@@ -741,7 +734,6 @@ class WasmGraphBuildingInterface {
         // and IfFailure nodes.
         builder_->Rethrow(block->try_info->exception);
         TerminateThrow(decoder);
-        current_catch_ = block->previous_catch;
         return;
       }
       DCHECK(decoder->control_at(depth)->is_try());
@@ -763,15 +755,12 @@ class WasmGraphBuildingInterface {
             target_try->exception, block->try_info->exception);
       }
     }
-    current_catch_ = block->previous_catch;
   }
 
   void CatchAll(FullDecoder* decoder, Control* block) {
     DCHECK(block->is_try_catchall() || block->is_try_catch() ||
            block->is_try_unwind());
     DCHECK_EQ(decoder->control_at(0), block);
-
-    current_catch_ = block->previous_catch;  // Pop try scope.
 
     // The catch block is unreachable if no possible throws in the try block
     // exist. We only build a landing pad if some node in the try block can
@@ -1078,7 +1067,6 @@ class WasmGraphBuildingInterface {
  private:
   SsaEnv* ssa_env_ = nullptr;
   compiler::WasmGraphBuilder* builder_;
-  uint32_t current_catch_ = kNullCatch;
   // Tracks loop data for loop unrolling.
   std::vector<compiler::WasmLoopInfo> loop_infos_;
 
@@ -1086,13 +1074,9 @@ class WasmGraphBuildingInterface {
 
   TFNode* control() { return builder_->control(); }
 
-  uint32_t control_depth_of_current_catch(FullDecoder* decoder) {
-    return decoder->control_depth() - 1 - current_catch_;
-  }
-
   TryInfo* current_try_info(FullDecoder* decoder) {
-    DCHECK_LT(current_catch_, decoder->control_depth());
-    return decoder->control_at(control_depth_of_current_catch(decoder))
+    DCHECK_LT(decoder->current_catch(), decoder->control_depth());
+    return decoder->control_at(decoder->control_depth_of_current_catch())
         ->try_info;
   }
 
@@ -1141,7 +1125,7 @@ class WasmGraphBuildingInterface {
   V8_INLINE TFNode* CheckForException(FullDecoder* decoder, TFNode* node) {
     if (node == nullptr) return nullptr;
 
-    const bool inside_try_scope = current_catch_ != kNullCatch;
+    const bool inside_try_scope = decoder->current_catch() != -1;
     if (!inside_try_scope) return node;
 
     return CheckForExceptionImpl(decoder, node);
@@ -1165,7 +1149,7 @@ class WasmGraphBuildingInterface {
     TryInfo* try_info = current_try_info(decoder);
     if (FLAG_wasm_loop_unrolling) {
       ValueVector values;
-      BuildNestedLoopExits(decoder, control_depth_of_current_catch(decoder),
+      BuildNestedLoopExits(decoder, decoder->control_depth_of_current_catch(),
                            true, values, &if_exception);
     }
     Goto(decoder, try_info->catch_env);
@@ -1213,7 +1197,7 @@ class WasmGraphBuildingInterface {
                        Value* values) {
     DCHECK(merge == &c->start_merge || merge == &c->end_merge);
 
-    SsaEnv* target = c->end_env;
+    SsaEnv* target = c->merge_env;
     // This has to be computed before calling Goto().
     const bool first = target->state == SsaEnv::kUnreachable;
 

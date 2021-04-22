@@ -4,6 +4,7 @@
 
 // TODO(v8:11421): Remove #if once baseline compiler is ported to other
 // architectures.
+#include "src/base/bits.h"
 #if V8_TARGET_ARCH_IA32 || V8_TARGET_ARCH_X64 || V8_TARGET_ARCH_ARM64 || \
     V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_RISCV64
 
@@ -230,6 +231,21 @@ void MoveArgumentsForBuiltin(BaselineAssembler* masm, Args... args) {
 
 }  // namespace detail
 
+namespace {
+// Rough upper-bound estimate. Copying the data is most likely more expensive
+// than pre-allocating a large enough buffer.
+#ifdef V8_TARGET_ARCH_IA32
+const int kAverageBytecodeToInstructionRatio = 5;
+#else
+const int kAverageBytecodeToInstructionRatio = 7;
+#endif
+std::unique_ptr<AssemblerBuffer> AllocateBuffer(
+    Handle<BytecodeArray> bytecodes) {
+  int estimated_size = bytecodes->length() * kAverageBytecodeToInstructionRatio;
+  return NewAssemblerBuffer(RoundUp(estimated_size, 4 * KB));
+}
+}  // namespace
+
 BaselineCompiler::BaselineCompiler(
     Isolate* isolate, Handle<SharedFunctionInfo> shared_function_info,
     Handle<BytecodeArray> bytecode)
@@ -237,12 +253,19 @@ BaselineCompiler::BaselineCompiler(
       stats_(isolate->counters()->runtime_call_stats()),
       shared_function_info_(shared_function_info),
       bytecode_(bytecode),
-      masm_(isolate, CodeObjectRequired::kNo),
+      masm_(isolate, CodeObjectRequired::kNo, AllocateBuffer(bytecode)),
       basm_(&masm_),
       iterator_(bytecode_),
       zone_(isolate->allocator(), ZONE_NAME),
       labels_(zone_.NewArray<BaselineLabels*>(bytecode_->length())) {
   MemsetPointer(labels_, nullptr, bytecode_->length());
+
+  // Empirically determined expected size of the offset table at the 95th %ile,
+  // based on the size of the bytecode, to be:
+  //
+  //   16 + (bytecode size) / 4
+  bytecode_offset_table_builder_.Reserve(
+      base::bits::RoundUpToPowerOfTwo(16 + bytecode_->Size() / 4));
 }
 
 #define __ basm_.
@@ -456,7 +479,7 @@ void BaselineCompiler::VisitSingleBytecode() {
 }
 
 void BaselineCompiler::VerifyFrame() {
-  if (__ emit_debug_code()) {
+  if (FLAG_debug_code) {
     __ RecordComment("[ Verify frame");
     __ RecordComment(" -- Verify frame size");
     VerifyFrameSize();

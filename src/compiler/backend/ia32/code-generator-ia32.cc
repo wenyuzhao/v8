@@ -2132,10 +2132,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kIA32I64x2Neg: {
-      XMMRegister dst = i.OutputSimd128Register();
-      Operand src = i.InputOperand(0);
-      __ Pxor(dst, dst);
-      __ Psubq(dst, src);
+      __ I64x2Neg(i.OutputSimd128Register(), i.InputSimd128Register(0),
+                  kScratchDoubleReg);
       break;
     }
     case kIA32I64x2Shl: {
@@ -2276,38 +2274,12 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kIA32F32x4Splat: {
-      XMMRegister dst = i.OutputDoubleRegister();
-      XMMRegister src = i.InputDoubleRegister(0);
-      if (CpuFeatures::IsSupported(AVX)) {
-        CpuFeatureScope avx_scope(tasm(), AVX);
-        __ vshufps(i.OutputSimd128Register(), src, src, 0x0);
-      } else {
-        DCHECK_EQ(dst, src);
-        __ shufps(dst, src, 0x0);
-      }
+      __ F32x4Splat(i.OutputSimd128Register(), i.InputDoubleRegister(0));
       break;
     }
     case kIA32F32x4ExtractLane: {
-      XMMRegister dst = i.OutputFloatRegister();
-      XMMRegister src = i.InputSimd128Register(0);
-      uint8_t lane = i.InputUint8(1);
-      DCHECK_LT(lane, 4);
-      // These instructions are shorter than insertps, but will leave junk in
-      // the top lanes of dst.
-      if (lane == 0) {
-        if (dst != src) {
-          __ Movaps(dst, src);
-        }
-      } else if (lane == 1) {
-        __ Movshdup(dst, src);
-      } else if (lane == 2 && dst == src) {
-        // Check dst == src to avoid false dependency on dst.
-        __ Movhlps(dst, src);
-      } else if (dst == src) {
-        __ Shufps(dst, src, src, lane);
-      } else {
-        __ Pshufd(dst, src, lane);
-      }
+      __ F32x4ExtractLane(i.OutputFloatRegister(), i.InputSimd128Register(0),
+                          i.InputUint8(1));
       break;
     }
     case kIA32Insertps: {
@@ -4623,7 +4595,7 @@ void CodeGenerator::AssembleConstructFrame() {
     // frame is still on the stack. Optimized code uses OSR values directly from
     // the unoptimized frame. Thus, all that needs to be done is to allocate the
     // remaining stack slots.
-    if (FLAG_code_comments) __ RecordComment("-- OSR entrypoint --");
+    __ RecordComment("-- OSR entrypoint --");
     osr_pc_offset_ = __ pc_offset();
     required_slots -= osr_helper()->UnoptimizedFrameSlots();
   }
@@ -4712,7 +4684,7 @@ void CodeGenerator::AssembleReturn(InstructionOperand* additional_pop_count) {
   if (parameter_slots != 0) {
     if (additional_pop_count->IsImmediate()) {
       DCHECK_EQ(g.ToConstant(additional_pop_count).ToInt32(), 0);
-    } else if (__ emit_debug_code()) {
+    } else if (FLAG_debug_code) {
       __ cmp(g.ToRegister(additional_pop_count), Immediate(0));
       __ Assert(equal, AbortReason::kUnexpectedAdditionalPopValue);
     }
