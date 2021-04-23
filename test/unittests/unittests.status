@@ -87,6 +87,9 @@
 
 ################################################################################
 ['third_party_heap', {
+  # Tests on OptimizingCompileDispatcher
+  'OptimizingCompileDispatcherTest.NonBlockingFlush': [SKIP],
+  'OptimizingCompileDispatcherTest.Construct': [SKIP],
   # Test V8 stock GC
   'SpacesTest.CompactionSpaceMerge': [SKIP],
   # Requires --concurrent_inlining / --finalize_streaming_on_background:

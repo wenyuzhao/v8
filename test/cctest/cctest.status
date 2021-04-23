@@ -720,6 +720,24 @@
 
 ################################################################################
 ['third_party_heap', {
+  # v8::Unwinder::PCIsInV8 is not supported
+  'test-unwinder-code-pages/PCIsInV8_LargeCodeObject_CodePagesAPI': [SKIP],
+  'test-unwinder-code-pages/Unwind_CodeObjectPCInMiddle_Success_CodePagesAPI': [SKIP],
+  # Calls Space::FirstPageAddress
+  'test-debug-helper/GetObjectProperties': [SKIP],
+  # Calls Heap::SizeOfObjects
+  'test-heap/TestSizeOfObjectsVsHeapObjectIteratorPrecision': [SKIP],
+  # Test on heap profiler
+  'test-heap-profiler/SamplingHeapProfilerApiSamples': [SKIP],
+  'test-heap-profiler/SamplingHeapProfiler': [SKIP],
+  'test-heap-profiler/SamplingHeapProfilerRateAgnosticEstimates': [SKIP],
+  'test-heap-profiler/SamplingHeapProfilerApiAllocation': [SKIP],
+  'test-heap-profiler/SamplingHeapProfilerLargeInterval': [SKIP],
+  # Test old/new space backing store allocation
+  'test-external-string-tracker/ExternalString_ExternalBackingStoreSizeIncreases': [SKIP],
+  # Read data from read_only_space->pages()
+  'test-serialize/CodeSerializerExternalScriptName': [SKIP],
+  'test-serialize/CodeSerializerThreeBigStrings': [SKIP],
   # Access chunk metadata
   'test-roots/TestHeapRootsNotReadOnly': [SKIP],
   'test-roots/TestReadOnlyRoots': [SKIP],
@@ -758,7 +776,16 @@
   'test-concurrent-allocation/ConcurrentAllocationWhileMainThreadIsParked': [SKIP],
   'test-concurrent-allocation/ConcurrentAllocationWhileMainThreadParksAndUnparks': [SKIP],
   'test-concurrent-allocation/ConcurrentAllocationWhileMainThreadRunsWithSafepoints': [SKIP],
-  # Performs GC
+  # Performs GC or expects OOM
+  'test-api/TwoPassPhantomCallbacksTriggeredByStringAlloc': [SKIP],
+  'test-factory/Factory_CodeBuilder_TryBuildOOM': [SKIP],
+  'test-heap/OutOfMemoryIneffectiveGCRunningJS': [SKIP],
+  'test-factory/Factory_CodeBuilder_BuildOOM': [SKIP],
+  'test-debug/DebugSetOutOfMemoryListener': [SKIP],
+  'test-weaksets/WeakSet_Regress2060a': [SKIP],
+  'test-weaksets/WeakSet_Regress2060b': [SKIP],
+  'test-weakmaps/Regress2060a': [SKIP],
+  'test-weakmaps/Regress2060b': [SKIP],
   'test-heap/UncommitUnusedLargeObjectMemory': [SKIP],
   'test-cpu-profiler/ContextFilterMovedNativeContext': [SKIP],
   'test-run-wasm/RunWasmInterpreter_I32AddOnDifferentRegisters': [SKIP],

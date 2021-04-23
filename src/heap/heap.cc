@@ -3138,7 +3138,7 @@ bool Heap::IsImmovable(HeapObject object) {
 }
 
 bool Heap::IsLargeObject(HeapObject object) {
-  if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) return false;
+  if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) return third_party_heap::Heap::InLargeObjectSpace(object.address());
   return BasicMemoryChunk::FromHeapObject(object)->IsLargePage();
 }
 
@@ -6138,7 +6138,8 @@ HeapObjectIterator::HeapObjectIterator(
       filter_(nullptr),
       space_iterator_(nullptr),
       object_iterator_(nullptr),
-      third_party_heap_iterator_initialized_(false) {
+      third_party_heap_iterator_initialized_(false),
+      third_party_heap_iterator_finished_(false) {
   heap_->MakeHeapIterable();
   // Start the iteration.
   space_iterator_ = new SpaceIterator(heap_);
@@ -6178,7 +6179,14 @@ HeapObject HeapObjectIterator::NextObject() {
       third_party_heap_iterator_initialized_ = true;
       heap_->tp_heap_->ResetIterator();
     }
-    return heap_->tp_heap_->NextObject();
+    if (third_party_heap_iterator_finished_) {
+      return HeapObject();
+    }
+    HeapObject object = heap_->tp_heap_->NextObject();
+    if (object.is_null()) {
+      third_party_heap_iterator_finished_ = true;
+    }
+    return object;
   }
   // No iterator means we are done.
   if (object_iterator_.get() == nullptr) return HeapObject();
