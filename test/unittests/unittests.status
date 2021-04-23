@@ -87,6 +87,8 @@
 
 ################################################################################
 ['third_party_heap', {
+  # Test V8 stock GC
+  'SpacesTest.CompactionSpaceMerge': [SKIP],
   # Requires --concurrent_inlining / --finalize_streaming_on_background:
   'LocalFactoryTest.AstConsString_CreatesConsString': [SKIP],
   'LocalFactoryTest.AstRawString_IsInternalized': [SKIP],

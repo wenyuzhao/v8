@@ -3138,6 +3138,7 @@ bool Heap::IsImmovable(HeapObject object) {
 }
 
 bool Heap::IsLargeObject(HeapObject object) {
+  if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) return false;
   return BasicMemoryChunk::FromHeapObject(object)->IsLargePage();
 }
 
@@ -6814,6 +6815,7 @@ template void Heap::WriteBarrierForRange<MaybeObjectSlot>(
 template <typename TSlot>
 void Heap::WriteBarrierForRange(HeapObject object, TSlot start_slot,
                                 TSlot end_slot) {
+  if (FLAG_enable_third_party_heap) return;
   MemoryChunk* source_page = MemoryChunk::FromHeapObject(object);
   base::Flags<RangeWriteBarrierMode> mode;
 
