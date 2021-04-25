@@ -119,9 +119,6 @@ Isolate* Heap::GetIsolateFromWritableObject(HeapObject object) {
 }
 #endif
 
-
-bool Heap::inSnapshot = false;
-
 // These are outside the Heap class so they can be forward-declared
 // in heap-write-barrier-inl.h.
 bool Heap_PageFlagsAreConsistent(HeapObject object) {
@@ -1639,7 +1636,6 @@ Heap::DevToolsTraceEventScope::~DevToolsTraceEventScope() {
 bool Heap::CollectGarbage(AllocationSpace space,
                           GarbageCollectionReason gc_reason,
                           const v8::GCCallbackFlags gc_callback_flags) {
-  DCHECK_IMPLIES(!inSnapshot, !FLAG_enable_third_party_heap);
   if (V8_UNLIKELY(!deserialization_complete_)) {
     // During isolate initialization heap always grows. GC is only requested
     // if a new page allocation fails. In such a case we should crash with
@@ -6144,8 +6140,7 @@ HeapObjectIterator::HeapObjectIterator(
       filter_(nullptr),
       space_iterator_(nullptr),
       object_iterator_(nullptr),
-      third_party_heap_iterator_initialized_(false),
-      third_party_heap_iterator_finished_(false) {
+      third_party_heap_iterator_initialized_(false) {
   heap_->MakeHeapIterable();
   // Start the iteration.
   space_iterator_ = new SpaceIterator(heap_);
@@ -6185,14 +6180,7 @@ HeapObject HeapObjectIterator::NextObject() {
       third_party_heap_iterator_initialized_ = true;
       heap_->tp_heap_->ResetIterator();
     }
-    if (third_party_heap_iterator_finished_) {
-      return HeapObject();
-    }
-    HeapObject object = heap_->tp_heap_->NextObject();
-    if (object.is_null()) {
-      third_party_heap_iterator_finished_ = true;
-    }
-    return object;
+    return heap_->tp_heap_->NextObject();
   }
   // No iterator means we are done.
   if (object_iterator_.get() == nullptr) return HeapObject();
