@@ -325,9 +325,9 @@ void LiftoffAssembler::PatchPrepareStackFrame(int offset) {
   patching_assembler.Add64(sp, sp, Operand(-frame_size));
 }
 
-void LiftoffAssembler::FinishCode() {}
+void LiftoffAssembler::FinishCode() { ForceConstantPoolEmissionWithoutJump(); }
 
-void LiftoffAssembler::AbortCompilation() {}
+void LiftoffAssembler::AbortCompilation() { AbortedCodeGeneration(); }
 
 // static
 constexpr int LiftoffAssembler::StaticStackFrameSize() {
@@ -2557,8 +2557,8 @@ void LiftoffAssembler::CallIndirect(const ValueKindSig* sig,
                                     compiler::CallDescriptor* call_descriptor,
                                     Register target) {
   if (target == no_reg) {
-    pop(kScratchReg);
-    Call(kScratchReg);
+    pop(t6);
+    Call(t6);
   } else {
     Call(target);
   }
@@ -2566,8 +2566,8 @@ void LiftoffAssembler::CallIndirect(const ValueKindSig* sig,
 
 void LiftoffAssembler::TailCallIndirect(Register target) {
   if (target == no_reg) {
-    Pop(kScratchReg);
-    Jump(kScratchReg);
+    Pop(t6);
+    Jump(t6);
   } else {
     Jump(target);
   }

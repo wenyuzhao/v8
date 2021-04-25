@@ -342,7 +342,7 @@ namespace internal {
   I(ToNumber, 1, 1)                                             \
   F(ToNumeric, 1, 1)                                            \
   I(ToObject, 1, 1)                                             \
-  I(ToString, 1, 1)                                             \
+  F(ToString, 1, 1)                                             \
   F(TryMigrateInstance, 1, 1)                                   \
   F(SwissTableAdd, 4, 1)                                        \
   F(SwissTableAllocate, 1, 1)                                   \
@@ -552,7 +552,8 @@ namespace internal {
   I(DeoptimizeNow, 0, 1)                      \
   F(PromiseSpeciesProtector, 0, 1)            \
   F(IsConcatSpreadableProtector, 0, 1)        \
-  F(RegExpSpeciesProtector, 0, 1)
+  F(RegExpSpeciesProtector, 0, 1)             \
+  F(Is64Bit, 0, 1)
 
 #define FOR_EACH_INTRINSIC_TYPEDARRAY(F, I) \
   F(ArrayBufferDetach, 1, 1)                \

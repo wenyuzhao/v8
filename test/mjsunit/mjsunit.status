@@ -150,7 +150,7 @@
   'wasm/atomics64-stress': [PASS, SLOW, NO_VARIANTS, ['mode != release or dcheck_always_on', SKIP], ['tsan', SKIP]],
   'wasm/compare-exchange-stress': [PASS, SLOW, NO_VARIANTS],
   'wasm/compare-exchange64-stress': [PASS, SLOW, NO_VARIANTS],
-  'tools/tickprocessor-test-large': [PASS, SLOW, NO_VARIANTS, ['mode != release', SKIP]],
+  'tools/tickprocessor-test-large': [PASS, SLOW, NO_VARIANTS, ['mode != release or arch != x64', SKIP]],
 
   # Very slow on ARM and MIPS, contains no architecture dependent code.
   'unicode-case-overoptimization0': [PASS, NO_VARIANTS, ['arch in (arm, arm64, mipsel, mips64el, mips64, mips, riscv64)', SKIP]],
@@ -1442,7 +1442,7 @@
 }],  # variant == stress_concurrent_allocation
 
 ##############################################################################
-['no_simd_sse == True', {
+['no_simd_hardware == True', {
   'wasm/exceptions-simd': [SKIP],
   'wasm/liftoff-simd-params': [SKIP],
   'wasm/multi-value-simd': [SKIP],
@@ -1463,7 +1463,7 @@
   'regress/wasm/regress-1165966': [SKIP],
   'regress/wasm/regress-1187831': [SKIP],
   'regress/wasm/regress-1199662': [SKIP],
-}],  # no_simd_sse == True
+}],  # no_simd_hardware == True
 
 ##############################################################################
 # TODO(v8:11421): Port baseline compiler to other architectures.

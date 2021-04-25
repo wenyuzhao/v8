@@ -2972,8 +2972,6 @@ void* Heap::AllocateExternalBackingStore(
                      GarbageCollectionReason::kExternalMemoryPressure);
     }
   }
-  // TODO(ulan): Perform GCs proactively based on the byte_length and
-  // the current external backing store counters.
   void* result = allocate(byte_length);
   if (result) return result;
   if (!always_allocate()) {
@@ -3067,8 +3065,7 @@ void VerifyNoNeedToClearSlots(Address start, Address end) {
   BasicMemoryChunk* basic_chunk = BasicMemoryChunk::FromAddress(start);
   if (basic_chunk->InReadOnlySpace()) return;
   MemoryChunk* chunk = static_cast<MemoryChunk*>(basic_chunk);
-  // TODO(ulan): Support verification of large pages.
-  if (chunk->InYoungGeneration() || chunk->IsLargePage()) return;
+  if (chunk->InYoungGeneration()) return;
   BaseSpace* space = chunk->owner();
   space->heap()->VerifySlotRangeHasNoRecordedSlots(start, end);
 }
@@ -3548,8 +3545,6 @@ void Heap::ActivateMemoryReducerIfNeeded() {
 }
 
 void Heap::ReduceNewSpaceSize() {
-  // TODO(ulan): Unify this constant with the similar constant in
-  // GCIdleTimeHandler once the change is merged to 4.5.
   static const size_t kLowAllocationThroughput = 1000;
   const double allocation_throughput =
       tracer()->CurrentAllocationThroughputInBytesPerMillisecond();
@@ -5403,6 +5398,8 @@ void Heap::SetUpSpaces() {
     dead_object_stats_.reset(new ObjectStats(this));
   }
   local_embedder_heap_tracer_.reset(new LocalEmbedderHeapTracer(isolate()));
+  embedder_roots_handler_ =
+      &local_embedder_heap_tracer()->default_embedder_roots_handler();
 
   LOG(isolate_, IntPtrTEvent("heap-capacity", Capacity()));
   LOG(isolate_, IntPtrTEvent("heap-available", Available()));
@@ -5539,6 +5536,14 @@ void Heap::SetEmbedderHeapTracer(EmbedderHeapTracer* tracer) {
   // Setting a tracer is only supported when CppHeap is not used.
   DCHECK_IMPLIES(tracer, !cpp_heap_);
   local_embedder_heap_tracer()->SetRemoteTracer(tracer);
+}
+
+void Heap::SetEmbedderRootsHandler(EmbedderRootsHandler* handler) {
+  embedder_roots_handler_ = handler;
+}
+
+EmbedderRootsHandler* Heap::GetEmbedderRootsHandler() const {
+  return embedder_roots_handler_;
 }
 
 EmbedderHeapTracer* Heap::GetEmbedderHeapTracer() const {
@@ -5681,6 +5686,8 @@ void Heap::TearDown() {
   dead_object_stats_.reset();
 
   local_embedder_heap_tracer_.reset();
+  embedder_roots_handler_ = nullptr;
+
   if (cpp_heap_) {
     CppHeap::From(cpp_heap_)->DetachIsolate();
     cpp_heap_ = nullptr;
@@ -5952,7 +5959,6 @@ void Heap::VerifyClearedSlot(HeapObject object, ObjectSlot slot) {
 void Heap::VerifySlotRangeHasNoRecordedSlots(Address start, Address end) {
 #ifndef V8_DISABLE_WRITE_BARRIERS
   Page* page = Page::FromAddress(start);
-  DCHECK(!page->IsLargePage());
   DCHECK(!page->InYoungGeneration());
   RememberedSet<OLD_TO_NEW>::CheckNoneInRange(page, start, end);
 #endif

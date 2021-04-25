@@ -3625,15 +3625,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kX64S128Not: {
-      XMMRegister dst = i.OutputSimd128Register();
-      XMMRegister src = i.InputSimd128Register(0);
-      if (dst == src) {
-        __ Pcmpeqd(kScratchDoubleReg, kScratchDoubleReg);
-        __ Pxor(dst, kScratchDoubleReg);
-      } else {
-        __ Pcmpeqd(dst, dst);
-        __ Pxor(dst, src);
-      }
+      __ S128Not(i.OutputSimd128Register(), i.InputSimd128Register(0),
+                 kScratchDoubleReg);
       break;
     }
     case kX64S128Select: {
@@ -4407,18 +4400,35 @@ void CodeGenerator::AssembleArchSelect(Instruction* instr,
   Condition cc = FlagsConditionToCondition(condition);
   DCHECK_EQ(i.OutputRegister(), i.InputRegister(instr->InputCount() - 2));
   size_t last_input = instr->InputCount() - 1;
+  // kUnorderedNotEqual can be implemented more efficiently than
+  // kUnorderedEqual. As the OR of two flags, it can be done with just two
+  // cmovs. If the condition was originally a kUnorderedEqual, expect the
+  // instruction selector to have inverted it and swapped the input.
+  DCHECK_NE(condition, kUnorderedEqual);
   if (rep == MachineRepresentation::kWord32) {
     if (HasRegisterInput(instr, last_input)) {
       __ cmovl(cc, i.OutputRegister(), i.InputRegister(last_input));
+      if (condition == kUnorderedNotEqual) {
+        __ cmovl(parity_even, i.OutputRegister(), i.InputRegister(last_input));
+      }
     } else {
       __ cmovl(cc, i.OutputRegister(), i.InputOperand(last_input));
+      if (condition == kUnorderedNotEqual) {
+        __ cmovl(parity_even, i.OutputRegister(), i.InputOperand(last_input));
+      }
     }
   } else {
     DCHECK_EQ(rep, MachineRepresentation::kWord64);
     if (HasRegisterInput(instr, last_input)) {
       __ cmovq(cc, i.OutputRegister(), i.InputRegister(last_input));
+      if (condition == kUnorderedNotEqual) {
+        __ cmovq(parity_even, i.OutputRegister(), i.InputRegister(last_input));
+      }
     } else {
       __ cmovq(cc, i.OutputRegister(), i.InputOperand(last_input));
+      if (condition == kUnorderedNotEqual) {
+        __ cmovq(parity_even, i.OutputRegister(), i.InputOperand(last_input));
+      }
     }
   }
 }

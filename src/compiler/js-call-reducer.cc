@@ -7708,7 +7708,7 @@ Reduction JSCallReducer::ReduceRegExpPrototypeTest(Node* node) {
       MapRef map_ref(broker(), map);
       PropertyAccessInfo access_info = broker()->GetPropertyAccessInfo(
           map_ref, NameRef(broker(), isolate()->factory()->exec_string()),
-          AccessMode::kLoad);
+          AccessMode::kLoad, dependencies());
       access_infos.push_back(access_info);
     }
   } else {
@@ -7829,9 +7829,9 @@ Reduction JSCallReducer::ReduceBigIntAsUintN(Node* node) {
   NumberMatcher matcher(bits);
   if (matcher.IsInteger() && matcher.IsInRange(0, 64)) {
     const int bits_value = static_cast<int>(matcher.ResolvedValue());
-    value = effect = graph()->NewNode(simplified()->CheckBigInt(p.feedback()),
-                                      value, effect, control);
-    value = graph()->NewNode(simplified()->BigIntAsUintN(bits_value), value);
+    value = effect = graph()->NewNode(
+        simplified()->SpeculativeBigIntAsUintN(bits_value, p.feedback()), value,
+        effect, control);
     ReplaceWithValue(node, value, effect);
     return Replace(value);
   }
