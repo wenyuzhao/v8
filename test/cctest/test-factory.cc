@@ -76,7 +76,8 @@ TEST(Factory_CodeBuilder) {
   Handle<Code> code =
       Factory::CodeBuilder(isolate, desc, CodeKind::WASM_FUNCTION).Build();
 
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap, isolate->heap()->InSpace(*code, CODE_LO_SPACE));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap,
+                isolate->heap()->InSpace(*code, CODE_LO_SPACE));
 #if VERIFY_HEAP
   code->ObjectVerify(isolate);
 #endif

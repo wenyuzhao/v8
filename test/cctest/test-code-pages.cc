@@ -162,7 +162,8 @@ TEST(OptimizedCodeWithCodeRange) {
   CHECK(abstract_code.IsCode());
   Code foo_code = abstract_code.GetCode();
 
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap, i_isolate->heap()->InSpace(foo_code, CODE_SPACE));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap,
+                i_isolate->heap()->InSpace(foo_code, CODE_SPACE));
 
   std::vector<MemoryRange>* pages = i_isolate->GetCodePages();
   CHECK(PagesContainsAddress(pages, foo_code.address()));
@@ -208,7 +209,8 @@ TEST(OptimizedCodeWithCodePages) {
       CHECK(abstract_code.IsCode());
       Code foo_code = abstract_code.GetCode();
 
-      CHECK_IMPLIES(!FLAG_enable_third_party_heap, i_isolate->heap()->InSpace(foo_code, CODE_SPACE));
+      CHECK_IMPLIES(!FLAG_enable_third_party_heap,
+                    i_isolate->heap()->InSpace(foo_code, CODE_SPACE));
 
       // Check that the generated code ended up in one of the code pages
       // returned by GetCodePages().
@@ -299,7 +301,8 @@ TEST(LargeCodeObject) {
     Handle<Code> foo_code =
         Factory::CodeBuilder(i_isolate, desc, CodeKind::WASM_FUNCTION).Build();
 
-    CHECK_IMPLIES(!FLAG_enable_third_party_heap, i_isolate->heap()->InSpace(*foo_code, CODE_LO_SPACE));
+    CHECK_IMPLIES(!FLAG_enable_third_party_heap,
+                  i_isolate->heap()->InSpace(*foo_code, CODE_LO_SPACE));
 
     std::vector<MemoryRange>* pages = i_isolate->GetCodePages();
 
@@ -314,7 +317,9 @@ TEST(LargeCodeObject) {
 
   // Delete the large code object.
   CcTest::CollectGarbage(CODE_LO_SPACE);
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap, !i_isolate->heap()->InSpaceSlow(stale_code_address, CODE_LO_SPACE));
+  CHECK_IMPLIES(
+      !FLAG_enable_third_party_heap,
+      !i_isolate->heap()->InSpaceSlow(stale_code_address, CODE_LO_SPACE));
 
   // Check that it was removed from CodePages.
   std::vector<MemoryRange>* pages = i_isolate->GetCodePages();
@@ -424,7 +429,8 @@ TEST(LargeCodeObjectWithSignalHandler) {
     Handle<Code> foo_code =
         Factory::CodeBuilder(i_isolate, desc, CodeKind::WASM_FUNCTION).Build();
 
-    CHECK_IMPLIES(!FLAG_enable_third_party_heap, i_isolate->heap()->InSpace(*foo_code, CODE_LO_SPACE));
+    CHECK_IMPLIES(!FLAG_enable_third_party_heap,
+                  i_isolate->heap()->InSpace(*foo_code, CODE_LO_SPACE));
 
     // Do a synchronous sample to ensure that we capture the state with the
     // extra code page.
@@ -448,7 +454,9 @@ TEST(LargeCodeObjectWithSignalHandler) {
 
   // Delete the large code object.
   CcTest::CollectGarbage(CODE_LO_SPACE);
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap, !i_isolate->heap()->InSpaceSlow(stale_code_address, CODE_LO_SPACE));
+  CHECK_IMPLIES(
+      !FLAG_enable_third_party_heap,
+      !i_isolate->heap()->InSpaceSlow(stale_code_address, CODE_LO_SPACE));
 
   sampling_thread.Stop();
   sampling_thread.Join();
@@ -499,7 +507,8 @@ TEST(Sorted) {
 
     code1 =
         Factory::CodeBuilder(i_isolate, desc, CodeKind::WASM_FUNCTION).Build();
-    CHECK_IMPLIES(!FLAG_enable_third_party_heap, i_isolate->heap()->InSpace(*code1, CODE_LO_SPACE));
+    CHECK_IMPLIES(!FLAG_enable_third_party_heap,
+                  i_isolate->heap()->InSpace(*code1, CODE_LO_SPACE));
 
     {
       HandleScope scope(i_isolate);
@@ -509,15 +518,23 @@ TEST(Sorted) {
       Handle<Code> code2 =
           Factory::CodeBuilder(i_isolate, desc, CodeKind::WASM_FUNCTION)
               .Build();
-      CHECK_IMPLIES(!FLAG_enable_third_party_heap, i_isolate->heap()->InSpace(*code2, CODE_LO_SPACE));
+      CHECK_IMPLIES(!FLAG_enable_third_party_heap,
+                    i_isolate->heap()->InSpace(*code2, CODE_LO_SPACE));
       code3 = Factory::CodeBuilder(i_isolate, desc, CodeKind::WASM_FUNCTION)
                   .Build();
-      CHECK_IMPLIES(!FLAG_enable_third_party_heap, i_isolate->heap()->InSpace(*code3, CODE_LO_SPACE));
+      CHECK_IMPLIES(!FLAG_enable_third_party_heap,
+                    i_isolate->heap()->InSpace(*code3, CODE_LO_SPACE));
 
       code2_address = code2->address();
-      CHECK_IMPLIES(!FLAG_enable_third_party_heap, i_isolate->heap()->InSpaceSlow(code1->address(), CODE_LO_SPACE));
-      CHECK_IMPLIES(!FLAG_enable_third_party_heap, i_isolate->heap()->InSpaceSlow(code2->address(), CODE_LO_SPACE));
-      CHECK_IMPLIES(!FLAG_enable_third_party_heap, i_isolate->heap()->InSpaceSlow(code3->address(), CODE_LO_SPACE));
+      CHECK_IMPLIES(
+          !FLAG_enable_third_party_heap,
+          i_isolate->heap()->InSpaceSlow(code1->address(), CODE_LO_SPACE));
+      CHECK_IMPLIES(
+          !FLAG_enable_third_party_heap,
+          i_isolate->heap()->InSpaceSlow(code2->address(), CODE_LO_SPACE));
+      CHECK_IMPLIES(
+          !FLAG_enable_third_party_heap,
+          i_isolate->heap()->InSpaceSlow(code3->address(), CODE_LO_SPACE));
 
       // Check that the pages were added.
       std::vector<MemoryRange> pages =
@@ -532,14 +549,25 @@ TEST(Sorted) {
 
       code3 = scope.CloseAndEscape(code3);
     }
-    CHECK_IMPLIES(!FLAG_enable_third_party_heap, i_isolate->heap()->InSpaceSlow(code1->address(), CODE_LO_SPACE));
-    CHECK_IMPLIES(!FLAG_enable_third_party_heap, i_isolate->heap()->InSpaceSlow(code2_address, CODE_LO_SPACE));
-    CHECK_IMPLIES(!FLAG_enable_third_party_heap, i_isolate->heap()->InSpaceSlow(code3->address(), CODE_LO_SPACE));
+    CHECK_IMPLIES(
+        !FLAG_enable_third_party_heap,
+        i_isolate->heap()->InSpaceSlow(code1->address(), CODE_LO_SPACE));
+    CHECK_IMPLIES(!FLAG_enable_third_party_heap,
+                  i_isolate->heap()->InSpaceSlow(code2_address, CODE_LO_SPACE));
+    CHECK_IMPLIES(
+        !FLAG_enable_third_party_heap,
+        i_isolate->heap()->InSpaceSlow(code3->address(), CODE_LO_SPACE));
     // Delete code2.
     CcTest::CollectGarbage(CODE_LO_SPACE);
-    CHECK_IMPLIES(!FLAG_enable_third_party_heap, i_isolate->heap()->InSpaceSlow(code1->address(), CODE_LO_SPACE));
-    CHECK_IMPLIES(!FLAG_enable_third_party_heap, !i_isolate->heap()->InSpaceSlow(code2_address, CODE_LO_SPACE));
-    CHECK_IMPLIES(!FLAG_enable_third_party_heap, i_isolate->heap()->InSpaceSlow(code3->address(), CODE_LO_SPACE));
+    CHECK_IMPLIES(
+        !FLAG_enable_third_party_heap,
+        i_isolate->heap()->InSpaceSlow(code1->address(), CODE_LO_SPACE));
+    CHECK_IMPLIES(
+        !FLAG_enable_third_party_heap,
+        !i_isolate->heap()->InSpaceSlow(code2_address, CODE_LO_SPACE));
+    CHECK_IMPLIES(
+        !FLAG_enable_third_party_heap,
+        i_isolate->heap()->InSpaceSlow(code3->address(), CODE_LO_SPACE));
 
     std::vector<MemoryRange> pages =
         SamplingThread::DoSynchronousSample(isolate);

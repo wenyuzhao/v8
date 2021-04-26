@@ -253,7 +253,8 @@ TEST(Regress2060a) {
       Handle<JSObject> object =
           factory->NewJSObject(function, AllocationType::kOld);
       CHECK(!Heap::InYoungGeneration(*object));
-      CHECK_IMPLIES(!FLAG_enable_third_party_heap, !first_page->Contains(object->address()));
+      CHECK_IMPLIES(!FLAG_enable_third_party_heap,
+                    !first_page->Contains(object->address()));
       int32_t hash = key->GetOrCreateHash(isolate).value();
       JSWeakCollection::Set(weakmap, key, object, hash);
     }
@@ -292,7 +293,8 @@ TEST(Regress2060b) {
   for (int i = 0; i < 32; i++) {
     keys[i] = factory->NewJSObject(function, AllocationType::kOld);
     CHECK(!Heap::InYoungGeneration(*keys[i]));
-    CHECK_IMPLIES(!FLAG_enable_third_party_heap, !first_page->Contains(keys[i]->address()));
+    CHECK_IMPLIES(!FLAG_enable_third_party_heap,
+                  !first_page->Contains(keys[i]->address()));
   }
   Handle<JSWeakMap> weakmap = isolate->factory()->NewJSWeakMap();
   for (int i = 0; i < 32; i++) {

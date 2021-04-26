@@ -2538,10 +2538,14 @@ TEST(OptimizedPretenuringAllocationFolding) {
   i::Handle<JSReceiver> o =
       v8::Utils::OpenHandle(*v8::Local<v8::Object>::Cast(res));
   CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(*o));
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(*int_array_handle));
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(int_array_handle->elements()));
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(*double_array_handle));
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(double_array_handle->elements()));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap,
+                CcTest::heap()->InOldSpace(*int_array_handle));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap,
+                CcTest::heap()->InOldSpace(int_array_handle->elements()));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap,
+                CcTest::heap()->InOldSpace(*double_array_handle));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap,
+                CcTest::heap()->InOldSpace(double_array_handle->elements()));
 }
 
 
@@ -2580,7 +2584,8 @@ TEST(OptimizedPretenuringObjectArrayLiterals) {
   i::Handle<JSObject> o = Handle<JSObject>::cast(
       v8::Utils::OpenHandle(*v8::Local<v8::Object>::Cast(res)));
 
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(o->elements()));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap,
+                CcTest::heap()->InOldSpace(o->elements()));
   CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(*o));
 }
 
@@ -2663,13 +2668,20 @@ TEST(OptimizedPretenuringMixedInObjectProperties) {
   CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(*o));
   FieldIndex idx1 = FieldIndex::ForPropertyIndex(o->map(), 0);
   FieldIndex idx2 = FieldIndex::ForPropertyIndex(o->map(), 1);
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(o->RawFastPropertyAt(idx1)));
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(o->RawFastPropertyAt(idx2)));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap,
+                CcTest::heap()->InOldSpace(o->RawFastPropertyAt(idx1)));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap,
+                CcTest::heap()->InOldSpace(o->RawFastPropertyAt(idx2)));
 
   JSObject inner_object = JSObject::cast(o->RawFastPropertyAt(idx1));
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(inner_object));
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(inner_object.RawFastPropertyAt(idx1)));
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(inner_object.RawFastPropertyAt(idx2)));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap,
+                CcTest::heap()->InOldSpace(inner_object));
+  CHECK_IMPLIES(
+      !FLAG_enable_third_party_heap,
+      CcTest::heap()->InOldSpace(inner_object.RawFastPropertyAt(idx1)));
+  CHECK_IMPLIES(
+      !FLAG_enable_third_party_heap,
+      CcTest::heap()->InOldSpace(inner_object.RawFastPropertyAt(idx2)));
 }
 
 
@@ -2746,7 +2758,8 @@ TEST(OptimizedPretenuringDoubleArrayLiterals) {
   i::Handle<JSObject> o = Handle<JSObject>::cast(
       v8::Utils::OpenHandle(*v8::Local<v8::Object>::Cast(res)));
 
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(o->elements()));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap,
+                CcTest::heap()->InOldSpace(o->elements()));
   CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(*o));
 }
 
@@ -2793,10 +2806,14 @@ TEST(OptimizedPretenuringNestedMixedArrayLiterals) {
   Handle<JSObject> o = Handle<JSObject>::cast(
       v8::Utils::OpenHandle(*v8::Local<v8::Object>::Cast(res)));
   CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(*o));
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(*int_array_handle));
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(int_array_handle->elements()));
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(*double_array_handle));
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(double_array_handle->elements()));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap,
+                CcTest::heap()->InOldSpace(*int_array_handle));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap,
+                CcTest::heap()->InOldSpace(int_array_handle->elements()));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap,
+                CcTest::heap()->InOldSpace(*double_array_handle));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap,
+                CcTest::heap()->InOldSpace(double_array_handle->elements()));
 }
 
 
@@ -2843,10 +2860,14 @@ TEST(OptimizedPretenuringNestedObjectLiterals) {
   Handle<JSObject> o = Handle<JSObject>::cast(
       v8::Utils::OpenHandle(*v8::Local<v8::Object>::Cast(res)));
   CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(*o));
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(*int_array_handle_1));
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(int_array_handle_1->elements()));
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(*int_array_handle_2));
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(int_array_handle_2->elements()));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap,
+                CcTest::heap()->InOldSpace(*int_array_handle_1));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap,
+                CcTest::heap()->InOldSpace(int_array_handle_1->elements()));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap,
+                CcTest::heap()->InOldSpace(*int_array_handle_2));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap,
+                CcTest::heap()->InOldSpace(int_array_handle_2->elements()));
 }
 
 
@@ -2893,10 +2914,14 @@ TEST(OptimizedPretenuringNestedDoubleLiterals) {
   i::Handle<JSObject> o = Handle<JSObject>::cast(
       v8::Utils::OpenHandle(*v8::Local<v8::Object>::Cast(res)));
   CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(*o));
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(*double_array_handle_1));
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(double_array_handle_1->elements()));
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(*double_array_handle_2));
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap, CcTest::heap()->InOldSpace(double_array_handle_2->elements()));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap,
+                CcTest::heap()->InOldSpace(*double_array_handle_1));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap,
+                CcTest::heap()->InOldSpace(double_array_handle_1->elements()));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap,
+                CcTest::heap()->InOldSpace(*double_array_handle_2));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap,
+                CcTest::heap()->InOldSpace(double_array_handle_2->elements()));
 }
 
 
@@ -3851,7 +3876,8 @@ static void TestFillersFromPersistentHandles(bool promote) {
   if (promote) {
     CHECK_IMPLIES(!FLAG_enable_third_party_heap, heap->InOldSpace(*tail));
   } else {
-    CHECK_IMPLIES(!FLAG_enable_third_party_heap, Heap::InYoungGeneration(*tail));
+    CHECK_IMPLIES(!FLAG_enable_third_party_heap,
+                  Heap::InYoungGeneration(*tail));
   }
   CHECK_EQ(n - 6, (*tail).length());
   CHECK(!filler_1->IsHeapObject());
@@ -6248,7 +6274,8 @@ TEST(UncommitUnusedLargeObjectMemory) {
   Handle<FixedArray> array =
       isolate->factory()->NewFixedArray(200000, AllocationType::kOld);
   MemoryChunk* chunk = MemoryChunk::FromHeapObject(*array);
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap, chunk->owner_identity() == LO_SPACE);
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap,
+                chunk->owner_identity() == LO_SPACE);
 
   intptr_t size_before = array->Size();
   size_t committed_memory_before = chunk->CommittedPhysicalMemory();
@@ -6447,7 +6474,8 @@ TEST(RememberedSetRemoveRange) {
   Handle<FixedArray> array = isolate->factory()->NewFixedArray(
       Page::kPageSize / kTaggedSize, AllocationType::kOld);
   MemoryChunk* chunk = MemoryChunk::FromHeapObject(*array);
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap, chunk->owner_identity() == LO_SPACE);
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap,
+                chunk->owner_identity() == LO_SPACE);
   Address start = array->address();
   // Maps slot to boolean indicator of whether the slot should be in the set.
   std::map<Address, bool> slots;
@@ -7293,7 +7321,8 @@ TEST(IsPendingAllocationNewSpace) {
   Factory* factory = isolate->factory();
   HandleScope handle_scope(isolate);
   Handle<FixedArray> object = factory->NewFixedArray(5, AllocationType::kYoung);
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap, heap->IsPendingAllocation(*object));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap,
+                heap->IsPendingAllocation(*object));
   heap->PublishPendingAllocations();
   CHECK(!heap->IsPendingAllocation(*object));
 }
@@ -7306,7 +7335,8 @@ TEST(IsPendingAllocationNewLOSpace) {
   HandleScope handle_scope(isolate);
   Handle<FixedArray> object = factory->NewFixedArray(
       FixedArray::kMaxRegularLength + 1, AllocationType::kYoung);
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap, heap->IsPendingAllocation(*object));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap,
+                heap->IsPendingAllocation(*object));
   heap->PublishPendingAllocations();
   CHECK(!heap->IsPendingAllocation(*object));
 }
@@ -7318,7 +7348,8 @@ TEST(IsPendingAllocationOldSpace) {
   Factory* factory = isolate->factory();
   HandleScope handle_scope(isolate);
   Handle<FixedArray> object = factory->NewFixedArray(5, AllocationType::kOld);
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap, heap->IsPendingAllocation(*object));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap,
+                heap->IsPendingAllocation(*object));
   heap->PublishPendingAllocations();
   CHECK(!heap->IsPendingAllocation(*object));
 }
@@ -7331,7 +7362,8 @@ TEST(IsPendingAllocationLOSpace) {
   HandleScope handle_scope(isolate);
   Handle<FixedArray> object = factory->NewFixedArray(
       FixedArray::kMaxRegularLength + 1, AllocationType::kOld);
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap, heap->IsPendingAllocation(*object));
+  CHECK_IMPLIES(!FLAG_enable_third_party_heap,
+                heap->IsPendingAllocation(*object));
   heap->PublishPendingAllocations();
   CHECK(!heap->IsPendingAllocation(*object));
 }

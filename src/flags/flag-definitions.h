@@ -385,7 +385,8 @@ DEFINE_NEG_IMPLICATION(enable_third_party_heap, allocation_site_pretenuring)
 DEFINE_NEG_IMPLICATION(enable_third_party_heap, turbo_allocation_folding)
 DEFINE_NEG_IMPLICATION(enable_third_party_heap, concurrent_recompilation)
 DEFINE_NEG_IMPLICATION(enable_third_party_heap, concurrent_inlining)
-DEFINE_NEG_IMPLICATION(enable_third_party_heap, finalize_streaming_on_background)
+DEFINE_NEG_IMPLICATION(enable_third_party_heap,
+                       finalize_streaming_on_background)
 
 DEFINE_BOOL_READONLY(enable_third_party_heap, V8_ENABLE_THIRD_PARTY_HEAP_BOOL,
                      "Use third-party heap")

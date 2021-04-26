@@ -1000,7 +1000,6 @@ void Heap::PublishPendingAllocations() {
   PagedSpaceIterator spaces(this);
   for (PagedSpace* space = spaces.Next(); space != nullptr;
        space = spaces.Next()) {
-    DCHECK_NE((PagedSpace*) new_space_, space);
     space->MoveOriginalTopForward();
   }
   lo_space_->ResetPendingObject();
@@ -3131,7 +3130,8 @@ bool Heap::IsImmovable(HeapObject object) {
 }
 
 bool Heap::IsLargeObject(HeapObject object) {
-  if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) return third_party_heap::Heap::InLargeObjectSpace(object.address());
+  if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL)
+    return third_party_heap::Heap::InLargeObjectSpace(object.address());
   return BasicMemoryChunk::FromHeapObject(object)->IsLargePage();
 }
 
@@ -5810,9 +5810,10 @@ void Heap::CompactWeakArrayLists(AllocationType allocation) {
   for (auto& prototype_info : prototype_infos) {
     Handle<WeakArrayList> array(
         WeakArrayList::cast(prototype_info->prototype_users()), isolate());
-    DCHECK_IMPLIES(!FLAG_enable_third_party_heap && allocation == AllocationType::kOld,
-                   InOldSpace(*array) ||
-                       *array == ReadOnlyRoots(this).empty_weak_array_list());
+    DCHECK_IMPLIES(
+        !FLAG_enable_third_party_heap && allocation == AllocationType::kOld,
+        InOldSpace(*array) ||
+            *array == ReadOnlyRoots(this).empty_weak_array_list());
     WeakArrayList new_array = PrototypeUsers::Compact(
         array, this, JSObject::PrototypeRegistryCompactionCallback, allocation);
     prototype_info->set_prototype_users(new_array);
