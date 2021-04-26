@@ -16,21 +16,6 @@
 
 ################################################################################
 ['third_party_heap', {
-  # Performs GC
-  'WasmCapiCallbacksTest.GC': [SKIP],
-  'WasmCapiCallbacksTest.Trap': [SKIP],
-  'WasmCapiTest.CapiFunctionLifetimes': [SKIP],
-  'WasmCapiTest.DirectCallCapiFunction': [SKIP],
-  'WasmCapiTest.Globals': [SKIP],
-  'WasmCapiTest.HostRef': [SKIP],
-  'WasmCapiTest.Memory': [SKIP],
-  'WasmCapiTest.MultiReturn': [SKIP],
-  'WasmCapiTest.Recursion': [SKIP],
-  'WasmCapiTest.Reflect': [SKIP],
-  'WasmCapiTest.Serialize': [SKIP],
-  'WasmCapiTest.StartupErrors': [SKIP],
-  'WasmCapiTest.Table': [SKIP],
-  'WasmCapiTest.Traps': [SKIP],
   # Requires a second isolate
   'WasmCapiTest.InstanceFinalization': [SKIP],
   'WasmCapiTest.MultiStoresOneThread': [SKIP],

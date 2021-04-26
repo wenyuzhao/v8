@@ -65,10 +65,4 @@
   '*': [SKIP],  # only relevant for mjsunit tests.
 }],
 
-################################################################################
-['third_party_heap', {
-  # Performs GC
-  'regress-1121156': [SKIP],
-}], # third_party_heap
-
 ]
