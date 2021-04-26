@@ -399,7 +399,7 @@ MaybeHandle<FixedArray> Factory::TryNewFixedArray(
   HeapObject result;
   if (!allocation.To(&result)) return MaybeHandle<FixedArray>();
   if ((size > Heap::MaxRegularHeapObjectSize(allocation_type)) &&
-      FLAG_use_marking_progress_bar && !FLAG_enable_third_party_heap) {
+      FLAG_use_marking_progress_bar) {
     BasicMemoryChunk* chunk = BasicMemoryChunk::FromHeapObject(result);
     chunk->SetFlag<AccessMode::ATOMIC>(MemoryChunk::HAS_PROGRESS_BAR);
   }
