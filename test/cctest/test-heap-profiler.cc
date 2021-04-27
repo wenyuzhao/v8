@@ -3957,10 +3957,8 @@ TEST(SamplingHeapProfilerPretenuredInlineAllocations) {
   auto res = f->Call(env.local(), env->Global(), 0, nullptr).ToLocalChecked();
   i::Handle<i::JSObject> o = i::Handle<i::JSObject>::cast(
       v8::Utils::OpenHandle(*v8::Local<v8::Object>::Cast(res)));
-  CHECK_IMPLIES(!v8::internal::FLAG_enable_third_party_heap,
-                CcTest::heap()->InOldSpace(o->elements()));
-  CHECK_IMPLIES(!v8::internal::FLAG_enable_third_party_heap,
-                CcTest::heap()->InOldSpace(*o));
+  CHECK(CcTest::heap()->InOldSpace(o->elements()));
+  CHECK(CcTest::heap()->InOldSpace(*o));
 
   // Call the function and profile it.
   heap_profiler->StartSamplingHeapProfiler(64);

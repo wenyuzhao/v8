@@ -82,18 +82,18 @@ TEST(WeakReferencesOldToOld) {
   HandleScope outer_scope(isolate);
   Handle<LoadHandler> lh =
       CreateLoadHandlerForTest(factory, AllocationType::kOld);
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap, heap->InOldSpace(*lh));
+  CHECK(heap->InOldSpace(*lh));
 
   // Create a new FixedArray which the LoadHandler will point to.
   Handle<FixedArray> fixed_array =
       factory->NewFixedArray(1, AllocationType::kOld);
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap, heap->InOldSpace(*fixed_array));
+  CHECK(heap->InOldSpace(*fixed_array));
   lh->set_data1(HeapObjectReference::Weak(*fixed_array));
 
   Page* page_before_gc = Page::FromHeapObject(*fixed_array);
   heap::ForceEvacuationCandidate(page_before_gc);
   CcTest::CollectAllGarbage();
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap, heap->InOldSpace(*fixed_array));
+  CHECK(heap->InOldSpace(*fixed_array));
 
   HeapObject heap_object;
   CHECK(lh->data1()->GetHeapObjectIfWeak(&heap_object));
@@ -112,7 +112,7 @@ TEST(WeakReferencesOldToNew) {
   HandleScope outer_scope(isolate);
   Handle<LoadHandler> lh =
       CreateLoadHandlerForTest(factory, AllocationType::kOld);
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap, heap->InOldSpace(*lh));
+  CHECK(heap->InOldSpace(*lh));
 
   // Create a new FixedArray which the LoadHandler will point to.
   Handle<FixedArray> fixed_array = factory->NewFixedArray(1);
@@ -138,7 +138,7 @@ TEST(WeakReferencesOldToNewScavenged) {
   HandleScope outer_scope(isolate);
   Handle<LoadHandler> lh =
       CreateLoadHandlerForTest(factory, AllocationType::kOld);
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap, heap->InOldSpace(*lh));
+  CHECK(heap->InOldSpace(*lh));
 
   // Create a new FixedArray which the LoadHandler will point to.
   Handle<FixedArray> fixed_array = factory->NewFixedArray(1);
@@ -165,7 +165,7 @@ TEST(WeakReferencesOldToCleared) {
   HandleScope outer_scope(isolate);
   Handle<LoadHandler> lh =
       CreateLoadHandlerForTest(factory, AllocationType::kOld);
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap, heap->InOldSpace(*lh));
+  CHECK(heap->InOldSpace(*lh));
   lh->set_data1(HeapObjectReference::ClearedValue(isolate));
 
   CcTest::CollectAllGarbage();
@@ -265,8 +265,8 @@ TEST(ObjectWithWeakReferencePromoted) {
 
   CcTest::CollectGarbage(NEW_SPACE);
   CcTest::CollectGarbage(NEW_SPACE);
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap, heap->InOldSpace(*lh));
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap, heap->InOldSpace(*fixed_array));
+  CHECK(heap->InOldSpace(*lh));
+  CHECK(heap->InOldSpace(*fixed_array));
 
   HeapObject heap_object;
   CHECK(lh->data1()->GetHeapObjectIfWeak(&heap_object));
@@ -409,7 +409,7 @@ TEST(WeakArraysBasic) {
   CHECK_EQ(Smi::cast(FixedArray::cast(heap_object).get(0)).value(), 2019);
 
   CcTest::CollectAllGarbage();
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap, heap->InOldSpace(*array));
+  CHECK(heap->InOldSpace(*array));
   CHECK(array->Get(0)->IsCleared());
   CHECK(array->Get(1)->GetHeapObjectIfWeak(&heap_object));
   CHECK_EQ(Smi::cast(FixedArray::cast(heap_object).get(0)).value(), 2017);
@@ -511,7 +511,7 @@ TEST(WeakArrayListBasic) {
   CHECK_EQ(array->Get(7).ToSmi().value(), 7);
 
   CcTest::CollectAllGarbage();
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap, heap->InOldSpace(*array));
+  CHECK(heap->InOldSpace(*array));
   CHECK_EQ(array->length(), 8);
   CHECK(array->Get(0)->IsCleared());
   CHECK_EQ(array->Get(1).ToSmi().value(), 1);

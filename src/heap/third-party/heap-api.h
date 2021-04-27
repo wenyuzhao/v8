@@ -26,6 +26,8 @@ class Heap {
 
   const base::AddressRegion& GetCodeRange();
 
+  static bool InOldSpace(Address address);
+
   static bool InCodeSpace(Address address);
 
   static bool InReadOnlySpace(Address address);
