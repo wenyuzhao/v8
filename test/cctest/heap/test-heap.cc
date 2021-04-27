@@ -1928,6 +1928,7 @@ TEST(TestAlignedOverAllocation) {
 }
 
 TEST(HeapNumberAlignment) {
+  if (!FLAG_allocation_site_pretenuring) return;
   CcTest::InitializeVM();
   Isolate* isolate = CcTest::i_isolate();
   Factory* factory = isolate->factory();
@@ -3848,11 +3849,12 @@ static void TestFillersFromPersistentHandles(bool promote) {
 
   // GC should retain the trimmed array but drop all of the three fillers.
   CcTest::CollectGarbage(NEW_SPACE);
-  if (promote) {
-    CHECK_IMPLIES(!FLAG_enable_third_party_heap, heap->InOldSpace(*tail));
-  } else {
-    CHECK_IMPLIES(!FLAG_enable_third_party_heap,
-                  Heap::InYoungGeneration(*tail));
+  if (!FLAG_single_generation) {
+    if (promote) {
+      CHECK(heap->InOldSpace(*tail));
+    } else {
+      CHECK(Heap::InYoungGeneration(*tail));
+    }
   }
   CHECK_EQ(n - 6, (*tail).length());
   CHECK(!filler_1->IsHeapObject());
@@ -3861,12 +3863,12 @@ static void TestFillersFromPersistentHandles(bool promote) {
 }
 
 TEST(DoNotEvacuateFillersFromPersistentHandles) {
-  if (FLAG_single_generation) return;
+  if (FLAG_single_generation || FLAG_move_object_start) return;
   TestFillersFromPersistentHandles(false /*promote*/);
 }
 
 TEST(DoNotPromoteFillersFromPersistentHandles) {
-  if (FLAG_single_generation) return;
+  if (FLAG_single_generation || FLAG_move_object_start) return;
   TestFillersFromPersistentHandles(true /*promote*/);
 }
 

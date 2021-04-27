@@ -6155,7 +6155,7 @@ HeapObjectIterator::~HeapObjectIterator() {
 #ifdef DEBUG
   // Assert that in filtering mode we have iterated through all
   // objects. Otherwise, heap will be left in an inconsistent state.
-  if (!V8_ENABLE_THIRD_PARTY_HEAP_BOOL && filtering_ != kNoFiltering) {
+  if (filtering_ != kNoFiltering) {
     DCHECK_NULL(object_iterator_);
   }
 #endif
