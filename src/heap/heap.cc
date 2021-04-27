@@ -5793,7 +5793,7 @@ Handle<WeakArrayList> CompactWeakArrayList(Heap* heap,
 
 }  // anonymous namespace
 
-void Heap::CompactWeakArrayLists(AllocationType allocation) {
+void Heap::CompactWeakArrayLists() {
   // Find known PrototypeUsers and compact them.
   std::vector<Handle<PrototypeInfo>> prototype_infos;
   {
@@ -5810,21 +5810,19 @@ void Heap::CompactWeakArrayLists(AllocationType allocation) {
   for (auto& prototype_info : prototype_infos) {
     Handle<WeakArrayList> array(
         WeakArrayList::cast(prototype_info->prototype_users()), isolate());
-    DCHECK_IMPLIES(
-        !FLAG_enable_third_party_heap && allocation == AllocationType::kOld,
-        InOldSpace(*array) ||
-            *array == ReadOnlyRoots(this).empty_weak_array_list());
+    DCHECK_IMPLIES(!FLAG_enable_third_party_heap,
+                   InOldSpace(*array) ||
+                       *array == ReadOnlyRoots(this).empty_weak_array_list());
     WeakArrayList new_array = PrototypeUsers::Compact(
-        array, this, JSObject::PrototypeRegistryCompactionCallback, allocation);
+        array, this, JSObject::PrototypeRegistryCompactionCallback,
+        AllocationType::kOld);
     prototype_info->set_prototype_users(new_array);
   }
 
   // Find known WeakArrayLists and compact them.
   Handle<WeakArrayList> scripts(script_list(), isolate());
-  DCHECK_IMPLIES(
-      !V8_ENABLE_THIRD_PARTY_HEAP_BOOL && allocation == AllocationType::kOld,
-      InOldSpace(*scripts));
-  scripts = CompactWeakArrayList(this, scripts, allocation);
+  DCHECK_IMPLIES(!V8_ENABLE_THIRD_PARTY_HEAP_BOOL, InOldSpace(*scripts));
+  scripts = CompactWeakArrayList(this, scripts, AllocationType::kOld);
   set_script_list(*scripts);
 }
 
