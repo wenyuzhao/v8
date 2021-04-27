@@ -76,9 +76,6 @@ TEST(Factory_CodeBuilder) {
   Handle<Code> code =
       Factory::CodeBuilder(isolate, desc, CodeKind::WASM_FUNCTION).Build();
 
-  printf("CODE: %p\n", (void*)code->ptr());
-  auto x = isolate->heap()->InSpace(*code, CODE_LO_SPACE);
-  std::cout << x << std::endl;
   CHECK(isolate->heap()->InSpace(*code, CODE_LO_SPACE));
 #if VERIFY_HEAP
   code->ObjectVerify(isolate);
