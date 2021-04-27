@@ -1823,9 +1823,7 @@ TEST(CodeSerializerLargeCodeObject) {
       isolate, source_str, Handle<String>(), &cache,
       v8::ScriptCompiler::kNoCompileOptions);
 
-  CHECK_IMPLIES(
-      !FLAG_enable_third_party_heap,
-      isolate->heap()->InSpace(orig->abstract_code(isolate), LO_SPACE));
+  CHECK(isolate->heap()->InSpace(orig->abstract_code(isolate), LO_SPACE));
 
   Handle<SharedFunctionInfo> copy;
   {
@@ -1975,14 +1973,10 @@ TEST(CodeSerializerLargeStrings) {
   CHECK_EQ(6 * 1999999, Handle<String>::cast(copy_result)->length());
   Handle<Object> property = JSReceiver::GetDataProperty(
       isolate->global_object(), f->NewStringFromAsciiChecked("s"));
-  CHECK_IMPLIES(
-      !FLAG_enable_third_party_heap,
-      isolate->heap()->InSpace(HeapObject::cast(*property), LO_SPACE));
+  CHECK(isolate->heap()->InSpace(HeapObject::cast(*property), LO_SPACE));
   property = JSReceiver::GetDataProperty(isolate->global_object(),
                                          f->NewStringFromAsciiChecked("t"));
-  CHECK_IMPLIES(
-      !FLAG_enable_third_party_heap,
-      isolate->heap()->InSpace(HeapObject::cast(*property), LO_SPACE));
+  CHECK(isolate->heap()->InSpace(HeapObject::cast(*property), LO_SPACE));
   // Make sure we do not serialize too much, e.g. include the source string.
   CHECK_LT(cache->length(), 13000000);
 
