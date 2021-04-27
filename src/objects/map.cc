@@ -1153,7 +1153,7 @@ int Map::NumberOfEnumerableProperties() const {
 
 int Map::NextFreePropertyIndex() const {
   int number_of_own_descriptors = NumberOfOwnDescriptors();
-  DescriptorArray descs = instance_descriptors();
+  DescriptorArray descs = instance_descriptors(kRelaxedLoad);
   // Search properties backwards to find the last field.
   for (int i = number_of_own_descriptors - 1; i >= 0; --i) {
     PropertyDetails details = descs.GetDetails(InternalIndex(i));

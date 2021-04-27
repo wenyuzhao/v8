@@ -6438,10 +6438,11 @@ bool FunctionTemplate::HasInstance(v8::Local<v8::Value> value) {
   return false;
 }
 
-bool FunctionTemplate::IsLeafTemplateForApiObject(v8::Value* value) const {
+bool FunctionTemplate::IsLeafTemplateForApiObject(
+    v8::Local<v8::Value> value) const {
   i::DisallowGarbageCollection no_gc;
 
-  i::Object object = *Utils::OpenHandle(value);
+  i::Object object = *Utils::OpenHandle(*value);
 
   auto self = Utils::OpenHandle(this);
   return self->IsLeafTemplateForApiObject(object);
@@ -8997,10 +8998,12 @@ CALLBACK_SETTER(WasmExceptionsEnabledCallback, WasmExceptionsEnabledCallback,
 
 void Isolate::InstallConditionalFeatures(Local<Context> context) {
 #if V8_ENABLE_WEBASSEMBLY
-  v8::HandleScope handle_scope(this);
-  v8::Context::Scope context_scope(context);
-  i::WasmJs::InstallConditionalFeatures(reinterpret_cast<i::Isolate*>(this),
-                                        Utils::OpenHandle(*context));
+  if (i::FLAG_expose_wasm) {
+    v8::HandleScope handle_scope(this);
+    v8::Context::Scope context_scope(context);
+    i::WasmJs::InstallConditionalFeatures(reinterpret_cast<i::Isolate*>(this),
+                                          Utils::OpenHandle(*context));
+  }
 #endif  // V8_ENABLE_WEBASSEMBLY
 }
 

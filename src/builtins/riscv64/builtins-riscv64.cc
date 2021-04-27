@@ -979,7 +979,7 @@ static void LoadOptimizationStateAndJumpIfNeedsProcessing(
   __ RecordComment("[ Check optimization state");
   UseScratchRegisterScope temps(masm);
   Register scratch = temps.Acquire();
-  __ Ld(optimization_state,
+  __ Lw(optimization_state,
         FieldMemOperand(feedback_vector, FeedbackVector::kFlagsOffset));
   __ And(
       scratch, optimization_state,
@@ -1814,6 +1814,8 @@ void Builtins::Generate_InterpreterOnStackReplacement(MacroAssembler* masm) {
 }
 
 void Builtins::Generate_BaselineOnStackReplacement(MacroAssembler* masm) {
+  __ Ld(kContextRegister,
+        MemOperand(fp, StandardFrameConstants::kContextOffset));
   return OnStackReplacement(masm, false);
 }
 

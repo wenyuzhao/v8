@@ -325,6 +325,9 @@
 
   # BUG(v8:11240)
   'regress/regress-v8-9267-1': [SKIP],
+
+  # BUG(v8:11700)
+  'wasm/reference-globals': [SKIP],
 }],  # 'gc_stress'
 
 ##############################################################################
@@ -609,6 +612,9 @@
 
   # https://crbug.com/v8/9337 - OOMs on TSAN
   'compiler/regress-9017': [SKIP],
+
+  # BUG(v8:11702): Times out on TSAN.
+  'harmony/sharedarraybuffer-worker-gc-stress': [SKIP],
 }],  # 'tsan == True'
 
 ##############################################################################
@@ -854,10 +860,6 @@
 
 }],  # 'arch == riscv64'
 
-['arch == riscv64 and variant == stress_incremental_marking', {
-  # https://github.com/v8-riscv/v8/issues/414
-  'wasm/externref-globals-liftoff': [SKIP],
-}], #'arch == riscv64 and variant == stress-incremental-marking'
 
 ##############################################################################
 ['system == macos', {

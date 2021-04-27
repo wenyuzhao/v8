@@ -67,7 +67,6 @@
 #include "src/compiler/pipeline-statistics.h"
 #include "src/compiler/redundancy-elimination.h"
 #include "src/compiler/schedule.h"
-#include "src/compiler/scheduled-machine-lowering.h"
 #include "src/compiler/scheduler.h"
 #include "src/compiler/select-lowering.h"
 #include "src/compiler/serializer-for-background-compilation.h"
@@ -139,8 +138,7 @@ class PipelineData {
   // For main entry point.
   PipelineData(ZoneStats* zone_stats, Isolate* isolate,
                OptimizedCompilationInfo* info,
-               PipelineStatistics* pipeline_statistics,
-               bool is_concurrent_inlining)
+               PipelineStatistics* pipeline_statistics)
       : isolate_(isolate),
         allocator_(isolate->allocator()),
         info_(info),
@@ -157,9 +155,9 @@ class PipelineData {
         instruction_zone_(instruction_zone_scope_.zone()),
         codegen_zone_scope_(zone_stats_, kCodegenZoneName),
         codegen_zone_(codegen_zone_scope_.zone()),
-        broker_(new JSHeapBroker(isolate_, info_->zone(),
-                                 info_->trace_heap_broker(),
-                                 is_concurrent_inlining, info->code_kind())),
+        broker_(new JSHeapBroker(
+            isolate_, info_->zone(), info_->trace_heap_broker(),
+            info_->concurrent_inlining(), info->code_kind())),
         register_allocation_zone_scope_(zone_stats_,
                                         kRegisterAllocationZoneName),
         register_allocation_zone_(register_allocation_zone_scope_.zone()),
@@ -1105,15 +1103,6 @@ class PipelineCompilationJob final : public OptimizedCompilationJob {
   Linkage* linkage_;
 };
 
-namespace {
-
-bool ShouldUseConcurrentInlining(CodeKind code_kind, bool is_osr) {
-  if (is_osr) return false;
-  return code_kind == CodeKind::TURBOPROP || FLAG_concurrent_inlining;
-}
-
-}  // namespace
-
 PipelineCompilationJob::PipelineCompilationJob(
     Isolate* isolate, Handle<SharedFunctionInfo> shared_info,
     Handle<JSFunction> function, BytecodeOffset osr_offset,
@@ -1126,17 +1115,14 @@ PipelineCompilationJob::PipelineCompilationJob(
             kPipelineCompilationJobZoneName),
       zone_stats_(function->GetIsolate()->allocator()),
       compilation_info_(&zone_, function->GetIsolate(), shared_info, function,
-                        code_kind),
+                        code_kind, osr_offset, osr_frame),
       pipeline_statistics_(CreatePipelineStatistics(
           handle(Script::cast(shared_info->script()), isolate),
           compilation_info(), function->GetIsolate(), &zone_stats_)),
       data_(&zone_stats_, function->GetIsolate(), compilation_info(),
-            pipeline_statistics_.get(),
-            ShouldUseConcurrentInlining(code_kind, !osr_offset.IsNone())),
+            pipeline_statistics_.get()),
       pipeline_(&data_),
-      linkage_(nullptr) {
-  compilation_info_.SetOptimizingForOsr(osr_offset, osr_frame);
-}
+      linkage_(nullptr) {}
 
 PipelineCompilationJob::~PipelineCompilationJob() = default;
 
@@ -1229,7 +1215,7 @@ PipelineCompilationJob::Status PipelineCompilationJob::PrepareJobImpl(
     }
   }
 
-  if (FLAG_turbo_direct_heap_access) {
+  if (compilation_info()->concurrent_inlining()) {
     isolate->heap()->PublishPendingAllocations();
   }
 
@@ -1376,7 +1362,8 @@ struct InliningPhase {
                                data->broker(), data->jsgraph()->Dead(),
                                data->observe_node_manager());
     DeadCodeElimination dead_code_elimination(&graph_reducer, data->graph(),
-                                              data->common(), temp_zone);
+                                              data->common(), temp_zone,
+                                              info->concurrent_inlining());
     CheckpointElimination checkpoint_elimination(&graph_reducer);
     CommonOperatorReducer common_reducer(&graph_reducer, data->graph(),
                                          data->broker(), data->common(),
@@ -1446,7 +1433,8 @@ struct WasmInliningPhase {
     GraphReducer graph_reducer(temp_zone, data->graph(), &info->tick_counter(),
                                data->broker(), data->jsgraph()->Dead());
     DeadCodeElimination dead_code_elimination(&graph_reducer, data->graph(),
-                                              data->common(), temp_zone);
+                                              data->common(), temp_zone,
+                                              info->concurrent_inlining());
     CommonOperatorReducer common_reducer(&graph_reducer, data->graph(),
                                          data->broker(), data->common(),
                                          data->machine(), temp_zone);
@@ -1569,6 +1557,10 @@ struct SerializationPhase {
       data->broker()->ClearCachedPropertyAccessInfos();
       data->dependencies()->ClearForConcurrentGetPropertyAccessInfo();
     }
+    if (FLAG_stress_concurrent_inlining) {
+      // Force re-serialization from the background thread.
+      data->broker()->ClearReconstructibleData();
+    }
   }
 };
 
@@ -1579,8 +1571,9 @@ struct TypedLoweringPhase {
     GraphReducer graph_reducer(
         temp_zone, data->graph(), &data->info()->tick_counter(), data->broker(),
         data->jsgraph()->Dead(), data->observe_node_manager());
-    DeadCodeElimination dead_code_elimination(&graph_reducer, data->graph(),
-                                              data->common(), temp_zone);
+    DeadCodeElimination dead_code_elimination(
+        &graph_reducer, data->graph(), data->common(), temp_zone,
+        data->info()->concurrent_inlining());
     JSCreateLowering create_lowering(&graph_reducer, data->dependencies(),
                                      data->jsgraph(), data->broker(),
                                      temp_zone);
@@ -1766,8 +1759,9 @@ struct EarlyOptimizationPhase {
     GraphReducer graph_reducer(
         temp_zone, data->graph(), &data->info()->tick_counter(), data->broker(),
         data->jsgraph()->Dead(), data->observe_node_manager());
-    DeadCodeElimination dead_code_elimination(&graph_reducer, data->graph(),
-                                              data->common(), temp_zone);
+    DeadCodeElimination dead_code_elimination(
+        &graph_reducer, data->graph(), data->common(), temp_zone,
+        data->info()->concurrent_inlining());
     SimplifiedOperatorReducer simple_reducer(&graph_reducer, data->jsgraph(),
                                              data->broker());
     RedundancyElimination redundancy_elimination(&graph_reducer, temp_zone);
@@ -1823,11 +1817,6 @@ struct EffectControlLinearizationPhase {
       TraceScheduleAndVerify(data->info(), data, schedule,
                              "effect linearization schedule");
 
-      MaskArrayIndexEnable mask_array_index =
-          (data->info()->GetPoisoningMitigationLevel() !=
-           PoisoningMitigationLevel::kDontPoison)
-              ? MaskArrayIndexEnable::kMaskArrayIndex
-              : MaskArrayIndexEnable::kDoNotMaskArrayIndex;
       // Post-pass for wiring the control/effects
       // - connect allocating representation changes into the control&effect
       //   chains and lower them,
@@ -1835,7 +1824,7 @@ struct EffectControlLinearizationPhase {
       // - introduce effect phis and rewire effects to get SSA again.
       LinearizeEffectControl(data->jsgraph(), schedule, temp_zone,
                              data->source_positions(), data->node_origins(),
-                             mask_array_index, MaintainSchedule::kDiscard,
+                             data->info()->GetPoisoningMitigationLevel(),
                              data->broker());
     }
     {
@@ -1848,8 +1837,9 @@ struct EffectControlLinearizationPhase {
                                  &data->info()->tick_counter(), data->broker(),
                                  data->jsgraph()->Dead(),
                                  data->observe_node_manager());
-      DeadCodeElimination dead_code_elimination(&graph_reducer, data->graph(),
-                                                data->common(), temp_zone);
+      DeadCodeElimination dead_code_elimination(
+          &graph_reducer, data->graph(), data->common(), temp_zone,
+          data->info()->concurrent_inlining());
       CommonOperatorReducer common_reducer(&graph_reducer, data->graph(),
                                            data->broker(), data->common(),
                                            data->machine(), temp_zone);
@@ -1887,8 +1877,9 @@ struct LoadEliminationPhase {
     BranchElimination branch_condition_elimination(&graph_reducer,
                                                    data->jsgraph(), temp_zone,
                                                    BranchElimination::kEARLY);
-    DeadCodeElimination dead_code_elimination(&graph_reducer, data->graph(),
-                                              data->common(), temp_zone);
+    DeadCodeElimination dead_code_elimination(
+        &graph_reducer, data->graph(), data->common(), temp_zone,
+        data->info()->concurrent_inlining());
     RedundancyElimination redundancy_elimination(&graph_reducer, temp_zone);
     LoadElimination load_elimination(&graph_reducer, data->jsgraph(),
                                      temp_zone);
@@ -1955,8 +1946,9 @@ struct LateOptimizationPhase {
         data->jsgraph()->Dead(), data->observe_node_manager());
     BranchElimination branch_condition_elimination(&graph_reducer,
                                                    data->jsgraph(), temp_zone);
-    DeadCodeElimination dead_code_elimination(&graph_reducer, data->graph(),
-                                              data->common(), temp_zone);
+    DeadCodeElimination dead_code_elimination(
+        &graph_reducer, data->graph(), data->common(), temp_zone,
+        data->info()->concurrent_inlining());
     ValueNumberingReducer value_numbering(temp_zone, data->graph()->zone());
     MachineOperatorReducer machine_reducer(&graph_reducer, data->jsgraph());
     CommonOperatorReducer common_reducer(&graph_reducer, data->graph(),
@@ -2019,43 +2011,22 @@ struct ScheduledEffectControlLinearizationPhase {
   DECL_PIPELINE_PHASE_CONSTANTS(ScheduledEffectControlLinearization)
 
   void Run(PipelineData* data, Zone* temp_zone) {
-    MaskArrayIndexEnable mask_array_index =
-        (data->info()->GetPoisoningMitigationLevel() !=
-         PoisoningMitigationLevel::kDontPoison)
-            ? MaskArrayIndexEnable::kMaskArrayIndex
-            : MaskArrayIndexEnable::kDoNotMaskArrayIndex;
     // Post-pass for wiring the control/effects
     // - connect allocating representation changes into the control&effect
     //   chains and lower them,
     // - get rid of the region markers,
-    // - introduce effect phis and rewire effects to get SSA again.
-    LinearizeEffectControl(data->jsgraph(), data->schedule(), temp_zone,
+    // - introduce effect phis and rewire effects to get SSA again,
+    // - lower simplified memory and select nodes to machine level nodes.
+    LowerToMachineSchedule(data->jsgraph(), data->schedule(), temp_zone,
                            data->source_positions(), data->node_origins(),
-                           mask_array_index, MaintainSchedule::kMaintain,
+                           data->info()->GetPoisoningMitigationLevel(),
                            data->broker());
-
-    // TODO(rmcilroy) Avoid having to rebuild rpo_order on schedule each time.
-    Scheduler::ComputeSpecialRPO(temp_zone, data->schedule());
-    if (FLAG_turbo_verify) Scheduler::GenerateDominatorTree(data->schedule());
-    TraceScheduleAndVerify(data->info(), data, data->schedule(),
-                           "effect linearization schedule");
-  }
-};
-
-struct ScheduledMachineLoweringPhase {
-  DECL_PIPELINE_PHASE_CONSTANTS(ScheduledMachineLowering)
-
-  void Run(PipelineData* data, Zone* temp_zone) {
-    ScheduledMachineLowering machine_lowering(
-        data->jsgraph(), data->schedule(), temp_zone, data->source_positions(),
-        data->node_origins(), data->info()->GetPoisoningMitigationLevel());
-    machine_lowering.Run();
 
     // TODO(rmcilroy) Avoid having to rebuild rpo_order on schedule each time.
     Scheduler::ComputeSpecialRPO(temp_zone, data->schedule());
     Scheduler::GenerateDominatorTree(data->schedule());
     TraceScheduleAndVerify(data->info(), data, data->schedule(),
-                           "machine lowered schedule");
+                           "effect linearization schedule");
   }
 };
 
@@ -2070,8 +2041,9 @@ struct CsaEarlyOptimizationPhase {
                                            allow_signalling_nan);
     BranchElimination branch_condition_elimination(&graph_reducer,
                                                    data->jsgraph(), temp_zone);
-    DeadCodeElimination dead_code_elimination(&graph_reducer, data->graph(),
-                                              data->common(), temp_zone);
+    DeadCodeElimination dead_code_elimination(
+        &graph_reducer, data->graph(), data->common(), temp_zone,
+        data->info()->concurrent_inlining());
     CommonOperatorReducer common_reducer(&graph_reducer, data->graph(),
                                          data->broker(), data->common(),
                                          data->machine(), temp_zone);
@@ -2097,8 +2069,9 @@ struct CsaOptimizationPhase {
         data->jsgraph()->Dead(), data->observe_node_manager());
     BranchElimination branch_condition_elimination(&graph_reducer,
                                                    data->jsgraph(), temp_zone);
-    DeadCodeElimination dead_code_elimination(&graph_reducer, data->graph(),
-                                              data->common(), temp_zone);
+    DeadCodeElimination dead_code_elimination(
+        &graph_reducer, data->graph(), data->common(), temp_zone,
+        data->info()->concurrent_inlining());
     MachineOperatorReducer machine_reducer(&graph_reducer, data->jsgraph(),
                                            allow_signalling_nan);
     CommonOperatorReducer common_reducer(&graph_reducer, data->graph(),
@@ -2881,9 +2854,6 @@ bool PipelineImpl::OptimizeGraphForMidTier(Linkage* linkage) {
   RunPrintAndVerify(ScheduledEffectControlLinearizationPhase::phase_name(),
                     true);
 
-  Run<ScheduledMachineLoweringPhase>();
-  RunPrintAndVerify(ScheduledMachineLoweringPhase::phase_name(), true);
-
   data->source_positions()->RemoveDecorator();
   if (data->info()->trace_turbo_json()) {
     data->node_origins()->RemoveDecorator();
@@ -3308,8 +3278,7 @@ MaybeHandle<Code> Pipeline::GenerateCodeForTesting(
       CreatePipelineStatistics(Handle<Script>::null(), info, isolate,
                                &zone_stats));
 
-  PipelineData data(&zone_stats, isolate, info, pipeline_statistics.get(),
-                    i::FLAG_concurrent_inlining);
+  PipelineData data(&zone_stats, isolate, info, pipeline_statistics.get());
   PipelineImpl pipeline(&data);
 
   Linkage linkage(Linkage::ComputeIncoming(data.instruction_zone(), info));

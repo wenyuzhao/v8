@@ -4291,6 +4291,9 @@ Reduction JSCallReducer::ReduceJSCall(Node* node,
   Node* target = n.target();
 
   // Do not reduce calls to functions with break points.
+  // If this state changes during background compilation, the compilation
+  // job will be aborted from the main thread (see
+  // Debug::PrepareFunctionForDebugExecution()).
   if (shared.HasBreakInfo()) return NoChange();
 
   // Raise a TypeError if the {target} is a "classConstructor".
@@ -4758,6 +4761,9 @@ Reduction JSCallReducer::ReduceJSConstruct(Node* node) {
       }
 
       // Do not reduce constructors with break points.
+      // If this state changes during background compilation, the compilation
+      // job will be aborted from the main thread (see
+      // Debug::PrepareFunctionForDebugExecution()).
       if (function.shared().HasBreakInfo()) return NoChange();
 
       // Don't inline cross native context.
@@ -5717,15 +5723,17 @@ Reduction JSCallReducer::ReduceArrayPrototypeSlice(Node* node) {
   bool can_be_holey = false;
   for (Handle<Map> map : receiver_maps) {
     MapRef receiver_map(broker(), map);
-    if (!receiver_map.supports_fast_array_iteration())
+    if (!receiver_map.supports_fast_array_iteration()) {
       return inference.NoChange();
+    }
     if (IsHoleyElementsKind(receiver_map.elements_kind())) {
       can_be_holey = true;
     }
   }
 
-  if (!dependencies()->DependOnArraySpeciesProtector())
+  if (!dependencies()->DependOnArraySpeciesProtector()) {
     return inference.NoChange();
+  }
   if (can_be_holey && !dependencies()->DependOnNoElementsProtector()) {
     return inference.NoChange();
   }

@@ -173,6 +173,7 @@ class V8_EXPORT_PRIVATE JSHeapBroker {
   // Check if {object} is any native context's %ArrayPrototype% or
   // %ObjectPrototype%.
   bool IsArrayOrObjectPrototype(const JSObjectRef& object) const;
+  bool IsArrayOrObjectPrototype(Handle<JSObject> object) const;
 
   bool HasFeedback(FeedbackSource const& source) const;
   void SetFeedback(FeedbackSource const& source,
@@ -260,6 +261,10 @@ class V8_EXPORT_PRIVATE JSHeapBroker {
     property_access_infos_.clear();
   }
 
+  // As above, clear cached ObjectData that can be reconstructed, i.e. is
+  // either never-serialized or background-serialized.
+  void ClearReconstructibleData();
+
   StringRef GetTypedArrayStringTag(ElementsKind kind);
 
   bool ShouldBeSerializedForCompilation(const SharedFunctionInfoRef& shared,
@@ -341,6 +346,29 @@ class V8_EXPORT_PRIVATE JSHeapBroker {
   void DecrementTracingIndentation();
 
   RootIndexMap const& root_index_map() { return root_index_map_; }
+
+  class MapUpdaterMutexDepthScope final {
+   public:
+    explicit MapUpdaterMutexDepthScope(JSHeapBroker* ptr)
+        : ptr_(ptr),
+          initial_map_updater_mutex_depth_(ptr->map_updater_mutex_depth_) {
+      ptr_->map_updater_mutex_depth_++;
+    }
+
+    ~MapUpdaterMutexDepthScope() {
+      ptr_->map_updater_mutex_depth_--;
+      DCHECK_EQ(initial_map_updater_mutex_depth_,
+                ptr_->map_updater_mutex_depth_);
+    }
+
+    // Whether the MapUpdater mutex should be physically locked (if not, we
+    // already hold the lock).
+    bool should_lock() const { return initial_map_updater_mutex_depth_ == 0; }
+
+   private:
+    JSHeapBroker* const ptr_;
+    const int initial_map_updater_mutex_depth_;
+  };
 
  private:
   friend class HeapObjectRef;
@@ -456,9 +484,19 @@ class V8_EXPORT_PRIVATE JSHeapBroker {
   };
   ZoneMultimap<SerializedFunction, HintsVector> serialized_functions_;
 
-  static const size_t kMaxSerializedFunctionsCacheSize = 200;
-  static const uint32_t kMinimalRefsBucketCount = 8;     // must be power of 2
-  static const uint32_t kInitialRefsBucketCount = 1024;  // must be power of 2
+  // The MapUpdater mutex is used in recursive patterns; for example,
+  // ComputePropertyAccessInfo may call itself recursively. Thus we need to
+  // emulate a recursive mutex, which we do by checking if this heap broker
+  // instance already holds the mutex when a lock is requested. This field
+  // holds the locking depth, i.e. how many times the mutex has been
+  // recursively locked. Only the outermost locker actually locks underneath.
+  int map_updater_mutex_depth_ = 0;
+
+  static constexpr size_t kMaxSerializedFunctionsCacheSize = 200;
+  static constexpr uint32_t kMinimalRefsBucketCount = 8;
+  STATIC_ASSERT(base::bits::IsPowerOfTwo(kMinimalRefsBucketCount));
+  static constexpr uint32_t kInitialRefsBucketCount = 1024;
+  STATIC_ASSERT(base::bits::IsPowerOfTwo(kInitialRefsBucketCount));
 };
 
 class V8_NODISCARD TraceScope {

@@ -794,7 +794,6 @@
   'test-heap/DeepEagerCompilationPeakMemory': [SKIP],
   'test-api/GetHeapStatistics': [SKIP],
   'test-api/GetHeapSpaceStatistics': [SKIP],
-  'test-api/GetHeapStatistics': [SKIP],
   # Requires --concurrent_recompilation
   'test-debug/BreakPointBuiltinConcurrentOpt': [SKIP],
   # Requires a second isolate

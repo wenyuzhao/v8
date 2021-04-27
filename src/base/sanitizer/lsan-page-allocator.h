@@ -2,10 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef V8_SANITIZER_LSAN_PAGE_ALLOCATOR_H_
-#define V8_SANITIZER_LSAN_PAGE_ALLOCATOR_H_
+#ifndef V8_BASE_SANITIZER_LSAN_PAGE_ALLOCATOR_H_
+#define V8_BASE_SANITIZER_LSAN_PAGE_ALLOCATOR_H_
 
 #include "include/v8-platform.h"
+#include "src/base/base-export.h"
 #include "src/base/compiler-specific.h"
 
 namespace v8 {
@@ -14,7 +15,7 @@ namespace base {
 // This is a v8::PageAllocator implementation that decorates provided page
 // allocator object with leak sanitizer notifications when LEAK_SANITIZER
 // is defined.
-class LsanPageAllocator : public v8::PageAllocator {
+class V8_BASE_EXPORT LsanPageAllocator : public v8::PageAllocator {
  public:
   explicit LsanPageAllocator(v8::PageAllocator* page_allocator);
   ~LsanPageAllocator() override = default;
@@ -56,4 +57,4 @@ class LsanPageAllocator : public v8::PageAllocator {
 
 }  // namespace base
 }  // namespace v8
-#endif  // V8_SANITIZER_LSAN_PAGE_ALLOCATOR_H_
+#endif  // V8_BASE_SANITIZER_LSAN_PAGE_ALLOCATOR_H_
