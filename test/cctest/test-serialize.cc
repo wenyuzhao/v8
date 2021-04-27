@@ -1892,8 +1892,7 @@ TEST(CodeSerializerLargeCodeObjectWithIncrementalMarking) {
       isolate, source_str, Handle<String>(), &cache,
       v8::ScriptCompiler::kNoCompileOptions);
 
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap,
-                heap->InSpace(orig->abstract_code(isolate), LO_SPACE));
+  CHECK(heap->InSpace(orig->abstract_code(isolate), LO_SPACE));
 
   // Pretend that incremental marking is on when deserialization begins.
   heap::ForceEvacuationCandidate(ec_page);
@@ -2062,19 +2061,16 @@ TEST(CodeSerializerThreeBigStrings) {
       CompileRun("a")
           ->ToString(CcTest::isolate()->GetCurrentContext())
           .ToLocalChecked();
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap,
-                heap->InSpace(*v8::Utils::OpenHandle(*result_str), LO_SPACE));
+  CHECK(heap->InSpace(*v8::Utils::OpenHandle(*result_str), LO_SPACE));
   result_str = CompileRun("b")
                    ->ToString(CcTest::isolate()->GetCurrentContext())
                    .ToLocalChecked();
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap,
-                heap->InSpace(*v8::Utils::OpenHandle(*result_str), OLD_SPACE));
+  CHECK(heap->InSpace(*v8::Utils::OpenHandle(*result_str), OLD_SPACE));
 
   result_str = CompileRun("c")
                    ->ToString(CcTest::isolate()->GetCurrentContext())
                    .ToLocalChecked();
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap,
-                heap->InSpace(*v8::Utils::OpenHandle(*result_str), OLD_SPACE));
+  CHECK(heap->InSpace(*v8::Utils::OpenHandle(*result_str), OLD_SPACE));
 
   delete cache;
   source_a.Dispose();

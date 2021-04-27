@@ -4106,6 +4106,7 @@ bool Heap::Contains(HeapObject value) const {
 }
 
 bool Heap::InSpace(HeapObject value, AllocationSpace space) const {
+  if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) third_party_heap::Heap::InSpace(value.address(), space);
   if (memory_allocator()->IsOutsideAllocatedSpace(value.address())) {
     return false;
   }

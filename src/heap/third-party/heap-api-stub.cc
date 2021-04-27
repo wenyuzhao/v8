@@ -38,6 +38,9 @@ const base::AddressRegion& Heap::GetCodeRange() {
 }
 
 // static
+bool Heap::InSpace(Address, AllocationSpace) { return false; }
+
+// static
 bool Heap::InOldSpace(Address) { return false; }
 
 // static
