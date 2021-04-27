@@ -3131,7 +3131,8 @@ bool Heap::IsImmovable(HeapObject object) {
 
 bool Heap::IsLargeObject(HeapObject object) {
   if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL)
-    return third_party_heap::Heap::InLargeObjectSpace(object.address());
+    return third_party_heap::Heap::InLargeObjectSpace(object.address()) ||
+           third_party_heap::Heap::InSpace(object.address(), CODE_LO_SPACE);
   return BasicMemoryChunk::FromHeapObject(object)->IsLargePage();
 }
 
@@ -4106,7 +4107,8 @@ bool Heap::Contains(HeapObject value) const {
 }
 
 bool Heap::InSpace(HeapObject value, AllocationSpace space) const {
-  if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) third_party_heap::Heap::InSpace(value.address(), space);
+  if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL)
+    return third_party_heap::Heap::InSpace(value.address(), space);
   if (memory_allocator()->IsOutsideAllocatedSpace(value.address())) {
     return false;
   }
@@ -5811,7 +5813,8 @@ void Heap::CompactWeakArrayLists() {
   for (auto& prototype_info : prototype_infos) {
     Handle<WeakArrayList> array(
         WeakArrayList::cast(prototype_info->prototype_users()), isolate());
-    DCHECK(InOldSpace(*array) || *array == ReadOnlyRoots(this).empty_weak_array_list());
+    DCHECK(InOldSpace(*array) ||
+           *array == ReadOnlyRoots(this).empty_weak_array_list());
     WeakArrayList new_array = PrototypeUsers::Compact(
         array, this, JSObject::PrototypeRegistryCompactionCallback,
         AllocationType::kOld);

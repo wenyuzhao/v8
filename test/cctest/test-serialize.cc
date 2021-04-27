@@ -2199,8 +2199,7 @@ TEST(CodeSerializerLargeExternalString) {
   name->MakeExternal(&one_byte_resource);
   CHECK(name->IsExternalOneByteString());
   CHECK(name->IsInternalizedString());
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap,
-                isolate->heap()->InSpace(*name, LO_SPACE));
+  CHECK(isolate->heap()->InSpace(*name, LO_SPACE));
 
   // Create the source, which is "var <literal> = 42; <literal>".
   Handle<String> source_str =

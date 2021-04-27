@@ -61,7 +61,7 @@ TEST(Factory_CodeBuilder) {
 
   // Create a big function that ends up in CODE_LO_SPACE.
   const int instruction_size =
-      MemoryChunkLayout::MaxRegularCodeObjectSize() + 1;
+      Heap::MaxRegularHeapObjectSize(AllocationType::kCode) + 1;
   std::unique_ptr<byte[]> instructions(new byte[instruction_size]);
 
   CodeDesc desc;
@@ -76,7 +76,10 @@ TEST(Factory_CodeBuilder) {
   Handle<Code> code =
       Factory::CodeBuilder(isolate, desc, CodeKind::WASM_FUNCTION).Build();
 
-  CHECK_IMPLIES(!FLAG_enable_third_party_heap, isolate->heap()->InSpace(*code, CODE_LO_SPACE));
+  printf("CODE: %p\n", (void*)code->ptr());
+  auto x = isolate->heap()->InSpace(*code, CODE_LO_SPACE);
+  std::cout << x << std::endl;
+  CHECK(isolate->heap()->InSpace(*code, CODE_LO_SPACE));
 #if VERIFY_HEAP
   code->ObjectVerify(isolate);
 #endif
