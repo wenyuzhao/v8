@@ -41,7 +41,7 @@ declare_args() {
   v8_enable_future = false
 
   # Sets -DSYSTEM_INSTRUMENTATION. Enables OS-dependent event tracing
-  v8_enable_system_instrumentation = true
+  v8_enable_system_instrumentation = is_win || is_mac
 
   # Sets the GUID for the ETW provider
   v8_etw_guid = ""
@@ -4589,7 +4589,6 @@ v8_component("v8_libbase") {
     "src/base/lazy-instance.h",
     "src/base/logging.cc",
     "src/base/logging.h",
-    "src/base/lsan.h",
     "src/base/macros.h",
     "src/base/memory.h",
     "src/base/once.cc",
@@ -4618,6 +4617,7 @@ v8_component("v8_libbase") {
     "src/base/sanitizer/asan.h",
     "src/base/sanitizer/lsan-page-allocator.cc",
     "src/base/sanitizer/lsan-page-allocator.h",
+    "src/base/sanitizer/lsan.h",
     "src/base/sanitizer/msan.h",
     "src/base/small-vector.h",
     "src/base/sys-info.cc",
@@ -4781,8 +4781,6 @@ v8_component("v8_libplatform") {
     "src/libplatform/delayed-task-queue.h",
     "src/libplatform/task-queue.cc",
     "src/libplatform/task-queue.h",
-    "src/libplatform/tracing/recorder-default.cc",
-    "src/libplatform/tracing/recorder.h",
     "src/libplatform/tracing/trace-buffer.cc",
     "src/libplatform/tracing/trace-buffer.h",
     "src/libplatform/tracing/trace-config.cc",
@@ -4813,8 +4811,6 @@ v8_component("v8_libplatform") {
   if (v8_use_perfetto) {
     sources -= [
       "//base/trace_event/common/trace_event_common.h",
-      "src/libplatform/tracing/recorder-default.cc",
-      "src/libplatform/tracing/recorder.h",
       "src/libplatform/tracing/trace-buffer.cc",
       "src/libplatform/tracing/trace-buffer.h",
       "src/libplatform/tracing/trace-object.cc",
@@ -4829,12 +4825,15 @@ v8_component("v8_libplatform") {
       # TODO(skyostil): Switch TraceEventListener to protozero.
       "//third_party/perfetto/protos/perfetto/trace:lite",
     ]
-  } else if (is_win) {
-    sources -= [ "src/libplatform/tracing/recorder-default.cc" ]
-    sources += [ "src/libplatform/tracing/recorder-win.cc" ]
-  } else if (is_mac) {
-    sources -= [ "src/libplatform/tracing/recorder-default.cc" ]
-    sources += [ "src/libplatform/tracing/recorder-mac.cc" ]
+  }
+
+  if (v8_enable_system_instrumentation) {
+    sources += [ "src/libplatform/tracing/recorder.h" ]
+    if (is_mac) {
+      sources += [ "src/libplatform/tracing/recorder-mac.cc" ]
+    } else if (is_win) {
+      sources += [ "src/libplatform/tracing/recorder-win.cc" ]
+    }
   }
 }
 
@@ -4876,7 +4875,6 @@ v8_source_set("v8_cppgc_shared") {
     "src/heap/base/stack.h",
     "src/heap/base/worklist.cc",
     "src/heap/base/worklist.h",
-    "src/heap/cppgc/sanitizers.h",
   ]
 
   if (is_clang || !is_win) {
@@ -5023,6 +5021,7 @@ v8_source_set("cppgc_base") {
     "src/heap/cppgc/marking-visitor.h",
     "src/heap/cppgc/marking-worklists.cc",
     "src/heap/cppgc/marking-worklists.h",
+    "src/heap/cppgc/memory.h",
     "src/heap/cppgc/metric-recorder.h",
     "src/heap/cppgc/name-trait.cc",
     "src/heap/cppgc/object-allocator.cc",
