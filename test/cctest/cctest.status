@@ -1164,6 +1164,11 @@
   'test-weakmaps/Weakness': [SKIP],
   'test-weaksets/WeakSet_Weakness': [SKIP],
   'test-web-snapshots/SFIDeduplicationAfterBytecodeFlushing': [SKIP],
+  # CodeRange tests
+  'test-code-pages/LargeCodeObjectWithSignalHandler': [SKIP],
+  'test-code-pages/LargeCodeObject': [SKIP],
+  'test-code-pages/OptimizedCodeWithCodeRange': [SKIP],
+  'test-code-pages/Sorted': [SKIP],
 }], # third_party_heap
 
 ]
