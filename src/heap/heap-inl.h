@@ -166,11 +166,12 @@ size_t Heap::NewSpaceAllocationCounter() {
   return new_space_allocation_counter_ + new_space()->AllocatedSinceLastGC();
 }
 
-inline const base::AddressRegion& Heap::code_range() {
+inline const base::AddressRegion& Heap::code_region() {
 #ifdef V8_ENABLE_THIRD_PARTY_HEAP
   return tp_heap_->GetCodeRange();
 #else
-  return memory_allocator_->code_range();
+  static constexpr base::AddressRegion kEmptyRegion;
+  return code_range_ ? code_range_->reservation()->region() : kEmptyRegion;
 #endif
 }
 
@@ -245,6 +246,12 @@ AllocationResult Heap::AllocateRaw(int size_in_bytes, AllocationType type,
       DCHECK(CanAllocateInReadOnlySpace());
       DCHECK_EQ(AllocationOrigin::kRuntime, origin);
       allocation = read_only_space_->AllocateRaw(size_in_bytes, alignment);
+    } else if (AllocationType::kSharedOld == type) {
+      allocation =
+          shared_old_allocator_->AllocateRaw(size_in_bytes, alignment, origin);
+    } else if (AllocationType::kSharedMap == type) {
+      allocation =
+          shared_map_allocator_->AllocateRaw(size_in_bytes, alignment, origin);
     } else {
       UNREACHABLE();
     }

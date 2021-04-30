@@ -1035,6 +1035,15 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
     return isolate_data()->cage_base();
   }
 
+  // When pointer compression is on, the PtrComprCage used by this
+  // Isolate. Otherwise nullptr.
+  VirtualMemoryCage* GetPtrComprCage() {
+    return isolate_allocator_->GetPtrComprCage();
+  }
+  const VirtualMemoryCage* GetPtrComprCage() const {
+    return isolate_allocator_->GetPtrComprCage();
+  }
+
   // Generated code can embed this address to get access to the isolate-specific
   // data (for example, roots, external references, builtins, etc.).
   // The kRootRegister is set to this value.
@@ -1684,8 +1693,9 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   }
 
 #if V8_ENABLE_WEBASSEMBLY
-  wasm::WasmEngine* wasm_engine() const { return wasm_engine_.get(); }
-  void SetWasmEngine(std::shared_ptr<wasm::WasmEngine> engine);
+  // TODO(wasm): Replace all uses by {WasmEngine::GetWasmEngine}?
+  wasm::WasmEngine* wasm_engine() const { return wasm_engine_; }
+  void SetWasmEngine(wasm::WasmEngine* engine);
 
   void AddSharedWasmMemory(Handle<WasmMemoryObject> memory_object);
 #endif  // V8_ENABLE_WEBASSEMBLY
@@ -1751,6 +1761,18 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
     using HasAsyncEventDelegate = HasIsolatePromiseHook::Next<bool, 1>;
     using IsDebugActive = HasAsyncEventDelegate::Next<bool, 1>;
   };
+
+  void UseAsSharedIsolate() {
+    DCHECK(!is_shared_);
+    DCHECK_NULL(shared_isolate_);
+    is_shared_ = true;
+  }
+
+  bool is_shared() { return is_shared_; }
+  Isolate* shared_isolate() { return shared_isolate_; }
+
+  void AttachToSharedIsolate(Isolate* shared);
+  void DetachFromSharedIsolate();
 
  private:
   explicit Isolate(std::unique_ptr<IsolateAllocator> isolate_allocator);
@@ -1863,6 +1885,10 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
 
   // Returns the Exception sentinel.
   Object ThrowInternal(Object exception, MessageLocation* location);
+
+  // Methods for appending and removing to/from client isolates list.
+  void AppendAsClientIsolate(Isolate* client);
+  void RemoveAsClientIsolate(Isolate* client);
 
   // This class contains a collection of data accessible from both C++ runtime
   // and compiled code (including assembly stubs, builtins, interpreter bytecode
@@ -2119,7 +2145,7 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   size_t elements_deletion_counter_ = 0;
 
 #if V8_ENABLE_WEBASSEMBLY
-  std::shared_ptr<wasm::WasmEngine> wasm_engine_;
+  wasm::WasmEngine* wasm_engine_ = nullptr;
 #endif  // V8_ENABLE_WEBASSEMBLY
 
   std::unique_ptr<TracingCpuProfilerImpl> tracing_cpu_profiler_;
@@ -2137,6 +2163,23 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   // know if this is the case, so I'm preserving it for now.
   base::Mutex thread_data_table_mutex_;
   ThreadDataTable thread_data_table_;
+
+  // Set to true if this isolate is used as shared heap.
+  bool is_shared_ = false;
+
+  // Stores the shared isolate for this client isolate. nullptr for shared
+  // isolates or when no shared isolate is used.
+  Isolate* shared_isolate_ = nullptr;
+
+  // A shared isolate will use these two fields to track all its client
+  // isolates.
+  base::Mutex client_isolate_mutex_;
+  Isolate* client_isolate_head_ = nullptr;
+
+  // Used to form a linked list of all client isolates. Protected by
+  // client_isolate_mutex_.
+  Isolate* prev_client_isolate_ = nullptr;
+  Isolate* next_client_isolate_ = nullptr;
 
   // A signal-safe vector of heap pages containing code. Used with the
   // v8::Unwinder API.
