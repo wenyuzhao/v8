@@ -230,6 +230,7 @@ TEST(WeakMapScavenge) {
 // by other paths are correctly recorded in the slots buffer.
 TEST(Regress2060a) {
   if (i::FLAG_never_compact) return;
+  if (i::FLAG_enable_third_party_heap) return;
   FLAG_always_compact = true;
   FLAG_stress_concurrent_allocation = false;  // For SimulateFullSpace.
   LocalContext context;

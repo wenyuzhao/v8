@@ -6442,6 +6442,7 @@ TEST(RememberedSet_OldToOld) {
 }
 
 TEST(RememberedSetRemoveRange) {
+  if (FLAG_single_generation) return;
   CcTest::InitializeVM();
   v8::HandleScope scope(CcTest::isolate());
   Heap* heap = CcTest::heap();

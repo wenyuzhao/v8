@@ -7,7 +7,7 @@
 #include <stdlib.h>
 
 #include <atomic>
-#include <fstream>  // NOLINT(readability/streams)
+#include <fstream>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -1404,11 +1404,13 @@ Object Isolate::StackOverflow() {
       MessageFormatter::TemplateString(MessageTemplate::kStackOverflow));
   Handle<Object> options = factory()->undefined_value();
   Handle<Object> no_caller;
-  Handle<Object> exception;
+  Handle<JSObject> exception;
   ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
       this, exception,
       ErrorUtils::Construct(this, fun, fun, msg, options, SKIP_NONE, no_caller,
                             ErrorUtils::StackTraceCollection::kSimple));
+  JSObject::AddProperty(this, exception, factory()->wasm_uncatchable_symbol(),
+                        factory()->true_value(), NONE);
 
   Throw(*exception);
 
@@ -2709,7 +2711,6 @@ void Isolate::AddSharedWasmMemory(Handle<WasmMemoryObject> memory_object) {
 }
 #endif  // V8_ENABLE_WEBASSEMBLY
 
-// NOLINTNEXTLINE
 Isolate::PerIsolateThreadData::~PerIsolateThreadData() {
 #if defined(USE_SIMULATOR)
   delete simulator_;
@@ -3585,7 +3586,7 @@ bool Isolate::Init(SnapshotData* startup_snapshot_data,
 
   metrics_recorder_ = std::make_shared<metrics::Recorder>();
 
-  {  // NOLINT
+  {
     // Ensure that the thread has a valid stack guard.  The v8::Locker object
     // will ensure this too, but we don't have to use lockers if we are only
     // using one thread.
