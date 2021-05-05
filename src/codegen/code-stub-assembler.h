@@ -748,9 +748,6 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
                              AllocationFlags flags = kNone);
 
   TNode<HeapObject> Allocate(int size, AllocationFlags flags = kNone);
-  TNode<HeapObject> InnerAllocate(TNode<HeapObject> previous, int offset);
-  TNode<HeapObject> InnerAllocate(TNode<HeapObject> previous,
-                                  TNode<IntPtrT> offset);
   TNode<HeapObject> OuterAllocate(int group_size, int object_size);
   TNode<HeapObject> InnerAllocate(TNode<HeapObject> previous, TNode<IntPtrT> offset, int object_size, bool is_memento = false);
   TNode<HeapObject> InnerAllocate(TNode<HeapObject> previous, int offset, int object_size, bool is_memento = false);

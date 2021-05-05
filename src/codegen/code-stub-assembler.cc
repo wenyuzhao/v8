@@ -1444,25 +1444,13 @@ TNode<HeapObject> CodeStubAssembler::InnerAllocate(TNode<HeapObject> previous, T
     return UncheckedCast<HeapObject>(
       BitcastWordToTagged(IntPtrAdd(BitcastTaggedToWord(previous), offset)));
   } else {
+    DCHECK_NE(object_size, -1);
     return Allocate(object_size);
   }
 }
 
 TNode<HeapObject> CodeStubAssembler::InnerAllocate(TNode<HeapObject> previous, int offset, int object_size, bool is_memento) {
   return InnerAllocate(previous, IntPtrConstant(offset), object_size, is_memento);
-}
-
-TNode<HeapObject> CodeStubAssembler::InnerAllocate(TNode<HeapObject> previous,
-                                                   TNode<IntPtrT> offset) {
-  DCHECK(FLAG_turbo_allocation_folding);
-  return UncheckedCast<HeapObject>(
-      BitcastWordToTagged(IntPtrAdd(BitcastTaggedToWord(previous), offset)));
-}
-
-TNode<HeapObject> CodeStubAssembler::InnerAllocate(TNode<HeapObject> previous,
-                                                   int offset) {
-  DCHECK(FLAG_turbo_allocation_folding);
-  return InnerAllocate(previous, IntPtrConstant(offset));
 }
 
 TNode<BoolT> CodeStubAssembler::IsRegularHeapObjectSize(TNode<IntPtrT> size) {
@@ -4027,8 +4015,9 @@ CodeStubAssembler::AllocateUninitializedJSArrayWithElements(
     // Fold all objects into a single new space allocation.
     array =
         AllocateUninitializedJSArray(array_map, length, allocation_site, size);
+    DCHECK(FLAG_turbo_allocation_folding);
     elements = UncheckedCast<FixedArrayBase>(
-        InnerAllocate(array.value(), elements_offset));
+        InnerAllocate(array.value(), elements_offset, -1));
 
     StoreObjectFieldNoWriteBarrier(array.value(), JSObject::kElementsOffset,
                                    elements.value());
