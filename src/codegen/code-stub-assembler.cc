@@ -1432,7 +1432,8 @@ TNode<HeapObject> CodeStubAssembler::Allocate(int size_in_bytes,
 }
 
 TNode<HeapObject> CodeStubAssembler::OuterAllocate(int group_size, int object_size) {
-  const int size = FLAG_turbo_allocation_folding ? group_size : object_size;
+  // TODO(wenyuzhao): Support generational heap. Mainly fixing the barriers.
+  const int size = !FLAG_single_generation || FLAG_turbo_allocation_folding ? group_size : object_size;
   return Allocate(size);
 }
 
@@ -1441,7 +1442,7 @@ TNode<HeapObject> CodeStubAssembler::InnerAllocate(TNode<HeapObject> previous, T
   if (TryToIntPtrConstant(offset, &offset_literal) && offset_literal == 0) {
     return previous;
   } else if (FLAG_single_generation && !FLAG_turbo_allocation_folding && !is_memento) {
-    // TODO(wenyuzhao): Support generational heap here. Mainly fixing the barriers.
+    // TODO(wenyuzhao): Support generational heap. Mainly fixing the barriers.
     DCHECK_NE(object_size, -1);
     return Allocate(object_size);
   } else {
@@ -3981,9 +3982,10 @@ CodeStubAssembler::AllocateUninitializedJSArrayWithElements(
     // folding trick. Instead, we first allocate the elements in large object
     // space, and then allocate the JSArray (and possibly the allocation
     // memento) in new space.
-    if ((allocation_flags & kAllowLargeObjectAllocation) || !FLAG_turbo_allocation_folding) {
+    const bool no_inline_allocation = FLAG_single_generation && !FLAG_turbo_allocation_folding;
+    if ((allocation_flags & kAllowLargeObjectAllocation) || no_inline_allocation) {
       Label next(this);
-      if (FLAG_turbo_allocation_folding) GotoIf(IsRegularHeapObjectSize(size), &next);
+      if (!no_inline_allocation) GotoIf(IsRegularHeapObjectSize(size), &next);
 
       CSA_CHECK(this, IsValidFastJSArrayCapacity(capacity));
 
@@ -4005,7 +4007,7 @@ CodeStubAssembler::AllocateUninitializedJSArrayWithElements(
 
       Goto(&out);
 
-      if (!FLAG_turbo_allocation_folding) {
+      if (no_inline_allocation) {
         BIND(&out);
         return {array.value(), elements.value()};
       }
@@ -4015,7 +4017,6 @@ CodeStubAssembler::AllocateUninitializedJSArrayWithElements(
     // Fold all objects into a single new space allocation.
     array =
         AllocateUninitializedJSArray(array_map, length, allocation_site, size);
-    DCHECK(FLAG_turbo_allocation_folding);
     elements = UncheckedCast<FixedArrayBase>(
         InnerAllocate(array.value(), elements_offset, -1));
 
