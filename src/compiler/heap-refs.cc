@@ -2120,7 +2120,7 @@ base::Optional<PropertyCellRef> GetPropertyCellFromHeap(JSHeapBroker* broker,
   it.TryLookupCachedProperty();
   if (it.state() == LookupIterator::DATA &&
       it.GetHolder<JSObject>()->IsJSGlobalObject()) {
-    return PropertyCellRef(broker, it.GetPropertyCell());
+    return MakeRef(broker, it.GetPropertyCell());
   }
   return base::nullopt;
 }
@@ -3205,10 +3205,8 @@ int ArrayBoilerplateDescriptionRef::constants_elements_length() const {
 ObjectRef FixedArrayRef::get(int i) const { return TryGet(i).value(); }
 
 base::Optional<ObjectRef> FixedArrayRef::TryGet(int i) const {
-  ObjectData* data = broker()->TryGetOrCreateData(
-      broker()->CanonicalPersistentHandle(object()->get(i, kRelaxedLoad)));
-  if (data == nullptr) return {};
-  return ObjectRef{broker(), data};
+  return TryMakeRef(broker(), broker()->CanonicalPersistentHandle(
+                                  object()->get(i, kRelaxedLoad)));
 }
 
 Float64 FixedDoubleArrayRef::GetFromImmutableFixedDoubleArray(int i) const {
@@ -3237,8 +3235,9 @@ int BytecodeArrayRef::handler_table_size() const {
 
 #define IF_ACCESS_FROM_HEAP(result, name)                                      \
   if (data_->should_access_heap()) {                                           \
-    return result##Ref(broker(),                                               \
-                       broker()->CanonicalPersistentHandle(object()->name())); \
+    return MakeRef(                                                            \
+        broker(), Handle<result>::cast(                                        \
+                      broker()->CanonicalPersistentHandle(object()->name()))); \
   }
 
 // Macros for definining a const getter that, depending on the data kind,
@@ -3267,8 +3266,9 @@ int BytecodeArrayRef::handler_table_size() const {
 // kSerialized only for methods that we identified to be safe.
 #define IF_ACCESS_FROM_HEAP_WITH_FLAG(result, name)                            \
   if (data_->should_access_heap() || broker()->is_concurrent_inlining()) {     \
-    return result##Ref(broker(),                                               \
-                       broker()->CanonicalPersistentHandle(object()->name())); \
+    return MakeRef(                                                            \
+        broker(), Handle<result>::cast(                                        \
+                      broker()->CanonicalPersistentHandle(object()->name()))); \
   }
 #define IF_ACCESS_FROM_HEAP_WITH_FLAG_C(name)                              \
   if (data_->should_access_heap() || broker()->is_concurrent_inlining()) { \
@@ -3387,8 +3387,9 @@ base::Optional<CallHandlerInfoRef> FunctionTemplateInfoRef::call_code() const {
   if (data_->should_access_heap()) {
     HeapObject call_code = object()->call_code(kAcquireLoad);
     if (call_code.IsUndefined()) return base::nullopt;
-    return CallHandlerInfoRef(broker(),
-                              broker()->CanonicalPersistentHandle(call_code));
+    return MakeRef(broker(),
+                   Handle<CallHandlerInfo>::cast(
+                       broker()->CanonicalPersistentHandle(call_code)));
   }
   ObjectData* call_code = data()->AsFunctionTemplateInfo()->call_code();
   if (!call_code) return base::nullopt;
@@ -3462,9 +3463,9 @@ HolderLookupResult FunctionTemplateInfoRef::LookupHolderOfExpectedType(
     }
     Handle<JSObject> prototype =
         broker()->CanonicalPersistentHandle(raw_prototype);
-    if (ObjectData* data = broker()->TryGetOrCreateData(prototype)) {
-      return HolderLookupResult(CallOptimization::kHolderFound,
-                                JSObjectRef(broker(), data));
+    base::Optional<JSObjectRef> prototype_ref = TryMakeRef(broker(), prototype);
+    if (prototype_ref.has_value()) {
+      return HolderLookupResult(CallOptimization::kHolderFound, prototype_ref);
     }
 
     TRACE_BROKER_MISSING(broker(),
@@ -3499,7 +3500,7 @@ HolderLookupResult FunctionTemplateInfoRef::LookupHolderOfExpectedType(
 
   switch (result.lookup) {
     case CallOptimization::kHolderFound: {
-      result.holder = JSObjectRef(broker(), holder);
+      result.holder = MakeRef(broker(), holder);
       fti_data->known_receivers().insert({receiver_map.data(), result});
       break;
     }
@@ -3527,8 +3528,8 @@ BytecodeArrayRef SharedFunctionInfoRef::GetBytecodeArray() const {
     } else {
       bytecode_array = object()->GetBytecodeArray(broker()->isolate());
     }
-    return BytecodeArrayRef(
-        broker(), broker()->CanonicalPersistentHandle(bytecode_array));
+    return MakeRef(broker(),
+                   broker()->CanonicalPersistentHandle(bytecode_array));
   }
   return BytecodeArrayRef(
       broker(), ObjectRef ::data()->AsSharedFunctionInfo()->GetBytecodeArray());
@@ -3554,15 +3555,15 @@ base::Optional<FeedbackVectorRef> FeedbackCellRef::value() const {
     // Note that we use the synchronized accessor.
     Object value = object()->value(kAcquireLoad);
     if (!value.IsFeedbackVector()) return base::nullopt;
-    auto vector_handle = broker()->CanonicalPersistentHandle(value);
-    ObjectData* vector = broker()->TryGetOrCreateData(vector_handle);
-    if (vector) {
-      return FeedbackVectorRef(broker(), vector);
-    }
-    TRACE_BROKER_MISSING(
+    base::Optional<FeedbackVectorRef> vector_ref = TryMakeRef(
         broker(),
-        "Unable to retrieve FeedbackVector from FeedbackCellRef " << *this);
-    return base::nullopt;
+        broker()->CanonicalPersistentHandle(FeedbackVector::cast(value)));
+    if (!vector_ref.has_value()) {
+      TRACE_BROKER_MISSING(
+          broker(),
+          "Unable to retrieve FeedbackVector from FeedbackCellRef " << *this);
+    }
+    return vector_ref;
   }
   ObjectData* vector = ObjectRef::data()->AsFeedbackCell()->value();
   return FeedbackVectorRef(broker(), vector->AsFeedbackVector());
@@ -3576,10 +3577,9 @@ base::Optional<ObjectRef> MapRef::GetStrongValue(
 
 DescriptorArrayRef MapRef::instance_descriptors() const {
   if (data_->should_access_heap() || broker()->is_concurrent_inlining()) {
-    return DescriptorArrayRef(
-        broker(),
-        broker()->CanonicalPersistentHandle(
-            object()->instance_descriptors(broker()->isolate(), kRelaxedLoad)));
+    return MakeRef(broker(), broker()->CanonicalPersistentHandle(
+                                 object()->instance_descriptors(
+                                     broker()->isolate(), kRelaxedLoad)));
   }
 
   return DescriptorArrayRef(broker(), data()->AsMap()->instance_descriptors());
@@ -3595,17 +3595,16 @@ void MapRef::SerializeRootMap() {
 // deleting serialization.
 base::Optional<MapRef> MapRef::FindRootMap() const {
   if (data_->should_access_heap() || broker()->is_concurrent_inlining()) {
-    // TODO(solanes): Remove the TryGetOrCreateData part when Map is moved to
+    // TODO(solanes): Change TryMakeRef to MakeRef when Map is moved to
     // kNeverSerialized.
-    ObjectData* root_map =
-        broker()->TryGetOrCreateData(broker()->CanonicalPersistentHandle(
-            object()->FindRootMap(broker()->isolate())));
-    if (root_map) {
-      // TODO(solanes, v8:7790): Consider caching the result of the root map.
-      return MapRef(broker(), root_map);
+    // TODO(solanes, v8:7790): Consider caching the result of the root map.
+    base::Optional<MapRef> root_map =
+        TryMakeRef(broker(), broker()->CanonicalPersistentHandle(
+                                 object()->FindRootMap(broker()->isolate())));
+    if (!root_map.has_value()) {
+      TRACE_BROKER_MISSING(broker(), "root map for object " << *this);
     }
-    TRACE_BROKER_MISSING(broker(), "root map for object " << *this);
-    return base::nullopt;
+    return root_map;
   }
   ObjectData* map_data = data()->AsMap()->FindRootMap();
   if (map_data != nullptr) {
@@ -3643,9 +3642,9 @@ HeapObjectRef JSTypedArrayRef::buffer() const {
     // Safe to read concurrently because:
     // - immutable after initialization.
     // - host object seen by serializer.
-    Handle<JSArrayBuffer> value =
+    Handle<HeapObject> value =
         broker()->CanonicalPersistentHandle(object()->buffer());
-    return JSObjectRef{broker(), value};
+    return MakeRef(broker(), value);
   }
   return HeapObjectRef{broker(), data()->AsJSTypedArray()->buffer()};
 }
@@ -3746,17 +3745,16 @@ bool NativeContextRef::is_unserialized_heap_object() const {
 
 ScopeInfoRef NativeContextRef::scope_info() const {
   if (data_->should_access_heap()) {
-    return ScopeInfoRef(
-        broker(), broker()->CanonicalPersistentHandle(object()->scope_info()));
+    return MakeRef(broker(),
+                   broker()->CanonicalPersistentHandle(object()->scope_info()));
   }
   return ScopeInfoRef(broker(), data()->AsNativeContext()->scope_info());
 }
 
 SharedFunctionInfoRef FeedbackVectorRef::shared_function_info() const {
   if (data_->should_access_heap()) {
-    return SharedFunctionInfoRef(
-        broker(),
-        broker()->CanonicalPersistentHandle(object()->shared_function_info()));
+    return MakeRef(broker(), broker()->CanonicalPersistentHandle(
+                                 object()->shared_function_info()));
   }
 
   return SharedFunctionInfoRef(
@@ -4010,7 +4008,7 @@ base::Optional<ObjectRef> JSArrayRef::GetOwnCowElement(
 
 base::Optional<CellRef> SourceTextModuleRef::GetCell(int cell_index) const {
   if (data_->should_access_heap() || broker()->is_concurrent_inlining()) {
-    return CellRef(broker(), broker()->CanonicalPersistentHandle(
+    return MakeRef(broker(), broker()->CanonicalPersistentHandle(
                                  object()->GetCell(cell_index)));
   }
   ObjectData* cell =
@@ -4021,7 +4019,7 @@ base::Optional<CellRef> SourceTextModuleRef::GetCell(int cell_index) const {
 
 ObjectRef SourceTextModuleRef::import_meta() const {
   if (data_->should_access_heap()) {
-    return ObjectRef(
+    return MakeRef(
         broker(), broker()->CanonicalPersistentHandle(object()->import_meta()));
   }
   return ObjectRef(broker(),
@@ -4087,8 +4085,8 @@ HeapObjectType HeapObjectRef::GetHeapObjectType() const {
 }
 base::Optional<JSObjectRef> AllocationSiteRef::boilerplate() const {
   if (data_->should_access_heap()) {
-    return JSObjectRef(broker(), broker()->CanonicalPersistentHandle(
-                                     object()->boilerplate(kAcquireLoad)));
+    return MakeRef(broker(), broker()->CanonicalPersistentHandle(
+                                 object()->boilerplate(kAcquireLoad)));
   }
   ObjectData* boilerplate = data()->AsAllocationSite()->boilerplate();
   if (boilerplate) {
@@ -4104,8 +4102,8 @@ ElementsKind JSObjectRef::GetElementsKind() const {
 
 base::Optional<FixedArrayBaseRef> JSObjectRef::elements() const {
   if (data_->should_access_heap()) {
-    return FixedArrayBaseRef(
-        broker(), broker()->CanonicalPersistentHandle(object()->elements()));
+    return MakeRef(broker(),
+                   broker()->CanonicalPersistentHandle(object()->elements()));
   }
   const JSObjectData* d = data()->AsJSObject();
   if (!d->serialized_elements()) {
@@ -4131,8 +4129,8 @@ PropertyDetails DescriptorArrayRef::GetPropertyDetails(
 NameRef DescriptorArrayRef::GetPropertyKey(
     InternalIndex descriptor_index) const {
   if (data_->should_access_heap()) {
-    NameRef result(broker(), broker()->CanonicalPersistentHandle(
-                                 object()->GetKey(descriptor_index)));
+    NameRef result = MakeRef(broker(), broker()->CanonicalPersistentHandle(
+                                           object()->GetKey(descriptor_index)));
     CHECK(result.IsUniqueName());
     return result;
   }
@@ -4154,22 +4152,22 @@ base::Optional<ObjectRef> DescriptorArrayRef::GetStrongValue(
     InternalIndex descriptor_index) const {
   if (data_->should_access_heap()) {
     HeapObject heap_object;
-    if (object()
-            ->GetValue(descriptor_index)
-            .GetHeapObjectIfStrong(&heap_object)) {
-      // Since the descriptors in the descriptor array can be changed in-place
-      // via DescriptorArray::Replace, we might get a value that we haven't seen
-      // before.
-      ObjectData* data = broker()->TryGetOrCreateData(
-          broker()->CanonicalPersistentHandle(heap_object));
-      if (data) return ObjectRef(broker(), data);
-
+    if (!object()
+             ->GetValue(descriptor_index)
+             .GetHeapObjectIfStrong(&heap_object)) {
+      return {};
+    }
+    // Since the descriptors in the descriptor array can be changed in-place
+    // via DescriptorArray::Replace, we might get a value that we haven't seen
+    // before.
+    base::Optional<ObjectRef> ref =
+        TryMakeRef(broker(), broker()->CanonicalPersistentHandle(heap_object));
+    if (!ref.has_value()) {
       TRACE_BROKER_MISSING(broker(), "strong value for descriptor array "
                                          << *this << " at index "
                                          << descriptor_index.as_int());
-      // Fall through to the base::nullopt below.
     }
-    return base::nullopt;
+    return ref;
   }
   ObjectData* value =
       data()->AsDescriptorArray()->GetStrongValue(descriptor_index);
@@ -4391,14 +4389,11 @@ void SharedFunctionInfoRef::SerializeScopeInfoChain() {
 base::Optional<FunctionTemplateInfoRef>
 SharedFunctionInfoRef::function_template_info() const {
   if (data_->should_access_heap()) {
-    if (object()->IsApiFunction()) {
-      ObjectData* data =
-          broker()->TryGetOrCreateData(broker()->CanonicalPersistentHandle(
-              object()->function_data(kAcquireLoad)));
-      if (data == nullptr) return base::nullopt;
-      return FunctionTemplateInfoRef(broker(), data, true);
-    }
-    return base::nullopt;
+    if (!object()->IsApiFunction()) return {};
+    return TryMakeRef(
+        broker(),
+        broker()->CanonicalPersistentHandle(
+            FunctionTemplateInfo::cast(object()->function_data(kAcquireLoad))));
   }
   ObjectData* function_template_info =
       data()->AsSharedFunctionInfo()->function_template_info();
@@ -4413,8 +4408,8 @@ int SharedFunctionInfoRef::context_header_size() const {
 
 ScopeInfoRef SharedFunctionInfoRef::scope_info() const {
   if (data_->should_access_heap()) {
-    return ScopeInfoRef(
-        broker(), broker()->CanonicalPersistentHandle(object()->scope_info()));
+    return MakeRef(broker(),
+                   broker()->CanonicalPersistentHandle(object()->scope_info()));
   }
   return ScopeInfoRef(broker(), data()->AsSharedFunctionInfo()->scope_info());
 }
@@ -4499,8 +4494,9 @@ void JSTypedArrayRef::Serialize() {
     static_assert(
         std::is_base_of<JSObject, decltype(object()->buffer())>::value, "");
     STATIC_ASSERT(IsSerializedRef<JSObject>());
-    JSObjectRef data_ref{
-        broker(), broker()->CanonicalPersistentHandle(object()->buffer())};
+    MakeRef(broker(),
+            Handle<JSObject>::cast(
+                broker()->CanonicalPersistentHandle(object()->buffer())));
   } else {
     CHECK_EQ(broker()->mode(), JSHeapBroker::kSerializing);
     data()->AsJSTypedArray()->Serialize(broker());
