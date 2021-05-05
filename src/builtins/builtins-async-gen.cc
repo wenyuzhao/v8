@@ -155,7 +155,7 @@ TNode<Object> AsyncBuiltinsAssembler::AwaitOptimized(
                           on_resolve_sfi);
 
   // Initialize reject handler
-  TNode<HeapObject> on_reject = InnerAllocate(base, kResolveClosureOffset, JSFunction::kSizeWithoutPrototype);
+  TNode<HeapObject> on_reject = InnerAllocate(base, kRejectClosureOffset, JSFunction::kSizeWithoutPrototype);
   InitializeNativeClosure(closure_context, native_context, on_reject,
                           on_reject_sfi);
 
