@@ -1440,12 +1440,12 @@ TNode<HeapObject> CodeStubAssembler::InnerAllocate(TNode<HeapObject> previous, T
   intptr_t offset_literal;
   if (TryToIntPtrConstant(offset, &offset_literal) && offset_literal == 0) {
     return previous;
-  } else if (FLAG_turbo_allocation_folding || is_memento) {
-    return UncheckedCast<HeapObject>(
-      BitcastWordToTagged(IntPtrAdd(BitcastTaggedToWord(previous), offset)));
-  } else {
+  } else if (FLAG_single_generation && !FLAG_turbo_allocation_folding && !is_memento) {
+    // TODO(wenyuzhao): Support generational heap here. Mainly fixing the barriers.
     DCHECK_NE(object_size, -1);
     return Allocate(object_size);
+  } else {
+    return UncheckedCast<HeapObject>(BitcastWordToTagged(IntPtrAdd(BitcastTaggedToWord(previous), offset)));
   }
 }
 
