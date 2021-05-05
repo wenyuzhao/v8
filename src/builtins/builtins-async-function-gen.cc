@@ -103,13 +103,16 @@ TF_BUILTIN(AsyncFunctionEnter, AsyncFunctionBuiltinsAssembler) {
                           IntPtrConstant(0), parameters_and_register_length,
                           RootIndex::kUndefinedValue);
 
+  // Allocate space for the promise, the async function object.
+  int total_size = JSPromise::kSizeWithEmbedderFields + JSAsyncFunctionObject::kHeaderSize;
+  TNode<HeapObject> base = OuterAllocate(total_size, JSAsyncFunctionObject::kHeaderSize);
   // Initialize the promise.
   TNode<NativeContext> native_context = LoadNativeContext(context);
   TNode<JSFunction> promise_function =
       CAST(LoadContextElement(native_context, Context::PROMISE_FUNCTION_INDEX));
   TNode<Map> promise_map = LoadObjectField<Map>(
       promise_function, JSFunction::kPrototypeOrInitialMapOffset);
-  TNode<JSPromise> promise = UncheckedCast<JSPromise>(Allocate(JSPromise::kSizeWithEmbedderFields));
+  TNode<JSPromise> promise = UncheckedCast<JSPromise>(InnerAllocate(base, JSAsyncFunctionObject::kHeaderSize, JSPromise::kSizeWithEmbedderFields));
   StoreMapNoWriteBarrier(promise, promise_map);
   StoreObjectFieldRoot(promise, JSPromise::kPropertiesOrHashOffset,
                        RootIndex::kEmptyFixedArray);
@@ -120,7 +123,7 @@ TF_BUILTIN(AsyncFunctionEnter, AsyncFunctionBuiltinsAssembler) {
   // Initialize the async function object.
   TNode<Map> async_function_object_map = CAST(LoadContextElement(
       native_context, Context::ASYNC_FUNCTION_OBJECT_MAP_INDEX));
-  TNode<JSAsyncFunctionObject> async_function_object = UncheckedCast<JSAsyncFunctionObject>(Allocate(JSAsyncFunctionObject::kHeaderSize));
+  TNode<JSAsyncFunctionObject> async_function_object = UncheckedCast<JSAsyncFunctionObject>(InnerAllocate(base, 0, JSAsyncFunctionObject::kHeaderSize));
   StoreMapNoWriteBarrier(async_function_object, async_function_object_map);
   StoreObjectFieldRoot(async_function_object,
                        JSAsyncFunctionObject::kPropertiesOrHashOffset,
