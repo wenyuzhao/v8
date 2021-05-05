@@ -39,7 +39,8 @@ TNode<Object> AsyncBuiltinsAssembler::AwaitOld(
   static const int kTotalSize =
       kRejectClosureOffset + JSFunction::kSizeWithoutPrototype;
 
-  TNode<HeapObject> base = OuterAllocate(kTotalSize, FixedArray::SizeFor(Context::MIN_CONTEXT_EXTENDED_SLOTS));
+  TNode<HeapObject> base = OuterAllocate(
+      kTotalSize, FixedArray::SizeFor(Context::MIN_CONTEXT_EXTENDED_SLOTS));
   TNode<Context> closure_context = UncheckedCast<Context>(base);
   {
     // Initialize the await context, storing the {generator} as extension.
@@ -74,8 +75,8 @@ TNode<Object> AsyncBuiltinsAssembler::AwaitOld(
   TNode<JSPromise> promise;
   {
     // Initialize Promise
-    TNode<HeapObject> wrapped_value =
-        InnerAllocate(base, kWrappedPromiseOffset, JSPromise::kSizeWithEmbedderFields);
+    TNode<HeapObject> wrapped_value = InnerAllocate(
+        base, kWrappedPromiseOffset, JSPromise::kSizeWithEmbedderFields);
     StoreMapNoWriteBarrier(wrapped_value, promise_map);
     StoreObjectFieldRoot(wrapped_value, JSPromise::kPropertiesOrHashOffset,
                          RootIndex::kEmptyFixedArray);
@@ -86,12 +87,14 @@ TNode<Object> AsyncBuiltinsAssembler::AwaitOld(
   }
 
   // Initialize resolve handler
-  TNode<HeapObject> on_resolve = InnerAllocate(base, kResolveClosureOffset, JSFunction::kSizeWithoutPrototype);
+  TNode<HeapObject> on_resolve = InnerAllocate(
+      base, kResolveClosureOffset, JSFunction::kSizeWithoutPrototype);
   InitializeNativeClosure(closure_context, native_context, on_resolve,
                           on_resolve_sfi);
 
   // Initialize reject handler
-  TNode<HeapObject> on_reject = InnerAllocate(base, kRejectClosureOffset, JSFunction::kSizeWithoutPrototype);
+  TNode<HeapObject> on_reject = InnerAllocate(
+      base, kRejectClosureOffset, JSFunction::kSizeWithoutPrototype);
   InitializeNativeClosure(closure_context, native_context, on_reject,
                           on_reject_sfi);
 
@@ -129,7 +132,8 @@ TNode<Object> AsyncBuiltinsAssembler::AwaitOptimized(
   // We skip this step, because promise is already guaranteed to be a
   // JSPRomise at this point.
 
-  TNode<HeapObject> base = OuterAllocate(kTotalSize, FixedArray::SizeFor(Context::MIN_CONTEXT_EXTENDED_SLOTS));
+  TNode<HeapObject> base = OuterAllocate(
+      kTotalSize, FixedArray::SizeFor(Context::MIN_CONTEXT_EXTENDED_SLOTS));
   TNode<Context> closure_context = UncheckedCast<Context>(base);
   {
     // Initialize the await context, storing the {generator} as extension.
@@ -150,12 +154,14 @@ TNode<Object> AsyncBuiltinsAssembler::AwaitOptimized(
   }
 
   // Initialize resolve handler
-  TNode<HeapObject> on_resolve = InnerAllocate(base, kResolveClosureOffset, JSFunction::kSizeWithoutPrototype);
+  TNode<HeapObject> on_resolve = InnerAllocate(
+      base, kResolveClosureOffset, JSFunction::kSizeWithoutPrototype);
   InitializeNativeClosure(closure_context, native_context, on_resolve,
                           on_resolve_sfi);
 
   // Initialize reject handler
-  TNode<HeapObject> on_reject = InnerAllocate(base, kRejectClosureOffset, JSFunction::kSizeWithoutPrototype);
+  TNode<HeapObject> on_reject = InnerAllocate(
+      base, kRejectClosureOffset, JSFunction::kSizeWithoutPrototype);
   InitializeNativeClosure(closure_context, native_context, on_reject,
                           on_reject_sfi);
 
