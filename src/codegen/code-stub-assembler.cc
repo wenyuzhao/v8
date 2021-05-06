@@ -1431,15 +1431,37 @@ TNode<HeapObject> CodeStubAssembler::Allocate(int size_in_bytes,
   return CodeStubAssembler::Allocate(IntPtrConstant(size_in_bytes), flags);
 }
 
-TNode<HeapObject> CodeStubAssembler::InnerAllocate(TNode<HeapObject> previous,
-                                                   TNode<IntPtrT> offset) {
-  return UncheckedCast<HeapObject>(
-      BitcastWordToTagged(IntPtrAdd(BitcastTaggedToWord(previous), offset)));
+TNode<HeapObject> CodeStubAssembler::OuterAllocate(int group_size,
+                                                   int object_size) {
+  // TODO(wenyuzhao): Support generational heap. Mainly fixing the barriers.
+  const int size = !FLAG_disable_write_barriers || FLAG_turbo_allocation_folding
+                       ? group_size
+                       : object_size;
+  return Allocate(size);
 }
 
 TNode<HeapObject> CodeStubAssembler::InnerAllocate(TNode<HeapObject> previous,
-                                                   int offset) {
-  return InnerAllocate(previous, IntPtrConstant(offset));
+                                                   TNode<IntPtrT> offset,
+                                                   TNode<IntPtrT> object_size,
+                                                   bool is_memento) {
+  intptr_t offset_literal;
+  if (TryToIntPtrConstant(offset, &offset_literal) && offset_literal == 0) {
+    return previous;
+  } else if (FLAG_disable_write_barriers && !FLAG_turbo_allocation_folding &&
+             !is_memento) {
+    // TODO(wenyuzhao): Support generational heap. Mainly fixing the barriers.
+    return Allocate(object_size);
+  } else {
+    return UncheckedCast<HeapObject>(
+        BitcastWordToTagged(IntPtrAdd(BitcastTaggedToWord(previous), offset)));
+  }
+}
+
+TNode<HeapObject> CodeStubAssembler::InnerAllocate(TNode<HeapObject> previous,
+                                                   int offset, int object_size,
+                                                   bool is_memento) {
+  return InnerAllocate(previous, IntPtrConstant(offset),
+                       IntPtrConstant(object_size), is_memento);
 }
 
 TNode<BoolT> CodeStubAssembler::IsRegularHeapObjectSize(TNode<IntPtrT> size) {
@@ -3970,9 +3992,12 @@ CodeStubAssembler::AllocateUninitializedJSArrayWithElements(
     // folding trick. Instead, we first allocate the elements in large object
     // space, and then allocate the JSArray (and possibly the allocation
     // memento) in new space.
-    if (allocation_flags & kAllowLargeObjectAllocation) {
+    const bool inline_allocation =
+        !FLAG_disable_write_barriers || FLAG_turbo_allocation_folding;
+    if ((allocation_flags & kAllowLargeObjectAllocation) ||
+        !inline_allocation) {
       Label next(this);
-      GotoIf(IsRegularHeapObjectSize(size), &next);
+      if (inline_allocation) GotoIf(IsRegularHeapObjectSize(size), &next);
 
       CSA_CHECK(this, IsValidFastJSArrayCapacity(capacity));
 
@@ -4001,7 +4026,8 @@ CodeStubAssembler::AllocateUninitializedJSArrayWithElements(
     array =
         AllocateUninitializedJSArray(array_map, length, allocation_site, size);
     elements = UncheckedCast<FixedArrayBase>(
-        InnerAllocate(array.value(), elements_offset));
+        InnerAllocate(array.value(), IntPtrConstant(elements_offset),
+                      IntPtrSub(size, IntPtrConstant(base_size))));
 
     StoreObjectFieldNoWriteBarrier(array.value(), JSObject::kElementsOffset,
                                    elements.value());
@@ -5327,7 +5353,9 @@ void CodeStubAssembler::InitializeAllocationMemento(
     TNode<HeapObject> base, TNode<IntPtrT> base_allocation_size,
     TNode<AllocationSite> allocation_site) {
   Comment("[Initialize AllocationMemento");
-  TNode<HeapObject> memento = InnerAllocate(base, base_allocation_size);
+  TNode<HeapObject> memento =
+      InnerAllocate(base, base_allocation_size,
+                    IntPtrConstant(AllocationMemento::kSize), true);
   StoreMapNoWriteBarrier(memento, RootIndex::kAllocationMementoMap);
   StoreObjectFieldNoWriteBarrier(
       memento, AllocationMemento::kAllocationSiteOffset, allocation_site);
@@ -13571,8 +13599,10 @@ TNode<JSObject> CodeStubAssembler::AllocateJSIteratorResultForEntry(
   TNode<NativeContext> native_context = LoadNativeContext(context);
   TNode<Smi> length = SmiConstant(2);
   int const elements_size = FixedArray::SizeFor(2);
-  TNode<FixedArray> elements = UncheckedCast<FixedArray>(
-      Allocate(elements_size + JSArray::kHeaderSize + JSIteratorResult::kSize));
+  int const total_size =
+      elements_size + JSArray::kHeaderSize + JSIteratorResult::kSize;
+  TNode<FixedArray> elements =
+      UncheckedCast<FixedArray>(OuterAllocate(total_size, elements_size));
   StoreObjectFieldRoot(elements, FixedArray::kMapOffset,
                        RootIndex::kFixedArrayMap);
   StoreObjectFieldNoWriteBarrier(elements, FixedArray::kLengthOffset, length);
@@ -13580,7 +13610,8 @@ TNode<JSObject> CodeStubAssembler::AllocateJSIteratorResultForEntry(
   StoreFixedArrayElement(elements, 1, value);
   TNode<Map> array_map = CAST(LoadContextElement(
       native_context, Context::JS_ARRAY_PACKED_ELEMENTS_MAP_INDEX));
-  TNode<HeapObject> array = InnerAllocate(elements, elements_size);
+  TNode<HeapObject> array =
+      InnerAllocate(elements, elements_size, JSArray::kHeaderSize);
   StoreMapNoWriteBarrier(array, array_map);
   StoreObjectFieldRoot(array, JSArray::kPropertiesOrHashOffset,
                        RootIndex::kEmptyFixedArray);
@@ -13588,7 +13619,8 @@ TNode<JSObject> CodeStubAssembler::AllocateJSIteratorResultForEntry(
   StoreObjectFieldNoWriteBarrier(array, JSArray::kLengthOffset, length);
   TNode<Map> iterator_map = CAST(
       LoadContextElement(native_context, Context::ITERATOR_RESULT_MAP_INDEX));
-  TNode<HeapObject> result = InnerAllocate(array, JSArray::kHeaderSize);
+  TNode<HeapObject> result =
+      InnerAllocate(array, JSArray::kHeaderSize, JSIteratorResult::kSize);
   StoreMapNoWriteBarrier(result, iterator_map);
   StoreObjectFieldRoot(result, JSIteratorResult::kPropertiesOrHashOffset,
                        RootIndex::kEmptyFixedArray);
