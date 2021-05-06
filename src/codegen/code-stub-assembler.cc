@@ -1442,7 +1442,7 @@ TNode<HeapObject> CodeStubAssembler::OuterAllocate(int group_size,
 
 TNode<HeapObject> CodeStubAssembler::InnerAllocate(TNode<HeapObject> previous,
                                                    TNode<IntPtrT> offset,
-                                                   int object_size,
+                                                   TNode<IntPtrT> object_size,
                                                    bool is_memento) {
   intptr_t offset_literal;
   if (TryToIntPtrConstant(offset, &offset_literal) && offset_literal == 0) {
@@ -1450,7 +1450,6 @@ TNode<HeapObject> CodeStubAssembler::InnerAllocate(TNode<HeapObject> previous,
   } else if (FLAG_disable_write_barriers && !FLAG_turbo_allocation_folding &&
              !is_memento) {
     // TODO(wenyuzhao): Support generational heap. Mainly fixing the barriers.
-    DCHECK_NE(object_size, -1);
     return Allocate(object_size);
   } else {
     return UncheckedCast<HeapObject>(
@@ -1461,8 +1460,8 @@ TNode<HeapObject> CodeStubAssembler::InnerAllocate(TNode<HeapObject> previous,
 TNode<HeapObject> CodeStubAssembler::InnerAllocate(TNode<HeapObject> previous,
                                                    int offset, int object_size,
                                                    bool is_memento) {
-  return InnerAllocate(previous, IntPtrConstant(offset), object_size,
-                       is_memento);
+  return InnerAllocate(previous, IntPtrConstant(offset),
+                       IntPtrConstant(object_size), is_memento);
 }
 
 TNode<BoolT> CodeStubAssembler::IsRegularHeapObjectSize(TNode<IntPtrT> size) {
@@ -3993,8 +3992,10 @@ CodeStubAssembler::AllocateUninitializedJSArrayWithElements(
     // folding trick. Instead, we first allocate the elements in large object
     // space, and then allocate the JSArray (and possibly the allocation
     // memento) in new space.
-    const bool inline_allocation = !FLAG_disable_write_barriers || FLAG_turbo_allocation_folding;
-    if ((allocation_flags & kAllowLargeObjectAllocation) || !inline_allocation) {
+    const bool inline_allocation =
+        !FLAG_disable_write_barriers || FLAG_turbo_allocation_folding;
+    if ((allocation_flags & kAllowLargeObjectAllocation) ||
+        !inline_allocation) {
       Label next(this);
       if (inline_allocation) GotoIf(IsRegularHeapObjectSize(size), &next);
 
@@ -4025,7 +4026,8 @@ CodeStubAssembler::AllocateUninitializedJSArrayWithElements(
     array =
         AllocateUninitializedJSArray(array_map, length, allocation_site, size);
     elements = UncheckedCast<FixedArrayBase>(
-        InnerAllocate(array.value(), elements_offset, -1));
+        InnerAllocate(array.value(), IntPtrConstant(elements_offset),
+                      IntPtrSub(size, IntPtrConstant(base_size))));
 
     StoreObjectFieldNoWriteBarrier(array.value(), JSObject::kElementsOffset,
                                    elements.value());
@@ -5352,7 +5354,8 @@ void CodeStubAssembler::InitializeAllocationMemento(
     TNode<AllocationSite> allocation_site) {
   Comment("[Initialize AllocationMemento");
   TNode<HeapObject> memento =
-      InnerAllocate(base, base_allocation_size, AllocationMemento::kSize, true);
+      InnerAllocate(base, base_allocation_size,
+                    IntPtrConstant(AllocationMemento::kSize), true);
   StoreMapNoWriteBarrier(memento, RootIndex::kAllocationMementoMap);
   StoreObjectFieldNoWriteBarrier(
       memento, AllocationMemento::kAllocationSiteOffset, allocation_site);

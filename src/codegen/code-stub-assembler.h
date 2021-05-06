@@ -758,7 +758,8 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   // Special case: Memento object allocations are always folded together with
   // their base objects.
   TNode<HeapObject> InnerAllocate(TNode<HeapObject> previous,
-                                  TNode<IntPtrT> offset, int object_size,
+                                  TNode<IntPtrT> offset,
+                                  TNode<IntPtrT> object_size,
                                   bool is_memento = false);
   TNode<HeapObject> InnerAllocate(TNode<HeapObject> previous, int offset,
                                   int object_size, bool is_memento = false);
