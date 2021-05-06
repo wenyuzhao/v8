@@ -1434,7 +1434,7 @@ TNode<HeapObject> CodeStubAssembler::Allocate(int size_in_bytes,
 TNode<HeapObject> CodeStubAssembler::OuterAllocate(int group_size,
                                                    int object_size) {
   // TODO(wenyuzhao): Support generational heap. Mainly fixing the barriers.
-  const int size = !FLAG_single_generation || FLAG_turbo_allocation_folding
+  const int size = !FLAG_disable_write_barriers || FLAG_turbo_allocation_folding
                        ? group_size
                        : object_size;
   return Allocate(size);
@@ -1447,7 +1447,7 @@ TNode<HeapObject> CodeStubAssembler::InnerAllocate(TNode<HeapObject> previous,
   intptr_t offset_literal;
   if (TryToIntPtrConstant(offset, &offset_literal) && offset_literal == 0) {
     return previous;
-  } else if (FLAG_single_generation && !FLAG_turbo_allocation_folding &&
+  } else if (FLAG_disable_write_barriers && !FLAG_turbo_allocation_folding &&
              !is_memento) {
     // TODO(wenyuzhao): Support generational heap. Mainly fixing the barriers.
     DCHECK_NE(object_size, -1);
@@ -3993,7 +3993,7 @@ CodeStubAssembler::AllocateUninitializedJSArrayWithElements(
     // folding trick. Instead, we first allocate the elements in large object
     // space, and then allocate the JSArray (and possibly the allocation
     // memento) in new space.
-    const bool inline_allocation = !FLAG_single_generation || FLAG_turbo_allocation_folding;
+    const bool inline_allocation = !FLAG_disable_write_barriers || FLAG_turbo_allocation_folding;
     if ((allocation_flags & kAllowLargeObjectAllocation) || !inline_allocation) {
       Label next(this);
       if (inline_allocation) GotoIf(IsRegularHeapObjectSize(size), &next);
