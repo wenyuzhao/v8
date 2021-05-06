@@ -11100,6 +11100,7 @@ void CodeStubAssembler::TrapAllocationMemento(TNode<JSObject> object,
 
   TNode<ExternalReference> new_space_top_address = ExternalConstant(
       ExternalReference::new_space_allocation_top_address(isolate()));
+  GotoIf(BoolConstant(FLAG_single_generation), &no_memento_found);
   const int kMementoMapOffset = JSArray::kHeaderSize;
   const int kMementoLastWordOffset =
       kMementoMapOffset + AllocationMemento::kSize - kTaggedSize;
