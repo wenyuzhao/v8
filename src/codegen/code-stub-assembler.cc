@@ -4818,7 +4818,7 @@ void CodeStubAssembler::MoveElements(ElementsKind kind,
                                      TNode<IntPtrT> length) {
   Label finished(this);
   Label needs_barrier(this);
-  const bool needs_barrier_check = !IsDoubleElementsKind(kind);
+  const bool needs_barrier_check = !IsDoubleElementsKind(kind) && !FLAG_disable_write_barriers;
 
   DCHECK(IsFastElementsKind(kind));
   CSA_ASSERT(this, IsFixedArrayWithKind(elements, kind));
@@ -4903,7 +4903,7 @@ void CodeStubAssembler::CopyElements(ElementsKind kind,
                                      WriteBarrierMode write_barrier) {
   Label finished(this);
   Label needs_barrier(this);
-  const bool needs_barrier_check = !IsDoubleElementsKind(kind);
+  const bool needs_barrier_check = !IsDoubleElementsKind(kind) && !FLAG_disable_write_barriers;
 
   DCHECK(IsFastElementsKind(kind));
   CSA_ASSERT(this, IsFixedArrayWithKind(dst_elements, kind));
@@ -11197,7 +11197,7 @@ void CodeStubAssembler::TrapAllocationMemento(TNode<JSObject> object,
 }
 
 TNode<IntPtrT> CodeStubAssembler::PageFromAddress(TNode<IntPtrT> address) {
-  // CSA_ASSERT(this, BoolConstant(!FLAG_));
+  CSA_ASSERT(this, BoolConstant(!FLAG_enable_third_party_heap));
   return WordAnd(address, IntPtrConstant(~kPageAlignmentMask));
 }
 
