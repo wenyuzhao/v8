@@ -4019,6 +4019,11 @@ CodeStubAssembler::AllocateUninitializedJSArrayWithElements(
 
       Goto(&out);
 
+      if (!inline_allocation) {
+        BIND(&out);
+        return {array.value(), elements.value()};
+      }
+
       BIND(&next);
     }
 
@@ -11192,6 +11197,7 @@ void CodeStubAssembler::TrapAllocationMemento(TNode<JSObject> object,
 }
 
 TNode<IntPtrT> CodeStubAssembler::PageFromAddress(TNode<IntPtrT> address) {
+  // CSA_ASSERT(this, BoolConstant(!FLAG_));
   return WordAnd(address, IntPtrConstant(~kPageAlignmentMask));
 }
 
