@@ -6129,6 +6129,13 @@ class UnreachableObjectsFilter : public HeapObjectsFilter {
     MarkReachableObjects();
   }
 
+  ~UnreachableObjectsFilter() override {
+    for (auto it : reachable_) {
+      delete it.second;
+      it.second = nullptr;
+    }
+  }
+
   bool SkipObject(HeapObject object) override {
     if (object.IsFreeSpaceOrFiller()) return true;
     Address chunk = object.ptr() & ~kLogicalChunkAlignmentMask;
