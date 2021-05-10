@@ -593,8 +593,7 @@ class LiftoffCompiler {
     }
   }
 
-  // TODO(ahaas): Make this function constexpr once GCC allows it.
-  LiftoffRegList RegsUnusedByParams() {
+  constexpr static LiftoffRegList RegsUnusedByParams() {
     LiftoffRegList regs = kGpCacheRegList;
     for (auto reg : kGpParamRegisters) {
       regs.clear(reg);
@@ -619,8 +618,9 @@ class LiftoffCompiler {
       // For reference type parameters we have to use registers that were not
       // used for parameters because some reference type stack parameters may
       // get processed before some value type register parameters.
+      static constexpr auto kRegsUnusedByParams = RegsUnusedByParams();
       LiftoffRegister reg = is_reference(reg_kind)
-                                ? __ GetUnusedRegister(RegsUnusedByParams())
+                                ? __ GetUnusedRegister(kRegsUnusedByParams)
                                 : __ GetUnusedRegister(rc, pinned);
       __ LoadCallerFrameSlot(reg, -location.AsCallerFrameSlot(), reg_kind);
       return reg;
@@ -4812,6 +4812,17 @@ class LiftoffCompiler {
       StoreObjectField(obj.gp(), no_reg, offset, value, pinned, field_kind);
       pinned.clear(value);
     }
+    if (imm.struct_type->field_count() == 0) {
+      static_assert(Heap::kMinObjectSizeInTaggedWords == 2 &&
+                        WasmStruct::kHeaderSize == kTaggedSize,
+                    "empty structs need exactly one padding field");
+      ValueKind field_kind = ValueKind::kRef;
+      LiftoffRegister value = pinned.set(__ GetUnusedRegister(kGpReg, pinned));
+      LoadNullValue(value.gp(), pinned);
+      StoreObjectField(obj.gp(), no_reg, WasmStruct::kHeaderSize, value, pinned,
+                       field_kind);
+      pinned.clear(value);
+    }
     __ PushRegister(kRef, obj);
   }
 
@@ -5688,10 +5699,21 @@ class LiftoffCompiler {
     }
     // Load the call target.
     __ bind(&load_target);
+
+#ifdef V8_HEAP_SANDBOX
+    LOAD_INSTANCE_FIELD(temp.gp(), IsolateRoot, kSystemPointerSize, pinned);
+    __ LoadExternalPointerField(
+        target.gp(),
+        FieldOperand(func_data.gp(), WasmFunctionData::kForeignAddressOffset),
+        kForeignForeignAddressTag, temp.gp(),
+        TurboAssembler::IsolateRootLocation::kInScratchRegister);
+#else
     __ Load(
         target, func_data.gp(), no_reg,
         wasm::ObjectAccess::ToTagged(WasmFunctionData::kForeignAddressOffset),
         kPointerLoadType, pinned);
+#endif
+
     LiftoffRegister null_address = temp;
     __ LoadConstant(null_address, WasmValue::ForUintPtr(0));
     __ emit_cond_jump(kUnequal, &perform_call, kRef, target.gp(),

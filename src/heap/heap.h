@@ -704,6 +704,8 @@ class Heap {
 
   void AppendArrayBufferExtension(JSArrayBuffer object,
                                   ArrayBufferExtension* extension);
+  void DetachArrayBufferExtension(JSArrayBuffer object,
+                                  ArrayBufferExtension* extension);
 
   GlobalSafepoint* safepoint() { return safepoint_.get(); }
 
@@ -891,6 +893,8 @@ class Heap {
   }
 
   const base::AddressRegion& code_region();
+
+  CodeRange* code_range() { return code_range_.get(); }
 
   LocalHeap* main_thread_local_heap() { return main_thread_local_heap_; }
 

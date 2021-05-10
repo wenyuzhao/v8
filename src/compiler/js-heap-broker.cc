@@ -142,8 +142,7 @@ void JSHeapBroker::SetTargetNativeContextRef(
          (mode() == kSerializing &&
           target_native_context_->object().equals(native_context) &&
           target_native_context_->is_unserialized_heap_object()));
-  target_native_context_ =
-      MakeRef(this, CanonicalPersistentHandle(*native_context));
+  target_native_context_ = MakeRef(this, *native_context);
 }
 
 void JSHeapBroker::CollectArrayAndObjectPrototypes() {
@@ -466,7 +465,7 @@ ElementAccessFeedback::ElementAccessFeedback(Zone* zone,
 bool ElementAccessFeedback::HasOnlyStringMaps(JSHeapBroker* broker) const {
   for (auto const& group : transition_groups()) {
     for (Handle<Map> map : group) {
-      if (!MapRef(broker, map).IsStringMap()) return false;
+      if (!MakeRef(broker, map).IsStringMap()) return false;
     }
   }
   return true;
@@ -712,8 +711,7 @@ ProcessedFeedback const& JSHeapBroker::ReadFeedbackForGlobalAccess(
   PropertyCellRef cell =
       MakeRef(this, Handle<PropertyCell>::cast(feedback_value));
   MakeRef(this,
-          CanonicalPersistentHandle(
-              Handle<PropertyCell>::cast(feedback_value)->value(kAcquireLoad)));
+          Handle<PropertyCell>::cast(feedback_value)->value(kAcquireLoad));
   return *zone()->New<GlobalAccessFeedback>(cell, nexus.kind());
 }
 
@@ -830,7 +828,9 @@ ProcessedFeedback const& JSHeapBroker::ReadFeedbackForCall(
   }
   float frequency = nexus.ComputeCallFrequency();
   SpeculationMode mode = nexus.GetSpeculationMode();
-  return *zone()->New<CallFeedback>(target_ref, frequency, mode, nexus.kind());
+  CallFeedbackContent content = nexus.GetCallFeedbackContent();
+  return *zone()->New<CallFeedback>(target_ref, frequency, mode, content,
+                                    nexus.kind());
 }
 
 BinaryOperationHint JSHeapBroker::GetFeedbackForBinaryOperation(
@@ -996,7 +996,7 @@ ElementAccessFeedback const& JSHeapBroker::ProcessFeedbackMapsForElementAccess(
   MapHandles possible_transition_targets;
   possible_transition_targets.reserve(maps.size());
   for (Handle<Map> map : maps) {
-    MapRef map_ref(this, map);
+    MapRef map_ref = MakeRef(this, map);
     map_ref.SerializeRootMap();
 
     if (CanInlineElementAccess(map_ref) &&

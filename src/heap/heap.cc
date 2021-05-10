@@ -4009,6 +4009,11 @@ void Heap::AppendArrayBufferExtension(JSArrayBuffer object,
   array_buffer_sweeper_->Append(object, extension);
 }
 
+void Heap::DetachArrayBufferExtension(JSArrayBuffer object,
+                                      ArrayBufferExtension* extension) {
+  return array_buffer_sweeper_->Detach(object, extension);
+}
+
 void Heap::AutomaticallyRestoreInitialHeapLimit(double threshold_percent) {
   initial_max_old_generation_size_threshold_ =
       initial_max_old_generation_size_ * threshold_percent;
@@ -6124,17 +6129,36 @@ class UnreachableObjectsFilter : public HeapObjectsFilter {
     MarkReachableObjects();
   }
 
+  ~UnreachableObjectsFilter() override {
+    for (auto it : reachable_) {
+      delete it.second;
+      it.second = nullptr;
+    }
+  }
+
   bool SkipObject(HeapObject object) override {
     if (object.IsFreeSpaceOrFiller()) return true;
-    return reachable_.count(object) == 0;
+    Address chunk = object.ptr() & ~kLogicalChunkAlignmentMask;
+    if (reachable_.count(chunk) == 0) return true;
+    return reachable_[chunk]->count(object) == 0;
   }
 
  private:
   bool MarkAsReachable(HeapObject object) {
-    if (reachable_.count(object)) return false;
-    reachable_.insert(object);
+    Address chunk = object.ptr() & ~kLogicalChunkAlignmentMask;
+    if (reachable_.count(chunk) == 0) {
+      reachable_[chunk] = new std::unordered_set<HeapObject, Object::Hasher>();
+    }
+    if (reachable_[chunk]->count(object)) return false;
+    reachable_[chunk]->insert(object);
     return true;
   }
+
+  static constexpr intptr_t kLogicalChunkAlignment =
+      (static_cast<uintptr_t>(1) << kPageSizeBits);
+
+  static constexpr intptr_t kLogicalChunkAlignmentMask =
+      kLogicalChunkAlignment - 1;
 
   class MarkingVisitor : public ObjectVisitor, public RootVisitor {
    public:
@@ -6218,7 +6242,8 @@ class UnreachableObjectsFilter : public HeapObjectsFilter {
 
   Heap* heap_;
   DISALLOW_GARBAGE_COLLECTION(no_gc_)
-  std::unordered_set<HeapObject, Object::Hasher> reachable_;
+  std::unordered_map<Address, std::unordered_set<HeapObject, Object::Hasher>*>
+      reachable_;
 };
 
 HeapObjectIterator::HeapObjectIterator(

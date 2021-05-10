@@ -123,7 +123,7 @@ enum class RefSerializationKind {
   V(FeedbackVector, RefSerializationKind::kNeverSerialized)               \
   V(FixedArrayBase, RefSerializationKind::kBackgroundSerialized)          \
   V(FunctionTemplateInfo, RefSerializationKind::kNeverSerialized)         \
-  V(HeapNumber, RefSerializationKind::kPossiblyBackgroundSerialized)      \
+  V(HeapNumber, RefSerializationKind::kBackgroundSerialized)              \
   V(JSReceiver, RefSerializationKind::kBackgroundSerialized)              \
   V(Map, RefSerializationKind::kBackgroundSerialized)                     \
   V(Name, RefSerializationKind::kNeverSerialized)                         \
@@ -131,7 +131,7 @@ enum class RefSerializationKind {
   V(RegExpBoilerplateDescription, RefSerializationKind::kNeverSerialized) \
   V(ScopeInfo, RefSerializationKind::kNeverSerialized)                    \
   V(SharedFunctionInfo, RefSerializationKind::kNeverSerialized)           \
-  V(SourceTextModule, RefSerializationKind::kSerialized)                  \
+  V(SourceTextModule, RefSerializationKind::kNeverSerialized)             \
   V(TemplateObjectDescription, RefSerializationKind::kNeverSerialized)    \
   /* Subtypes of Object */                                                \
   V(HeapObject, RefSerializationKind::kBackgroundSerialized)
@@ -275,18 +275,7 @@ class HeapObjectType {
 
 // Constructors are carefully defined such that we do a type check on
 // the outermost Ref class in the inheritance chain only.
-// TODO(jgruber): Remove DEFINE_REF_CONSTRUCTOR once all types use the new
-// pattern based on TryMakeRef.
 #define DEFINE_REF_CONSTRUCTOR(Name, Base)                                  \
-  Name##Ref(JSHeapBroker* broker, Handle<Object> object,                    \
-            BackgroundSerialization background_serialization =              \
-                BackgroundSerialization::kDisallowed,                       \
-            bool check_type = true)                                         \
-      : Base(broker, object, background_serialization, false) {             \
-    if (check_type) {                                                       \
-      CHECK(Is##Name());                                                    \
-    }                                                                       \
-  }                                                                         \
   Name##Ref(JSHeapBroker* broker, ObjectData* data, bool check_type = true) \
       : Base(broker, data, false) {                                         \
     if (check_type) {                                                       \
@@ -294,37 +283,9 @@ class HeapObjectType {
     }                                                                       \
   }
 
-#define DEFINE_REF_CONSTRUCTOR2(Name, Base)                                 \
- public:                                                                    \
-  Name##Ref(JSHeapBroker* broker, ObjectData* data, bool check_type = true) \
-      : Base(broker, data, false) {                                         \
-    if (check_type) {                                                       \
-      CHECK(Is##Name());                                                    \
-    }                                                                       \
-  }                                                                         \
-                                                                            \
- protected:                                                                 \
-  Name##Ref(JSHeapBroker* broker, Handle<Object> object,                    \
-            BackgroundSerialization background_serialization =              \
-                BackgroundSerialization::kDisallowed,                       \
-            bool check_type = true)                                         \
-      : Base(broker, object, background_serialization, false) {             \
-    if (check_type) {                                                       \
-      CHECK(Is##Name());                                                    \
-    }                                                                       \
-  }                                                                         \
-  template <class T, typename>                                              \
-  friend base::Optional<typename ref_traits<T>::ref_type> TryMakeRef(       \
-      JSHeapBroker*, T);                                                    \
-  template <class T, typename>                                              \
-  friend base::Optional<typename ref_traits<T>::ref_type> TryMakeRef(       \
-      JSHeapBroker*, Handle<T>);                                            \
-                                                                            \
- public:
-
 class HeapObjectRef : public ObjectRef {
  public:
-  DEFINE_REF_CONSTRUCTOR2(HeapObject, ObjectRef)
+  DEFINE_REF_CONSTRUCTOR(HeapObject, ObjectRef)
 
   Handle<HeapObject> object() const;
 
@@ -336,7 +297,7 @@ class HeapObjectRef : public ObjectRef {
 
 class PropertyCellRef : public HeapObjectRef {
  public:
-  DEFINE_REF_CONSTRUCTOR2(PropertyCell, HeapObjectRef)
+  DEFINE_REF_CONSTRUCTOR(PropertyCell, HeapObjectRef)
 
   Handle<PropertyCell> object() const;
 
@@ -355,14 +316,14 @@ class PropertyCellRef : public HeapObjectRef {
 
 class JSReceiverRef : public HeapObjectRef {
  public:
-  DEFINE_REF_CONSTRUCTOR2(JSReceiver, HeapObjectRef)
+  DEFINE_REF_CONSTRUCTOR(JSReceiver, HeapObjectRef)
 
   Handle<JSReceiver> object() const;
 };
 
 class JSObjectRef : public JSReceiverRef {
  public:
-  DEFINE_REF_CONSTRUCTOR2(JSObject, JSReceiverRef)
+  DEFINE_REF_CONSTRUCTOR(JSObject, JSReceiverRef)
 
   Handle<JSObject> object() const;
 
@@ -398,7 +359,7 @@ class JSObjectRef : public JSReceiverRef {
 
 class JSDataViewRef : public JSObjectRef {
  public:
-  DEFINE_REF_CONSTRUCTOR2(JSDataView, JSObjectRef)
+  DEFINE_REF_CONSTRUCTOR(JSDataView, JSObjectRef)
 
   Handle<JSDataView> object() const;
 
@@ -407,7 +368,7 @@ class JSDataViewRef : public JSObjectRef {
 
 class JSBoundFunctionRef : public JSObjectRef {
  public:
-  DEFINE_REF_CONSTRUCTOR2(JSBoundFunction, JSObjectRef)
+  DEFINE_REF_CONSTRUCTOR(JSBoundFunction, JSObjectRef)
 
   Handle<JSBoundFunction> object() const;
 
@@ -422,7 +383,7 @@ class JSBoundFunctionRef : public JSObjectRef {
 
 class V8_EXPORT_PRIVATE JSFunctionRef : public JSObjectRef {
  public:
-  DEFINE_REF_CONSTRUCTOR2(JSFunction, JSObjectRef)
+  DEFINE_REF_CONSTRUCTOR(JSFunction, JSObjectRef)
 
   Handle<JSFunction> object() const;
 
@@ -457,7 +418,7 @@ class V8_EXPORT_PRIVATE JSFunctionRef : public JSObjectRef {
 
 class RegExpBoilerplateDescriptionRef : public HeapObjectRef {
  public:
-  DEFINE_REF_CONSTRUCTOR2(RegExpBoilerplateDescription, HeapObjectRef)
+  DEFINE_REF_CONSTRUCTOR(RegExpBoilerplateDescription, HeapObjectRef)
 
   Handle<RegExpBoilerplateDescription> object() const;
 
@@ -470,7 +431,7 @@ class RegExpBoilerplateDescriptionRef : public HeapObjectRef {
 
 class HeapNumberRef : public HeapObjectRef {
  public:
-  DEFINE_REF_CONSTRUCTOR2(HeapNumber, HeapObjectRef)
+  DEFINE_REF_CONSTRUCTOR(HeapNumber, HeapObjectRef)
 
   Handle<HeapNumber> object() const;
 
@@ -479,7 +440,7 @@ class HeapNumberRef : public HeapObjectRef {
 
 class ContextRef : public HeapObjectRef {
  public:
-  DEFINE_REF_CONSTRUCTOR2(Context, HeapObjectRef)
+  DEFINE_REF_CONSTRUCTOR(Context, HeapObjectRef)
 
   Handle<Context> object() const;
 
@@ -506,6 +467,7 @@ class ContextRef : public HeapObjectRef {
 
 #define BROKER_COMPULSORY_NATIVE_CONTEXT_FIELDS(V) \
   V(JSFunction, array_function)                    \
+  V(JSFunction, function_prototype_apply)          \
   V(JSFunction, boolean_function)                  \
   V(JSFunction, bigint_function)                   \
   V(JSFunction, number_function)                   \
@@ -563,7 +525,7 @@ class ContextRef : public HeapObjectRef {
 
 class NativeContextRef : public ContextRef {
  public:
-  DEFINE_REF_CONSTRUCTOR2(NativeContext, ContextRef)
+  DEFINE_REF_CONSTRUCTOR(NativeContext, ContextRef)
 
   bool is_unserialized_heap_object() const;
 
@@ -584,7 +546,7 @@ class NativeContextRef : public ContextRef {
 
 class NameRef : public HeapObjectRef {
  public:
-  DEFINE_REF_CONSTRUCTOR2(Name, HeapObjectRef)
+  DEFINE_REF_CONSTRUCTOR(Name, HeapObjectRef)
 
   Handle<Name> object() const;
 
@@ -593,7 +555,7 @@ class NameRef : public HeapObjectRef {
 
 class DescriptorArrayRef : public HeapObjectRef {
  public:
-  DEFINE_REF_CONSTRUCTOR2(DescriptorArray, HeapObjectRef)
+  DEFINE_REF_CONSTRUCTOR(DescriptorArray, HeapObjectRef)
 
   Handle<DescriptorArray> object() const;
 
@@ -606,7 +568,7 @@ class DescriptorArrayRef : public HeapObjectRef {
 
 class FeedbackCellRef : public HeapObjectRef {
  public:
-  DEFINE_REF_CONSTRUCTOR2(FeedbackCell, HeapObjectRef)
+  DEFINE_REF_CONSTRUCTOR(FeedbackCell, HeapObjectRef)
 
   Handle<FeedbackCell> object() const;
   base::Optional<SharedFunctionInfoRef> shared_function_info() const;
@@ -620,7 +582,7 @@ class FeedbackCellRef : public HeapObjectRef {
 
 class FeedbackVectorRef : public HeapObjectRef {
  public:
-  DEFINE_REF_CONSTRUCTOR2(FeedbackVector, HeapObjectRef)
+  DEFINE_REF_CONSTRUCTOR(FeedbackVector, HeapObjectRef)
 
   Handle<FeedbackVector> object() const;
 
@@ -634,7 +596,7 @@ class FeedbackVectorRef : public HeapObjectRef {
 
 class CallHandlerInfoRef : public HeapObjectRef {
  public:
-  DEFINE_REF_CONSTRUCTOR2(CallHandlerInfo, HeapObjectRef)
+  DEFINE_REF_CONSTRUCTOR(CallHandlerInfo, HeapObjectRef)
 
   Handle<CallHandlerInfo> object() const;
 
@@ -644,14 +606,14 @@ class CallHandlerInfoRef : public HeapObjectRef {
 
 class AccessorInfoRef : public HeapObjectRef {
  public:
-  DEFINE_REF_CONSTRUCTOR2(AccessorInfo, HeapObjectRef)
+  DEFINE_REF_CONSTRUCTOR(AccessorInfo, HeapObjectRef)
 
   Handle<AccessorInfo> object() const;
 };
 
 class AllocationSiteRef : public HeapObjectRef {
  public:
-  DEFINE_REF_CONSTRUCTOR2(AllocationSite, HeapObjectRef)
+  DEFINE_REF_CONSTRUCTOR(AllocationSite, HeapObjectRef)
 
   Handle<AllocationSite> object() const;
 
@@ -677,7 +639,7 @@ class AllocationSiteRef : public HeapObjectRef {
 
 class BigIntRef : public HeapObjectRef {
  public:
-  DEFINE_REF_CONSTRUCTOR2(BigInt, HeapObjectRef)
+  DEFINE_REF_CONSTRUCTOR(BigInt, HeapObjectRef)
 
   Handle<BigInt> object() const;
 
@@ -728,10 +690,12 @@ class V8_EXPORT_PRIVATE MapRef : public HeapObjectRef {
   void SerializeBackPointer();
   HeapObjectRef GetBackPointer() const;
 
-  bool TrySerializePrototype();
   void SerializePrototype();
-  bool serialized_prototype() const;
-  HeapObjectRef prototype() const;
+  // TODO(neis): We should be able to remove TrySerializePrototype once
+  // concurrent-inlining is always on. Then we can also change the return type
+  // of prototype() back to HeapObjectRef.
+  bool TrySerializePrototype();
+  base::Optional<HeapObjectRef> prototype() const;
 
   void SerializeForElementLoad();
 
@@ -773,7 +737,7 @@ struct HolderLookupResult {
 
 class FunctionTemplateInfoRef : public HeapObjectRef {
  public:
-  DEFINE_REF_CONSTRUCTOR2(FunctionTemplateInfo, HeapObjectRef)
+  DEFINE_REF_CONSTRUCTOR(FunctionTemplateInfo, HeapObjectRef)
 
   Handle<FunctionTemplateInfo> object() const;
 
@@ -794,7 +758,7 @@ class FunctionTemplateInfoRef : public HeapObjectRef {
 
 class FixedArrayBaseRef : public HeapObjectRef {
  public:
-  DEFINE_REF_CONSTRUCTOR2(FixedArrayBase, HeapObjectRef)
+  DEFINE_REF_CONSTRUCTOR(FixedArrayBase, HeapObjectRef)
 
   Handle<FixedArrayBase> object() const;
 
@@ -811,7 +775,7 @@ class ArrayBoilerplateDescriptionRef : public HeapObjectRef {
 
 class FixedArrayRef : public FixedArrayBaseRef {
  public:
-  DEFINE_REF_CONSTRUCTOR2(FixedArray, FixedArrayBaseRef)
+  DEFINE_REF_CONSTRUCTOR(FixedArray, FixedArrayBaseRef)
 
   Handle<FixedArray> object() const;
 
@@ -826,7 +790,7 @@ class FixedArrayRef : public FixedArrayBaseRef {
 
 class FixedDoubleArrayRef : public FixedArrayBaseRef {
  public:
-  DEFINE_REF_CONSTRUCTOR2(FixedDoubleArray, FixedArrayBaseRef)
+  DEFINE_REF_CONSTRUCTOR(FixedDoubleArray, FixedArrayBaseRef)
 
   Handle<FixedDoubleArray> object() const;
 
@@ -838,7 +802,7 @@ class FixedDoubleArrayRef : public FixedArrayBaseRef {
 
 class BytecodeArrayRef : public FixedArrayBaseRef {
  public:
-  DEFINE_REF_CONSTRUCTOR2(BytecodeArray, FixedArrayBaseRef)
+  DEFINE_REF_CONSTRUCTOR(BytecodeArray, FixedArrayBaseRef)
 
   Handle<BytecodeArray> object() const;
 
@@ -859,14 +823,14 @@ class BytecodeArrayRef : public FixedArrayBaseRef {
 
 class ScriptContextTableRef : public FixedArrayRef {
  public:
-  DEFINE_REF_CONSTRUCTOR2(ScriptContextTable, FixedArrayRef)
+  DEFINE_REF_CONSTRUCTOR(ScriptContextTable, FixedArrayRef)
 
   Handle<ScriptContextTable> object() const;
 };
 
 class ObjectBoilerplateDescriptionRef : public FixedArrayRef {
  public:
-  DEFINE_REF_CONSTRUCTOR2(ObjectBoilerplateDescription, FixedArrayRef)
+  DEFINE_REF_CONSTRUCTOR(ObjectBoilerplateDescription, FixedArrayRef)
 
   Handle<ObjectBoilerplateDescription> object() const;
 
@@ -875,7 +839,7 @@ class ObjectBoilerplateDescriptionRef : public FixedArrayRef {
 
 class JSArrayRef : public JSObjectRef {
  public:
-  DEFINE_REF_CONSTRUCTOR2(JSArray, JSObjectRef)
+  DEFINE_REF_CONSTRUCTOR(JSArray, JSObjectRef)
 
   Handle<JSArray> object() const;
 
@@ -901,7 +865,7 @@ class JSArrayRef : public JSObjectRef {
 
 class ScopeInfoRef : public HeapObjectRef {
  public:
-  DEFINE_REF_CONSTRUCTOR2(ScopeInfo, HeapObjectRef)
+  DEFINE_REF_CONSTRUCTOR(ScopeInfo, HeapObjectRef)
 
   Handle<ScopeInfo> object() const;
 
@@ -959,7 +923,7 @@ class V8_EXPORT_PRIVATE SharedFunctionInfoRef : public HeapObjectRef {
 
 class StringRef : public NameRef {
  public:
-  DEFINE_REF_CONSTRUCTOR2(String, NameRef)
+  DEFINE_REF_CONSTRUCTOR(String, NameRef)
 
   Handle<String> object() const;
 
@@ -981,14 +945,14 @@ class StringRef : public NameRef {
 
 class SymbolRef : public NameRef {
  public:
-  DEFINE_REF_CONSTRUCTOR2(Symbol, NameRef)
+  DEFINE_REF_CONSTRUCTOR(Symbol, NameRef)
 
   Handle<Symbol> object() const;
 };
 
 class JSTypedArrayRef : public JSObjectRef {
  public:
-  DEFINE_REF_CONSTRUCTOR2(JSTypedArray, JSObjectRef)
+  DEFINE_REF_CONSTRUCTOR(JSTypedArray, JSObjectRef)
 
   Handle<JSTypedArray> object() const;
 
@@ -1005,33 +969,33 @@ class JSTypedArrayRef : public JSObjectRef {
 
 class SourceTextModuleRef : public HeapObjectRef {
  public:
-  DEFINE_REF_CONSTRUCTOR2(SourceTextModule, HeapObjectRef)
+  DEFINE_REF_CONSTRUCTOR(SourceTextModule, HeapObjectRef)
 
   Handle<SourceTextModule> object() const;
 
   void Serialize();
 
   base::Optional<CellRef> GetCell(int cell_index) const;
-  ObjectRef import_meta() const;
+  base::Optional<ObjectRef> import_meta() const;
 };
 
 class TemplateObjectDescriptionRef : public HeapObjectRef {
  public:
-  DEFINE_REF_CONSTRUCTOR2(TemplateObjectDescription, HeapObjectRef)
+  DEFINE_REF_CONSTRUCTOR(TemplateObjectDescription, HeapObjectRef)
 
   Handle<TemplateObjectDescription> object() const;
 };
 
 class CellRef : public HeapObjectRef {
  public:
-  DEFINE_REF_CONSTRUCTOR2(Cell, HeapObjectRef)
+  DEFINE_REF_CONSTRUCTOR(Cell, HeapObjectRef)
 
   Handle<Cell> object() const;
 };
 
 class JSGlobalObjectRef : public JSObjectRef {
  public:
-  DEFINE_REF_CONSTRUCTOR2(JSGlobalObject, JSObjectRef)
+  DEFINE_REF_CONSTRUCTOR(JSGlobalObject, JSObjectRef)
 
   Handle<JSGlobalObject> object() const;
 
@@ -1051,7 +1015,7 @@ class JSGlobalObjectRef : public JSObjectRef {
 
 class JSGlobalProxyRef : public JSObjectRef {
  public:
-  DEFINE_REF_CONSTRUCTOR2(JSGlobalProxy, JSObjectRef)
+  DEFINE_REF_CONSTRUCTOR(JSGlobalProxy, JSObjectRef)
 
   Handle<JSGlobalProxy> object() const;
 };
@@ -1067,12 +1031,11 @@ class CodeRef : public HeapObjectRef {
 
 class InternalizedStringRef : public StringRef {
  public:
-  DEFINE_REF_CONSTRUCTOR2(InternalizedString, StringRef)
+  DEFINE_REF_CONSTRUCTOR(InternalizedString, StringRef)
 
   Handle<InternalizedString> object() const;
 };
 
-#undef DEFINE_REF_CONSTRUCTOR2
 #undef DEFINE_REF_CONSTRUCTOR
 
 }  // namespace compiler

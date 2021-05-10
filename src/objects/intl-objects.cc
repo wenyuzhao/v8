@@ -479,7 +479,12 @@ Handle<JSObject> InnerAddElement(Isolate* isolate, Handle<JSArray> array,
                         field_type_string, NONE);
 
   JSObject::AddProperty(isolate, element, factory->value_string(), value, NONE);
-  JSObject::AddDataElement(array, index, element, NONE);
+  // TODO(victorgomes): Temporarily forcing a fatal error here in case of
+  // overflow, until Intl::AddElement can handle exceptions.
+  if (JSObject::AddDataElement(array, index, element, NONE).IsNothing()) {
+    FATAL("Fatal JavaScript invalid array size when adding element");
+    UNREACHABLE();
+  }
   return element;
 }
 
@@ -1569,9 +1574,9 @@ std::vector<std::string> BestFitSupportedLocales(
 }
 
 // ecma262 #sec-createarrayfromlist
-Handle<JSArray> CreateArrayFromList(Isolate* isolate,
-                                    std::vector<std::string> elements,
-                                    PropertyAttributes attr) {
+MaybeHandle<JSArray> CreateArrayFromList(Isolate* isolate,
+                                         std::vector<std::string> elements,
+                                         PropertyAttributes attr) {
   Factory* factory = isolate->factory();
   // Let array be ! ArrayCreate(0).
   Handle<JSArray> array = factory->NewJSArray(0);
@@ -1584,10 +1589,11 @@ Handle<JSArray> CreateArrayFromList(Isolate* isolate,
     const std::string& part = elements[i];
     Handle<String> value =
         factory->NewStringFromUtf8(CStrVector(part.c_str())).ToHandleChecked();
-    JSObject::AddDataElement(array, i, value, attr);
+    MAYBE_RETURN(JSObject::AddDataElement(array, i, value, attr),
+                 MaybeHandle<JSArray>());
   }
   // 5. Return array.
-  return array;
+  return MaybeHandle<JSArray>(array);
 }
 
 // ECMA 402 9.2.9 SupportedLocales(availableLocales, requestedLocales, options)
@@ -2027,23 +2033,15 @@ icu::TimeZone* ICUTimezoneCache::GetTimeZone() {
 bool ICUTimezoneCache::GetOffsets(double time_ms, bool is_utc,
                                   int32_t* raw_offset, int32_t* dst_offset) {
   UErrorCode status = U_ZERO_ERROR;
-  // TODO(jshin): ICU TimeZone class handles skipped time differently from
-  // Ecma 262 (https://github.com/tc39/ecma262/pull/778) and icu::TimeZone
-  // class does not expose the necessary API. Fixing
-  // http://bugs.icu-project.org/trac/ticket/13268 would make it easy to
-  // implement the proposed spec change. A proposed fix for ICU is
-  //    https://chromium-review.googlesource.com/851265 .
-  // In the meantime, use an internal (still public) API of icu::BasicTimeZone.
-  // Once it's accepted by the upstream, get rid of cast. Note that casting
-  // TimeZone to BasicTimeZone is safe because we know that icu::TimeZone used
-  // here is a BasicTimeZone.
   if (is_utc) {
     GetTimeZone()->getOffset(time_ms, false, *raw_offset, *dst_offset, status);
   } else {
+    // Note that casting TimeZone to BasicTimeZone is safe because we know that
+    // icu::TimeZone used here is a BasicTimeZone.
     static_cast<const icu::BasicTimeZone*>(GetTimeZone())
-        ->getOffsetFromLocal(time_ms, icu::BasicTimeZone::kFormer,
-                             icu::BasicTimeZone::kFormer, *raw_offset,
-                             *dst_offset, status);
+        ->getOffsetFromLocal(time_ms, UCAL_TZ_LOCAL_FORMER,
+                             UCAL_TZ_LOCAL_FORMER, *raw_offset, *dst_offset,
+                             status);
   }
 
   return U_SUCCESS(status);

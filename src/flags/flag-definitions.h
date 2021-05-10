@@ -276,10 +276,10 @@ DEFINE_BOOL(harmony_shipping, true, "enable all shipped harmony features")
   V(harmony_import_assertions, "harmony import assertions")
 
 #ifdef V8_INTL_SUPPORT
-#define HARMONY_INPROGRESS(V)                             \
-  HARMONY_INPROGRESS_BASE(V)                              \
-  V(harmony_intl_best_fit_matcher, "Intl BestFitMatcher") \
-  V(harmony_intl_displaynames_date_types, "Intl.DisplayNames date types")
+#define HARMONY_INPROGRESS(V)                                             \
+  HARMONY_INPROGRESS_BASE(V)                                              \
+  V(harmony_intl_displaynames_date_types, "Intl.DisplayNames date types") \
+  V(harmony_intl_locale_info, "Intl locale info")
 #else
 #define HARMONY_INPROGRESS(V) HARMONY_INPROGRESS_BASE(V)
 #endif
@@ -290,7 +290,9 @@ DEFINE_BOOL(harmony_shipping, true, "enable all shipped harmony features")
   V(harmony_error_cause, "harmony error cause property")
 
 #ifdef V8_INTL_SUPPORT
-#define HARMONY_STAGED(V) HARMONY_STAGED_BASE(V)
+#define HARMONY_STAGED(V) \
+  HARMONY_STAGED_BASE(V)  \
+  V(harmony_intl_best_fit_matcher, "Intl BestFitMatcher")
 #else
 #define HARMONY_STAGED(V) HARMONY_STAGED_BASE(V)
 #endif
@@ -338,6 +340,13 @@ HARMONY_SHIPPING(FLAG_SHIPPING_FEATURES)
 DEFINE_BOOL(builtin_subclassing, true,
             "subclassing support in built-in methods")
 
+// If the following flag is set to `true`, the SharedArrayBuffer constructor is
+// enabled per context depending on the callback set via
+// `SetSharedArrayBufferConstructorEnabledCallback`. If no callback is set, the
+// SharedArrayBuffer constructor is disabled.
+DEFINE_BOOL(enable_sharedarraybuffer_per_context, false,
+            "enable the SharedArrayBuffer constructor per context")
+
 #ifdef V8_INTL_SUPPORT
 DEFINE_BOOL(icu_timezone_data, true, "get information about timezones from ICU")
 #endif
@@ -365,6 +374,9 @@ DEFINE_BOOL(icu_timezone_data, true, "get information about timezones from ICU")
 #else
 #define V8_SHARED_RO_HEAP_BOOL false
 #endif
+
+DEFINE_BOOL(disable_shared_ro_heap_for_testing, false,
+            "disables sharing of the read-only heap for testing")
 
 DEFINE_BOOL(lite_mode, V8_LITE_BOOL,
             "enables trade-off of performance for memory savings")
@@ -856,7 +868,11 @@ DEFINE_VALUE_IMPLICATION(single_threaded, wasm_num_compilation_tasks, 0)
 DEFINE_DEBUG_BOOL(trace_wasm_native_heap, false,
                   "trace wasm native heap events")
 DEFINE_BOOL(wasm_write_protect_code_memory, false,
-            "write protect code memory on the wasm native heap")
+            "write protect code memory on the wasm native heap with mprotect")
+DEFINE_BOOL(wasm_memory_protection_keys, false,
+            "protect wasm code memory with PKU if available, no protection "
+            "without support; fallback to mprotect by adding "
+            "--wasm-write-protect-code-memory")
 DEFINE_DEBUG_BOOL(trace_wasm_serialization, false,
                   "trace serialization/deserialization")
 DEFINE_BOOL(wasm_async_compilation, true,

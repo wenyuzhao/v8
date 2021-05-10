@@ -2577,6 +2577,29 @@ void Isolate::SetAbortOnUncaughtExceptionCallback(
   abort_on_uncaught_exception_callback_ = callback;
 }
 
+void Isolate::InstallConditionalFeatures(Handle<Context> context) {
+  Handle<JSGlobalObject> global = handle(context->global_object(), this);
+  Handle<String> sab_name = factory()->SharedArrayBuffer_string();
+  if (IsSharedArrayBufferConstructorEnabled(context)) {
+    if (!JSObject::HasRealNamedProperty(global, sab_name).FromMaybe(true)) {
+      JSObject::AddProperty(this, global, factory()->SharedArrayBuffer_string(),
+                            shared_array_buffer_fun(), DONT_ENUM);
+    }
+  }
+}
+
+bool Isolate::IsSharedArrayBufferConstructorEnabled(Handle<Context> context) {
+  if (!FLAG_harmony_sharedarraybuffer) return false;
+
+  if (!FLAG_enable_sharedarraybuffer_per_context) return true;
+
+  if (sharedarraybuffer_constructor_enabled_callback()) {
+    v8::Local<v8::Context> api_context = v8::Utils::ToLocal(context);
+    return sharedarraybuffer_constructor_enabled_callback()(api_context);
+  }
+  return false;
+}
+
 bool Isolate::IsWasmSimdEnabled(Handle<Context> context) {
 #if V8_ENABLE_WEBASSEMBLY
   if (wasm_simd_enabled_callback()) {
@@ -3053,7 +3076,8 @@ void Isolate::Deinit() {
 
 #if defined(V8_OS_WIN64)
   if (win64_unwindinfo::CanRegisterUnwindInfoForNonABICompliantCodeRange() &&
-      heap()->memory_allocator() && RequiresCodeRange()) {
+      heap()->memory_allocator() && RequiresCodeRange() &&
+      heap()->code_range()->AtomicDecrementUnwindInfoUseCount() == 1) {
     const base::AddressRegion& code_region = heap()->code_region();
     void* start = reinterpret_cast<void*>(code_region.begin());
     win64_unwindinfo::UnregisterNonABICompliantCodeRange(start);
@@ -3784,7 +3808,8 @@ bool Isolate::Init(SnapshotData* startup_snapshot_data,
   }
 
 #if defined(V8_OS_WIN64)
-  if (win64_unwindinfo::CanRegisterUnwindInfoForNonABICompliantCodeRange()) {
+  if (win64_unwindinfo::CanRegisterUnwindInfoForNonABICompliantCodeRange() &&
+      heap()->code_range()->AtomicIncrementUnwindInfoUseCount() == 0) {
     const base::AddressRegion& code_region = heap()->code_region();
     void* start = reinterpret_cast<void*>(code_region.begin());
     size_t size_in_bytes = code_region.size();
@@ -4328,11 +4353,15 @@ MaybeHandle<FixedArray> Isolate::GetImportAssertionsFromArgument(
   Handle<JSReceiver> import_assertions_object_receiver =
       Handle<JSReceiver>::cast(import_assertions_object);
 
-  Handle<FixedArray> assertion_keys =
-      KeyAccumulator::GetKeys(import_assertions_object_receiver,
-                              KeyCollectionMode::kOwnOnly, ENUMERABLE_STRINGS,
-                              GetKeysConversion::kConvertToString)
-          .ToHandleChecked();
+  Handle<FixedArray> assertion_keys;
+  if (!KeyAccumulator::GetKeys(import_assertions_object_receiver,
+                               KeyCollectionMode::kOwnOnly, ENUMERABLE_STRINGS,
+                               GetKeysConversion::kConvertToString)
+           .ToHandle(&assertion_keys)) {
+    // This happens if the assertions object is a Proxy whose ownKeys() or
+    // getOwnPropertyDescriptor() trap throws.
+    return MaybeHandle<FixedArray>();
+  }
 
   // The assertions will be passed to the host in the form: [key1,
   // value1, key2, value2, ...].

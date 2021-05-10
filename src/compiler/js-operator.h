@@ -290,9 +290,9 @@ class CallParameters final {
   }
 
   using ArityField = base::BitField<size_t, 0, 27>;
-  using CallFeedbackRelationField = base::BitField<CallFeedbackRelation, 27, 1>;
-  using SpeculationModeField = base::BitField<SpeculationMode, 28, 1>;
-  using ConvertReceiverModeField = base::BitField<ConvertReceiverMode, 29, 2>;
+  using CallFeedbackRelationField = base::BitField<CallFeedbackRelation, 27, 2>;
+  using SpeculationModeField = base::BitField<SpeculationMode, 29, 1>;
+  using ConvertReceiverModeField = base::BitField<ConvertReceiverMode, 30, 2>;
 
   uint32_t const bit_field_;
   CallFrequency const frequency_;
@@ -308,7 +308,7 @@ const CallParameters& CallParametersOf(const Operator* op);
 
 // Defines the arity and the ID for a runtime function call. This is used as a
 // parameter by JSCallRuntime operators.
-class CallRuntimeParameters final {
+class V8_EXPORT_PRIVATE CallRuntimeParameters final {
  public:
   CallRuntimeParameters(Runtime::FunctionId id, size_t arity)
       : id_(id), arity_(arity) {}
@@ -328,8 +328,8 @@ size_t hash_value(CallRuntimeParameters const&);
 
 std::ostream& operator<<(std::ostream&, CallRuntimeParameters const&);
 
-const CallRuntimeParameters& CallRuntimeParametersOf(const Operator* op);
-
+V8_EXPORT_PRIVATE const CallRuntimeParameters& CallRuntimeParametersOf(
+    const Operator* op);
 
 // Defines the location of a context slot relative to a specific scope. This is
 // used as a parameter by JSLoadContext and JSStoreContext operators and allows
@@ -951,12 +951,12 @@ class V8_EXPORT_PRIVATE JSOperatorBuilder final
       CallFrequency const& frequency,
       const FeedbackSource& feedback = FeedbackSource{},
       SpeculationMode speculation_mode = SpeculationMode::kDisallowSpeculation,
-      CallFeedbackRelation feedback_relation = CallFeedbackRelation::kRelated);
+      CallFeedbackRelation feedback_relation = CallFeedbackRelation::kTarget);
   const Operator* CallWithSpread(
       uint32_t arity, CallFrequency const& frequency = CallFrequency(),
       FeedbackSource const& feedback = FeedbackSource(),
       SpeculationMode speculation_mode = SpeculationMode::kDisallowSpeculation,
-      CallFeedbackRelation feedback_relation = CallFeedbackRelation::kRelated);
+      CallFeedbackRelation feedback_relation = CallFeedbackRelation::kTarget);
   const Operator* CallRuntime(Runtime::FunctionId id);
   const Operator* CallRuntime(Runtime::FunctionId id, size_t arity);
   const Operator* CallRuntime(const Runtime::Function* function, size_t arity);
