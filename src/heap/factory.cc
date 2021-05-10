@@ -1361,7 +1361,8 @@ Handle<Foreign> Factory::NewForeign(Address addr) {
 
 #if V8_ENABLE_WEBASSEMBLY
 Handle<WasmTypeInfo> Factory::NewWasmTypeInfo(Address type_address,
-                                              Handle<Map> opt_parent) {
+                                              Handle<Map> opt_parent,
+                                              int instance_size_bytes) {
   // We pretenure WasmTypeInfo objects because they are refererenced by Maps,
   // which are assumed to be long-lived. The supertypes list is constant
   // after initialization, so we pretenure that too.
@@ -1385,6 +1386,7 @@ Handle<WasmTypeInfo> Factory::NewWasmTypeInfo(Address type_address,
   result.set_foreign_address(isolate(), type_address);
   result.set_supertypes(*supertypes, SKIP_WRITE_BARRIER);
   result.set_subtypes(*subtypes);
+  result.set_instance_size(instance_size_bytes);
   return handle(result, isolate());
 }
 
@@ -1421,6 +1423,7 @@ Handle<WasmExportedFunctionData> Factory::NewWasmExportedFunctionData(
       WasmExportedFunctionData::cast(AllocateRawWithImmortalMap(
           map.instance_size(), AllocationType::kOld, map));
   DisallowGarbageCollection no_gc;
+  result.AllocateExternalPointerEntries(isolate());
   result.set_foreign_address(isolate(), call_target);
   result.set_ref(*ref);
   result.set_wrapper_code(*export_wrapper);

@@ -227,6 +227,22 @@ class ConstantInDictionaryPrototypeChainDependency final
   PropertyKind kind_;
 };
 
+class HeapNumberValueDependency final : public CompilationDependency {
+ public:
+  HeapNumberValueDependency(Handle<HeapNumber> number, uint64_t value)
+      : number_(number), value_(value) {}
+
+  bool IsValid() const override { return number_->value_as_bits() == value_; }
+
+  void Install(const MaybeObjectHandle& code) const override {
+    SLOW_DCHECK(IsValid());
+  }
+
+ private:
+  Handle<HeapNumber> number_;
+  const uint64_t value_;
+};
+
 class TransitionDependency final : public CompilationDependency {
  public:
   explicit TransitionDependency(const MapRef& map) : map_(map) {
@@ -680,7 +696,7 @@ namespace {
 void DependOnStablePrototypeChain(CompilationDependencies* deps, MapRef map,
                                   base::Optional<JSObjectRef> last_prototype) {
   while (true) {
-    HeapObjectRef proto = map.prototype();
+    HeapObjectRef proto = map.prototype().value();
     if (!proto.IsJSObject()) {
       CHECK_EQ(proto.map().oddball_type(), OddballType::kNull);
       break;
@@ -697,7 +713,7 @@ void CompilationDependencies::DependOnStablePrototypeChains(
     MapContainer const& receiver_maps, WhereToStart start,
     base::Optional<JSObjectRef> last_prototype) {
   for (auto map : receiver_maps) {
-    MapRef receiver_map(broker_, map);
+    MapRef receiver_map = MakeRef(broker_, map);
     if (start == kStartAtReceiver) DependOnStableMap(receiver_map);
     if (receiver_map.IsPrimitiveMap()) {
       // Perform the implicit ToObject for primitives here.
@@ -746,6 +762,11 @@ CompilationDependencies::DependOnInitialMapInstanceSizePrediction(
       function, instance_size));
   DCHECK_LE(instance_size, function.initial_map().instance_size());
   return SlackTrackingPrediction(initial_map, instance_size);
+}
+
+void CompilationDependencies::DependOnHeapNumberValue(Handle<HeapNumber> number,
+                                                      uint64_t value) {
+  RecordDependency(zone_->New<HeapNumberValueDependency>(number, value));
 }
 
 CompilationDependency const*

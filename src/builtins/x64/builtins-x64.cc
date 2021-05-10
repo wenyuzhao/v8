@@ -384,7 +384,6 @@ void Generate_JSEntryVariant(MacroAssembler* masm, StackFrame::Type type,
 
 #ifdef V8_COMPRESS_POINTERS_IN_SHARED_CAGE
     // Initialize the pointer cage base register.
-    // TODO(syg): Actually make a cage.
     __ LoadRootRelative(kPtrComprCageBaseRegister,
                         IsolateData::cage_base_offset());
 #endif
@@ -742,20 +741,15 @@ void Builtins::Generate_ResumeGeneratorTrampoline(MacroAssembler* masm) {
       rbx, FieldOperand(rdx, JSGeneratorObject::kParametersAndRegistersOffset));
 
   {
-    {
-      Label done_loop, loop;
-      __ movq(r9, rcx);
-
-      __ bind(&loop);
-      __ decq(r9);
-      __ j(less, &done_loop, Label::kNear);
-      __ PushTaggedAnyField(
-          FieldOperand(rbx, r9, times_tagged_size, FixedArray::kHeaderSize),
-          decompr_scratch1);
-      __ jmp(&loop);
-
-      __ bind(&done_loop);
-    }
+    Label done_loop, loop;
+    __ bind(&loop);
+    __ decq(rcx);
+    __ j(less, &done_loop, Label::kNear);
+    __ PushTaggedAnyField(
+        FieldOperand(rbx, rcx, times_tagged_size, FixedArray::kHeaderSize),
+        decompr_scratch1);
+    __ jmp(&loop);
+    __ bind(&done_loop);
 
     // Push the receiver.
     __ PushTaggedPointerField(
@@ -2930,7 +2924,7 @@ void Builtins::Generate_GenericJSToWasmWrapper(MacroAssembler* masm) {
   __ LoadExternalPointerField(
       signature,
       FieldOperand(foreign_signature, Foreign::kForeignAddressOffset),
-      kForeignForeignAddressTag);
+      kForeignForeignAddressTag, kScratchRegister);
   foreign_signature = no_reg;
   Register return_count = r8;
   __ movq(return_count,
@@ -3261,11 +3255,14 @@ void Builtins::Generate_GenericJSToWasmWrapper(MacroAssembler* masm) {
   thread_in_wasm_flag_addr = no_reg;
 
   Register function_entry = function_data;
-  __ movq(function_entry,
-          MemOperand(function_data,
-                     wasm::ObjectAccess::ToTagged(
-                         WasmExportedFunctionData::kForeignAddressOffset)));
+  Register scratch = r12;
+  __ LoadExternalPointerField(
+      function_entry,
+      FieldOperand(function_data,
+                   WasmExportedFunctionData::kForeignAddressOffset),
+      kForeignForeignAddressTag, scratch);
   function_data = no_reg;
+  scratch = no_reg;
 
   // We set the indicating value for the GC to the proper one for Wasm call.
   constexpr int kWasmCallGCScanSlotCount = 0;
@@ -4125,7 +4122,7 @@ void Builtins::Generate_CallApiGetter(MacroAssembler* masm) {
   __ LoadExternalPointerField(
       api_function_address,
       FieldOperand(scratch, Foreign::kForeignAddressOffset),
-      kForeignForeignAddressTag);
+      kForeignForeignAddressTag, kScratchRegister);
 
   // +3 is to skip prolog, return address and name handle.
   Operand return_value_operand(

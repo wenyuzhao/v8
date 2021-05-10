@@ -211,10 +211,6 @@ declare_args() {
                       (is_linux || is_chromeos || is_mac)) ||
                      (v8_current_cpu == "ppc64" && (is_linux || is_chromeos))
 
-  # Temporary flag to allow embedders to update their microtasks scopes
-  # while rolling in a new version of V8.
-  v8_check_microtasks_scopes_consistency = ""
-
   # Enable mitigations for executing untrusted code.
   # Disabled by default on ia32 due to conflicting requirements with embedded
   # builtins. Enabled by default on Android since it doesn't support
@@ -348,10 +344,6 @@ if (v8_enable_snapshot_code_comments) {
 if (v8_enable_debug_code == "") {
   v8_enable_debug_code = v8_enable_debugging_features
 }
-if (v8_check_microtasks_scopes_consistency == "") {
-  v8_check_microtasks_scopes_consistency =
-      v8_enable_debugging_features || dcheck_always_on
-}
 if (v8_enable_snapshot_native_code_counters == "") {
   v8_enable_snapshot_native_code_counters = v8_enable_debugging_features
 }
@@ -360,7 +352,7 @@ if (v8_enable_pointer_compression == "") {
       v8_current_cpu == "arm64" || v8_current_cpu == "x64"
 }
 if (v8_enable_pointer_compression_shared_cage == "") {
-  v8_enable_pointer_compression_shared_cage = false
+  v8_enable_pointer_compression_shared_cage = v8_enable_pointer_compression
 }
 if (v8_enable_fast_torque == "") {
   v8_enable_fast_torque = v8_enable_fast_mksnapshot
@@ -432,7 +424,8 @@ assert(v8_current_cpu != "x86" || !v8_untrusted_code_mitigations,
 assert(v8_current_cpu == "arm64" || !v8_control_flow_integrity,
        "Control-flow integrity is only supported on arm64")
 
-if (v8_enable_shared_ro_heap && v8_enable_pointer_compression) {
+if (v8_enable_shared_ro_heap && v8_enable_pointer_compression &&
+    !v8_enable_pointer_compression_shared_cage) {
   assert(
       is_linux || is_chromeos || is_android,
       "Sharing read-only heap with pointer compression is only supported on Linux or Android")
@@ -453,6 +446,10 @@ assert(!v8_enable_heap_sandbox || v8_enable_pointer_compression,
 assert(
     !v8_enable_pointer_compression_shared_cage || v8_enable_pointer_compression,
     "Can't share a pointer compression cage if pointers aren't compressed")
+
+assert(!v8_enable_pointer_compression_shared_cage || v8_current_cpu == "x64" ||
+           v8_current_cpu == "arm64",
+       "Sharing a pointer compression cage is only supported on x64 and arm64")
 
 assert(!v8_enable_unconditional_write_barriers || !v8_disable_write_barriers,
        "Write barriers can't be both enabled and disabled")
@@ -801,9 +798,6 @@ config("features") {
   }
   if (v8_enable_lazy_source_positions) {
     defines += [ "V8_ENABLE_LAZY_SOURCE_POSITIONS" ]
-  }
-  if (v8_check_microtasks_scopes_consistency) {
-    defines += [ "V8_CHECK_MICROTASKS_SCOPES_CONSISTENCY" ]
   }
   if (v8_use_multi_snapshots) {
     defines += [ "V8_MULTI_SNAPSHOTS" ]
@@ -3000,7 +2994,6 @@ v8_header_set("v8_internal_headers") {
     "src/roots/roots.h",
     "src/runtime/runtime-utils.h",
     "src/runtime/runtime.h",
-    "src/sanitizer/tsan.h",
     "src/snapshot/code-serializer.h",
     "src/snapshot/context-deserializer.h",
     "src/snapshot/context-serializer.h",
@@ -3104,6 +3097,7 @@ v8_header_set("v8_internal_headers") {
       "src/wasm/jump-table-assembler.h",
       "src/wasm/leb-helper.h",
       "src/wasm/local-decl-encoder.h",
+      "src/wasm/memory-protection-key.h",
       "src/wasm/memory-tracing.h",
       "src/wasm/module-compiler.h",
       "src/wasm/module-decoder.h",
@@ -3121,6 +3115,7 @@ v8_header_set("v8_internal_headers") {
       "src/wasm/wasm-feature-flags.h",
       "src/wasm/wasm-features.h",
       "src/wasm/wasm-import-wrapper-cache.h",
+      "src/wasm/wasm-init-expr.h",
       "src/wasm/wasm-js.h",
       "src/wasm/wasm-linkage.h",
       "src/wasm/wasm-module-builder.h",
@@ -4042,6 +4037,7 @@ v8_source_set("v8_base_without_compiler") {
       "src/wasm/graph-builder-interface.cc",
       "src/wasm/jump-table-assembler.cc",
       "src/wasm/local-decl-encoder.cc",
+      "src/wasm/memory-protection-key.cc",
       "src/wasm/memory-tracing.cc",
       "src/wasm/module-compiler.cc",
       "src/wasm/module-decoder.cc",
@@ -4057,6 +4053,7 @@ v8_source_set("v8_base_without_compiler") {
       "src/wasm/wasm-external-refs.cc",
       "src/wasm/wasm-features.cc",
       "src/wasm/wasm-import-wrapper-cache.cc",
+      "src/wasm/wasm-init-expr.cc",
       "src/wasm/wasm-js.cc",
       "src/wasm/wasm-module-builder.cc",
       "src/wasm/wasm-module-sourcemap.cc",
@@ -4740,9 +4737,11 @@ v8_component("v8_libbase") {
 
   if (is_tsan && !build_with_chromium) {
     data += [ "tools/sanitizers/tsan_suppressions.txt" ]
+  }
 
-    # llvm-symbolizer uses libstdc++ from the clang package.
-    data += [ "//third_party/llvm-build/Release+Asserts/lib/libstdc++.so.6" ]
+  if (using_sanitizer && !build_with_chromium) {
+    data_deps +=
+        [ "//build/config/clang:llvm-symbolizer_data($host_toolchain)" ]
   }
 
   # TODO(jochen): Add support for qnx, freebsd, openbsd, netbsd, and solaris.
@@ -5006,6 +5005,7 @@ v8_source_set("cppgc_base") {
     "src/heap/cppgc/marking-visitor.h",
     "src/heap/cppgc/marking-worklists.cc",
     "src/heap/cppgc/marking-worklists.h",
+    "src/heap/cppgc/memory.cc",
     "src/heap/cppgc/memory.h",
     "src/heap/cppgc/metric-recorder.h",
     "src/heap/cppgc/name-trait.cc",
