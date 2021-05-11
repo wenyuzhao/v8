@@ -219,7 +219,6 @@ void AccessorAssembler::HandleLoadICHandlerCase(
 
   BIND(&call_handler);
   {
-    Print("HandleLoadICHandlerCase call_handler");
     exit_point->ReturnCallStub(LoadWithVectorDescriptor{}, CAST(handler),
                                p->context(), p->lookup_start_object(),
                                p->name(), p->slot(), p->vector());
