@@ -202,7 +202,9 @@ void AccessorAssembler::HandleLoadICHandlerCase(
 
   BIND(&try_proto_handler);
   {
+    Print("HandleLoadICHandlerCase try_proto_handler, ", handler);
     GotoIf(IsCodeMap(LoadMap(CAST(handler))), &call_handler);
+    Print("HandleLoadICHandlerCase try_proto_handler 2");
     HandleLoadICProtoHandler(p, CAST(handler), &var_holder, &var_smi_handler,
                              &if_smi_handler, miss, exit_point, ic_mode,
                              access_mode);
@@ -219,6 +221,7 @@ void AccessorAssembler::HandleLoadICHandlerCase(
 
   BIND(&call_handler);
   {
+    Print("HandleLoadICHandlerCase call_handler");
     exit_point->ReturnCallStub(LoadWithVectorDescriptor{}, CAST(handler),
                                p->context(), p->lookup_start_object(),
                                p->name(), p->slot(), p->vector());
