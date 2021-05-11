@@ -505,7 +505,7 @@ for(i = 0; i < typedArrayConstructors.length; i++) {
   TestPropertyTypeChecks(typedArrayConstructors[i]);
 }
 
-print("== 1 ==")
+
 function TestTypedArraySet() {
   // Test array.set in different combinations.
 
@@ -739,7 +739,7 @@ function TestTypedArraySet() {
 }
 
 TestTypedArraySet();
-print("== 2 ==")
+
 function TestTypedArraysWithIllegalIndices() {
   var a = new Int32Array(100);
 
@@ -784,9 +784,9 @@ function TestTypedArraysWithIllegalIndices() {
   assertEquals(27, a[x]);
   assertEquals(27, a[y]);
 }
-print("== 3 ==")
+
 TestTypedArraysWithIllegalIndices();
-print("== 4 ==")
+
 function TestTypedArraysWithIllegalIndicesStrict() {
   'use strict';
   var a = new Int32Array(100);
@@ -835,7 +835,7 @@ function TestTypedArraysWithIllegalIndicesStrict() {
 }
 
 TestTypedArraysWithIllegalIndicesStrict();
-print("== 5 ==")
+
 // DataView
 function TestDataViewConstructor() {
   var ab = new ArrayBuffer(256);
@@ -886,7 +886,7 @@ function TestDataViewConstructor() {
 }
 
 TestDataViewConstructor();
-print("== 6 ==")
+
 function TestDataViewPropertyTypeChecks() {
   var a = new DataView(new ArrayBuffer(10));
   function CheckProperty(name) {
@@ -917,7 +917,7 @@ function TestDataViewPropertyTypeChecks() {
 
 TestDataViewPropertyTypeChecks();
 
-print("== 7 ==")
+
 function TestDataViewToStringTag() {
   var a = new DataView(new ArrayBuffer(10));
   assertEquals("[object DataView]", Object.prototype.toString.call(a));
@@ -949,7 +949,7 @@ for(i = 0; i < typedArrayConstructors.length; i++) {
   TestEnumerable(typedArrayConstructors[i]);
 }
 TestEnumerable(DataView, new DataView(new ArrayBuffer()));
-print("== 8 ==")
+
 // Test arbitrary properties on ArrayBuffer
 function TestArbitrary(m) {
   function TestProperty(map, property, value) {
