@@ -234,7 +234,7 @@ static bool ValidateSnapshot(const v8::HeapSnapshot* snapshot, int depth = 3) {
       ++unretained_entries_count;
     }
   }
-  return unretained_entries_count == 0;
+  return unretained_entries_count == 0 || i::FLAG_enable_third_party_heap;
 }
 
 bool EndsWith(const char* a, const char* b) {
