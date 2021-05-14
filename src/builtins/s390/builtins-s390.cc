@@ -111,7 +111,7 @@ void Generate_JSBuiltinsConstructStubHelper(MacroAssembler* masm) {
     // r3: constructor function
     // r5: new target
 
-    __ InvokeFunctionWithNewTarget(r3, r5, r2, CALL_FUNCTION);
+    __ InvokeFunctionWithNewTarget(r3, r5, r2, InvokeType::kCall);
 
     // Restore context from the frame.
     __ LoadU64(cp, MemOperand(fp, ConstructFrameConstants::kContextOffset));
@@ -239,7 +239,7 @@ void Builtins::Generate_JSConstructStubGeneric(MacroAssembler* masm) {
   __ Push(r8);
 
   // Call the function.
-  __ InvokeFunctionWithNewTarget(r3, r5, r2, CALL_FUNCTION);
+  __ InvokeFunctionWithNewTarget(r3, r5, r2, InvokeType::kCall);
 
   // ----------- S t a t e -------------
   //  --                 r0: constructor result
@@ -340,7 +340,7 @@ void Builtins::Generate_ResumeGeneratorTrampoline(MacroAssembler* masm) {
   __ StoreTaggedField(
       r2, FieldMemOperand(r3, JSGeneratorObject::kInputOrDebugPosOffset), r0);
   __ RecordWriteField(r3, JSGeneratorObject::kInputOrDebugPosOffset, r2, r5,
-                      kLRHasNotBeenSaved, kDontSaveFPRegs);
+                      kLRHasNotBeenSaved, SaveFPRegsMode::kIgnore);
 
   // Load suspended function and context.
   __ LoadTaggedPointerField(
@@ -855,8 +855,8 @@ static void ReplaceClosureCodeWithOptimizedCode(MacroAssembler* masm,
   __ mov(scratch1,
          optimized_code);  // Write barrier clobbers scratch1 below.
   __ RecordWriteField(closure, JSFunction::kCodeOffset, scratch1, scratch2,
-                      kLRHasNotBeenSaved, kDontSaveFPRegs, OMIT_REMEMBERED_SET,
-                      OMIT_SMI_CHECK);
+                      kLRHasNotBeenSaved, SaveFPRegsMode::kIgnore,
+                      RememberedSetAction::kOmit, SmiCheck::kOmit);
 }
 
 static void LeaveInterpreterFrame(MacroAssembler* masm, Register scratch1,
@@ -2176,7 +2176,7 @@ void Builtins::Generate_CallFunction(MacroAssembler* masm,
 
   __ LoadU16(
       r4, FieldMemOperand(r4, SharedFunctionInfo::kFormalParameterCountOffset));
-  __ InvokeFunctionCode(r3, no_reg, r4, r2, JUMP_FUNCTION);
+  __ InvokeFunctionCode(r3, no_reg, r4, r2, InvokeType::kJump);
 
   // The function is a "classConstructor", need to raise an exception.
   __ bind(&class_constructor);
@@ -2565,12 +2565,12 @@ void Builtins::Generate_CEntry(MacroAssembler* masm, int result_size,
   // sp: stack pointer  (restored as callee's sp after C call)
   // cp: current context  (C callee-saved)
   //
-  // If argv_mode == kArgvInRegister:
+  // If argv_mode == ArgvMode::kRegister:
   // r4: pointer to the first argument
 
   __ mov(r7, r3);
 
-  if (argv_mode == kArgvInRegister) {
+  if (argv_mode == ArgvMode::kRegister) {
     // Move argv into the correct register.
     __ mov(r3, r4);
   } else {
@@ -2598,7 +2598,7 @@ void Builtins::Generate_CEntry(MacroAssembler* masm, int result_size,
 #endif
 
   __ EnterExitFrame(
-      save_doubles, arg_stack_space,
+      save_doubles == SaveFPRegsMode::kSave, arg_stack_space,
       builtin_exit_frame ? StackFrame::BUILTIN_EXIT : StackFrame::EXIT);
 
   // Store a copy of argc, argv in callee-saved registers for later.
@@ -2661,12 +2661,12 @@ void Builtins::Generate_CEntry(MacroAssembler* masm, int result_size,
   // r2:r3: result
   // sp: stack pointer
   // fp: frame pointer
-  Register argc = argv_mode == kArgvInRegister
+  Register argc = argv_mode == ArgvMode::kRegister
                       // We don't want to pop arguments so set argc to no_reg.
                       ? no_reg
                       // r6: still holds argc (callee-saved).
                       : r6;
-  __ LeaveExitFrame(save_doubles, argc);
+  __ LeaveExitFrame(save_doubles == SaveFPRegsMode::kSave, argc);
   __ b(r14);
 
   // Handling of exception.
@@ -3468,11 +3468,12 @@ void Builtins::Generate_DynamicCheckMapsTrampoline(MacroAssembler* masm) {
       descriptor.GetRegisterParameter(DynamicCheckMapsDescriptor::kSlot);
   Register handler_arg =
       descriptor.GetRegisterParameter(DynamicCheckMapsDescriptor::kHandler);
-  __ LoadP(handler_arg, MemOperand(fp, CommonFrameConstants::kCallerPCOffset));
-  __ LoadP(
+  __ LoadU64(handler_arg,
+             MemOperand(fp, CommonFrameConstants::kCallerPCOffset));
+  __ LoadU64(
       slot_arg,
       MemOperand(handler_arg, Deoptimizer::kEagerWithResumeImmedArgs1PcOffset));
-  __ LoadP(
+  __ LoadU64(
       handler_arg,
       MemOperand(handler_arg, Deoptimizer::kEagerWithResumeImmedArgs2PcOffset));
 

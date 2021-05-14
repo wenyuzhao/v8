@@ -130,11 +130,7 @@ constexpr Builtins::Name WasmRuntimeStubIdToBuiltinName(
 #undef DEF_CASE
 #undef DEF_TRAP_CASE
     default:
-#if V8_HAS_CXX14_CONSTEXPR
       UNREACHABLE();
-#else
-      return Builtins::kAbort;
-#endif
   }
 }
 
@@ -705,8 +701,23 @@ void WasmGraphBuilder::PatchInStackCheckIfNeeded() {
   if (effect() == dummy) return;
 
   // Now patch all control uses of {start} to use {control} and all effect uses
-  // to use {effect} instead. Then rewire the dummy node to use start instead.
+  // to use {effect} instead. We exclude Projection nodes: Projections pointing
+  // to start are floating control, and we want it to point directly to start
+  // because of restrictions later in the pipeline (specifically, loop
+  // unrolling).
+  // Then rewire the dummy node to use start instead.
   NodeProperties::ReplaceUses(start, start, effect(), control());
+  {
+    // We need an intermediate vector because we are not allowed to modify a use
+    // while traversing uses().
+    std::vector<Node*> projections;
+    for (Node* use : control()->uses()) {
+      if (use->opcode() == IrOpcode::kProjection) projections.emplace_back(use);
+    }
+    for (Node* use : projections) {
+      use->ReplaceInput(NodeProperties::FirstControlIndex(use), start);
+    }
+  }
   NodeProperties::ReplaceUses(dummy, nullptr, start, start);
 }
 
@@ -869,17 +880,19 @@ Node* WasmGraphBuilder::Binop(wasm::WasmOpcode opcode, Node* left, Node* right,
       std::swap(left, right);
       break;
     case wasm::kExprI64Ror:
-      op = m->Word64Ror();
       right = MaskShiftCount64(right);
-      break;
+      return m->Is64() ? graph()->NewNode(m->Word64Ror(), left, right)
+                       : graph()->NewNode(m->Word64RorLowerable(), left, right,
+                                          control());
     case wasm::kExprI64Rol:
       if (m->Word64Rol().IsSupported()) {
-        op = m->Word64Rol().op();
-        right = MaskShiftCount64(right);
-        break;
+        return m->Is64() ? graph()->NewNode(m->Word64Rol().op(), left,
+                                            MaskShiftCount64(right))
+                         : graph()->NewNode(m->Word64RolLowerable().op(), left,
+                                            MaskShiftCount64(right), control());
       } else if (m->Word32Rol().IsSupported()) {
-        op = m->Word64Rol().placeholder();
-        break;
+        return graph()->NewNode(m->Word64RolLowerable().placeholder(), left,
+                                right, control());
       }
       return BuildI64Rol(left, right);
     case wasm::kExprF32CopySign:
@@ -1170,19 +1183,22 @@ Node* WasmGraphBuilder::Unop(wasm::WasmOpcode opcode, Node* input,
       op = m->BitcastFloat64ToInt64();
       break;
     case wasm::kExprI64Clz:
-      op = m->Word64Clz();
-      break;
+      return m->Is64()
+                 ? graph()->NewNode(m->Word64Clz(), input)
+                 : graph()->NewNode(m->Word64ClzLowerable(), input, control());
     case wasm::kExprI64Ctz: {
-      OptionalOperator ctz64 = m->Word64Ctz();
-      if (ctz64.IsSupported()) {
-        op = ctz64.op();
-        break;
+      if (m->Word64Ctz().IsSupported()) {
+        return m->Is64() ? graph()->NewNode(m->Word64Ctz().op(), input)
+                         : graph()->NewNode(m->Word64CtzLowerable().op(), input,
+                                            control());
       } else if (m->Is32() && m->Word32Ctz().IsSupported()) {
-        op = ctz64.placeholder();
-        break;
+        return graph()->NewNode(m->Word64CtzLowerable().placeholder(), input,
+                                control());
       } else if (m->Word64ReverseBits().IsSupported()) {
         Node* reversed = graph()->NewNode(m->Word64ReverseBits().op(), input);
-        Node* result = graph()->NewNode(m->Word64Clz(), reversed);
+        Node* result = m->Is64() ? graph()->NewNode(m->Word64Clz(), reversed)
+                                 : graph()->NewNode(m->Word64ClzLowerable(),
+                                                    reversed, control());
         return result;
       } else {
         return BuildI64Ctz(input);
@@ -3134,8 +3150,8 @@ Node* WasmGraphBuilder::BuildLoadCallTargetFromExportedFunctionData(
                                 Internals::kExternalPointerTableBufferOffset);
   Node* offset = gasm_->Int32Mul(index, gasm_->Int32Constant(8));
   Node* decoded_ptr = gasm_->Load(MachineType::Pointer(), table, offset);
-  Node* tag = gasm_->IntPtrConstant(kForeignForeignAddressTag);
-  return gasm_->WordXor(decoded_ptr, tag);
+  Node* tag = gasm_->IntPtrConstant(~kForeignForeignAddressTag);
+  return gasm_->WordAnd(decoded_ptr, tag);
 #else
   return gasm_->LoadFromObject(
       MachineType::Pointer(), function_data,
@@ -5289,12 +5305,7 @@ Node* WasmGraphBuilder::AtomicOp(wasm::WasmOpcode opcode, Node* const* inputs,
         case wasm::kExprI64AtomicWait:
           return {kSpecial, MachineType::Int64(), OperatorByType{nullptr}};
         default:
-#if V8_HAS_CXX14_CONSTEXPR
           UNREACHABLE();
-#else
-          // Return something for older GCC.
-          return {kSpecial, MachineType::Int64(), OperatorByType{nullptr}};
-#endif
       }
     }
   };

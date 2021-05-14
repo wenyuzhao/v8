@@ -89,6 +89,46 @@ TEST_F(GCHeapTest, ConservativeGCRetainsObjectOnStack) {
   EXPECT_EQ(1u, Foo::destructor_callcount);
 }
 
+namespace {
+
+class GCedWithFinalizer final : public GarbageCollected<GCedWithFinalizer> {
+ public:
+  static size_t destructor_counter;
+
+  GCedWithFinalizer() { destructor_counter = 0; }
+  ~GCedWithFinalizer() { destructor_counter++; }
+  void Trace(Visitor* visitor) const {}
+};
+// static
+size_t GCedWithFinalizer::destructor_counter = 0;
+
+class LargeObjectGCDuringCtor final
+    : public GarbageCollected<LargeObjectGCDuringCtor> {
+ public:
+  static constexpr size_t kDataSize = kLargeObjectSizeThreshold + 1;
+
+  explicit LargeObjectGCDuringCtor(cppgc::Heap* heap)
+      : child_(MakeGarbageCollected<GCedWithFinalizer>(
+            heap->GetAllocationHandle())) {
+    internal::Heap::From(heap)->CollectGarbage(
+        Heap::Config::ConservativeAtomicConfig());
+  }
+
+  void Trace(Visitor* visitor) const { visitor->Trace(child_); }
+
+  char data[kDataSize];
+  Member<GCedWithFinalizer> child_;
+};
+
+}  // namespace
+
+TEST_F(GCHeapTest, ConservativeGCFromLargeObjectCtorFindsObject) {
+  GCedWithFinalizer::destructor_counter = 0;
+  MakeGarbageCollected<LargeObjectGCDuringCtor>(GetAllocationHandle(),
+                                                GetHeap());
+  EXPECT_EQ(0u, GCedWithFinalizer::destructor_counter);
+}
+
 TEST_F(GCHeapTest, ObjectPayloadSize) {
   static constexpr size_t kNumberOfObjectsPerArena = 16;
   static constexpr size_t kObjectSizes[] = {1, 32, 64, 128,
@@ -131,20 +171,20 @@ TEST_F(GCHeapTest, AllocateWithAdditionalBytes) {
   static constexpr size_t kAdditionalBytes = 10u * kAllocationGranularity;
   {
     Foo* object = MakeGarbageCollected<Foo>(GetAllocationHandle());
-    EXPECT_LE(kBaseSize, HeapObjectHeader::FromPayload(object).GetSize());
+    EXPECT_LE(kBaseSize, HeapObjectHeader::FromObject(object).AllocatedSize());
   }
   {
     Foo* object = MakeGarbageCollected<Foo>(GetAllocationHandle(),
                                             AdditionalBytes(kAdditionalBytes));
     EXPECT_LE(kBaseSize + kAdditionalBytes,
-              HeapObjectHeader::FromPayload(object).GetSize());
+              HeapObjectHeader::FromObject(object).AllocatedSize());
   }
   {
     Foo* object = MakeGarbageCollected<Foo>(
         GetAllocationHandle(),
         AdditionalBytes(kAdditionalBytes * kAdditionalBytes));
     EXPECT_LE(kBaseSize + kAdditionalBytes * kAdditionalBytes,
-              HeapObjectHeader::FromPayload(object).GetSize());
+              HeapObjectHeader::FromObject(object).AllocatedSize());
   }
 }
 
@@ -156,10 +196,11 @@ TEST_F(GCHeapTest, AllocatedSizeDependOnAdditionalBytes) {
   Foo* object_with_more_bytes = MakeGarbageCollected<Foo>(
       GetAllocationHandle(),
       AdditionalBytes(kAdditionalBytes * kAdditionalBytes));
-  EXPECT_LT(HeapObjectHeader::FromPayload(object).GetSize(),
-            HeapObjectHeader::FromPayload(object_with_bytes).GetSize());
-  EXPECT_LT(HeapObjectHeader::FromPayload(object_with_bytes).GetSize(),
-            HeapObjectHeader::FromPayload(object_with_more_bytes).GetSize());
+  EXPECT_LT(HeapObjectHeader::FromObject(object).AllocatedSize(),
+            HeapObjectHeader::FromObject(object_with_bytes).AllocatedSize());
+  EXPECT_LT(
+      HeapObjectHeader::FromObject(object_with_bytes).AllocatedSize(),
+      HeapObjectHeader::FromObject(object_with_more_bytes).AllocatedSize());
 }
 
 TEST_F(GCHeapTest, Epoch) {
@@ -329,7 +370,7 @@ TEST_F(GCHeapDeathTest, LargeChainOfNewStates) {
 TEST_F(GCHeapTest, IsHeapObjectAliveForConstPointer) {
   // Regression test: http://crbug.com/661363.
   GCed<64>* object = MakeGarbageCollected<GCed<64>>(GetAllocationHandle());
-  HeapObjectHeader& header = HeapObjectHeader::FromPayload(object);
+  HeapObjectHeader& header = HeapObjectHeader::FromObject(object);
   LivenessBroker broker = internal::LivenessBrokerFactory::Create();
   EXPECT_TRUE(header.TryMarkAtomic());
   EXPECT_TRUE(broker.IsHeapObjectAlive(object));

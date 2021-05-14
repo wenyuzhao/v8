@@ -212,10 +212,10 @@ constexpr Register kReturnRegister2 = r8;
 constexpr Register kJSFunctionRegister = rdi;
 constexpr Register kContextRegister = rsi;
 constexpr Register kAllocateSizeRegister = rdx;
-constexpr Register kSpeculationPoisonRegister = r12;
+constexpr Register kSpeculationPoisonRegister = r11;
 constexpr Register kInterpreterAccumulatorRegister = rax;
 constexpr Register kInterpreterBytecodeOffsetRegister = r9;
-constexpr Register kInterpreterBytecodeArrayRegister = r11;
+constexpr Register kInterpreterBytecodeArrayRegister = r12;
 constexpr Register kInterpreterDispatchTableRegister = r15;
 
 constexpr Register kJavaScriptCallArgCountRegister = rax;

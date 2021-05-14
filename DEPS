@@ -47,7 +47,7 @@ vars = {
   'gn_version': 'git_revision:39a87c0b36310bdf06b692c098f199a0d97fc810',
 
   # luci-go CIPD package version.
-  'luci_go': 'git_revision:66f9c8541b85c7f6efc63e75e68d660d4fb30752',
+  'luci_go': 'git_revision:e03dc36a7374fdf2331886695fa8b13457e15b92',
 
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling android_sdk_build-tools_version
@@ -85,15 +85,15 @@ vars = {
 
 deps = {
   'build':
-    Var('chromium_url') + '/chromium/src/build.git' + '@' + 'b3b05abd2bbc39ad99f4abfee0d870c36e36c7ab',
+    Var('chromium_url') + '/chromium/src/build.git' + '@' + '80d2921f477207d512b32402895c0e14fdc50c85',
   'third_party/depot_tools':
-    Var('chromium_url') + '/chromium/tools/depot_tools.git' + '@' + 'b865acd3f2d8cd305f87215154351620354d075f',
+    Var('chromium_url') + '/chromium/tools/depot_tools.git' + '@' + 'f5c054ce5345942142ebb925896a16f28609060f',
   'third_party/icu':
-    Var('chromium_url') + '/chromium/deps/icu.git' + '@' + 'cd9f9a9495b1978ded709c248e467e7f5a74ea0a',
+    Var('chromium_url') + '/chromium/deps/icu.git' + '@' + 'f022e298b4f4a782486bb6d5ce6589c998b51fe2',
   'third_party/instrumented_libraries':
     Var('chromium_url') + '/chromium/src/third_party/instrumented_libraries.git' + '@' + '084aee04777db574038af9e9d33ca5caed577462',
   'buildtools':
-    Var('chromium_url') + '/chromium/src/buildtools.git' + '@' + 'e72cd4587a1b833ecf559e4524b69a359cc87697',
+    Var('chromium_url') + '/chromium/src/buildtools.git' + '@' + '9b15350d89250a57ae63cbdc9d7180797f6c8dc4',
   'buildtools/clang_format/script':
     Var('chromium_url') + '/external/github.com/llvm/llvm-project/clang/tools/clang-format.git' + '@' + '99803d74e35962f63a775f29477882afd4d57d94',
   'buildtools/linux64': {
@@ -181,7 +181,7 @@ deps = {
       'dep_type': 'cipd',
   },
   'third_party/catapult': {
-    'url': Var('chromium_url') + '/catapult.git' + '@' + 'c92267a4b7d8617db43e59a78051963313b20bd1',
+    'url': Var('chromium_url') + '/catapult.git' + '@' + '52e67e75f6c2d0315d510a54a52ed29abe3d57f7',
     'condition': 'checkout_android',
   },
   'third_party/colorama/src': {
@@ -195,7 +195,7 @@ deps = {
   'third_party/googletest/src':
     Var('chromium_url') + '/external/github.com/google/googletest.git' + '@' + '23ef29555ef4789f555f1ba8c51b4c52975f0907',
   'third_party/google_benchmark/src': {
-    'url': Var('chromium_url') + '/external/github.com/google/benchmark.git' + '@' + '0852c79f3511dec3115e72d19d99ec8146404cc5',
+    'url': Var('chromium_url') + '/external/github.com/google/benchmark.git' + '@' + '7d0d9061d83b663ce05d9de5da3d5865a3845b79',
   },
   'third_party/jinja2':
     Var('chromium_url') + '/chromium/src/third_party/jinja2.git' + '@' + '11b6b3e5971d760bd2d310f77643f55a818a6d25',
@@ -235,7 +235,7 @@ deps = {
       'packages': [
           {
               'package': 'fuchsia/third_party/aemu/linux-amd64',
-              'version': 'H-kH9WxQErL_AR-Nu_ZL8hbu1D-rZmdQQUaYZYm3AOUC'
+              'version': 'KMQBSqcXw7u61OKLUonbaZeROpW1KXX9tM-8Klzxus8C'
           },
       ],
       'condition': 'host_os == "linux" and checkout_fuchsia',
@@ -252,7 +252,7 @@ deps = {
       'dep_type': 'cipd',
   },
   'tools/clang':
-    Var('chromium_url') + '/chromium/src/tools/clang.git' + '@' + 'dbcffda598a4956fc34be5e9e3021998fa8c358f',
+    Var('chromium_url') + '/chromium/src/tools/clang.git' + '@' + '06d525cc6f7770fe4aa305d73eb1fadc37865070',
   'tools/luci-go': {
       'packages': [
         {
@@ -286,7 +286,7 @@ deps = {
   'third_party/protobuf':
     Var('chromium_url') + '/external/github.com/google/protobuf'+ '@' + '6a59a2ad1f61d9696092f79b6d74368b4d7970a3',
   'third_party/zlib':
-    Var('chromium_url') + '/chromium/src/third_party/zlib.git'+ '@' + 'eb9ce8c993117f27ea0e5bccc0f2fee2a5323066',
+    Var('chromium_url') + '/chromium/src/third_party/zlib.git'+ '@' + 'c830e4eaa2b25afa65d2dde0f1eb625a1f6c1a27',
   'third_party/jsoncpp/source':
     Var('chromium_url') + '/external/github.com/open-source-parsers/jsoncpp.git'+ '@' + '9059f5cad030ba11d37818847443a53918c327b1',
   'third_party/ittapi': {

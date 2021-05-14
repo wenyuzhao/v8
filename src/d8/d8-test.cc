@@ -37,13 +37,12 @@ namespace {
 
 class FastCApiObject {
  public:
-  static double AddAllFastCallback(Local<Value> receiver, bool should_fallback,
+  static double AddAllFastCallback(Local<Object> receiver, bool should_fallback,
                                    int32_t arg_i32, uint32_t arg_u32,
                                    int64_t arg_i64, uint64_t arg_u64,
                                    float arg_f32, double arg_f64,
                                    FastApiCallbackOptions& options) {
-    CHECK(receiver->IsObject());
-    FastCApiObject* self = UnwrapObject(receiver.As<Object>());
+    FastCApiObject* self = UnwrapObject(receiver);
     CHECK_SELF_OR_FALLBACK(0);
     self->fast_call_count_++;
 
@@ -92,12 +91,11 @@ class FastCApiObject {
     args.GetReturnValue().Set(Number::New(isolate, sum));
   }
 
-  static int Add32BitIntFastCallback(v8::Local<v8::Value> receiver,
+  static int Add32BitIntFastCallback(v8::Local<v8::Object> receiver,
                                      bool should_fallback, int32_t arg_i32,
                                      uint32_t arg_u32,
                                      FastApiCallbackOptions& options) {
-    CHECK(receiver->IsObject());
-    FastCApiObject* self = UnwrapObject(receiver.As<Object>());
+    FastCApiObject* self = UnwrapObject(receiver);
     CHECK_SELF_OR_FALLBACK(0);
     self->fast_call_count_++;
 
@@ -128,12 +126,11 @@ class FastCApiObject {
     args.GetReturnValue().Set(Number::New(isolate, sum));
   }
 
-  static bool IsFastCApiObjectFastCallback(v8::Local<v8::Value> receiver,
+  static bool IsFastCApiObjectFastCallback(v8::Local<v8::Object> receiver,
                                            bool should_fallback,
                                            v8::Local<v8::Value> arg,
                                            FastApiCallbackOptions& options) {
-    CHECK(receiver->IsObject());
-    FastCApiObject* self = UnwrapObject(receiver.As<Object>());
+    FastCApiObject* self = UnwrapObject(receiver);
     CHECK_SELF_OR_FALLBACK(false);
     self->fast_call_count_++;
 
@@ -284,6 +281,15 @@ Local<FunctionTemplate> Shell::CreateTestFastCApiTemplate(Isolate* isolate) {
                               Local<Value>(), signature, 1,
                               ConstructorBehavior::kThrow,
                               SideEffectType::kHasSideEffect, &add_all_c_func));
+
+    // To test function overloads.
+    api_obj_ctor->PrototypeTemplate()->Set(
+        isolate, "overloaded_add_all",
+        FunctionTemplate::NewWithCFunctionOverloads(
+            isolate, FastCApiObject::AddAllSlowCallback, Local<Value>(),
+            signature, 1, ConstructorBehavior::kThrow,
+            SideEffectType::kHasSideEffect, {&add_all_c_func}));
+
     CFunction add_32bit_int_c_func =
         CFunction::Make(FastCApiObject::Add32BitIntFastCallback);
     api_obj_ctor->PrototypeTemplate()->Set(

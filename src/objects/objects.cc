@@ -2061,7 +2061,7 @@ void HeapObject::HeapObjectShortPrint(std::ostream& os) {
       os << "<FeedbackVector[" << FeedbackVector::cast(*this).length() << "]>";
       break;
     case FREE_SPACE_TYPE:
-      os << "<FreeSpace[" << FreeSpace::cast(*this).size() << "]>";
+      os << "<FreeSpace[" << FreeSpace::cast(*this).size(kRelaxedLoad) << "]>";
       break;
 
     case PREPARSE_DATA_TYPE: {
@@ -2284,7 +2284,7 @@ int HeapObject::SizeFromMap(Map map) const {
         BytecodeArray::unchecked_cast(*this).synchronized_length());
   }
   if (instance_type == FREE_SPACE_TYPE) {
-    return FreeSpace::unchecked_cast(*this).relaxed_read_size();
+    return FreeSpace::unchecked_cast(*this).size(kRelaxedLoad);
   }
   if (instance_type == STRING_TYPE ||
       instance_type == INTERNALIZED_STRING_TYPE) {
@@ -2313,7 +2313,7 @@ int HeapObject::SizeFromMap(Map map) const {
   }
   if (instance_type == WEAK_ARRAY_LIST_TYPE) {
     return WeakArrayList::SizeForCapacity(
-        WeakArrayList::unchecked_cast(*this).synchronized_capacity());
+        WeakArrayList::unchecked_cast(*this).capacity());
   }
   if (instance_type == SMALL_ORDERED_HASH_SET_TYPE) {
     return SmallOrderedHashSet::SizeFor(
@@ -2812,6 +2812,7 @@ Maybe<bool> Object::SetDataProperty(LookupIterator* it, Handle<Object> value) {
 
   Handle<Object> to_assign = value;
   // Convert the incoming value to a number for storing into typed arrays.
+  // TODO(v8:11111): Support RAB / GSAB.
   if (it->IsElement() && receiver->IsJSObject() &&
       JSObject::cast(*receiver).HasTypedArrayElements()) {
     ElementsKind elements_kind = JSObject::cast(*receiver).GetElementsKind();
@@ -4711,7 +4712,8 @@ Handle<Object> CacheInitialJSArrayMaps(Isolate* isolate,
   Handle<Map> current_map = initial_map;
   ElementsKind kind = current_map->elements_kind();
   DCHECK_EQ(GetInitialFastElementsKind(), kind);
-  native_context->set(Context::ArrayMapIndex(kind), *current_map);
+  native_context->set(Context::ArrayMapIndex(kind), *current_map,
+                      UPDATE_WRITE_BARRIER, kReleaseStore);
   for (int i = GetSequenceIndexFromFastElementsKind(kind) + 1;
        i < kFastElementsKindCount; ++i) {
     Handle<Map> new_map;
@@ -4724,7 +4726,8 @@ Handle<Object> CacheInitialJSArrayMaps(Isolate* isolate,
                                         INSERT_TRANSITION);
     }
     DCHECK_EQ(next_kind, new_map->elements_kind());
-    native_context->set(Context::ArrayMapIndex(next_kind), *new_map);
+    native_context->set(Context::ArrayMapIndex(next_kind), *new_map,
+                        UPDATE_WRITE_BARRIER, kReleaseStore);
     current_map = new_map;
   }
   return initial_map;

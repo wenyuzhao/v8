@@ -151,12 +151,7 @@ constexpr LiftoffCondition GetCompareCondition(WasmOpcode opcode) {
     case kExprI32GeU:
       return kUnsignedGreaterEqual;
     default:
-#if V8_HAS_CXX14_CONSTEXPR
       UNREACHABLE();
-#else
-      // We need to return something for old compilers here.
-      return kEqual;
-#endif
   }
 }
 
@@ -4819,8 +4814,9 @@ class LiftoffCompiler {
       ValueKind field_kind = ValueKind::kRef;
       LiftoffRegister value = pinned.set(__ GetUnusedRegister(kGpReg, pinned));
       LoadNullValue(value.gp(), pinned);
-      StoreObjectField(obj.gp(), no_reg, WasmStruct::kHeaderSize, value, pinned,
-                       field_kind);
+      StoreObjectField(obj.gp(), no_reg,
+                       wasm::ObjectAccess::ToTagged(WasmStruct::kHeaderSize),
+                       value, pinned, field_kind);
       pinned.clear(value);
     }
     __ PushRegister(kRef, obj);

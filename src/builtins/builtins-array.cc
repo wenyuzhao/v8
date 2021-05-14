@@ -208,16 +208,16 @@ V8_WARN_UNUSED_RESULT Object GenericArrayFill(Isolate* isolate,
   return *receiver;
 }
 
-V8_WARN_UNUSED_RESULT bool TryFastArrayFill(
+V8_WARN_UNUSED_RESULT Maybe<bool> TryFastArrayFill(
     Isolate* isolate, BuiltinArguments* args, Handle<JSReceiver> receiver,
     Handle<Object> value, double start_index, double end_index) {
   // If indices are too large, use generic path since they are stored as
   // properties, not in the element backing store.
-  if (end_index > kMaxUInt32) return false;
-  if (!receiver->IsJSObject()) return false;
+  if (end_index > kMaxUInt32) return Just(false);
+  if (!receiver->IsJSObject()) return Just(false);
 
   if (!EnsureJSArrayWithWritableFastElements(isolate, receiver, args, 1, 1)) {
-    return false;
+    return Just(false);
   }
 
   Handle<JSArray> array = Handle<JSArray>::cast(receiver);
@@ -241,14 +241,14 @@ V8_WARN_UNUSED_RESULT bool TryFastArrayFill(
   CHECK(DoubleToUint32IfEqualToSelf(end_index, &end));
 
   ElementsAccessor* accessor = array->GetElementsAccessor();
-  accessor->Fill(array, value, start, end);
-  return true;
+  RETURN_ON_EXCEPTION_VALUE(isolate, accessor->Fill(array, value, start, end),
+                            Nothing<bool>());
+  return Just(true);
 }
 }  // namespace
 
 BUILTIN(ArrayPrototypeFill) {
   HandleScope scope(isolate);
-
   if (isolate->debug_execution_mode() == DebugInfo::kSideEffects) {
     if (!isolate->debug()->PerformSideEffectCheckForObject(args.receiver())) {
       return ReadOnlyRoots(isolate).exception();
@@ -293,10 +293,12 @@ BUILTIN(ArrayPrototypeFill) {
 
   Handle<Object> value = args.atOrUndefined(isolate, 1);
 
-  if (TryFastArrayFill(isolate, &args, receiver, value, start_index,
-                       end_index)) {
-    return *receiver;
-  }
+  bool success;
+  MAYBE_ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+      isolate, success,
+      TryFastArrayFill(isolate, &args, receiver, value, start_index,
+                       end_index));
+  if (success) return *receiver;
   return GenericArrayFill(isolate, receiver, value, start_index, end_index);
 }
 
@@ -889,9 +891,11 @@ uint32_t EstimateElementCount(Isolate* isolate, Handle<JSArray> array) {
 #define TYPED_ARRAY_CASE(Type, type, TYPE, ctype) case TYPE##_ELEMENTS:
 
       TYPED_ARRAYS(TYPED_ARRAY_CASE)
-#undef TYPED_ARRAY_CASE
+      RAB_GSAB_TYPED_ARRAYS(TYPED_ARRAY_CASE)
       // External arrays are always dense.
       return length;
+
+#undef TYPED_ARRAY_CASE
     case NO_ELEMENTS:
       return 0;
     case FAST_SLOPPY_ARGUMENTS_ELEMENTS:
@@ -965,9 +969,7 @@ void CollectElementIndices(Isolate* isolate, Handle<JSObject> object,
     }
 #define TYPED_ARRAY_CASE(Type, type, TYPE, ctype) case TYPE##_ELEMENTS:
 
-      TYPED_ARRAYS(TYPED_ARRAY_CASE)
-#undef TYPED_ARRAY_CASE
-      {
+      TYPED_ARRAYS(TYPED_ARRAY_CASE) {
         size_t length = Handle<JSTypedArray>::cast(object)->length();
         if (range <= length) {
           length = range;
@@ -983,6 +985,11 @@ void CollectElementIndices(Isolate* isolate, Handle<JSObject> object,
         if (length == range) return;  // All indices accounted for already.
         break;
       }
+      RAB_GSAB_TYPED_ARRAYS(TYPED_ARRAY_CASE)
+      // TODO(v8:11111): Support RAB / GSAB.
+      UNREACHABLE();
+
+#undef TYPED_ARRAY_CASE
     case FAST_SLOPPY_ARGUMENTS_ELEMENTS:
     case SLOW_SLOPPY_ARGUMENTS_ELEMENTS: {
       DisallowGarbageCollection no_gc;
@@ -1208,8 +1215,11 @@ bool IterateElements(Isolate* isolate, Handle<JSReceiver> receiver,
       break;
 #define TYPED_ARRAY_CASE(Type, type, TYPE, ctype) case TYPE##_ELEMENTS:
       TYPED_ARRAYS(TYPED_ARRAY_CASE)
-#undef TYPED_ARRAY_CASE
       return IterateElementsSlow(isolate, receiver, length, visitor);
+      RAB_GSAB_TYPED_ARRAYS(TYPED_ARRAY_CASE)
+      // TODO(v8:11111): Support RAB / GSAB.
+      UNREACHABLE();
+#undef TYPED_ARRAY_CASE
     case FAST_STRING_WRAPPER_ELEMENTS:
     case SLOW_STRING_WRAPPER_ELEMENTS:
       // |array| is guaranteed to be an array or typed array.

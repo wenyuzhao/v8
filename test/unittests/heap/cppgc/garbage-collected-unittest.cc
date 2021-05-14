@@ -84,6 +84,17 @@ TEST(GarbageCollectedTest, GarbageCollectedWithMixinTrait) {
   STATIC_ASSERT(IsGarbageCollectedWithMixinTypeV<GCWithMergedMixins>);
 }
 
+namespace {
+
+class ForwardDeclaredType;
+
+}  // namespace
+
+TEST(GarbageCollectedTest, CompleteTypeTrait) {
+  STATIC_ASSERT(IsCompleteV<GCed>);
+  STATIC_ASSERT(!IsCompleteV<ForwardDeclaredType>);
+}
+
 TEST_F(GarbageCollectedTestWithHeap, GetObjectStartReturnsCurrentAddress) {
   GCed* gced = MakeGarbageCollected<GCed>(GetAllocationHandle());
   GCedWithMixin* gced_with_mixin =
@@ -124,7 +135,7 @@ struct PostConstructionCallbackTrait<
     internal::GCedWithPostConstructionCallback> {
   static void Call(internal::GCedWithPostConstructionCallback* object) {
     EXPECT_FALSE(
-        internal::HeapObjectHeader::FromPayload(object).IsInConstruction());
+        internal::HeapObjectHeader::FromObject(object).IsInConstruction());
     internal::GCedWithPostConstructionCallback::cb_callcount++;
   }
 };
@@ -137,7 +148,7 @@ struct PostConstructionCallbackTrait<
   static void Call(
       internal::GCedWithMixinWithPostConstructionCallback* object) {
     EXPECT_FALSE(
-        internal::HeapObjectHeader::FromPayload(object).IsInConstruction());
+        internal::HeapObjectHeader::FromObject(object).IsInConstruction());
     internal::GCedWithMixinWithPostConstructionCallback::cb_callcount++;
   }
 };
@@ -172,10 +183,10 @@ class CheckObjectInConstructionBeforeInitializerList final
  public:
   CheckObjectInConstructionBeforeInitializerList()
       : in_construction_before_initializer_list_(
-            HeapObjectHeader::FromPayload(this).IsInConstruction()),
+            HeapObjectHeader::FromObject(this).IsInConstruction()),
         unused_int_(GetDummyValue()) {
     EXPECT_TRUE(in_construction_before_initializer_list_);
-    EXPECT_TRUE(HeapObjectHeader::FromPayload(this).IsInConstruction());
+    EXPECT_TRUE(HeapObjectHeader::FromObject(this).IsInConstruction());
   }
 
   void Trace(Visitor*) const {}
@@ -190,11 +201,10 @@ class CheckMixinInConstructionBeforeInitializerList
  public:
   explicit CheckMixinInConstructionBeforeInitializerList(void* payload_start)
       : in_construction_before_initializer_list_(
-            HeapObjectHeader::FromPayload(payload_start).IsInConstruction()),
+            HeapObjectHeader::FromObject(payload_start).IsInConstruction()),
         unused_int_(GetDummyValue()) {
     EXPECT_TRUE(in_construction_before_initializer_list_);
-    EXPECT_TRUE(
-        HeapObjectHeader::FromPayload(payload_start).IsInConstruction());
+    EXPECT_TRUE(HeapObjectHeader::FromObject(payload_start).IsInConstruction());
   }
 
   void Trace(Visitor*) const override {}

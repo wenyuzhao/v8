@@ -367,7 +367,7 @@ void LiftoffAssembler::StoreTaggedPointer(Register dst_addr,
                        : Operand(dst_addr, offset_reg, times_1, offset_imm);
   mov(dst_op, src.gp());
 
-  if (skip_write_barrier) return;
+  if (skip_write_barrier || FLAG_disable_write_barriers) return;
 
   Register scratch = pinned.set(GetUnusedRegister(kGpReg, pinned)).gp();
   Label write_barrier;
@@ -382,8 +382,8 @@ void LiftoffAssembler::StoreTaggedPointer(Register dst_addr,
                 MemoryChunk::kPointersToHereAreInterestingMask, zero, &exit,
                 Label::kNear);
   lea(scratch, dst_op);
-  CallRecordWriteStub(dst_addr, scratch, EMIT_REMEMBERED_SET, kSaveFPRegs,
-                      wasm::WasmCode::kRecordWrite);
+  CallRecordWriteStub(dst_addr, scratch, RememberedSetAction::kEmit,
+                      SaveFPRegsMode::kSave, wasm::WasmCode::kRecordWrite);
   bind(&exit);
 }
 
@@ -4244,61 +4244,12 @@ void LiftoffAssembler::emit_f64x2_div(LiftoffRegister dst, LiftoffRegister lhs,
 
 void LiftoffAssembler::emit_f64x2_min(LiftoffRegister dst, LiftoffRegister lhs,
                                       LiftoffRegister rhs) {
-  // The minpd instruction doesn't propagate NaNs and +0's in its first
-  // operand. Perform minpd in both orders, merge the results, and adjust.
-  if (CpuFeatures::IsSupported(AVX)) {
-    CpuFeatureScope scope(this, AVX);
-    vminpd(liftoff::kScratchDoubleReg, lhs.fp(), rhs.fp());
-    vminpd(dst.fp(), rhs.fp(), lhs.fp());
-  } else if (dst.fp() == lhs.fp() || dst.fp() == rhs.fp()) {
-    XMMRegister src = dst.fp() == lhs.fp() ? rhs.fp() : lhs.fp();
-    movaps(liftoff::kScratchDoubleReg, src);
-    minpd(liftoff::kScratchDoubleReg, dst.fp());
-    minpd(dst.fp(), src);
-  } else {
-    movaps(liftoff::kScratchDoubleReg, lhs.fp());
-    minpd(liftoff::kScratchDoubleReg, rhs.fp());
-    movaps(dst.fp(), rhs.fp());
-    minpd(dst.fp(), lhs.fp());
-  }
-  // propagate -0's and NaNs, which may be non-canonical.
-  Orpd(liftoff::kScratchDoubleReg, dst.fp());
-  // Canonicalize NaNs by quieting and clearing the payload.
-  Cmpunordpd(dst.fp(), dst.fp(), liftoff::kScratchDoubleReg);
-  Orpd(liftoff::kScratchDoubleReg, dst.fp());
-  Psrlq(dst.fp(), byte{13});
-  Andnpd(dst.fp(), liftoff::kScratchDoubleReg);
+  F64x2Min(dst.fp(), lhs.fp(), rhs.fp(), liftoff::kScratchDoubleReg);
 }
 
 void LiftoffAssembler::emit_f64x2_max(LiftoffRegister dst, LiftoffRegister lhs,
                                       LiftoffRegister rhs) {
-  // The maxpd instruction doesn't propagate NaNs and +0's in its first
-  // operand. Perform maxpd in both orders, merge the results, and adjust.
-  if (CpuFeatures::IsSupported(AVX)) {
-    CpuFeatureScope scope(this, AVX);
-    vmaxpd(liftoff::kScratchDoubleReg, lhs.fp(), rhs.fp());
-    vmaxpd(dst.fp(), rhs.fp(), lhs.fp());
-  } else if (dst.fp() == lhs.fp() || dst.fp() == rhs.fp()) {
-    XMMRegister src = dst.fp() == lhs.fp() ? rhs.fp() : lhs.fp();
-    movaps(liftoff::kScratchDoubleReg, src);
-    maxpd(liftoff::kScratchDoubleReg, dst.fp());
-    maxpd(dst.fp(), src);
-  } else {
-    movaps(liftoff::kScratchDoubleReg, lhs.fp());
-    maxpd(liftoff::kScratchDoubleReg, rhs.fp());
-    movaps(dst.fp(), rhs.fp());
-    maxpd(dst.fp(), lhs.fp());
-  }
-  // Find discrepancies.
-  Xorpd(dst.fp(), liftoff::kScratchDoubleReg);
-  // Propagate NaNs, which may be non-canonical.
-  Orpd(liftoff::kScratchDoubleReg, dst.fp());
-  // Propagate sign discrepancy and (subtle) quiet NaNs.
-  Subpd(liftoff::kScratchDoubleReg, liftoff::kScratchDoubleReg, dst.fp());
-  // Canonicalize NaNs by clearing the payload. Sign is non-deterministic.
-  Cmpunordpd(dst.fp(), dst.fp(), liftoff::kScratchDoubleReg);
-  Psrlq(dst.fp(), byte{13});
-  Andnpd(dst.fp(), liftoff::kScratchDoubleReg);
+  F64x2Max(dst.fp(), lhs.fp(), rhs.fp(), liftoff::kScratchDoubleReg);
 }
 
 void LiftoffAssembler::emit_f64x2_pmin(LiftoffRegister dst, LiftoffRegister lhs,
@@ -4679,27 +4630,7 @@ void LiftoffAssembler::emit_f64x2_replace_lane(LiftoffRegister dst,
                                                LiftoffRegister src1,
                                                LiftoffRegister src2,
                                                uint8_t imm_lane_idx) {
-  // TODO(fanchenk): Use movlhps and blendpd
-  if (CpuFeatures::IsSupported(AVX)) {
-    CpuFeatureScope scope(this, AVX);
-    if (imm_lane_idx == 0) {
-      vinsertps(dst.fp(), src1.fp(), src2.fp(), 0b00000000);
-      vinsertps(dst.fp(), dst.fp(), src2.fp(), 0b01010000);
-    } else {
-      vinsertps(dst.fp(), src1.fp(), src2.fp(), 0b00100000);
-      vinsertps(dst.fp(), dst.fp(), src2.fp(), 0b01110000);
-    }
-  } else {
-    CpuFeatureScope scope(this, SSE4_1);
-    if (dst.fp() != src1.fp()) movaps(dst.fp(), src1.fp());
-    if (imm_lane_idx == 0) {
-      insertps(dst.fp(), src2.fp(), 0b00000000);
-      insertps(dst.fp(), src2.fp(), 0b01010000);
-    } else {
-      insertps(dst.fp(), src2.fp(), 0b00100000);
-      insertps(dst.fp(), src2.fp(), 0b01110000);
-    }
-  }
+  F64x2ReplaceLane(dst.fp(), src1.fp(), src2.fp(), imm_lane_idx);
 }
 
 void LiftoffAssembler::StackCheck(Label* ool_code, Register limit_address) {

@@ -410,28 +410,28 @@ namespace internal {
   F(StringReplaceNonGlobalRegExpWithFunction, 3, 1)              \
   F(StringSplit, 3, 1)
 
-#define FOR_EACH_INTRINSIC_SCOPES(F, I)     \
-  F(DeclareEvalFunction, 2, 1)              \
-  F(DeclareEvalVar, 1, 1)                   \
-  F(DeclareGlobals, 2, 1)                   \
-  F(DeclareModuleExports, 2, 1)             \
-  F(DeleteLookupSlot, 1, 1)                 \
-  F(LoadLookupSlot, 1, 1)                   \
-  F(LoadLookupSlotInsideTypeof, 1, 1)       \
-                                            \
-  F(NewClosure, 2, 1)                       \
-  F(NewClosure_Tenured, 2, 1)               \
-  F(NewFunctionContext, 1, 1)               \
-  F(NewRestParameter, 1, 1)                 \
-  F(NewSloppyArguments, 1, 1)               \
-  F(NewStrictArguments, 1, 1)               \
-  F(PushBlockContext, 1, 1)                 \
-  F(PushCatchContext, 2, 1)                 \
-  F(PushWithContext, 2, 1)                  \
-  F(StoreGlobalNoHoleCheckForReplLet, 2, 1) \
-  F(StoreLookupSlot_Sloppy, 2, 1)           \
-  F(StoreLookupSlot_SloppyHoisting, 2, 1)   \
-  F(StoreLookupSlot_Strict, 2, 1)           \
+#define FOR_EACH_INTRINSIC_SCOPES(F, I)            \
+  F(DeclareEvalFunction, 2, 1)                     \
+  F(DeclareEvalVar, 1, 1)                          \
+  F(DeclareGlobals, 2, 1)                          \
+  F(DeclareModuleExports, 2, 1)                    \
+  F(DeleteLookupSlot, 1, 1)                        \
+  F(LoadLookupSlot, 1, 1)                          \
+  F(LoadLookupSlotInsideTypeof, 1, 1)              \
+                                                   \
+  F(NewClosure, 2, 1)                              \
+  F(NewClosure_Tenured, 2, 1)                      \
+  F(NewFunctionContext, 1, 1)                      \
+  F(NewRestParameter, 1, 1)                        \
+  F(NewSloppyArguments, 1, 1)                      \
+  F(NewStrictArguments, 1, 1)                      \
+  F(PushBlockContext, 1, 1)                        \
+  F(PushCatchContext, 2, 1)                        \
+  F(PushWithContext, 2, 1)                         \
+  F(StoreGlobalNoHoleCheckForReplLetOrConst, 2, 1) \
+  F(StoreLookupSlot_Sloppy, 2, 1)                  \
+  F(StoreLookupSlot_SloppyHoisting, 2, 1)          \
+  F(StoreLookupSlot_Strict, 2, 1)                  \
   F(ThrowConstAssignError, 0, 1)
 
 #define FOR_EACH_INTRINSIC_STRINGS(F, I)  \
@@ -556,11 +556,12 @@ namespace internal {
   F(RegExpSpeciesProtector, 0, 1)             \
   F(Is64Bit, 0, 1)
 
-#define FOR_EACH_INTRINSIC_TYPEDARRAY(F, I) \
-  F(ArrayBufferDetach, 1, 1)                \
-  F(TypedArrayCopyElements, 3, 1)           \
-  F(TypedArrayGetBuffer, 1, 1)              \
-  F(TypedArraySet, 2, 1)                    \
+#define FOR_EACH_INTRINSIC_TYPEDARRAY(F, I)    \
+  F(ArrayBufferDetach, 1, 1)                   \
+  F(GrowableSharedArrayBufferByteLength, 1, 1) \
+  F(TypedArrayCopyElements, 3, 1)              \
+  F(TypedArrayGetBuffer, 1, 1)                 \
+  F(TypedArraySet, 2, 1)                       \
   F(TypedArraySortFast, 1, 1)
 
 #define FOR_EACH_INTRINSIC_WASM(F, I) \
@@ -787,9 +788,10 @@ class Runtime : public AllStatic {
                     Handle<Object> value, StoreOrigin store_origin,
                     Maybe<ShouldThrow> should_throw = Nothing<ShouldThrow>());
 
-  // When "receiver" is not passed, it defaults to "holder".
+  // When "receiver" is not passed, it defaults to "lookup_start_object".
   V8_EXPORT_PRIVATE V8_WARN_UNUSED_RESULT static MaybeHandle<Object>
-  GetObjectProperty(Isolate* isolate, Handle<Object> holder, Handle<Object> key,
+  GetObjectProperty(Isolate* isolate, Handle<Object> lookup_start_object,
+                    Handle<Object> key,
                     Handle<Object> receiver = Handle<Object>(),
                     bool* is_found = nullptr);
 

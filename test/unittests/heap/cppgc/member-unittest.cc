@@ -122,10 +122,10 @@ void AtomicCtorTest(cppgc::Heap* heap) {
     EXPECT_EQ(gced, member.Get());
   }
   {
-    GCed gced;
-    MemberType<GCed> member(gced,
+    GCed* gced = MakeGarbageCollected<GCed>(heap->GetAllocationHandle());
+    MemberType<GCed> member(*gced,
                             typename MemberType<GCed>::AtomicInitializerTag());
-    EXPECT_EQ(&gced, member.Get());
+    EXPECT_EQ(gced, member.Get());
   }
   {
     MemberType<GCed> member(nullptr,
@@ -505,6 +505,37 @@ TEST_F(MemberHeapTest, ConstWeakRefIsClearedOnGC) {
   EXPECT_FALSE(weak_persistent);
   EXPECT_FALSE(persistent->weak_member());
 }
+
+#if V8_ENABLE_CHECKS
+
+namespace {
+class MemberHeapDeathTest : public testing::TestWithHeap {};
+
+class LinkedNode final : public GarbageCollected<LinkedNode> {
+ public:
+  explicit LinkedNode(LinkedNode* next) : next_(next) {}
+  void Trace(Visitor* v) const { v->Trace(next_); }
+
+  void SetNext(LinkedNode* next) { next_ = next; }
+
+ private:
+  Member<LinkedNode> next_;
+};
+
+}  // namespace
+
+TEST_F(MemberHeapDeathTest, AssignDifferentHeapValues) {
+  auto* o1 = MakeGarbageCollected<LinkedNode>(GetAllocationHandle(), nullptr);
+  auto* o2 = MakeGarbageCollected<LinkedNode>(GetAllocationHandle(), o1);
+  {
+    auto tmp_heap = cppgc::Heap::Create(platform_);
+    auto* o3 = MakeGarbageCollected<LinkedNode>(tmp_heap->GetAllocationHandle(),
+                                                nullptr);
+    EXPECT_DEATH_IF_SUPPORTED(o2->SetNext(o3), "");
+  }
+}
+
+#endif  // V8_ENABLE_CHECKS
 
 }  // namespace internal
 }  // namespace cppgc

@@ -1657,9 +1657,6 @@ Heap::DevToolsTraceEventScope::~DevToolsTraceEventScope() {
 bool Heap::CollectGarbage(AllocationSpace space,
                           GarbageCollectionReason gc_reason,
                           const v8::GCCallbackFlags gc_callback_flags) {
-  // So far we can't collect the shared heap.
-  CHECK(!IsShared());
-
   if (V8_UNLIKELY(!deserialization_complete_)) {
     // During isolate initialization heap always grows. GC is only requested
     // if a new page allocation fails. In such a case we should crash with
@@ -2158,6 +2155,9 @@ size_t Heap::PerformGarbageCollection(
   TRACE_GC_EPOCH(tracer(), CollectorScopeId(collector), ThreadKind::kMain);
 
   SafepointScope safepoint_scope(this);
+
+  // Shared isolates cannot have any clients when running GC at the moment.
+  DCHECK_IMPLIES(IsShared(), !isolate()->HasClientIsolates());
 
   collection_barrier_->StopTimeToCollectionTimer();
 
@@ -3082,7 +3082,7 @@ HeapObject CreateFillerObjectAtImpl(ReadOnlyRoots roots, Address addr, int size,
     DCHECK_GT(size, 2 * kTaggedSize);
     filler.set_map_after_allocation(roots.unchecked_free_space_map(),
                                     SKIP_WRITE_BARRIER);
-    FreeSpace::cast(filler).relaxed_write_size(size);
+    FreeSpace::cast(filler).set_size(size, kRelaxedStore);
     if (clear_memory_mode == ClearFreedMemoryMode::kClearFreedMemory) {
       MemsetTagged(ObjectSlot(addr) + 2, Object(kClearedFreeMemoryValue),
                    (size / kTaggedSize) - 2);
@@ -5645,6 +5645,11 @@ EmbedderHeapTracer::TraceFlags Heap::flags_for_embedder_tracer() const {
     return EmbedderHeapTracer::TraceFlags::kReduceMemory;
   }
   return EmbedderHeapTracer::TraceFlags::kNoFlags;
+}
+
+const cppgc::EmbedderStackState* Heap::overriden_stack_state() const {
+  const auto* cpp_heap = CppHeap::From(cpp_heap_);
+  return cpp_heap ? cpp_heap->override_stack_state() : nullptr;
 }
 
 void Heap::RegisterExternallyReferencedObject(Address* location) {

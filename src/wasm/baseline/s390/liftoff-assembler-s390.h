@@ -256,7 +256,7 @@ void LiftoffAssembler::StoreTaggedPointer(Register dst_addr,
       MemOperand(dst_addr, offset_reg == no_reg ? r0 : offset_reg, offset_imm);
   StoreTaggedField(src.gp(), dst_op);
 
-  if (skip_write_barrier) return;
+  if (skip_write_barrier || FLAG_disable_write_barriers) return;
 
   Label write_barrier;
   Label exit;
@@ -271,8 +271,8 @@ void LiftoffAssembler::StoreTaggedPointer(Register dst_addr,
   CheckPageFlag(src.gp(), r1, MemoryChunk::kPointersToHereAreInterestingMask,
                 eq, &exit);
   lay(r1, dst_op);
-  CallRecordWriteStub(dst_addr, r1, EMIT_REMEMBERED_SET, kSaveFPRegs,
-                      wasm::WasmCode::kRecordWrite);
+  CallRecordWriteStub(dst_addr, r1, RememberedSetAction::kEmit,
+                      SaveFPRegsMode::kSave, wasm::WasmCode::kRecordWrite);
   bind(&exit);
 }
 

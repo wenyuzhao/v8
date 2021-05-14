@@ -273,13 +273,14 @@ DEFINE_BOOL(harmony_shipping, true, "enable all shipped harmony features")
   V(harmony_regexp_sequence, "RegExp Unicode sequence properties")             \
   V(harmony_weak_refs_with_cleanup_some,                                       \
     "harmony weak references with FinalizationRegistry.prototype.cleanupSome") \
-  V(harmony_import_assertions, "harmony import assertions")
+  V(harmony_import_assertions, "harmony import assertions")                    \
+  V(harmony_rab_gsab,                                                          \
+    "harmony ResizableArrayBuffer / GrowableSharedArrayBuffer")
 
 #ifdef V8_INTL_SUPPORT
-#define HARMONY_INPROGRESS(V)                                             \
-  HARMONY_INPROGRESS_BASE(V)                                              \
-  V(harmony_intl_displaynames_date_types, "Intl.DisplayNames date types") \
-  V(harmony_intl_locale_info, "Intl locale info")
+#define HARMONY_INPROGRESS(V) \
+  HARMONY_INPROGRESS_BASE(V)  \
+  V(harmony_intl_displaynames_date_types, "Intl.DisplayNames date types")
 #else
 #define HARMONY_INPROGRESS(V) HARMONY_INPROGRESS_BASE(V)
 #endif
@@ -290,9 +291,10 @@ DEFINE_BOOL(harmony_shipping, true, "enable all shipped harmony features")
   V(harmony_error_cause, "harmony error cause property")
 
 #ifdef V8_INTL_SUPPORT
-#define HARMONY_STAGED(V) \
-  HARMONY_STAGED_BASE(V)  \
-  V(harmony_intl_best_fit_matcher, "Intl BestFitMatcher")
+#define HARMONY_STAGED(V)                                 \
+  HARMONY_STAGED_BASE(V)                                  \
+  V(harmony_intl_best_fit_matcher, "Intl BestFitMatcher") \
+  V(harmony_intl_locale_info, "Intl locale info")
 #else
 #define HARMONY_STAGED(V) HARMONY_STAGED_BASE(V)
 #endif
@@ -375,8 +377,16 @@ DEFINE_BOOL(icu_timezone_data, true, "get information about timezones from ICU")
 #define V8_SHARED_RO_HEAP_BOOL false
 #endif
 
-DEFINE_BOOL(disable_shared_ro_heap_for_testing, false,
+DEFINE_BOOL(stress_snapshot, false,
             "disables sharing of the read-only heap for testing")
+// Incremental marking is incompatible with the stress_snapshot mode;
+// specifically, serialization may clear bytecode arrays from shared function
+// infos which the MarkCompactCollector (running concurrently) may still need.
+// See also https://crbug.com/v8/10882.
+//
+// Note: This is not an issue in production because we don't clear SFI's
+// there (that only happens in mksnapshot and in --stress-snapshot mode).
+DEFINE_NEG_IMPLICATION(stress_snapshot, incremental_marking)
 
 DEFINE_BOOL(lite_mode, V8_LITE_BOOL,
             "enables trade-off of performance for memory savings")
@@ -1310,10 +1320,18 @@ DEFINE_BOOL(partial_constant_pool, true,
 DEFINE_STRING(sim_arm64_optional_features, "none",
               "enable optional features on the simulator for testing: none or "
               "all")
-DEFINE_BOOL(debug_riscv, false, "enable debug prints")
 
-DEFINE_BOOL(disable_riscv_constant_pool, false,
-            "disable constant pool (RISCV only)")
+#if defined(V8_TARGET_ARCH_RISCV64)
+DEFINE_BOOL(riscv_trap_to_simulator_debugger, false,
+            "enable simulator trap to debugger")
+DEFINE_BOOL(riscv_debug, false, "enable debug prints")
+
+DEFINE_BOOL(riscv_constant_pool, true,
+            "enable constant pool (RISCV only)")
+
+DEFINE_BOOL(riscv_c_extension, false,
+            "enable compressed extension isa variant (RISCV only)")
+#endif
 
 // Controlling source positions for Torque/CSA code.
 DEFINE_BOOL(enable_source_at_csa_bind, false,
