@@ -39,6 +39,7 @@ namespace internal {
   V(MarkTransitiveClosure)                  \
   V(MarkTransitiveClosureWithDeadline)      \
   V(MarkFlushEphemerons)                    \
+  V(MarkOnAllocation)                       \
   V(MarkProcessBailOutObjects)              \
   V(MarkProcessMarkingWorklist)             \
   V(MarkProcessWriteBarrierWorklist)        \
@@ -52,6 +53,7 @@ namespace internal {
   V(MarkVisitRememberedSets)                \
   V(SweepInvokePreFinalizers)               \
   V(SweepIdleStep)                          \
+  V(SweepInTask)                            \
   V(SweepOnAllocation)                      \
   V(SweepFinalize)
 

@@ -819,7 +819,7 @@ ObjectData* ContextData::previous(JSHeapBroker* broker,
 
 ObjectData* ContextData::GetSlot(JSHeapBroker* broker, int index,
                                  SerializationPolicy policy) {
-  CHECK_GE(index, 0);
+  DCHECK_GE(index, 0);
   auto search = slots_.find(index);
   if (search != slots_.end()) {
     return search->second;
@@ -2071,7 +2071,7 @@ void SourceTextModuleData::Serialize(JSHeapBroker* broker) {
   TRACE(broker, "Copied " << exports_.size() << " exports");
 
   DCHECK_NULL(import_meta_);
-  import_meta_ = broker->GetOrCreateData(module->import_meta());
+  import_meta_ = broker->GetOrCreateData(module->import_meta(kAcquireLoad));
   TRACE(broker, "Copied import_meta");
 }
 
@@ -2204,16 +2204,8 @@ class CodeData : public HeapObjectData {
 HEAP_BROKER_OBJECT_LIST(DEFINE_IS)
 #undef DEFINE_IS
 
-// TODO(solanes, v8:10866): Remove support for kNeverSerialized objects here
-// once broker()->is_concurrent_inlining() is removed.
-// AsFoo() methods for NeverSerialized objects should only be used with direct
-// heap access off.
 #define DEFINE_AS(Name, Kind)                                      \
   Name##Data* ObjectData::As##Name() {                             \
-    DCHECK_IMPLIES(Kind == RefSerializationKind::kNeverSerialized, \
-                   !broker()->is_concurrent_inlining());           \
-    DCHECK_IMPLIES(Kind == RefSerializationKind::kNeverSerialized, \
-                   kind_ == kSerializedHeapObject);                \
     CHECK(Is##Name());                                             \
     CHECK(kind_ == kSerializedHeapObject ||                        \
           kind_ == kBackgroundSerializedHeapObject);               \
@@ -2518,16 +2510,15 @@ ContextRef ContextRef::previous(size_t* depth,
 
 base::Optional<ObjectRef> ContextRef::get(int index,
                                           SerializationPolicy policy) const {
+  CHECK_LE(0, index);
   if (data_->should_access_heap()) {
-    Handle<Object> value(object()->get(index), broker()->isolate());
-    return ObjectRef(broker(), value);
+    if (index >= object()->length()) return {};
+    return TryMakeRef(broker(), object()->get(index));
   }
   ObjectData* optional_slot =
       data()->AsContext()->GetSlot(broker(), index, policy);
-  if (optional_slot != nullptr) {
-    return ObjectRef(broker(), optional_slot);
-  }
-  return base::nullopt;
+  if (optional_slot == nullptr) return {};
+  return ObjectRef(broker(), optional_slot);
 }
 
 SourceTextModuleRef ContextRef::GetModule(SerializationPolicy policy) const {
@@ -2669,8 +2660,8 @@ void JSHeapBroker::InitializeAndStartSerializing(
     if (!data->should_access_heap()) data->AsPropertyCell()->Serialize(this);
   }
   GetOrCreateData(f->many_closures_cell());
-  GetOrCreateData(
-      CodeFactory::CEntry(isolate(), 1, kDontSaveFPRegs, kArgvOnStack, true));
+  GetOrCreateData(CodeFactory::CEntry(isolate(), 1, SaveFPRegsMode::kIgnore,
+                                      ArgvMode::kStack, true));
 
   TRACE(this, "Finished serializing standard objects");
 }
@@ -4001,7 +3992,7 @@ base::Optional<CellRef> SourceTextModuleRef::GetCell(int cell_index) const {
 
 base::Optional<ObjectRef> SourceTextModuleRef::import_meta() const {
   if (data_->should_access_heap()) {
-    return TryMakeRef(broker(), object()->import_meta());
+    return TryMakeRef(broker(), object()->import_meta(kAcquireLoad));
   }
   return ObjectRef(broker(),
                    data()->AsSourceTextModule()->GetImportMeta(broker()));
@@ -4286,11 +4277,11 @@ void NativeContextData::SerializeOnBackground(JSHeapBroker* broker) {
   Handle<NativeContext> context = Handle<NativeContext>::cast(object());
 
   constexpr auto kAllowed = ObjectRef::BackgroundSerialization::kAllowed;
-#define SERIALIZE_MEMBER(type, name)                            \
-  DCHECK_NULL(name##_);                                         \
-  name##_ = broker->GetOrCreateData(context->name(), kAllowed); \
-  if (!name##_->should_access_heap()) {                         \
-    DCHECK(!name##_->IsJSFunction());                           \
+#define SERIALIZE_MEMBER(type, name)                                        \
+  DCHECK_NULL(name##_);                                                     \
+  name##_ = broker->GetOrCreateData(context->name(kAcquireLoad), kAllowed); \
+  if (!name##_->should_access_heap()) {                                     \
+    DCHECK(!name##_->IsJSFunction());                                       \
   }
   BROKER_COMPULSORY_BACKGROUND_NATIVE_CONTEXT_FIELDS(SERIALIZE_MEMBER)
   if (!broker->is_isolate_bootstrapping()) {
@@ -4304,7 +4295,7 @@ void NativeContextData::SerializeOnBackground(JSHeapBroker* broker) {
   function_maps_.reserve(last + 1 - first);
   for (int i = first; i <= last; ++i) {
     function_maps_.push_back(
-        broker->GetOrCreateData(context->get(i), kAllowed));
+        broker->GetOrCreateData(context->get(i, kAcquireLoad), kAllowed));
   }
 }
 

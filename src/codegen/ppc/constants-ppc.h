@@ -418,6 +418,10 @@ using Instr = uint32_t;
   /* Saturate */                                                             \
   V(xvcvdpuxws, XVCVDPUXWS, 0xF0000320)
 
+#define PPC_XX2_OPCODE_B_FORM_LIST(V) \
+  /* Vector Byte-Reverse Quadword */  \
+  V(xxbrq, XXBRQ, 0xF01F076C)
+
 #define PPC_XX2_OPCODE_UNUSED_LIST(V)                                        \
   /* VSX Scalar Square Root Double-Precision */                              \
   V(xssqrtdp, XSSQRTDP, 0xF000012C)                                          \
@@ -520,12 +524,11 @@ using Instr = uint32_t;
   /* VSX Vector Test for software Square Root Single-Precision */            \
   V(xvtsqrtsp, XVTSQRTSP, 0xF00002A8)                                        \
   /* Vector Splat Immediate Byte */                                          \
-  V(xxspltib, XXSPLTIB, 0xF00002D0)                                          \
-  /* Vector Byte-Reverse Quadword */                                         \
-  V(xxbrq, XXBRQ, 0xF000076C)
+  V(xxspltib, XXSPLTIB, 0xF00002D0)
 
 #define PPC_XX2_OPCODE_LIST(V)  \
   PPC_XX2_OPCODE_A_FORM_LIST(V) \
+  PPC_XX2_OPCODE_B_FORM_LIST(V) \
   PPC_XX2_OPCODE_UNUSED_LIST(V)
 
 #define PPC_EVX_OPCODE_LIST(V)                                                \
@@ -2434,6 +2437,12 @@ using Instr = uint32_t;
   /* Vector Population Count Byte */       \
   V(vpopcntb, VPOPCNTB, 0x10000703)
 
+#define PPC_VX_OPCODE_D_FORM_LIST(V) \
+  /* Vector Negate Word */           \
+  V(vnegw, VNEGW, 0x10060602)        \
+  /* Vector Negate Doubleword */     \
+  V(vnegd, VNEGD, 0x10070602)
+
 #define PPC_VX_OPCODE_UNUSED_LIST(V)                                      \
   /* Decimal Add Modulo */                                                \
   V(bcdadd, BCDADD, 0xF0000400)                                           \
@@ -2590,6 +2599,7 @@ using Instr = uint32_t;
   PPC_VX_OPCODE_A_FORM_LIST(V) \
   PPC_VX_OPCODE_B_FORM_LIST(V) \
   PPC_VX_OPCODE_C_FORM_LIST(V) \
+  PPC_VX_OPCODE_D_FORM_LIST(V) \
   PPC_VX_OPCODE_UNUSED_LIST(V)
 
 #define PPC_XS_OPCODE_LIST(V)                      \
@@ -2923,9 +2933,19 @@ class Instruction {
       PPC_VA_OPCODE_LIST(OPCODE_CASES)
       return static_cast<Opcode>(opcode);
     }
+    // Some VX opcodes have integers hard coded in the middle, handle those
+    // first.
+    opcode = extcode | BitField(20, 16) | BitField(10, 0);
+    switch (opcode) {
+      PPC_VX_OPCODE_D_FORM_LIST(OPCODE_CASES)
+      return static_cast<Opcode>(opcode);
+    }
     opcode = extcode | BitField(10, 0);
     switch (opcode) {
-      PPC_VX_OPCODE_LIST(OPCODE_CASES)
+      PPC_VX_OPCODE_A_FORM_LIST(OPCODE_CASES)
+      PPC_VX_OPCODE_B_FORM_LIST(OPCODE_CASES)
+      PPC_VX_OPCODE_C_FORM_LIST(OPCODE_CASES)
+      PPC_VX_OPCODE_UNUSED_LIST(OPCODE_CASES)
       PPC_X_OPCODE_EH_S_FORM_LIST(OPCODE_CASES)
       return static_cast<Opcode>(opcode);
     }
@@ -2939,9 +2959,17 @@ class Instruction {
       PPC_XFX_OPCODE_LIST(OPCODE_CASES)
       return static_cast<Opcode>(opcode);
     }
+    // Some XX2 opcodes have integers hard coded in the middle, handle those
+    // first.
+    opcode = extcode | BitField(20, 16) | BitField(10, 2);
+    switch (opcode) {
+      PPC_XX2_OPCODE_B_FORM_LIST(OPCODE_CASES)
+      return static_cast<Opcode>(opcode);
+    }
     opcode = extcode | BitField(10, 2);
     switch (opcode) {
-      PPC_XX2_OPCODE_LIST(OPCODE_CASES)
+      PPC_XX2_OPCODE_A_FORM_LIST(OPCODE_CASES)
+      PPC_XX2_OPCODE_UNUSED_LIST(OPCODE_CASES)
       return static_cast<Opcode>(opcode);
     }
     opcode = extcode | BitField(10, 1);

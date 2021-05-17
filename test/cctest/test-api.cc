@@ -1453,6 +1453,9 @@ static void TestExternalPointerWrapping() {
   v8::Isolate* isolate = env->GetIsolate();
   v8::HandleScope scope(isolate);
 
+  int* ptr = new int;
+  expected_ptr = ptr;
+
   v8::Local<v8::Value> data = v8::External::New(isolate, expected_ptr);
 
   v8::Local<v8::Object> obj = v8::Object::New(isolate);
@@ -1468,6 +1471,8 @@ static void TestExternalPointerWrapping() {
                    "}\n"
                    "foo(), true")
             ->BooleanValue(isolate));
+
+  delete ptr;
 }
 
 
@@ -3049,7 +3054,9 @@ THREADED_TEST(InternalFieldsAlignedPointers) {
   int stack_allocated[100];
   CheckAlignedPointerInInternalField(obj, stack_allocated);
 
-  void* huge = reinterpret_cast<void*>(~static_cast<uintptr_t>(1));
+  // The aligned pointer must have the top bits be zero on 64-bit machines (at
+  // least if the heap sandbox is enabled).
+  void* huge = reinterpret_cast<void*>(0x0000fffffffffffe);
   CheckAlignedPointerInInternalField(obj, huge);
 
   v8::Global<v8::Object> persistent(isolate, obj);
@@ -3125,7 +3132,9 @@ THREADED_TEST(EmbedderDataAlignedPointers) {
   CheckAlignedPointerInEmbedderData(&env, 2, stack_allocated);
   CHECK_EQ(3, (*env)->GetNumberOfEmbedderDataFields());
 
-  void* huge = reinterpret_cast<void*>(~static_cast<uintptr_t>(1));
+  // The aligned pointer must have the top bits be zero on 64-bit machines (at
+  // least if the heap sandbox is enabled).
+  void* huge = reinterpret_cast<void*>(0x0000fffffffffffe);
   CheckAlignedPointerInEmbedderData(&env, 3, huge);
   CHECK_EQ(4, (*env)->GetNumberOfEmbedderDataFields());
 
@@ -27671,7 +27680,7 @@ namespace {
 
 template <typename Value, typename Impl, typename Ret>
 struct BasicApiChecker {
-  static Ret FastCallback(v8::Local<v8::Value> receiver, Value argument,
+  static Ret FastCallback(v8::Local<v8::Object> receiver, Value argument,
                           v8::FastApiCallbackOptions& options) {
     // TODO(mslekova): Refactor the data checking.
     v8::Value* data = &(options.data);
@@ -27679,7 +27688,7 @@ struct BasicApiChecker {
     CHECK_EQ(v8::Number::Cast(data)->Value(), 42.0);
     return Impl::FastCallback(receiver, argument, options);
   }
-  static Ret FastCallbackNoFallback(v8::Local<v8::Value> receiver,
+  static Ret FastCallbackNoFallback(v8::Local<v8::Object> receiver,
                                     Value argument) {
     v8::FastApiCallbackOptions options = {false, {0}};
     return Impl::FastCallback(receiver, argument, options);
@@ -27721,9 +27730,9 @@ struct ApiNumberChecker : BasicApiChecker<T, ApiNumberChecker<T>, void> {
         write_to_fallback_(write_to_fallback),
         args_count_(args_count) {}
 
-  static void FastCallback(v8::Local<v8::Value> receiver, T argument,
+  static void FastCallback(v8::Local<v8::Object> receiver, T argument,
                            v8::FastApiCallbackOptions& options) {
-    v8::Object* receiver_obj = v8::Object::Cast(*receiver);
+    v8::Object* receiver_obj = *receiver;
     if (!IsValidUnwrapObject(receiver_obj)) {
       options.fallback = 1;
       return;
@@ -27772,12 +27781,11 @@ struct ApiNumberChecker : BasicApiChecker<T, ApiNumberChecker<T>, void> {
 
 struct UnexpectedObjectChecker
     : BasicApiChecker<v8::Local<v8::Value>, UnexpectedObjectChecker, void> {
-  static void FastCallback(v8::Local<v8::Value> receiver,
+  static void FastCallback(v8::Local<v8::Object> receiver,
                            v8::Local<v8::Value> argument,
                            v8::FastApiCallbackOptions& options) {
-    v8::Object* receiver_obj = v8::Object::Cast(*receiver);
     UnexpectedObjectChecker* receiver_ptr =
-        GetInternalField<UnexpectedObjectChecker>(receiver_obj);
+        GetInternalField<UnexpectedObjectChecker>(*receiver);
     receiver_ptr->SetCallFast();
     if (argument->IsObject()) {
       v8::Object* argument_obj = v8::Object::Cast(*argument);
@@ -27806,12 +27814,11 @@ struct ApiObjectChecker
   ApiObjectChecker(v8::FunctionTemplate* ctor, int data)
       : ctor_(ctor), initial_data_(data) {}
 
-  static void FastCallback(v8::Local<v8::Value> receiver,
+  static void FastCallback(v8::Local<v8::Object> receiver,
                            v8::Local<v8::Value> argument,
                            v8::FastApiCallbackOptions& options) {
-    v8::Object* receiver_obj = v8::Object::Cast(*receiver);
     ApiObjectChecker* receiver_ptr =
-        GetInternalField<ApiObjectChecker>(receiver_obj);
+        GetInternalField<ApiObjectChecker>(*receiver);
     receiver_ptr->SetCallFast();
 
     v8::Object* argument_obj = v8::Object::Cast(*argument);
@@ -27994,11 +28001,10 @@ void CheckApiObjectArg() {
 
 template <typename T>
 struct ReturnValueChecker : BasicApiChecker<T, ReturnValueChecker<T>, T> {
-  static T FastCallback(v8::Local<v8::Value> receiver, T arg,
+  static T FastCallback(v8::Local<v8::Object> receiver, T arg,
                         v8::FastApiCallbackOptions& options) {
-    v8::Object* receiver_obj = v8::Object::Cast(*receiver);
     ReturnValueChecker<T>* receiver_ptr =
-        GetInternalField<ReturnValueChecker<T>>(receiver_obj);
+        GetInternalField<ReturnValueChecker<T>>(*receiver);
     receiver_ptr->SetCallFast();
     return arg;
   }
@@ -28192,12 +28198,12 @@ TEST(FastApiStackSlot) {
 #ifndef V8_LITE_MODE
   if (i::FLAG_jitless) return;
 
-  FLAG_SCOPE_EXTERNAL(opt);
-  FLAG_SCOPE_EXTERNAL(turbo_fast_api_calls);
-  FLAG_SCOPE_EXTERNAL(allow_natives_syntax);
+  v8::internal::FLAG_opt = true;
+  v8::internal::FLAG_turbo_fast_api_calls = true;
+  v8::internal::FLAG_allow_natives_syntax = true;
   // Disable --always_opt, otherwise we haven't generated the necessary
   // feedback to go down the "best optimization" path for the fast call.
-  UNFLAG_SCOPE_EXTERNAL(always_opt);
+  v8::internal::FLAG_always_opt = false;
 
   v8::Isolate* isolate = CcTest::isolate();
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
@@ -28243,12 +28249,12 @@ TEST(FastApiCalls) {
 #ifndef V8_LITE_MODE
   if (i::FLAG_jitless) return;
 
-  FLAG_SCOPE_EXTERNAL(opt);
-  FLAG_SCOPE_EXTERNAL(turbo_fast_api_calls);
-  FLAG_SCOPE_EXTERNAL(allow_natives_syntax);
+  v8::internal::FLAG_opt = true;
+  v8::internal::FLAG_turbo_fast_api_calls = true;
+  v8::internal::FLAG_allow_natives_syntax = true;
   // Disable --always_opt, otherwise we haven't generated the necessary
   // feedback to go down the "best optimization" path for the fast call.
-  UNFLAG_SCOPE_EXTERNAL(always_opt);
+  v8::internal::FLAG_always_opt = false;
 
   v8::Isolate* isolate = CcTest::isolate();
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);

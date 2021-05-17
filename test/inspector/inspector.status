@@ -44,6 +44,12 @@
 }],  # 'system == android'
 
 ##############################################################################
+['system == macos', {
+  # Bug(v8:11399): Deadlock on Mac.
+  'cpu-profiler/console-profile-wasm': [SKIP],
+}],
+
+##############################################################################
 ['variant != default', {
   # Issue 6167.
   'debugger/eval-scopes': [PASS, FAIL],
@@ -207,6 +213,8 @@
 ################################################################################
 ['third_party_heap', {
   # Requires a second isolate
+  'regress/regress-crbug-1207867': [SKIP],
+  'regress/regress-crbug-1197392': [SKIP],
   'debugger/command-line-api-with-arrow-function': [SKIP],
   'regress/regress-crbug-1199919': [SKIP],
   'console/destroy-context-during-log': [SKIP],

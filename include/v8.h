@@ -6499,6 +6499,15 @@ class V8_EXPORT FunctionTemplate : public Template {
       SideEffectType side_effect_type = SideEffectType::kHasSideEffect,
       const CFunction* c_function = nullptr);
 
+  /** Creates a function template for multiple overloaded fast API calls.*/
+  static Local<FunctionTemplate> NewWithCFunctionOverloads(
+      Isolate* isolate, FunctionCallback callback = nullptr,
+      Local<Value> data = Local<Value>(),
+      Local<Signature> signature = Local<Signature>(), int length = 0,
+      ConstructorBehavior behavior = ConstructorBehavior::kAllow,
+      SideEffectType side_effect_type = SideEffectType::kHasSideEffect,
+      const std::vector<const CFunction*>& c_function_overloads = {});
+
   /**
    * Creates a function template backed/cached by a private property.
    */
@@ -6530,7 +6539,7 @@ class V8_EXPORT FunctionTemplate : public Template {
   void SetCallHandler(
       FunctionCallback callback, Local<Value> data = Local<Value>(),
       SideEffectType side_effect_type = SideEffectType::kHasSideEffect,
-      const CFunction* c_function = nullptr);
+      const std::vector<const CFunction*>& c_function_overloads = {});
 
   /** Set the predefined length property for the FunctionTemplate. */
   void SetLength(int length);
@@ -8042,6 +8051,9 @@ class V8_EXPORT EmbedderHeapTracer {
   /**
    * Called by the embedder to notify V8 of an empty execution stack.
    */
+  V8_DEPRECATE_SOON(
+      "This call only optimized internal caches which V8 is able to figure out "
+      "on its own now.")
   void NotifyEmptyEmbedderStack();
 
   /**

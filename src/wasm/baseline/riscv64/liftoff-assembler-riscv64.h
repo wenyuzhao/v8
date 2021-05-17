@@ -440,7 +440,7 @@ void LiftoffAssembler::StoreTaggedPointer(Register dst_addr,
   MemOperand dst_op = liftoff::GetMemOp(this, dst_addr, offset_reg, offset_imm);
   Sd(src.gp(), dst_op);
 
-  if (skip_write_barrier) return;
+  if (skip_write_barrier || FLAG_disable_write_barriers) return;
 
   Label write_barrier;
   Label exit;
@@ -453,8 +453,8 @@ void LiftoffAssembler::StoreTaggedPointer(Register dst_addr,
   CheckPageFlag(src.gp(), scratch,
                 MemoryChunk::kPointersToHereAreInterestingMask, eq, &exit);
   Add64(scratch, dst_op.rm(), dst_op.offset());
-  CallRecordWriteStub(dst_addr, scratch, EMIT_REMEMBERED_SET, kSaveFPRegs,
-                      wasm::WasmCode::kRecordWrite);
+  CallRecordWriteStub(dst_addr, scratch, RememberedSetAction::kEmit,
+                      SaveFPRegsMode::kSave, wasm::WasmCode::kRecordWrite);
   bind(&exit);
 }
 

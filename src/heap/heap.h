@@ -894,8 +894,6 @@ class Heap {
 
   const base::AddressRegion& code_region();
 
-  CodeRange* code_range() { return code_range_.get(); }
-
   LocalHeap* main_thread_local_heap() { return main_thread_local_heap_; }
 
   // ===========================================================================
@@ -1175,6 +1173,8 @@ class Heap {
   V8_EXPORT_PRIVATE void DetachCppHeap();
 
   v8::CppHeap* cpp_heap() const { return cpp_heap_; }
+
+  const cppgc::EmbedderStackState* overriden_stack_state() const;
 
   // ===========================================================================
   // Embedder roots optimizations. =============================================

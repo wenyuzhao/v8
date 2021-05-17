@@ -2850,7 +2850,7 @@ constexpr InstructionCode EncodeCallDescriptorFlags(
   // Note: Not all bits of `flags` are preserved.
   STATIC_ASSERT(CallDescriptor::kFlagsBitsEncodedInInstructionCode ==
                 MiscField::kSize);
-  CONSTEXPR_DCHECK(Instruction::IsCallWithDescriptorFlags(opcode));
+  DCHECK(Instruction::IsCallWithDescriptorFlags(opcode));
   return opcode | MiscField::encode(flags & MiscField::kMax);
 }
 
@@ -2935,8 +2935,8 @@ void InstructionSelector::VisitCall(Node* node, BasicBlock* handler) {
 
   if (call_descriptor->NeedsCallerSavedRegisters()) {
     SaveFPRegsMode mode = call_descriptor->NeedsCallerSavedFPRegisters()
-                              ? kSaveFPRegs
-                              : kDontSaveFPRegs;
+                              ? SaveFPRegsMode::kSave
+                              : SaveFPRegsMode::kIgnore;
     Emit(kArchSaveCallerRegisters | MiscField::encode(static_cast<int>(mode)),
          g.NoOutput());
   }
@@ -3015,8 +3015,8 @@ void InstructionSelector::VisitCall(Node* node, BasicBlock* handler) {
 
   if (call_descriptor->NeedsCallerSavedRegisters()) {
     SaveFPRegsMode mode = call_descriptor->NeedsCallerSavedFPRegisters()
-                              ? kSaveFPRegs
-                              : kDontSaveFPRegs;
+                              ? SaveFPRegsMode::kSave
+                              : SaveFPRegsMode::kIgnore;
     Emit(
         kArchRestoreCallerRegisters | MiscField::encode(static_cast<int>(mode)),
         g.NoOutput());

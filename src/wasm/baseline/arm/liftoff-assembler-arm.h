@@ -745,7 +745,7 @@ void LiftoffAssembler::StoreTaggedPointer(Register dst_addr,
                           : MemOperand(dst_addr, actual_offset_reg);
   str(src.gp(), dst_op);
 
-  if (skip_write_barrier) return;
+  if (skip_write_barrier || FLAG_disable_write_barriers) return;
 
   // The write barrier.
   Label write_barrier;
@@ -760,7 +760,7 @@ void LiftoffAssembler::StoreTaggedPointer(Register dst_addr,
   CallRecordWriteStub(dst_addr,
                       actual_offset_reg == no_reg ? Operand(offset_imm)
                                                   : Operand(actual_offset_reg),
-                      EMIT_REMEMBERED_SET, kSaveFPRegs,
+                      RememberedSetAction::kEmit, SaveFPRegsMode::kSave,
                       wasm::WasmCode::kRecordWrite);
   bind(&exit);
 }

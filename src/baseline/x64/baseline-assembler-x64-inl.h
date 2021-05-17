@@ -200,7 +200,7 @@ void BaselineAssembler::Move(Register output, Handle<HeapObject> value) {
   __ Move(output, value);
 }
 void BaselineAssembler::Move(Register output, int32_t value) {
-  __ Move(output, Immediate(value));
+  __ Move(output, value);
 }
 void BaselineAssembler::MoveMaybeSmi(Register output, Register source) {
   __ mov_tagged(output, source);
@@ -325,7 +325,7 @@ void BaselineAssembler::StoreTaggedFieldWithWriteBarrier(Register target,
   DCHECK_NE(target, scratch);
   DCHECK_NE(value, scratch);
   __ StoreTaggedField(FieldOperand(target, offset), value);
-  __ RecordWriteField(target, offset, value, scratch, kDontSaveFPRegs);
+  __ RecordWriteField(target, offset, value, scratch, SaveFPRegsMode::kIgnore);
 }
 void BaselineAssembler::StoreTaggedFieldNoWriteBarrier(Register target,
                                                        int offset,

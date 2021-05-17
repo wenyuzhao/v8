@@ -332,7 +332,7 @@ void MacroAssembler::RecordWriteField(Register object, int offset,
   Label done;
 
   // Skip barrier if writing a smi.
-  if (smi_check == INLINE_SMI_CHECK) {
+  if (smi_check == SmiCheck::kInline) {
     JumpIfSmi(value, &done);
   }
 
@@ -350,7 +350,7 @@ void MacroAssembler::RecordWriteField(Register object, int offset,
   }
 
   RecordWrite(object, dst, value, save_fp, remembered_set_action,
-              OMIT_SMI_CHECK);
+              SmiCheck::kOmit);
 
   bind(&done);
 
@@ -390,8 +390,8 @@ void TurboAssembler::LoadExternalPointerField(
   movl(destination, field_operand);
   movq(destination, Operand(scratch, destination, times_8, 0));
   if (tag != 0) {
-    movq(scratch, Immediate64(tag));
-    xorq(destination, scratch);
+    movq(scratch, Immediate64(~tag));
+    andq(destination, scratch);
   }
 #else
   movq(destination, field_operand);
@@ -502,7 +502,7 @@ void MacroAssembler::RecordWrite(Register object, Register address,
   DCHECK(value != address);
   AssertNotSmi(object);
 
-  if ((remembered_set_action == OMIT_REMEMBERED_SET &&
+  if ((remembered_set_action == RememberedSetAction::kOmit &&
        !FLAG_incremental_marking) ||
       FLAG_disable_write_barriers) {
     return;
@@ -520,7 +520,7 @@ void MacroAssembler::RecordWrite(Register object, Register address,
   // catch stores of smis and stores into the young generation.
   Label done;
 
-  if (smi_check == INLINE_SMI_CHECK) {
+  if (smi_check == SmiCheck::kInline) {
     // Skip barrier if writing a smi.
     JumpIfSmi(value, &done);
   }
@@ -625,7 +625,7 @@ void MacroAssembler::CallRuntime(const Runtime::Function* f, int num_arguments,
   // arguments passed in because it is constant. At some point we
   // should remove this need and make the runtime routine entry code
   // smarter.
-  Set(rax, num_arguments);
+  Move(rax, num_arguments);
   LoadAddress(rbx, ExternalReference::Create(f));
   Handle<Code> code =
       CodeFactory::CEntry(isolate(), f->result_size, save_doubles);
@@ -646,7 +646,7 @@ void MacroAssembler::TailCallRuntime(Runtime::FunctionId fid) {
   const Runtime::Function* function = Runtime::FunctionForId(fid);
   DCHECK_EQ(1, function->result_size);
   if (function->nargs >= 0) {
-    Set(rax, function->nargs);
+    Move(rax, function->nargs);
   }
   JumpToExternalReference(ExternalReference::Create(fid));
 }
@@ -655,8 +655,8 @@ void MacroAssembler::JumpToExternalReference(const ExternalReference& ext,
                                              bool builtin_exit_frame) {
   // Set the entry point and jump to the C entry runtime stub.
   LoadAddress(rbx, ext);
-  Handle<Code> code = CodeFactory::CEntry(isolate(), 1, kDontSaveFPRegs,
-                                          kArgvOnStack, builtin_exit_frame);
+  Handle<Code> code = CodeFactory::CEntry(isolate(), 1, SaveFPRegsMode::kIgnore,
+                                          ArgvMode::kStack, builtin_exit_frame);
   Jump(code, RelocInfo::CODE_TARGET);
 }
 
@@ -678,7 +678,7 @@ int TurboAssembler::RequiredStackSizeForCallerSaved(SaveFPRegsMode fp_mode,
   }
 
   // R12 to r15 are callee save on all platforms.
-  if (fp_mode == kSaveFPRegs) {
+  if (fp_mode == SaveFPRegsMode::kSave) {
     bytes += kDoubleSize * XMMRegister::kNumRegisters;
   }
 
@@ -700,7 +700,7 @@ int TurboAssembler::PushCallerSaved(SaveFPRegsMode fp_mode, Register exclusion1,
   }
 
   // R12 to r15 are callee save on all platforms.
-  if (fp_mode == kSaveFPRegs) {
+  if (fp_mode == SaveFPRegsMode::kSave) {
     int delta = kDoubleSize * XMMRegister::kNumRegisters;
     AllocateStackSpace(delta);
     for (int i = 0; i < XMMRegister::kNumRegisters; i++) {
@@ -716,7 +716,7 @@ int TurboAssembler::PushCallerSaved(SaveFPRegsMode fp_mode, Register exclusion1,
 int TurboAssembler::PopCallerSaved(SaveFPRegsMode fp_mode, Register exclusion1,
                                    Register exclusion2, Register exclusion3) {
   int bytes = 0;
-  if (fp_mode == kSaveFPRegs) {
+  if (fp_mode == SaveFPRegsMode::kSave) {
     for (int i = 0; i < XMMRegister::kNumRegisters; i++) {
       XMMRegister reg = XMMRegister::from_code(i);
       Movsd(reg, Operand(rsp, i * kDoubleSize));
@@ -1073,7 +1073,7 @@ void ConvertFloatToUint64(TurboAssembler* tasm, Register dst,
   // The input value is within uint64 range and the second conversion worked
   // successfully, but we still have to undo the subtraction we did
   // earlier.
-  tasm->Set(kScratchRegister, 0x8000000000000000);
+  tasm->Move(kScratchRegister, 0x8000000000000000);
   tasm->orq(dst, kScratchRegister);
   tasm->bind(&success);
 }
@@ -1095,26 +1095,6 @@ void TurboAssembler::Cvttss2uiq(Register dst, XMMRegister src, Label* fail) {
   ConvertFloatToUint64<XMMRegister, false>(this, dst, src, fail);
 }
 
-void TurboAssembler::Set(Register dst, int64_t x) {
-  if (x == 0) {
-    xorl(dst, dst);
-  } else if (is_uint32(x)) {
-    movl(dst, Immediate(static_cast<uint32_t>(x)));
-  } else if (is_int32(x)) {
-    movq(dst, Immediate(static_cast<int32_t>(x)));
-  } else {
-    movq(dst, x);
-  }
-}
-
-void TurboAssembler::Set(Operand dst, intptr_t x) {
-  if (is_int32(x)) {
-    movq(dst, Immediate(static_cast<int32_t>(x)));
-  } else {
-    Set(kScratchRegister, x);
-    movq(dst, kScratchRegister);
-  }
-}
 
 // ----------------------------------------------------------------------------
 // Smi tagging, untagging and tag detection.
@@ -1122,36 +1102,6 @@ void TurboAssembler::Set(Operand dst, intptr_t x) {
 Register TurboAssembler::GetSmiConstant(Smi source) {
   Move(kScratchRegister, source);
   return kScratchRegister;
-}
-
-void TurboAssembler::Move(Register dst, Smi source) {
-  STATIC_ASSERT(kSmiTag == 0);
-  int value = source.value();
-  if (value == 0) {
-    xorl(dst, dst);
-  } else if (SmiValuesAre32Bits() || value < 0) {
-    Move(dst, source.ptr(), RelocInfo::NONE);
-  } else {
-    uint32_t uvalue = static_cast<uint32_t>(source.ptr());
-    if (uvalue <= 0xFF) {
-      // Emit shorter instructions for small Smis
-      xorl(dst, dst);
-      movb(dst, Immediate(uvalue));
-    } else {
-      movl(dst, Immediate(uvalue));
-    }
-  }
-}
-
-void TurboAssembler::Move(Register dst, ExternalReference ext) {
-  // TODO(jgruber,v8:8887): Also consider a root-relative load when generating
-  // non-isolate-independent code. In many cases it might be cheaper than
-  // embedding the relocatable value.
-  if (root_array_available_ && options().isolate_independent_code) {
-    IndirectLoadExternalReference(dst, ext);
-    return;
-  }
-  movq(dst, Immediate64(ext.address(), RelocInfo::EXTERNAL_REFERENCE));
 }
 
 void MacroAssembler::Cmp(Register dst, int32_t src) {
@@ -1375,6 +1325,39 @@ void TurboAssembler::Push(Smi source) {
 
 // ----------------------------------------------------------------------------
 
+void TurboAssembler::Move(Register dst, Smi source) {
+  STATIC_ASSERT(kSmiTag == 0);
+  int value = source.value();
+  if (value == 0) {
+    xorl(dst, dst);
+  } else if (SmiValuesAre32Bits() || value < 0) {
+    Move(dst, source.ptr(), RelocInfo::NONE);
+  } else {
+    uint32_t uvalue = static_cast<uint32_t>(source.ptr());
+    Move(dst, uvalue);
+  }
+}
+
+void TurboAssembler::Move(Operand dst, intptr_t x) {
+  if (is_int32(x)) {
+    movq(dst, Immediate(static_cast<int32_t>(x)));
+  } else {
+    Move(kScratchRegister, x);
+    movq(dst, kScratchRegister);
+  }
+}
+
+void TurboAssembler::Move(Register dst, ExternalReference ext) {
+  // TODO(jgruber,v8:8887): Also consider a root-relative load when generating
+  // non-isolate-independent code. In many cases it might be cheaper than
+  // embedding the relocatable value.
+  if (root_array_available_ && options().isolate_independent_code) {
+    IndirectLoadExternalReference(dst, ext);
+    return;
+  }
+  movq(dst, Immediate64(ext.address(), RelocInfo::EXTERNAL_REFERENCE));
+}
+
 void TurboAssembler::Move(Register dst, Register src) {
   if (dst != src) {
     movq(dst, src);
@@ -1382,7 +1365,13 @@ void TurboAssembler::Move(Register dst, Register src) {
 }
 
 void TurboAssembler::Move(Register dst, Operand src) { movq(dst, src); }
-void TurboAssembler::Move(Register dst, Immediate src) { movl(dst, src); }
+void TurboAssembler::Move(Register dst, Immediate src) {
+  if (src.rmode() == RelocInfo::Mode::NONE) {
+    Move(dst, src.value());
+  } else {
+    movl(dst, src);
+  }
+}
 
 void TurboAssembler::Move(XMMRegister dst, XMMRegister src) {
   if (dst != src) {
@@ -1521,7 +1510,7 @@ void TurboAssembler::PushArray(Register array, Register size, Register scratch,
   Register counter = scratch;
   Label loop, entry;
   if (order == PushArrayOrder::kReverse) {
-    Set(counter, 0);
+    Move(counter, 0);
     jmp(&entry);
     bind(&loop);
     Push(Operand(array, counter, times_system_pointer_size, 0));
@@ -2763,32 +2752,32 @@ void TurboAssembler::PrepareForTailCall(Register callee_args_count,
 
 void MacroAssembler::InvokeFunction(Register function, Register new_target,
                                     Register actual_parameter_count,
-                                    InvokeFlag flag) {
+                                    InvokeType type) {
   LoadTaggedPointerField(
       rbx, FieldOperand(function, JSFunction::kSharedFunctionInfoOffset));
   movzxwq(rbx,
           FieldOperand(rbx, SharedFunctionInfo::kFormalParameterCountOffset));
 
-  InvokeFunction(function, new_target, rbx, actual_parameter_count, flag);
+  InvokeFunction(function, new_target, rbx, actual_parameter_count, type);
 }
 
 void MacroAssembler::InvokeFunction(Register function, Register new_target,
                                     Register expected_parameter_count,
                                     Register actual_parameter_count,
-                                    InvokeFlag flag) {
-  DCHECK(function == rdi);
+                                    InvokeType type) {
+  DCHECK_EQ(function, rdi);
   LoadTaggedPointerField(rsi,
                          FieldOperand(function, JSFunction::kContextOffset));
   InvokeFunctionCode(rdi, new_target, expected_parameter_count,
-                     actual_parameter_count, flag);
+                     actual_parameter_count, type);
 }
 
 void MacroAssembler::InvokeFunctionCode(Register function, Register new_target,
                                         Register expected_parameter_count,
                                         Register actual_parameter_count,
-                                        InvokeFlag flag) {
+                                        InvokeType type) {
   // You can't call a function without a valid frame.
-  DCHECK_IMPLIES(flag == CALL_FUNCTION, has_frame());
+  DCHECK_IMPLIES(type == InvokeType::kCall, has_frame());
   DCHECK_EQ(function, rdi);
   DCHECK_IMPLIES(new_target.is_valid(), new_target == rdx);
 
@@ -2810,17 +2799,19 @@ void MacroAssembler::InvokeFunctionCode(Register function, Register new_target,
   }
 
   Label done;
-  InvokePrologue(expected_parameter_count, actual_parameter_count, &done, flag);
+  InvokePrologue(expected_parameter_count, actual_parameter_count, &done, type);
   // We call indirectly through the code field in the function to
   // allow recompilation to take effect without changing any of the
   // call sites.
   static_assert(kJavaScriptCallCodeStartRegister == rcx, "ABI mismatch");
   LoadTaggedPointerField(rcx, FieldOperand(function, JSFunction::kCodeOffset));
-  if (flag == CALL_FUNCTION) {
-    CallCodeObject(rcx);
-  } else {
-    DCHECK(flag == JUMP_FUNCTION);
-    JumpCodeObject(rcx);
+  switch (type) {
+    case InvokeType::kCall:
+      CallCodeObject(rcx);
+      break;
+    case InvokeType::kJump:
+      JumpCodeObject(rcx);
+      break;
   }
   jmp(&done, Label::kNear);
 
@@ -2873,7 +2864,7 @@ void MacroAssembler::StackOverflowCheck(
 
 void MacroAssembler::InvokePrologue(Register expected_parameter_count,
                                     Register actual_parameter_count,
-                                    Label* done, InvokeFlag flag) {
+                                    Label* done, InvokeType type) {
   if (expected_parameter_count != actual_parameter_count) {
     Label regular_invoke;
     // If the expected parameter count is equal to the adaptor sentinel, no need
@@ -2899,9 +2890,9 @@ void MacroAssembler::InvokePrologue(Register expected_parameter_count,
            Operand(expected_parameter_count, times_system_pointer_size, 0));
       AllocateStackSpace(kScratchRegister);
       // Extra words are the receiver and the return address (if a jump).
-      int extra_words = flag == CALL_FUNCTION ? 1 : 2;
+      int extra_words = type == InvokeType::kCall ? 1 : 2;
       leaq(num, Operand(rax, extra_words));  // Number of words to copy.
-      Set(current, 0);
+      Move(current, 0);
       // Fall-through to the loop body because there are non-zero words to copy.
       bind(&copy);
       movq(kScratchRegister,
@@ -3338,7 +3329,7 @@ void TurboAssembler::ComputeCodeStartAddress(Register dst) {
 
 void TurboAssembler::ResetSpeculationPoisonRegister() {
   // TODO(turbofan): Perhaps, we want to put an lfence here.
-  Set(kSpeculationPoisonRegister, -1);
+  Move(kSpeculationPoisonRegister, -1);
 }
 
 void TurboAssembler::CallForDeoptimization(Builtins::Name target, int,

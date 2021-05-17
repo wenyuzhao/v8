@@ -1349,7 +1349,8 @@ void Debug::PrepareFunctionForDebugExecution(
   DCHECK(shared->is_compiled());
   DCHECK(shared->HasDebugInfo());
   Handle<DebugInfo> debug_info = GetOrCreateDebugInfo(shared);
-  if (debug_info->flags() & DebugInfo::kPreparedForDebugExecution) return;
+  if (debug_info->flags(kRelaxedLoad) & DebugInfo::kPreparedForDebugExecution)
+    return;
 
   if (shared->HasBytecodeArray()) {
     SharedFunctionInfo::InstallDebugBytecode(shared, isolate_);
@@ -1368,8 +1369,9 @@ void Debug::PrepareFunctionForDebugExecution(
     redirect_visitor.VisitThread(isolate_, isolate_->thread_local_top());
     isolate_->thread_manager()->IterateArchivedThreads(&redirect_visitor);
   }
-  debug_info->set_flags(debug_info->flags() |
-                        DebugInfo::kPreparedForDebugExecution);
+  debug_info->set_flags(
+      debug_info->flags(kRelaxedLoad) | DebugInfo::kPreparedForDebugExecution,
+      kRelaxedStore);
 }
 
 void Debug::InstallDebugBreakTrampoline() {
@@ -1749,10 +1751,10 @@ void Debug::CreateBreakInfo(Handle<SharedFunctionInfo> shared) {
   Handle<FixedArray> break_points(
       factory->NewFixedArray(DebugInfo::kEstimatedNofBreakPointsInFunction));
 
-  int flags = debug_info->flags();
+  int flags = debug_info->flags(kRelaxedLoad);
   flags |= DebugInfo::kHasBreakInfo;
   if (CanBreakAtEntry(shared)) flags |= DebugInfo::kCanBreakAtEntry;
-  debug_info->set_flags(flags);
+  debug_info->set_flags(flags, kRelaxedStore);
   debug_info->set_break_points(*break_points);
 
   SharedFunctionInfo::EnsureSourcePositionsAvailable(isolate_, shared);
@@ -1779,7 +1781,9 @@ void Debug::InstallCoverageInfo(Handle<SharedFunctionInfo> shared,
 
   DCHECK(!debug_info->HasCoverageInfo());
 
-  debug_info->set_flags(debug_info->flags() | DebugInfo::kHasCoverageInfo);
+  debug_info->set_flags(
+      debug_info->flags(kRelaxedLoad) | DebugInfo::kHasCoverageInfo,
+      kRelaxedStore);
   debug_info->set_coverage_info(*coverage_info);
 }
 
@@ -2266,12 +2270,14 @@ void Debug::PrintBreakLocation() {
   StackTraceFrameIterator iterator(isolate_);
   if (iterator.done()) return;
   CommonFrame* frame = iterator.frame();
-  FrameSummary summary = FrameSummary::GetTop(frame);
-  summary.EnsureSourcePositionsAvailable();
-  int source_position = summary.SourcePosition();
-  Handle<Object> script_obj = summary.script();
+  std::vector<FrameSummary> frames;
+  frame->Summarize(&frames);
+  int inlined_frame_index = static_cast<int>(frames.size() - 1);
+  FrameInspector inspector(frame, inlined_frame_index, isolate_);
+  int source_position = inspector.GetSourcePosition();
+  Handle<Object> script_obj = inspector.GetScript();
   PrintF("[debug] break in function '");
-  summary.FunctionName()->PrintOn(stdout);
+  inspector.GetFunctionName()->PrintOn(stdout);
   PrintF("'.\n");
   if (script_obj->IsScript()) {
     Handle<Script> script = Handle<Script>::cast(script_obj);
