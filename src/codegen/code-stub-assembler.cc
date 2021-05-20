@@ -11234,7 +11234,8 @@ void CodeStubAssembler::TrapAllocationMemento(TNode<JSObject> object,
 }
 
 TNode<IntPtrT> CodeStubAssembler::PageFromAddress(TNode<IntPtrT> address) {
-  if (FLAG_enable_third_party_heap) AbortCSAAssert(StringConstant("Unreachable"));
+  if (FLAG_enable_third_party_heap)
+    AbortCSAAssert(StringConstant("Unreachable"));
   return WordAnd(address, IntPtrConstant(~kPageAlignmentMask));
 }
 
