@@ -451,12 +451,12 @@ void JSObject::JSObjectVerify(Isolate* isolate) {
 
 void Map::MapVerify(Isolate* isolate) {
   TorqueGeneratedClassVerifiers::MapVerify(*this, isolate);
-  // Heap* heap = isolate->heap();
+  Heap* heap = isolate->heap();
   CHECK(!ObjectInYoungGeneration(*this));
   CHECK(FIRST_TYPE <= instance_type() && instance_type() <= LAST_TYPE);
-  // CHECK(instance_size() == kVariableSizeSentinel ||
-  //       (kTaggedSize <= instance_size() &&
-  //        static_cast<size_t>(instance_size()) < heap->Capacity()));
+  CHECK(instance_size() == kVariableSizeSentinel ||
+        (kTaggedSize <= instance_size() &&
+         static_cast<size_t>(instance_size()) < heap->Capacity()));
   if (IsContextMap()) {
     // The map for the NativeContext is allocated before the NativeContext
     // itself, so it may happen that during a GC the native_context() is still
