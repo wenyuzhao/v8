@@ -45,6 +45,7 @@ from testrunner.outproc import test262
 # TODO(littledan): move the flag mapping into the status file
 FEATURE_FLAGS = {
   'Intl.DateTimeFormat-dayPeriod': '--harmony-intl-dateformat-day-period',
+  'Intl.Locale-info': '--harmony_intl_locale_info',
   'Symbol.prototype.description': '--harmony-symbol-description',
   'FinalizationRegistry': '--harmony-weak-refs-with-cleanup-some',
   'WeakRef': '--harmony-weak-refs-with-cleanup-some',
@@ -55,6 +56,7 @@ FEATURE_FLAGS = {
   # https://github.com/tc39/test262/pull/2395
   'regexp-named-groups': '--harmony-regexp-match-indices',
   'error-cause': '--harmony-error-cause',
+  'import-assertions': '--harmony-import-assertions',
 }
 
 SKIPPED_FEATURES = set([])

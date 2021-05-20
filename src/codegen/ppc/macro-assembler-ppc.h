@@ -38,7 +38,6 @@ Register GetRegisterThatIsNotOneOf(Register reg1, Register reg2 = no_reg,
 
 // These exist to provide portability between 32 and 64bit
 #if V8_TARGET_ARCH_PPC64
-#define LoadPX ldx
 #define LoadPUX ldux
 #define StorePX stdx
 #define StorePUX stdux
@@ -51,7 +50,6 @@ Register GetRegisterThatIsNotOneOf(Register reg1, Register reg2 = no_reg,
 #define ShiftRight_ srd
 #define ShiftRightArith srad
 #else
-#define LoadPX lwzx
 #define LoadPUX lwzux
 #define StorePX stwx
 #define StorePUX stwux
@@ -148,12 +146,8 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
 
   // These exist to provide portability between 32 and 64bit
   void LoadU64(Register dst, const MemOperand& mem, Register scratch = no_reg);
-  void LoadP(Register dst, const MemOperand& mem, Register scratch = no_reg) {
-    LoadU64(dst, mem, no_reg);
-  }
   void LoadPU(Register dst, const MemOperand& mem, Register scratch = no_reg);
-  void LoadWordArith(Register dst, const MemOperand& mem,
-                     Register scratch = no_reg);
+  void LoadS32(Register dst, const MemOperand& mem, Register scratch = no_reg);
   void StoreP(Register src, const MemOperand& mem, Register scratch = no_reg);
   void StorePU(Register src, const MemOperand& mem, Register scratch = no_reg);
 
@@ -288,14 +282,13 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   void SaveRegisters(RegList registers);
   void RestoreRegisters(RegList registers);
 
-  void CallRecordWriteStub(Register object, Register address,
-                           RememberedSetAction remembered_set_action,
-                           SaveFPRegsMode fp_mode);
-  void CallRecordWriteStub(Register object, Register address,
-                           RememberedSetAction remembered_set_action,
-                           SaveFPRegsMode fp_mode, Address wasm_target);
   void CallEphemeronKeyBarrier(Register object, Register address,
                                SaveFPRegsMode fp_mode);
+
+  void CallRecordWriteStub(
+      Register object, Register address,
+      RememberedSetAction remembered_set_action, SaveFPRegsMode fp_mode,
+      StubCallMode mode = StubCallMode::kCallBuiltinPointer);
 
   void MultiPush(RegList regs, Register location = sp);
   void MultiPop(RegList regs, Register location = sp);
@@ -715,7 +708,10 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   void DecompressAnyTagged(Register destination, MemOperand field_operand);
   void DecompressAnyTagged(Register destination, Register source);
 
-  void LoadWord(Register dst, const MemOperand& mem, Register scratch);
+  void LoadU32(Register dst, const MemOperand& mem, Register scratch);
+  void LoadU16(Register dst, const MemOperand& mem, Register scratch = no_reg);
+  void LoadS16(Register dst, const MemOperand& mem, Register scratch = no_reg);
+  void LoadU8(Register dst, const MemOperand& mem, Register scratch);
   void StoreWord(Register src, const MemOperand& mem, Register scratch);
 
  private:
@@ -726,10 +722,6 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   void CallCFunctionHelper(Register function, int num_reg_arguments,
                            int num_double_arguments,
                            bool has_function_descriptor);
-  void CallRecordWriteStub(Register object, Register address,
-                           RememberedSetAction remembered_set_action,
-                           SaveFPRegsMode fp_mode, int builtin_index,
-                           Address wasm_target);
 };
 
 // MacroAssembler implements a collection of frequently used acros.
@@ -797,13 +789,8 @@ class V8_EXPORT_PRIVATE MacroAssembler : public TurboAssembler {
 
   // load a literal double value <value> to FPR <result>
 
-  void LoadHalfWord(Register dst, const MemOperand& mem,
-                    Register scratch = no_reg);
-  void LoadHalfWordArith(Register dst, const MemOperand& mem,
-                         Register scratch = no_reg);
   void StoreHalfWord(Register src, const MemOperand& mem, Register scratch);
 
-  void LoadByte(Register dst, const MemOperand& mem, Register scratch);
   void StoreByte(Register src, const MemOperand& mem, Register scratch);
 
   void LoadDoubleU(DoubleRegister dst, const MemOperand& mem,

@@ -12,6 +12,9 @@
 #include "src/heap/cppgc/heap-object-header.h"
 #include "src/heap/cppgc/heap-page.h"
 #include "src/heap/cppgc/heap.h"
+#include "src/heap/cppgc/page-memory.h"
+#include "src/heap/cppgc/prefinalizer-handler.h"
+#include "src/heap/cppgc/process-heap.h"
 
 namespace cppgc {
 namespace internal {
@@ -36,28 +39,26 @@ void EnabledCheckingPolicy::CheckPointerImpl(const void* ptr,
   // valid for large objects.
   DCHECK_IMPLIES(base_page->is_large(), points_to_payload);
 
-  if (!state_) {
-    state_ = base_page->heap();
-    // Member references are used from within objects that cannot change their
-    // heap association which means that state is immutable once it is set.
-    //
-    // TODO(chromium:1056170): Binding state late allows for getting the initial
-    // state wrong which requires a check that `this` is contained in heap that
-    // is itself expensive. Investigate options on non-caged builds to improve
-    // coverage.
+  // References cannot change their heap association which means that state is
+  // immutable once it is set.
+  if (!heap_) {
+    heap_ = base_page->heap();
+    if (!heap_->page_backend()->Lookup(reinterpret_cast<Address>(this))) {
+      // If `this` is not contained within the heap of `ptr`, we must deal with
+      // an on-stack or off-heap reference. For both cases there should be no
+      // heap registered.
+      CHECK(!HeapRegistry::TryFromManagedPointer(this));
+    }
   }
 
-  HeapBase* heap = static_cast<HeapBase*>(state_);
-  if (!heap) return;
-
   // Member references should never mix heaps.
-  DCHECK_EQ(heap, base_page->heap());
+  DCHECK_EQ(heap_, base_page->heap());
 
   // Header checks.
   const HeapObjectHeader* header = nullptr;
   if (points_to_payload) {
     header = &HeapObjectHeader::FromObject(ptr);
-  } else if (!heap->sweeper().IsSweepingInProgress()) {
+  } else if (!heap_->sweeper().IsSweepingInProgress()) {
     // Mixin case.
     header = &base_page->ObjectHeaderFromInnerAddress(ptr);
     DCHECK_LE(header->ObjectStart(), ptr);
@@ -67,7 +68,20 @@ void EnabledCheckingPolicy::CheckPointerImpl(const void* ptr,
     DCHECK(!header->IsFree());
   }
 
-  // TODO(v8:11749): Check mark bits when during pre-finalizer phase.
+#ifdef CPPGC_CHECK_ASSIGNMENTS_IN_PREFINALIZERS
+  if (heap_->prefinalizer_handler()->IsInvokingPreFinalizers()) {
+    // During prefinalizers invocation, check that |ptr| refers to a live object
+    // and that it is assigned to a live slot.
+    DCHECK(header->IsMarked());
+    // Slot can be in a large object.
+    const auto* slot_page = BasePage::FromInnerAddress(heap_, this);
+    // Off-heap slots (from other heaps or on-stack) are considered live.
+    bool slot_is_live =
+        !slot_page || slot_page->ObjectHeaderFromInnerAddress(this).IsMarked();
+    DCHECK(slot_is_live);
+    USE(slot_is_live);
+  }
+#endif  // CPPGC_CHECK_ASSIGNMENTS_IN_PREFINALIZERS
 }
 
 PersistentRegion& StrongPersistentPolicy::GetPersistentRegion(

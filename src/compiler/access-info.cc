@@ -719,9 +719,8 @@ PropertyAccessInfo AccessInfoFactory::ComputePropertyAccessInfo(
     Handle<Map> map, Handle<Name> name, AccessMode access_mode) const {
   CHECK(name->IsUniqueName());
 
-  JSHeapBroker::MapUpdaterMutexDepthScope mumd_scope(broker());
-  base::SharedMutexGuardIf<base::kShared> mutex_guard(
-      isolate()->map_updater_access(), mumd_scope.should_lock());
+  JSHeapBroker::MapUpdaterGuardIfNeeded mumd_scope(
+      broker(), isolate()->map_updater_access());
 
   if (access_mode == AccessMode::kHas && !map->IsJSReceiverMap()) {
     return Invalid();
@@ -867,8 +866,8 @@ PropertyAccessInfo AccessInfoFactory::ComputePropertyAccessInfo(
 
     // Acquire synchronously the map's prototype's map to guarantee that every
     // time we use it, we use the same Map.
-    Handle<Map> map_prototype_map = broker()->CanonicalPersistentHandle(
-        map->prototype().synchronized_map());
+    Handle<Map> map_prototype_map =
+        broker()->CanonicalPersistentHandle(map->prototype().map(kAcquireLoad));
     if (!map_prototype_map->IsJSObjectMap()) {
       // Perform the implicit ToObject for primitives here.
       // Implemented according to ES6 section 7.3.2 GetV (V, P).
@@ -880,7 +879,7 @@ PropertyAccessInfo AccessInfoFactory::ComputePropertyAccessInfo(
         map = broker()->CanonicalPersistentHandle(
             maybe_constructor->initial_map());
         map_prototype_map = broker()->CanonicalPersistentHandle(
-            map->prototype().synchronized_map());
+            map->prototype().map(kAcquireLoad));
         DCHECK(map_prototype_map->IsJSObjectMap());
       } else if (map->prototype().IsNull()) {
         if (dictionary_prototype_on_chain) {

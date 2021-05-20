@@ -7,13 +7,16 @@
 
 #include <memory>
 
-#include "include/v8-inspector.h"
 #include "include/v8-util.h"
 #include "include/v8.h"
 #include "src/base/platform/time.h"
 #include "src/common/globals.h"
 #include "src/debug/interface-types.h"
 #include "src/utils/vector.h"
+
+namespace v8_inspector {
+class V8Inspector;
+}  // namespace v8_inspector
 
 namespace v8 {
 
@@ -526,6 +529,10 @@ enum class EvaluateGlobalMode {
 V8_EXPORT_PRIVATE v8::MaybeLocal<v8::Value> EvaluateGlobal(
     v8::Isolate* isolate, v8::Local<v8::String> source, EvaluateGlobalMode mode,
     bool repl_mode = false);
+
+V8_EXPORT_PRIVATE v8::MaybeLocal<v8::Value> EvaluateGlobalForTesting(
+    v8::Isolate* isolate, v8::Local<v8::Script> function,
+    v8::debug::EvaluateGlobalMode mode, bool repl);
 
 int GetDebuggingId(v8::Local<v8::Function> function);
 

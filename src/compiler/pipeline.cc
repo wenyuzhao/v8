@@ -183,7 +183,6 @@ class PipelineData {
             : nullptr;
     dependencies_ =
         info_->zone()->New<CompilationDependencies>(broker_, info_->zone());
-    broker_->set_dependencies(dependencies_);
   }
 
 #if V8_ENABLE_WEBASSEMBLY
@@ -1507,7 +1506,7 @@ struct HeapBrokerInitializationPhase {
   DECL_MAIN_THREAD_PIPELINE_PHASE_CONSTANTS(HeapBrokerInitialization)
 
   void Run(PipelineData* data, Zone* temp_zone) {
-    data->broker()->InitializeAndStartSerializing(data->native_context());
+    data->broker()->InitializeAndStartSerializing();
   }
 };
 
@@ -2646,8 +2645,10 @@ bool PipelineImpl::CreateGraph() {
   RunPrintAndVerify(InliningPhase::phase_name(), true);
 
   // Remove dead->live edges from the graph.
-  Run<EarlyGraphTrimmingPhase>();
-  RunPrintAndVerify(EarlyGraphTrimmingPhase::phase_name(), true);
+  if (!data->info()->IsTurboprop()) {
+    Run<EarlyGraphTrimmingPhase>();
+    RunPrintAndVerify(EarlyGraphTrimmingPhase::phase_name(), true);
+  }
 
   // Determine the Typer operation flags.
   {
@@ -3411,8 +3412,10 @@ void PipelineImpl::ComputeScheduledGraph() {
   // We should only schedule the graph if it is not scheduled yet.
   DCHECK_NULL(data->schedule());
 
-  Run<LateGraphTrimmingPhase>();
-  RunPrintAndVerify(LateGraphTrimmingPhase::phase_name(), true);
+  if (!data->info()->IsTurboprop()) {
+    Run<LateGraphTrimmingPhase>();
+    RunPrintAndVerify(LateGraphTrimmingPhase::phase_name(), true);
+  }
 
   Run<ComputeSchedulePhase>();
   TraceScheduleAndVerify(data->info(), data, data->schedule(), "schedule");

@@ -16,7 +16,7 @@ namespace compiler {
 // Foward declarations.
 class TypeCache;
 
-enum IdentifyZeros { kIdentifyZeros, kDistinguishZeros };
+enum IdentifyZeros : uint8_t { kIdentifyZeros, kDistinguishZeros };
 
 class Truncation final {
  public:

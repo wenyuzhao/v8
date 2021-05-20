@@ -430,7 +430,7 @@ class ByteArray::BodyDescriptor final : public BodyDescriptorBase {
                                  ObjectVisitor* v) {}
 
   static inline int SizeOf(Map map, HeapObject obj) {
-    return ByteArray::SizeFor(ByteArray::cast(obj).synchronized_length());
+    return ByteArray::SizeFor(ByteArray::cast(obj).length(kAcquireLoad));
   }
 };
 
@@ -451,7 +451,7 @@ class BytecodeArray::BodyDescriptor final : public BodyDescriptorBase {
 
   static inline int SizeOf(Map map, HeapObject obj) {
     return BytecodeArray::SizeFor(
-        BytecodeArray::cast(obj).synchronized_length());
+        BytecodeArray::cast(obj).length(kAcquireLoad));
   }
 };
 
@@ -464,7 +464,7 @@ class BigInt::BodyDescriptor final : public BodyDescriptorBase {
                                  ObjectVisitor* v) {}
 
   static inline int SizeOf(Map map, HeapObject obj) {
-    return BigInt::SizeFor(BigInt::cast(obj).synchronized_length());
+    return BigInt::SizeFor(BigInt::cast(obj).length(kAcquireLoad));
   }
 };
 
@@ -478,7 +478,7 @@ class FixedDoubleArray::BodyDescriptor final : public BodyDescriptorBase {
 
   static inline int SizeOf(Map map, HeapObject obj) {
     return FixedDoubleArray::SizeFor(
-        FixedDoubleArray::cast(obj).synchronized_length());
+        FixedDoubleArray::cast(obj).length(kAcquireLoad));
   }
 };
 
@@ -609,6 +609,24 @@ class WasmJSFunctionData::BodyDescriptor final : public BodyDescriptorBase {
 
 class WasmExportedFunctionData::BodyDescriptor final
     : public BodyDescriptorBase {
+ public:
+  static bool IsValidSlot(Map map, HeapObject obj, int offset) {
+    UNREACHABLE();
+  }
+
+  template <typename ObjectVisitor>
+  static inline void IterateBody(Map map, HeapObject obj, int object_size,
+                                 ObjectVisitor* v) {
+    Foreign::BodyDescriptor::IterateBody<ObjectVisitor>(map, obj, object_size,
+                                                        v);
+    IteratePointers(obj, WasmFunctionData::kStartOfStrongFieldsOffset,
+                    kEndOfStrongFieldsOffset, v);
+  }
+
+  static inline int SizeOf(Map map, HeapObject object) { return kSize; }
+};
+
+class WasmCapiFunctionData::BodyDescriptor final : public BodyDescriptorBase {
  public:
   static bool IsValidSlot(Map map, HeapObject obj, int offset) {
     UNREACHABLE();
@@ -988,6 +1006,9 @@ ReturnType BodyDescriptorApply(InstanceType type, T1 p1, T2 p2, T3 p3, T4 p4) {
 #if V8_ENABLE_WEBASSEMBLY
     case WASM_ARRAY_TYPE:
       return Op::template apply<WasmArray::BodyDescriptor>(p1, p2, p3, p4);
+    case WASM_CAPI_FUNCTION_DATA_TYPE:
+      return Op::template apply<WasmCapiFunctionData::BodyDescriptor>(p1, p2,
+                                                                      p3, p4);
     case WASM_EXPORTED_FUNCTION_DATA_TYPE:
       return Op::template apply<WasmExportedFunctionData::BodyDescriptor>(
           p1, p2, p3, p4);
@@ -1146,10 +1167,6 @@ ReturnType BodyDescriptorApply(InstanceType type, T1 p1, T2 p2, T3 p3, T4 p4) {
                                                                  p4);
       }
 #if V8_ENABLE_WEBASSEMBLY
-      if (type == WASM_CAPI_FUNCTION_DATA_TYPE) {
-        return Op::template apply<WasmCapiFunctionData::BodyDescriptor>(p1, p2,
-                                                                        p3, p4);
-      }
       if (type == WASM_INDIRECT_FUNCTION_TABLE_TYPE) {
         return Op::template apply<WasmIndirectFunctionTable::BodyDescriptor>(
             p1, p2, p3, p4);

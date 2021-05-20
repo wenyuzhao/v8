@@ -73,12 +73,6 @@ enum class RefSerializationKind {
   kNeverSerialized,
   // Can be serialized on demand from the background thread.
   kBackgroundSerialized,
-  // Behave like serialized classes, but allow lazy serialization from
-  // background threads where this is safe (e.g. for objects that are immutable
-  // and fully initialized once visible). Pass
-  // ObjectRef::BackgroundSerialization::kAllowed to the ObjectRef constructor
-  // for objects where serialization from the background thread is safe.
-  kPossiblyBackgroundSerialized,
   kSerialized,
 };
 
@@ -123,7 +117,7 @@ enum class RefSerializationKind {
   V(FeedbackVector, RefSerializationKind::kNeverSerialized)               \
   V(FixedArrayBase, RefSerializationKind::kBackgroundSerialized)          \
   V(FunctionTemplateInfo, RefSerializationKind::kNeverSerialized)         \
-  V(HeapNumber, RefSerializationKind::kBackgroundSerialized)              \
+  V(HeapNumber, RefSerializationKind::kNeverSerialized)                   \
   V(JSReceiver, RefSerializationKind::kBackgroundSerialized)              \
   V(Map, RefSerializationKind::kBackgroundSerialized)                     \
   V(Name, RefSerializationKind::kNeverSerialized)                         \
@@ -166,14 +160,7 @@ struct ref_traits<Object> {
 
 class V8_EXPORT_PRIVATE ObjectRef {
  public:
-  enum class BackgroundSerialization {
-    kDisallowed,
-    kAllowed,
-  };
-
   ObjectRef(JSHeapBroker* broker, Handle<Object> object,
-            BackgroundSerialization background_serialization =
-                BackgroundSerialization::kDisallowed,
             bool check_type = true);
   ObjectRef(JSHeapBroker* broker, ObjectData* data, bool check_type = true)
       : data_(data), broker_(broker) {
@@ -429,6 +416,11 @@ class RegExpBoilerplateDescriptionRef : public HeapObjectRef {
   int flags() const;
 };
 
+// HeapNumberRef is only created for immutable HeapNumbers. Mutable
+// HeapNumbers (those owned by in-object or backing store fields with
+// representation type Double are not exposed to the compiler through
+// HeapNumberRef. Instead, we read their value, and protect that read
+// with a field-constness Dependency.
 class HeapNumberRef : public HeapObjectRef {
  public:
   DEFINE_REF_CONSTRUCTOR(HeapNumber, HeapObjectRef)
@@ -746,8 +738,8 @@ class FunctionTemplateInfoRef : public HeapObjectRef {
 
   void SerializeCallCode();
   base::Optional<CallHandlerInfoRef> call_code() const;
-  Address c_function() const;
-  const CFunctionInfo* c_signature() const;
+  ZoneVector<Address> c_functions() const;
+  ZoneVector<const CFunctionInfo*> c_signatures() const;
 
   HolderLookupResult LookupHolderOfExpectedType(
       MapRef receiver_map,

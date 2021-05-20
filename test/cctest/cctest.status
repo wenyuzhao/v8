@@ -118,7 +118,6 @@
   'test-local-handles/DereferenceLocalHandleFailsWhenDisallowed': [SKIP, ['mode == debug', FAIL]],
   'test-persistent-handles/DereferencePersistentHandleFailsWhenDisallowed': [SKIP, ['mode == debug', FAIL]],
 
-############################################################################
   # Slow tests.
   'test-debug/CallFunctionInDebugger': [PASS, ['mode == debug', SLOW]],
   'test-heap-profiler/ManyLocalsInSharedContext': [PASS, SLOW],
@@ -126,6 +125,9 @@
   'test-strings/StringOOM*': [PASS, ['mode == debug', SKIP]],
   'test-serialize/CustomSnapshotDataBlobImmortalImmovableRoots': [PASS, ['mode == debug', SKIP]],
   'test-parsing/ObjectRestNegativeTestSlow': [PASS, ['mode == debug', SKIP]],
+
+  # pthread_rwlock_t combined with signals is broken on Mac (https://crbug.com/v8/11399).
+  'signals-and-mutexes/SignalsPlusSharedMutexes': [PASS, ['system == macos', SKIP]],
 }],  # ALWAYS
 
 ##############################################################################
@@ -402,13 +404,6 @@
   'test-run-wasm-64/*': [SKIP],
   'test-run-wasm/*': [SKIP],
 
-  # https://github.com/riscv/v8/issues/490
-  'test-api/CallICFastApi_TrivialSignatureWithProfiler': [SKIP],
-  'test-api/FunctionTemplateWithProfiler': [SKIP],
-  'test-api/InterceptorCallICFastApi_TrivialSignatureWithProfiler': [SKIP],
-  'test-api/LoadICFastApi_DirectCall_GCMoveStubWithProfiler': [SKIP],
-  'test-api/SimpleCallbackWithProfiler': [SKIP],
-  'test-cpu-profiler/*': [SKIP],
 
 }],  # 'arch == riscv64'
 
@@ -735,6 +730,7 @@
   'test-heap/LeakNativeContextVia*': [PASS, FAIL],
   'test-heap/NewSpaceObjectsInOptimizedCode': [PASS, FAIL],
   'test-heap/ObjectsInEagerlyDeoptimizedCodeAreWeak': [PASS, FAIL],
+  'test-heap/ObjectsInOptimizedCodeAreWeak': [PASS, FAIL],
 }], # variant == stress_concurrent_inlining
 
 ################################################################################

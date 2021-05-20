@@ -1374,12 +1374,8 @@ bool FunctionTemplateInfo::IsLeafTemplateForApiObject(Object object) const {
 FunctionTemplateRareData FunctionTemplateInfo::AllocateFunctionTemplateRareData(
     Isolate* isolate, Handle<FunctionTemplateInfo> function_template_info) {
   DCHECK(function_template_info->rare_data(kAcquireLoad).IsUndefined(isolate));
-  Handle<Struct> struct_obj = isolate->factory()->NewStruct(
-      FUNCTION_TEMPLATE_RARE_DATA_TYPE, AllocationType::kOld);
   Handle<FunctionTemplateRareData> rare_data =
-      i::Handle<FunctionTemplateRareData>::cast(struct_obj);
-  rare_data->set_c_function(Smi(0));
-  rare_data->set_c_signature(Smi(0));
+      isolate->factory()->NewFunctionTemplateRareData();
   function_template_info->set_rare_data(*rare_data, kReleaseStore);
   return *rare_data;
 }
@@ -2262,7 +2258,7 @@ int HeapObject::SizeFromMap(Map map) const {
   if (base::IsInRange(instance_type, FIRST_FIXED_ARRAY_TYPE,
                       LAST_FIXED_ARRAY_TYPE)) {
     return FixedArray::SizeFor(
-        FixedArray::unchecked_cast(*this).synchronized_length());
+        FixedArray::unchecked_cast(*this).length(kAcquireLoad));
   }
   if (base::IsInRange(instance_type, FIRST_CONTEXT_TYPE, LAST_CONTEXT_TYPE)) {
     if (instance_type == NATIVE_CONTEXT_TYPE) return NativeContext::kSize;
@@ -2273,15 +2269,15 @@ int HeapObject::SizeFromMap(Map map) const {
     // Strings may get concurrently truncated, hence we have to access its
     // length synchronized.
     return SeqOneByteString::SizeFor(
-        SeqOneByteString::unchecked_cast(*this).synchronized_length());
+        SeqOneByteString::unchecked_cast(*this).length(kAcquireLoad));
   }
   if (instance_type == BYTE_ARRAY_TYPE) {
     return ByteArray::SizeFor(
-        ByteArray::unchecked_cast(*this).synchronized_length());
+        ByteArray::unchecked_cast(*this).length(kAcquireLoad));
   }
   if (instance_type == BYTECODE_ARRAY_TYPE) {
     return BytecodeArray::SizeFor(
-        BytecodeArray::unchecked_cast(*this).synchronized_length());
+        BytecodeArray::unchecked_cast(*this).length(kAcquireLoad));
   }
   if (instance_type == FREE_SPACE_TYPE) {
     return FreeSpace::unchecked_cast(*this).size(kRelaxedLoad);
@@ -2291,11 +2287,11 @@ int HeapObject::SizeFromMap(Map map) const {
     // Strings may get concurrently truncated, hence we have to access its
     // length synchronized.
     return SeqTwoByteString::SizeFor(
-        SeqTwoByteString::unchecked_cast(*this).synchronized_length());
+        SeqTwoByteString::unchecked_cast(*this).length(kAcquireLoad));
   }
   if (instance_type == FIXED_DOUBLE_ARRAY_TYPE) {
     return FixedDoubleArray::SizeFor(
-        FixedDoubleArray::unchecked_cast(*this).synchronized_length());
+        FixedDoubleArray::unchecked_cast(*this).length(kAcquireLoad));
   }
   if (instance_type == FEEDBACK_METADATA_TYPE) {
     return FeedbackMetadata::SizeFor(
@@ -2309,7 +2305,7 @@ int HeapObject::SizeFromMap(Map map) const {
   if (base::IsInRange(instance_type, FIRST_WEAK_FIXED_ARRAY_TYPE,
                       LAST_WEAK_FIXED_ARRAY_TYPE)) {
     return WeakFixedArray::SizeFor(
-        WeakFixedArray::unchecked_cast(*this).synchronized_length());
+        WeakFixedArray::unchecked_cast(*this).length(kAcquireLoad));
   }
   if (instance_type == WEAK_ARRAY_LIST_TYPE) {
     return WeakArrayList::SizeForCapacity(
@@ -2333,7 +2329,7 @@ int HeapObject::SizeFromMap(Map map) const {
   }
   if (instance_type == PROPERTY_ARRAY_TYPE) {
     return PropertyArray::SizeFor(
-        PropertyArray::cast(*this).synchronized_length());
+        PropertyArray::cast(*this).length(kAcquireLoad));
   }
   if (instance_type == FEEDBACK_VECTOR_TYPE) {
     return FeedbackVector::SizeFor(
@@ -5581,8 +5577,9 @@ Handle<Object> JSPromise::TriggerPromiseReactions(Isolate* isolate,
         static_cast<int>(
             PromiseReactionJobTask::kSizeOfAllPromiseReactionJobTasks));
     if (type == PromiseReaction::kFulfill) {
-      task->synchronized_set_map(
-          ReadOnlyRoots(isolate).promise_fulfill_reaction_job_task_map());
+      task->set_map(
+          ReadOnlyRoots(isolate).promise_fulfill_reaction_job_task_map(),
+          kReleaseStore);
       Handle<PromiseFulfillReactionJobTask>::cast(task)->set_argument(
           *argument);
       Handle<PromiseFulfillReactionJobTask>::cast(task)->set_context(
@@ -5601,8 +5598,9 @@ Handle<Object> JSPromise::TriggerPromiseReactions(Isolate* isolate,
                                kContinuationPreservedEmbedderDataOffset));
     } else {
       DisallowGarbageCollection no_gc;
-      task->synchronized_set_map(
-          ReadOnlyRoots(isolate).promise_reject_reaction_job_task_map());
+      task->set_map(
+          ReadOnlyRoots(isolate).promise_reject_reaction_job_task_map(),
+          kReleaseStore);
       Handle<PromiseRejectReactionJobTask>::cast(task)->set_argument(*argument);
       Handle<PromiseRejectReactionJobTask>::cast(task)->set_context(
           *handler_context);
@@ -6657,6 +6655,25 @@ base::Optional<Name> FunctionTemplateInfo::TryGetCachedPropertyName(
   Object maybe_name = FunctionTemplateInfo::cast(getter).cached_property_name();
   if (maybe_name.IsTheHole(isolate)) return {};
   return Name::cast(maybe_name);
+}
+
+int FunctionTemplateInfo::GetCFunctionsCount() const {
+  i::DisallowHeapAllocation no_gc;
+  return FixedArray::cast(GetCFunctionOverloads()).length() /
+         kFunctionOverloadEntrySize;
+}
+
+Address FunctionTemplateInfo::GetCFunction(int index) const {
+  i::DisallowHeapAllocation no_gc;
+  return v8::ToCData<Address>(FixedArray::cast(GetCFunctionOverloads())
+                                  .get(index * kFunctionOverloadEntrySize));
+}
+
+const CFunctionInfo* FunctionTemplateInfo::GetCSignature(int index) const {
+  i::DisallowHeapAllocation no_gc;
+  return v8::ToCData<CFunctionInfo*>(
+      FixedArray::cast(GetCFunctionOverloads())
+          .get(index * kFunctionOverloadEntrySize + 1));
 }
 
 Address Smi::LexicographicCompare(Isolate* isolate, Smi x, Smi y) {

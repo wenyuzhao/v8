@@ -11,6 +11,7 @@
 #include "src/base/platform/wrappers.h"
 #include "src/handles/handles.h"
 #include "src/objects/contexts.h"
+#include "src/objects/js-regexp-inl.h"
 #include "src/objects/script.h"
 
 namespace v8 {
@@ -65,6 +66,9 @@ bool WebSnapshotSerializer::TakeSnapshot(
   }
   v8::Isolate* v8_isolate = reinterpret_cast<v8::Isolate*>(isolate_);
   for (const std::string& export_name : exports) {
+    if (export_name.length() == 0) {
+      continue;
+    }
     v8::ScriptCompiler::Source source(
         v8::String::NewFromUtf8(v8_isolate, export_name.c_str(),
                                 NewStringType::kNormal,
@@ -429,6 +433,23 @@ void WebSnapshotSerializer::WriteValue(Handle<Object> object,
       serializer.WriteUint32(ValueType::OBJECT_ID);
       serializer.WriteUint32(id);
       break;
+    case JS_REG_EXP_TYPE: {
+      Handle<JSRegExp> regexp = Handle<JSRegExp>::cast(object);
+      if (regexp->map() != isolate_->regexp_function()->initial_map()) {
+        Throw("Web snapshot: Unsupported RegExp map");
+        return;
+      }
+      uint32_t pattern_id, flags_id;
+      Handle<String> pattern = handle(regexp->Pattern(), isolate_);
+      Handle<String> flags_string =
+          JSRegExp::StringFromFlags(isolate_, regexp->GetFlags());
+      SerializeString(pattern, pattern_id);
+      SerializeString(flags_string, flags_id);
+      serializer.WriteUint32(ValueType::REGEXP);
+      serializer.WriteUint32(pattern_id);
+      serializer.WriteUint32(flags_id);
+      break;
+    }
     default:
       if (object->IsString()) {
         SerializeString(Handle<String>::cast(object), id);
@@ -461,13 +482,13 @@ void WebSnapshotDeserializer::Throw(const char* message) {
 
 bool WebSnapshotDeserializer::UseWebSnapshot(const uint8_t* data,
                                              size_t buffer_size) {
+  RCS_SCOPE(isolate_, RuntimeCallCounterId::kWebSnapshotDeserialize);
   if (deserialized_) {
     Throw("Web snapshot: Can't reuse WebSnapshotDeserializer");
     return false;
   }
   deserialized_ = true;
 
-  // TODO(v8:11525): Add RuntimeCallStats.
   base::ElapsedTimer timer;
   if (FLAG_trace_web_snapshot) {
     timer.Start();
@@ -496,6 +517,7 @@ bool WebSnapshotDeserializer::UseWebSnapshot(const uint8_t* data,
 }
 
 void WebSnapshotDeserializer::DeserializeStrings() {
+  RCS_SCOPE(isolate_, RuntimeCallCounterId::kWebSnapshotDeserialize_Strings);
   if (!deserializer_->ReadUint32(&string_count_) ||
       string_count_ > kMaxItemCount) {
     Throw("Web snapshot: Malformed string table");
@@ -532,6 +554,7 @@ Handle<String> WebSnapshotDeserializer::ReadString(bool internalize) {
 }
 
 void WebSnapshotDeserializer::DeserializeMaps() {
+  RCS_SCOPE(isolate_, RuntimeCallCounterId::kWebSnapshotDeserialize_Maps);
   if (!deserializer_->ReadUint32(&map_count_) || map_count_ > kMaxItemCount) {
     Throw("Web snapshot: Malformed shape table");
     return;
@@ -573,6 +596,7 @@ void WebSnapshotDeserializer::DeserializeMaps() {
 }
 
 void WebSnapshotDeserializer::DeserializeContexts() {
+  RCS_SCOPE(isolate_, RuntimeCallCounterId::kWebSnapshotDeserialize_Contexts);
   if (!deserializer_->ReadUint32(&context_count_) ||
       context_count_ > kMaxItemCount) {
     Throw("Web snapshot: Malformed context table");
@@ -684,6 +708,7 @@ Handle<ScopeInfo> WebSnapshotDeserializer::CreateScopeInfo(
 }
 
 void WebSnapshotDeserializer::DeserializeFunctions() {
+  RCS_SCOPE(isolate_, RuntimeCallCounterId::kWebSnapshotDeserialize_Functions);
   if (!deserializer_->ReadUint32(&function_count_) ||
       function_count_ > kMaxItemCount) {
     Throw("Web snapshot: Malformed function table");
@@ -775,6 +800,7 @@ void WebSnapshotDeserializer::DeserializeFunctions() {
 }
 
 void WebSnapshotDeserializer::DeserializeObjects() {
+  RCS_SCOPE(isolate_, RuntimeCallCounterId::kWebSnapshotDeserialize_Objects);
   if (!deserializer_->ReadUint32(&object_count_) ||
       object_count_ > kMaxItemCount) {
     Throw("Web snapshot: Malformed objects table");
@@ -820,6 +846,7 @@ void WebSnapshotDeserializer::DeserializeObjects() {
 }
 
 void WebSnapshotDeserializer::DeserializeExports() {
+  RCS_SCOPE(isolate_, RuntimeCallCounterId::kWebSnapshotDeserialize_Exports);
   uint32_t count;
   if (!deserializer_->ReadUint32(&count) || count > kMaxItemCount) {
     Throw("Web snapshot: Malformed export table");
@@ -928,6 +955,25 @@ void WebSnapshotDeserializer::ReadValue(Handle<Object>& value,
       value = handle(functions_->get(function_id), isolate_);
       representation = Representation::Tagged();
       break;
+    case ValueType::REGEXP: {
+      Handle<String> pattern = ReadString(false);
+      Handle<String> flags_string = ReadString(false);
+      bool success = false;
+      JSRegExp::Flags flags =
+          JSRegExp::FlagsFromString(isolate_, flags_string, &success);
+      if (!success) {
+        Throw("Web snapshot: Malformed flags in regular expression");
+        return;
+      }
+      MaybeHandle<JSRegExp> maybe_regexp =
+          JSRegExp::New(isolate_, pattern, flags);
+      if (!maybe_regexp.ToHandle(&value)) {
+        Throw("Web snapshot: Malformed RegExp");
+        return;
+      }
+      representation = Representation::Tagged();
+      break;
+    }
     default:
       // TODO(v8:11525): Handle other value types.
       Throw("Web snapshot: Unsupported value type");

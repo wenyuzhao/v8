@@ -1942,6 +1942,13 @@ void Shell::AsyncHooksTriggerAsyncId(
 
 void Shell::SetPromiseHooks(const v8::FunctionCallbackInfo<v8::Value>& args) {
   Isolate* isolate = args.GetIsolate();
+  if (i::FLAG_correctness_fuzzer_suppressions) {
+    // Make sure we have no pending promises if correctness fuzzing is active.
+    // Due to fast-paths we might have not created all intermediate promises
+    // that aren't spec visible. However, the promise hook might expose them
+    // and cause different output.
+    isolate->PerformMicrotaskCheckpoint();
+  }
   Local<Context> context = isolate->GetCurrentContext();
   HandleScope handle_scope(isolate);
 
@@ -2779,9 +2786,13 @@ Local<ObjectTemplate> Shell::CreateD8Template(Isolate* isolate) {
   }
   {
     Local<ObjectTemplate> test_template = ObjectTemplate::New(isolate);
-    test_template->Set(
-        isolate, "verifySourcePositions",
-        FunctionTemplate::New(isolate, TestVerifySourcePositions));
+    // For different runs of correctness fuzzing the bytecode of a function
+    // might get flushed, resulting in spurious errors.
+    if (!i::FLAG_correctness_fuzzer_suppressions) {
+      test_template->Set(
+          isolate, "verifySourcePositions",
+          FunctionTemplate::New(isolate, TestVerifySourcePositions));
+    }
     // Correctness fuzzing will attempt to compare results of tests with and
     // without turbo_fast_api_calls, so we don't expose the fast_c_api
     // constructor when --correctness_fuzzer_suppressions is on.

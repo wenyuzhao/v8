@@ -17,6 +17,7 @@
 namespace cppgc {
 namespace internal {
 
+class HeapBase;
 class PersistentRegion;
 class CrossThreadPersistentRegion;
 
@@ -76,12 +77,12 @@ class V8_EXPORT EnabledCheckingPolicy {
     }
   };
 
-  void* state_ = nullptr;
+  const HeapBase* heap_ = nullptr;
 };
 
 class DisabledCheckingPolicy {
  protected:
-  void CheckPointer(const void* raw) {}
+  void CheckPointer(const void*) {}
 };
 
 #if V8_ENABLE_CHECKS
@@ -91,6 +92,10 @@ using DefaultPersistentCheckingPolicy = EnabledCheckingPolicy;
 using DefaultMemberCheckingPolicy = DisabledCheckingPolicy;
 using DefaultPersistentCheckingPolicy = DisabledCheckingPolicy;
 #endif
+// For CT(W)P neither marking information (for value), nor objectstart bitmap
+// (for slot) are guaranteed to be present because there's no synchonization
+// between heaps after marking.
+using DefaultCrossThreadPersistentCheckingPolicy = DisabledCheckingPolicy;
 
 class KeepLocationPolicy {
  public:
@@ -153,7 +158,7 @@ struct WeakCrossThreadPersistentPolicy {
 // Forward declarations setting up the default policies.
 template <typename T, typename WeaknessPolicy,
           typename LocationPolicy = DefaultLocationPolicy,
-          typename CheckingPolicy = DisabledCheckingPolicy>
+          typename CheckingPolicy = DefaultCrossThreadPersistentCheckingPolicy>
 class BasicCrossThreadPersistent;
 template <typename T, typename WeaknessPolicy,
           typename LocationPolicy = DefaultLocationPolicy,

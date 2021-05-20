@@ -328,10 +328,6 @@ void CppHeap::TracePrologue(TraceFlags flags) {
 }
 
 bool CppHeap::AdvanceTracing(double deadline_in_ms) {
-  // TODO(chromium:1154636): The kAtomicMark/kIncrementalMark scope below is
-  // needed for recording all cpp marking time. Note that it can lead to double
-  // accounting since this scope is also accounted under an outer v8 scope.
-  // Make sure to only account this scope once.
   cppgc::internal::StatsCollector::EnabledScope stats_scope(
       stats_collector(),
       in_atomic_pause_ ? cppgc::internal::StatsCollector::kAtomicMark
@@ -382,7 +378,8 @@ void CppHeap::TraceEpilogue(TraceSummary* trace_summary) {
   // TODO(chromium:1056170): replace build flag with dedicated flag.
 #if DEBUG
   UnifiedHeapMarkingVerifier verifier(*this);
-  verifier.Run(stack_state_of_prev_gc(), stack_end_of_current_gc());
+  verifier.Run(stack_state_of_prev_gc(), stack_end_of_current_gc(),
+               stats_collector()->marked_bytes());
 #endif
 
   {
@@ -526,14 +523,18 @@ class CollectCustomSpaceStatisticsAtLastGCTask final : public v8::Task {
 
   void Run() final {
     cppgc::internal::Sweeper& sweeper = heap_.sweeper();
-    if (sweeper.PerformSweepOnMutatorThread(kStepSizeMs.InSecondsF())) {
+    if (sweeper.PerformSweepOnMutatorThread(
+            heap_.platform()->MonotonicallyIncreasingTime() +
+            kStepSizeMs.InSecondsF())) {
+      // Sweeping is done.
+      DCHECK(!sweeper.IsSweepingInProgress());
+      ReportCustomSpaceStatistics(heap_.raw_heap(), std::move(custom_spaces_),
+                                  std::move(receiver_));
+    } else {
       heap_.platform()->GetForegroundTaskRunner()->PostDelayedTask(
           std::make_unique<CollectCustomSpaceStatisticsAtLastGCTask>(
               heap_, std::move(custom_spaces_), std::move(receiver_)),
           kTaskDelayMs.InSecondsF());
-    } else {
-      ReportCustomSpaceStatistics(heap_.raw_heap(), std::move(custom_spaces_),
-                                  std::move(receiver_));
     }
   }
 

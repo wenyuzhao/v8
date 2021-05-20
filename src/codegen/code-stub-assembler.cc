@@ -4818,7 +4818,11 @@ void CodeStubAssembler::MoveElements(ElementsKind kind,
                                      TNode<IntPtrT> length) {
   Label finished(this);
   Label needs_barrier(this);
-  const bool needs_barrier_check = !IsDoubleElementsKind(kind) && !FLAG_disable_write_barriers;
+#ifdef V8_DISABLE_WRITE_BARRIERS
+  const bool needs_barrier_check = false;
+#else
+  const bool needs_barrier_check = !IsDoubleElementsKind(kind);
+#endif  // V8_DISABLE_WRITE_BARRIERS
 
   DCHECK(IsFastElementsKind(kind));
   CSA_ASSERT(this, IsFixedArrayWithKind(elements, kind));
@@ -4903,7 +4907,11 @@ void CodeStubAssembler::CopyElements(ElementsKind kind,
                                      WriteBarrierMode write_barrier) {
   Label finished(this);
   Label needs_barrier(this);
-  const bool needs_barrier_check = !IsDoubleElementsKind(kind) && !FLAG_disable_write_barriers;
+#ifdef V8_DISABLE_WRITE_BARRIERS
+  const bool needs_barrier_check = false;
+#else
+  const bool needs_barrier_check = !IsDoubleElementsKind(kind);
+#endif  // V8_DISABLE_WRITE_BARRIERS
 
   DCHECK(IsFastElementsKind(kind));
   CSA_ASSERT(this, IsFixedArrayWithKind(dst_elements, kind));
@@ -8963,9 +8971,9 @@ void CodeStubAssembler::ForEachEnumerableOwnProperty(
           {
             Label slow_load(this, Label::kDeferred);
 
-            var_value = CallGetterIfAccessor(var_value.value(), object,
-                                             var_details.value(), context,
-                                             object, &slow_load, kCallJSGetter);
+            var_value = CallGetterIfAccessor(
+                var_value.value(), object, var_details.value(), context, object,
+                next_key, &slow_load, kCallJSGetter);
             Goto(&callback);
 
             BIND(&slow_load);
@@ -9417,8 +9425,8 @@ template void CodeStubAssembler::LoadPropertyFromDictionary(
 // result of the getter call.
 TNode<Object> CodeStubAssembler::CallGetterIfAccessor(
     TNode<Object> value, TNode<HeapObject> holder, TNode<Uint32T> details,
-    TNode<Context> context, TNode<Object> receiver, Label* if_bailout,
-    GetOwnPropertyMode mode) {
+    TNode<Context> context, TNode<Object> receiver, TNode<Object> name,
+    Label* if_bailout, GetOwnPropertyMode mode) {
   TVARIABLE(Object, var_value, value);
   Label done(this), if_accessor_info(this, Label::kDeferred);
 
@@ -9446,13 +9454,16 @@ TNode<Object> CodeStubAssembler::CallGetterIfAccessor(
 
       BIND(&if_callable);
       {
-        // Call the accessor.
+        // Call the accessor. No need to check side-effect mode here, since it
+        // will be checked later in DebugOnFunctionCall.
         var_value = Call(context, getter, receiver);
         Goto(&done);
       }
 
       BIND(&if_function_template_info);
       {
+        Label runtime(this, Label::kDeferred);
+        GotoIf(IsSideEffectFreeDebuggingActive(), &runtime);
         TNode<HeapObject> cached_property_name = LoadObjectField<HeapObject>(
             getter, FunctionTemplateInfo::kCachedPropertyNameOffset);
         GotoIfNot(IsTheHole(cached_property_name), if_bailout);
@@ -9463,6 +9474,13 @@ TNode<Object> CodeStubAssembler::CallGetterIfAccessor(
             Builtins::kCallFunctionTemplate_CheckAccessAndCompatibleReceiver,
             creation_context, getter, IntPtrConstant(0), receiver);
         Goto(&done);
+
+        BIND(&runtime);
+        {
+          var_value = CallRuntime(Runtime::kGetProperty, context, holder, name,
+                                  receiver);
+          Goto(&done);
+        }
       }
     } else {
       Goto(&done);
@@ -9597,7 +9615,7 @@ void CodeStubAssembler::TryGetOwnProperty(
     }
     TNode<Object> value =
         CallGetterIfAccessor(var_value->value(), object, var_details->value(),
-                             context, receiver, if_bailout, mode);
+                             context, receiver, unique_name, if_bailout, mode);
     *var_value = value;
     Goto(if_found_value);
   }
@@ -11157,6 +11175,8 @@ void CodeStubAssembler::TrapAllocationMemento(TNode<JSObject> object,
 
   // Bail out if the object is not in new space.
   TNode<IntPtrT> object_word = BitcastTaggedToWord(object);
+  // TODO(v8:11641): Skip TrapAllocationMemento when allocation-site
+  // tracking is disabled.
   TNode<IntPtrT> object_page = PageFromAddress(object_word);
   {
     TNode<IntPtrT> page_flags =
@@ -11214,7 +11234,7 @@ void CodeStubAssembler::TrapAllocationMemento(TNode<JSObject> object,
 }
 
 TNode<IntPtrT> CodeStubAssembler::PageFromAddress(TNode<IntPtrT> address) {
-  CSA_ASSERT(this, BoolConstant(!FLAG_enable_third_party_heap));
+  if (FLAG_enable_third_party_heap) AbortCSAAssert(StringConstant("Unreachable"));
   return WordAnd(address, IntPtrConstant(~kPageAlignmentMask));
 }
 
@@ -14055,6 +14075,17 @@ TNode<BoolT> CodeStubAssembler::IsDebugActive() {
   return Word32NotEqual(is_debug_active, Int32Constant(0));
 }
 
+TNode<BoolT> CodeStubAssembler::IsSideEffectFreeDebuggingActive() {
+  TNode<Uint8T> debug_execution_mode = Load<Uint8T>(ExternalConstant(
+      ExternalReference::debug_execution_mode_address(isolate())));
+
+  TNode<BoolT> is_active =
+      Word32Equal(debug_execution_mode,
+                  Int32Constant(DebugInfo::ExecutionMode::kSideEffects));
+
+  return is_active;
+}
+
 TNode<BoolT> CodeStubAssembler::HasAsyncEventDelegate() {
   const TNode<RawPtrT> async_event_delegate = Load<RawPtrT>(ExternalConstant(
       ExternalReference::async_event_delegate_address(isolate())));
@@ -14093,18 +14124,8 @@ TNode<BoolT> CodeStubAssembler::
   return IsSetWord32(flags, mask);
 }
 
-TNode<BoolT> CodeStubAssembler::
-    IsAnyPromiseHookEnabledOrDebugIsActiveOrHasAsyncEventDelegate(
-        TNode<Uint32T> flags) {
-  return Word32NotEqual(flags, Int32Constant(0));
-}
-
 TNode<BoolT> CodeStubAssembler::NeedsAnyPromiseHooks(TNode<Uint32T> flags) {
-  uint32_t mask = Isolate::PromiseHookFields::HasContextPromiseHook::kMask |
-                  Isolate::PromiseHookFields::HasIsolatePromiseHook::kMask |
-                  Isolate::PromiseHookFields::HasAsyncEventDelegate::kMask |
-                  Isolate::PromiseHookFields::IsDebugActive::kMask;
-  return IsSetWord32(flags, mask);
+  return Word32NotEqual(flags, Int32Constant(0));
 }
 
 TNode<Code> CodeStubAssembler::LoadBuiltin(TNode<Smi> builtin_id) {
@@ -14155,22 +14176,20 @@ TNode<Code> CodeStubAssembler::GetSharedFunctionInfoCode(
     UNCOMPILED_DATA_WITH_PREPARSE_DATA_TYPE,
     FUNCTION_TEMPLATE_INFO_TYPE,
 #if V8_ENABLE_WEBASSEMBLY
-    WASM_EXPORTED_FUNCTION_DATA_TYPE,
-    ASM_WASM_DATA_TYPE,
-    WASM_JS_FUNCTION_DATA_TYPE,
     WASM_CAPI_FUNCTION_DATA_TYPE,
+    WASM_EXPORTED_FUNCTION_DATA_TYPE,
+    WASM_JS_FUNCTION_DATA_TYPE,
+    ASM_WASM_DATA_TYPE,
 #endif  // V8_ENABLE_WEBASSEMBLY
   };
   Label check_is_bytecode_array(this);
   Label check_is_baseline_data(this);
-  Label check_is_exported_function_data(this);
   Label check_is_asm_wasm_data(this);
   Label check_is_uncompiled_data_without_preparse_data(this);
   Label check_is_uncompiled_data_with_preparse_data(this);
   Label check_is_function_template_info(this);
   Label check_is_interpreter_data(this);
-  Label check_is_wasm_js_function_data(this);
-  Label check_is_wasm_capi_function_data(this);
+  Label check_is_wasm_function_data(this);
   Label* case_labels[] = {
     &check_is_bytecode_array,
     &check_is_baseline_data,
@@ -14178,10 +14197,10 @@ TNode<Code> CodeStubAssembler::GetSharedFunctionInfoCode(
     &check_is_uncompiled_data_with_preparse_data,
     &check_is_function_template_info,
 #if V8_ENABLE_WEBASSEMBLY
-    &check_is_exported_function_data,
+    &check_is_wasm_function_data,
+    &check_is_wasm_function_data,
+    &check_is_wasm_function_data,
     &check_is_asm_wasm_data,
-    &check_is_wasm_js_function_data,
-    &check_is_wasm_capi_function_data
 #endif  // V8_ENABLE_WEBASSEMBLY
   };
   STATIC_ASSERT(arraysize(case_values) == arraysize(case_labels));
@@ -14224,8 +14243,8 @@ TNode<Code> CodeStubAssembler::GetSharedFunctionInfoCode(
   Goto(&done);
 
 #if V8_ENABLE_WEBASSEMBLY
-  // IsWasmExportedFunctionData: Use the wrapper code
-  BIND(&check_is_exported_function_data);
+  // IsWasmFunctionData: Use the wrapper code
+  BIND(&check_is_wasm_function_data);
   sfi_code = CAST(LoadObjectField(
       CAST(sfi_data), WasmExportedFunctionData::kWrapperCodeOffset));
   Goto(&done);
@@ -14233,18 +14252,6 @@ TNode<Code> CodeStubAssembler::GetSharedFunctionInfoCode(
   // IsAsmWasmData: Instantiate using AsmWasmData
   BIND(&check_is_asm_wasm_data);
   sfi_code = HeapConstant(BUILTIN_CODE(isolate(), InstantiateAsmJs));
-  Goto(&done);
-
-  // IsWasmJSFunctionData: Use the wrapper code.
-  BIND(&check_is_wasm_js_function_data);
-  sfi_code = CAST(
-      LoadObjectField(CAST(sfi_data), WasmJSFunctionData::kWrapperCodeOffset));
-  Goto(&done);
-
-  // IsWasmCapiFunctionData: Use the wrapper code.
-  BIND(&check_is_wasm_capi_function_data);
-  sfi_code = CAST(LoadObjectField(CAST(sfi_data),
-                                  WasmCapiFunctionData::kWrapperCodeOffset));
   Goto(&done);
 #endif  // V8_ENABLE_WEBASSEMBLY
 

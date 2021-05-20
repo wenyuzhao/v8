@@ -894,6 +894,8 @@ class Heap {
 
   const base::AddressRegion& code_region();
 
+  CodeRange* code_range() { return code_range_.get(); }
+
   LocalHeap* main_thread_local_heap() { return main_thread_local_heap_; }
 
   // ===========================================================================
@@ -2705,7 +2707,7 @@ class HeapObjectAllocationTracker {
 
 template <typename T>
 T ForwardingAddress(T heap_obj) {
-  MapWord map_word = heap_obj.map_word();
+  MapWord map_word = heap_obj.map_word(kRelaxedLoad);
 
   if (map_word.IsForwardingAddress()) {
     return T::cast(map_word.ToForwardingAddress());

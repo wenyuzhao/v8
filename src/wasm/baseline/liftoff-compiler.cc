@@ -3146,6 +3146,32 @@ class LiftoffCompiler {
     __ PushRegister(kRef, ref);
   }
 
+  void BrOnNonNull(FullDecoder* decoder, const Value& ref_object,
+                   uint32_t depth) {
+    // Before branching, materialize all constants. This avoids repeatedly
+    // materializing them for each conditional branch.
+    if (depth != decoder->control_depth() - 1) {
+      __ MaterializeMergedConstants(
+          decoder->control_at(depth)->br_merge()->arity);
+    }
+
+    Label cont_false;
+    LiftoffRegList pinned;
+    LiftoffRegister ref = pinned.set(__ PopToRegister(pinned));
+    // Put the reference back onto the stack for the branch.
+    __ PushRegister(kRef, ref);
+
+    Register null = __ GetUnusedRegister(kGpReg, pinned).gp();
+    LoadNullValue(null, pinned);
+    __ emit_cond_jump(kEqual, &cont_false, ref_object.type.kind(), ref.gp(),
+                      null);
+
+    BrOrRet(decoder, depth, 0);
+    // Drop the reference if we are not branching.
+    __ DropValues(1);
+    __ bind(&cont_false);
+  }
+
   template <ValueKind src_kind, ValueKind result_kind, typename EmitFn>
   void EmitTerOp(EmitFn fn) {
     static constexpr RegClass src_rc = reg_class_for(src_kind);
@@ -5849,16 +5875,12 @@ class LiftoffCompiler {
     // no instance types between array and struct types that might possibly
     // occur (i.e. internal types are OK, types of Wasm objects are not).
     // At the time of this writing:
-    // WASM_ARRAY_TYPE = 180
-    // WASM_CAPI_FUNCTION_DATA_TYPE = 181
-    // WASM_STRUCT_TYPE = 182
+    // WASM_ARRAY_TYPE = 184
+    // WASM_STRUCT_TYPE = 185
     // The specific values don't matter; the relative order does.
     static_assert(
-        WASM_STRUCT_TYPE == static_cast<InstanceType>(WASM_ARRAY_TYPE + 2),
+        WASM_STRUCT_TYPE == static_cast<InstanceType>(WASM_ARRAY_TYPE + 1),
         "Relying on specific InstanceType values here");
-    static_assert(WASM_CAPI_FUNCTION_DATA_TYPE ==
-                      static_cast<InstanceType>(WASM_ARRAY_TYPE + 1),
-                  "Relying on specific InstanceType values here");
     __ emit_i32_subi(tmp.gp(), tmp.gp(), WASM_ARRAY_TYPE);
     __ emit_i32_cond_jumpi(kUnsignedGreaterThan, not_data_ref, tmp.gp(),
                            WASM_STRUCT_TYPE - WASM_ARRAY_TYPE);

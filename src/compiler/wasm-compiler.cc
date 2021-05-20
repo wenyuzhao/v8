@@ -427,16 +427,12 @@ class WasmGraphAssembler : public GraphAssembler {
     // no instance types between array and struct types that might possibly
     // occur (i.e. internal types are OK, types of Wasm objects are not).
     // At the time of this writing:
-    // WASM_ARRAY_TYPE = 180
-    // WASM_CAPI_FUNCTION_DATA_TYPE = 181
-    // WASM_STRUCT_TYPE = 182
+    // WASM_ARRAY_TYPE = 184
+    // WASM_STRUCT_TYPE = 185
     // The specific values don't matter; the relative order does.
     static_assert(
-        WASM_STRUCT_TYPE == static_cast<InstanceType>(WASM_ARRAY_TYPE + 2),
+        WASM_STRUCT_TYPE == static_cast<InstanceType>(WASM_ARRAY_TYPE + 1),
         "Relying on specific InstanceType values here");
-    static_assert(WASM_CAPI_FUNCTION_DATA_TYPE ==
-                      static_cast<InstanceType>(WASM_ARRAY_TYPE + 1),
-                  "Relying on specific InstanceType values here");
     Node* comparison_value =
         Int32Sub(instance_type, Int32Constant(WASM_ARRAY_TYPE));
     return Uint32LessThanOrEqual(
@@ -1310,6 +1306,11 @@ Node* WasmGraphBuilder::BranchNoHint(Node* cond, Node** true_node,
 Node* WasmGraphBuilder::BranchExpectFalse(Node* cond, Node** true_node,
                                           Node** false_node) {
   return gasm_->Branch(cond, true_node, false_node, BranchHint::kFalse);
+}
+
+Node* WasmGraphBuilder::BranchExpectTrue(Node* cond, Node** true_node,
+                                         Node** false_node) {
+  return gasm_->Branch(cond, true_node, false_node, BranchHint::kTrue);
 }
 
 Node* WasmGraphBuilder::Select(Node *cond, Node* true_node,
@@ -6938,7 +6939,7 @@ class WasmWrapperGraphBuilder : public WasmGraphBuilder {
     return true;
   }
 
-  void BuildCapiCallWrapper(Address address) {
+  void BuildCapiCallWrapper() {
     // Store arguments on our stack, then align the stack for calling to C.
     int param_bytes = 0;
     for (wasm::ValueType type : sig_->parameters()) {
@@ -6982,10 +6983,7 @@ class WasmWrapperGraphBuilder : public WasmGraphBuilder {
                                      kNoWriteBarrier),
                  isolate_root, Isolate::c_entry_fp_offset(), fp_value);
 
-    // TODO(jkummerow): Load the address from the {host_data}, and cache
-    // wrappers per signature.
-    const ExternalReference ref = ExternalReference::Create(address);
-    Node* function = gasm_->ExternalConstant(ref);
+    Node* function = BuildLoadCallTargetFromExportedFunctionData(sfi_data);
 
     // Parameters: Address host_data_foreign, Address arguments.
     MachineType host_sig_types[] = {
@@ -7547,8 +7545,7 @@ wasm::WasmCompilationResult CompileWasmImportCallWrapper(
 
 wasm::WasmCode* CompileWasmCapiCallWrapper(wasm::WasmEngine* wasm_engine,
                                            wasm::NativeModule* native_module,
-                                           const wasm::FunctionSig* sig,
-                                           Address address) {
+                                           const wasm::FunctionSig* sig) {
   TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("v8.wasm.detailed"),
                "wasm.CompileWasmCapiFunction");
 
@@ -7572,7 +7569,7 @@ wasm::WasmCode* CompileWasmCapiCallWrapper(wasm::WasmEngine* wasm_engine,
                     1 /* offset for first parameter index being -1 */ +
                     1 /* Wasm instance */ + 1 /* kExtraCallableParam */;
   builder.Start(param_count);
-  builder.BuildCapiCallWrapper(address);
+  builder.BuildCapiCallWrapper();
 
   // Run the compiler pipeline to generate machine code.
   CallDescriptor* call_descriptor =
@@ -7761,7 +7758,7 @@ bool BuildGraphForWasmFunction(AccountingAllocator* allocator,
                            source_positions);
   wasm::VoidResult graph_construction_result = wasm::BuildTFGraph(
       allocator, env->enabled_features, env->module, &builder, detected,
-      func_body, loop_infos, node_origins);
+      func_body, loop_infos, node_origins, func_index);
   if (graph_construction_result.failed()) {
     if (FLAG_trace_wasm_compiler) {
       StdoutStream{} << "Compilation failed: "

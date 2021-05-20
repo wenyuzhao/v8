@@ -7,6 +7,7 @@
 
 #include "src/base/compiler-specific.h"
 #include "src/base/optional.h"
+#include "src/base/platform/mutex.h"
 #include "src/common/globals.h"
 #include "src/compiler/access-info.h"
 #include "src/compiler/feedback-source.h"
@@ -79,6 +80,18 @@ struct PropertyAccessTarget {
   };
 };
 
+enum GetOrCreateDataFlag {
+  // If set, a failure to create the data object results in a crash.
+  kCrashOnError = 1 << 0,
+  // If set, data construction assumes that the given object is protected by
+  // a memory fence (e.g. acquire-release) and thus fields required for
+  // construction (like Object::map) are safe to read. The protection can
+  // extend to some other situations as well.
+  kAssumeMemoryFence = 1 << 1,
+};
+using GetOrCreateDataFlags = base::Flags<GetOrCreateDataFlag>;
+DEFINE_OPERATORS_FOR_FLAGS(GetOrCreateDataFlags)
+
 class V8_EXPORT_PRIVATE JSHeapBroker {
  public:
   JSHeapBroker(Isolate* isolate, Zone* broker_zone, bool tracing_enabled,
@@ -99,7 +112,7 @@ class V8_EXPORT_PRIVATE JSHeapBroker {
   }
   void SetTargetNativeContextRef(Handle<NativeContext> native_context);
 
-  void InitializeAndStartSerializing(Handle<NativeContext> native_context);
+  void InitializeAndStartSerializing();
 
   Isolate* isolate() const { return isolate_; }
   Zone* zone() const { return zone_; }
@@ -151,25 +164,16 @@ class V8_EXPORT_PRIVATE JSHeapBroker {
   Handle<Object> GetRootHandle(Object object);
 
   // Never returns nullptr.
-  ObjectData* GetOrCreateData(
-      Handle<Object>,
-      ObjectRef::BackgroundSerialization background_serialization =
-          ObjectRef::BackgroundSerialization::kDisallowed);
-  // Like the previous but wraps argument in handle first (for convenience).
-  ObjectData* GetOrCreateData(
-      Object, ObjectRef::BackgroundSerialization background_serialization =
-                  ObjectRef::BackgroundSerialization::kDisallowed);
+  ObjectData* GetOrCreateData(Handle<Object> object,
+                              GetOrCreateDataFlags flags = {});
+  ObjectData* GetOrCreateData(Object object, GetOrCreateDataFlags flags = {});
 
   // Gets data only if we have it. However, thin wrappers will be created for
   // smis, read-only objects and never-serialized objects.
-  ObjectData* TryGetOrCreateData(
-      Handle<Object>, bool crash_on_error = false,
-      ObjectRef::BackgroundSerialization background_serialization =
-          ObjectRef::BackgroundSerialization::kDisallowed);
-  ObjectData* TryGetOrCreateData(
-      Object object, bool crash_on_error = false,
-      ObjectRef::BackgroundSerialization background_serialization =
-          ObjectRef::BackgroundSerialization::kDisallowed);
+  ObjectData* TryGetOrCreateData(Handle<Object> object,
+                                 GetOrCreateDataFlags flags = {});
+  ObjectData* TryGetOrCreateData(Object object,
+                                 GetOrCreateDataFlags flags = {});
 
   // Check if {object} is any native context's %ArrayPrototype% or
   // %ObjectPrototype%.
@@ -348,25 +352,19 @@ class V8_EXPORT_PRIVATE JSHeapBroker {
 
   RootIndexMap const& root_index_map() { return root_index_map_; }
 
-  CompilationDependencies* dependencies() const {
-    DCHECK_NOT_NULL(dependencies_);
-    return dependencies_;
-  }
-
-  void set_dependencies(CompilationDependencies* dependencies) {
-    DCHECK_NULL(dependencies_);
-    dependencies_ = dependencies;
-  }
-
-  class MapUpdaterMutexDepthScope final {
+  // Locks {mutex} through the duration of this scope iff it is the first
+  // occurrence. This is done to have a recursive shared lock on {mutex}.
+  class V8_NODISCARD MapUpdaterGuardIfNeeded final {
    public:
-    explicit MapUpdaterMutexDepthScope(JSHeapBroker* ptr)
+    explicit MapUpdaterGuardIfNeeded(JSHeapBroker* ptr,
+                                     base::SharedMutex* mutex)
         : ptr_(ptr),
-          initial_map_updater_mutex_depth_(ptr->map_updater_mutex_depth_) {
+          initial_map_updater_mutex_depth_(ptr->map_updater_mutex_depth_),
+          shared_mutex(mutex, should_lock()) {
       ptr_->map_updater_mutex_depth_++;
     }
 
-    ~MapUpdaterMutexDepthScope() {
+    ~MapUpdaterGuardIfNeeded() {
       ptr_->map_updater_mutex_depth_--;
       DCHECK_EQ(initial_map_updater_mutex_depth_,
                 ptr_->map_updater_mutex_depth_);
@@ -379,6 +377,7 @@ class V8_EXPORT_PRIVATE JSHeapBroker {
    private:
     JSHeapBroker* const ptr_;
     const int initial_map_updater_mutex_depth_;
+    base::SharedMutexGuardIf<base::kShared> shared_mutex;
   };
 
  private:
@@ -391,6 +390,7 @@ class V8_EXPORT_PRIVATE JSHeapBroker {
   // thus safe to read from a memory safety perspective. The converse does not
   // necessarily hold.
   bool ObjectMayBeUninitialized(Handle<Object> object) const;
+  bool ObjectMayBeUninitialized(HeapObject object) const;
 
   bool CanUseFeedback(const FeedbackNexus& nexus) const;
   const ProcessedFeedback& NewInsufficientFeedback(FeedbackSlotKind kind) const;
@@ -451,7 +451,6 @@ class V8_EXPORT_PRIVATE JSHeapBroker {
 
   Isolate* const isolate_;
   Zone* const zone_ = nullptr;
-  CompilationDependencies* dependencies_ = nullptr;
   base::Optional<NativeContextRef> target_native_context_;
   RefsMap* refs_;
   RootIndexMap root_index_map_;
@@ -580,8 +579,8 @@ class V8_NODISCARD UnparkedScopeIfNeeded {
 template <class T,
           typename = std::enable_if_t<std::is_convertible<T*, Object*>::value>>
 base::Optional<typename ref_traits<T>::ref_type> TryMakeRef(
-    JSHeapBroker* broker, T object) {
-  ObjectData* data = broker->TryGetOrCreateData(object);
+    JSHeapBroker* broker, T object, GetOrCreateDataFlags flags = {}) {
+  ObjectData* data = broker->TryGetOrCreateData(object, flags);
   if (data == nullptr) {
     TRACE_BROKER_MISSING(broker, "ObjectData for " << Brief(object));
     return {};
@@ -592,8 +591,8 @@ base::Optional<typename ref_traits<T>::ref_type> TryMakeRef(
 template <class T,
           typename = std::enable_if_t<std::is_convertible<T*, Object*>::value>>
 base::Optional<typename ref_traits<T>::ref_type> TryMakeRef(
-    JSHeapBroker* broker, Handle<T> object) {
-  ObjectData* data = broker->TryGetOrCreateData(object);
+    JSHeapBroker* broker, Handle<T> object, GetOrCreateDataFlags flags = {}) {
+  ObjectData* data = broker->TryGetOrCreateData(object, flags);
   if (data == nullptr) {
     TRACE_BROKER_MISSING(broker, "ObjectData for " << Brief(*object));
     return {};
@@ -612,6 +611,20 @@ template <class T,
 typename ref_traits<T>::ref_type MakeRef(JSHeapBroker* broker,
                                          Handle<T> object) {
   return TryMakeRef(broker, object).value();
+}
+
+template <class T,
+          typename = std::enable_if_t<std::is_convertible<T*, Object*>::value>>
+typename ref_traits<T>::ref_type MakeRefAssumeMemoryFence(JSHeapBroker* broker,
+                                                          T object) {
+  return TryMakeRef(broker, object, kAssumeMemoryFence).value();
+}
+
+template <class T,
+          typename = std::enable_if_t<std::is_convertible<T*, Object*>::value>>
+typename ref_traits<T>::ref_type MakeRefAssumeMemoryFence(JSHeapBroker* broker,
+                                                          Handle<T> object) {
+  return TryMakeRef(broker, object, kAssumeMemoryFence).value();
 }
 
 }  // namespace compiler

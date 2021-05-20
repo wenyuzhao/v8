@@ -1639,6 +1639,7 @@ USE_TORQUE_VERIFIER(WasmGlobalObject)
 
 USE_TORQUE_VERIFIER(WasmExceptionObject)
 
+USE_TORQUE_VERIFIER(WasmCapiFunctionData)
 USE_TORQUE_VERIFIER(WasmJSFunctionData)
 
 USE_TORQUE_VERIFIER(WasmIndirectFunctionTable)
@@ -1744,6 +1745,12 @@ void StackFrameInfo::StackFrameInfoVerify(Isolate* isolate) {
   CHECK_IMPLIES(IsAsync(), !IsWasm());
   CHECK_IMPLIES(IsConstructor(), !IsWasm());
 #endif  // V8_ENABLE_WEBASSEMBLY
+}
+
+void FunctionTemplateRareData::FunctionTemplateRareDataVerify(
+    Isolate* isolate) {
+  CHECK(c_function_overloads().IsFixedArray() ||
+        c_function_overloads().IsUndefined(isolate));
 }
 
 #endif  // VERIFY_HEAP

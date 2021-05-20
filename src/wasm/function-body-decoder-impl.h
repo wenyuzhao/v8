@@ -575,18 +575,6 @@ struct BranchDepthImmediate {
 };
 
 template <Decoder::ValidateFlag validate>
-struct BranchOnExceptionImmediate {
-  BranchDepthImmediate<validate> depth;
-  ExceptionIndexImmediate<validate> index;
-  uint32_t length = 0;
-  inline BranchOnExceptionImmediate(Decoder* decoder, const byte* pc)
-      : depth(BranchDepthImmediate<validate>(decoder, pc)),
-        index(ExceptionIndexImmediate<validate>(decoder, pc + depth.length)) {
-    length = depth.length + index.length;
-  }
-};
-
-template <Decoder::ValidateFlag validate>
 struct FunctionIndexImmediate {
   uint32_t index = 0;
   uint32_t length = 1;
@@ -1093,6 +1081,7 @@ struct ControlBase : public PcForErrors<validate> {
   F(ReturnCallIndirect, const Value& index,                                    \
     const CallIndirectImmediate<validate>& imm, const Value args[])            \
   F(BrOnNull, const Value& ref_object, uint32_t depth)                         \
+  F(BrOnNonNull, const Value& ref_object, uint32_t depth)                      \
   F(SimdOp, WasmOpcode opcode, Vector<Value> args, Value* result)              \
   F(SimdLaneOp, WasmOpcode opcode, const SimdLaneImmediate<validate>& imm,     \
     const Vector<Value> inputs, Value* result)                                 \
@@ -1494,13 +1483,6 @@ class WasmDecoder : public Decoder {
     return checkAvailable(imm.table_count);
   }
 
-  inline bool Validate(const byte* pc,
-                       BranchOnExceptionImmediate<validate>& imm,
-                       size_t control_size) {
-    return Validate(pc, imm.depth, control_size) &&
-           Validate(pc + imm.depth.length, imm.index);
-  }
-
   inline bool Validate(const byte* pc, WasmOpcode opcode,
                        SimdLaneImmediate<validate>& imm) {
     uint8_t num_lanes = 0;
@@ -1697,6 +1679,7 @@ class WasmDecoder : public Decoder {
       case kExprBr:
       case kExprBrIf:
       case kExprBrOnNull:
+      case kExprBrOnNonNull:
       case kExprDelegate: {
         BranchDepthImmediate<validate> imm(decoder, pc + 1);
         return 1 + imm.length;
@@ -2031,6 +2014,7 @@ class WasmDecoder : public Decoder {
       case kExprBrIf:
       case kExprBrTable:
       case kExprIf:
+      case kExprBrOnNonNull:
         return {1, 0};
       case kExprLocalGet:
       case kExprGlobalGet:
@@ -2328,7 +2312,12 @@ class WasmFullDecoder : public WasmDecoder<validate> {
     }
   }
 
+  inline uint32_t pc_relative_offset() const {
+    return this->pc_offset() - first_instruction_offset;
+  }
+
  private:
+  uint32_t first_instruction_offset = 0;
   Interface interface_;
 
   // The value stack, stored as individual pointers for maximum performance.
@@ -2687,6 +2676,48 @@ class WasmFullDecoder : public WasmDecoder<validate> {
         PopTypeError(0, ref_object, "object reference");
         return 0;
     }
+    return 1 + imm.length;
+  }
+
+  DECODE(BrOnNonNull) {
+    CHECK_PROTOTYPE_OPCODE(gc);
+    BranchDepthImmediate<validate> imm(this, this->pc_ + 1);
+    if (!this->Validate(this->pc_ + 1, imm, control_.size())) return 0;
+    Value ref_object = Peek(0, 0, kWasmAnyRef);
+    Drop(ref_object);
+    // Typechecking the branch and creating the branch merges requires the
+    // non-null value on the stack, so we push it temporarily.
+    Value result = CreateValue(ref_object.type.AsNonNull());
+    Push(result);
+    Control* c = control_at(imm.depth);
+    if (!VALIDATE(TypeCheckBranch<true>(c, 0))) return 0;
+    switch (ref_object.type.kind()) {
+      case kBottom:
+        // We are in unreachable code. Do nothing.
+        DCHECK(!current_code_reachable_and_ok_);
+        break;
+      case kRef:
+        // For a non-nullable value, we always take the branch.
+        if (V8_LIKELY(current_code_reachable_and_ok_)) {
+          CALL_INTERFACE(Forward, ref_object, stack_value(1));
+          CALL_INTERFACE(BrOrRet, imm.depth, 0);
+          c->br_merge()->reached = true;
+        }
+        break;
+      case kOptRef: {
+        if (V8_LIKELY(current_code_reachable_and_ok_)) {
+          CALL_INTERFACE(Forward, ref_object, stack_value(1));
+          CALL_INTERFACE(BrOnNonNull, ref_object, imm.depth);
+          c->br_merge()->reached = true;
+        }
+        break;
+      }
+      default:
+        PopTypeError(0, ref_object, "object reference");
+        return 0;
+    }
+    // If we stay in the branch, {ref_object} is null. Drop it from the stack.
+    Drop(result);
     return 1 + imm.length;
   }
 
@@ -3398,6 +3429,7 @@ class WasmFullDecoder : public WasmDecoder<validate> {
     DECODE_IMPL(CatchAll);
     DECODE_IMPL(Unwind);
     DECODE_IMPL(BrOnNull);
+    DECODE_IMPL(BrOnNonNull);
     DECODE_IMPL(Let);
     DECODE_IMPL(Loop);
     DECODE_IMPL(If);
@@ -3479,6 +3511,7 @@ class WasmFullDecoder : public WasmDecoder<validate> {
       CALL_INTERFACE_IF_OK_AND_REACHABLE(StartFunctionBody, c);
     }
 
+    first_instruction_offset = this->pc_offset();
     // Decode the function body.
     while (this->pc_ < this->end_) {
       // Most operations only grow the stack by at least one element (unary and
@@ -3540,13 +3573,18 @@ class WasmFullDecoder : public WasmDecoder<validate> {
     InitMerge(&c->end_merge, imm.out_arity(), [pc, &imm](uint32_t i) {
       return Value{pc, imm.out_type(i)};
     });
-    InitMerge(&c->start_merge, imm.in_arity(),
-              [args](uint32_t i) { return args[i]; });
+    InitMerge(&c->start_merge, imm.in_arity(), [pc, &imm, args](uint32_t i) {
+      // The merge needs to be instantiated with Values of the correct type even
+      // in the presence of bottom values (i.e. in unreachable code). Since
+      // bottom Values will never be used for code generation, we can safely
+      // instantiate new ones in that case.
+      return args[i].type != kWasmBottom ? args[i] : Value{pc, imm.in_type(i)};
+    });
   }
 
   V8_INLINE void EnsureStackArguments(int count) {
     uint32_t limit = control_.back().stack_depth;
-    if (stack_size() >= count + limit) return;
+    if (V8_LIKELY(stack_size() >= count + limit)) return;
     EnsureStackArguments_Slow(count, limit);
   }
 
@@ -3555,15 +3593,21 @@ class WasmFullDecoder : public WasmDecoder<validate> {
       int index = count - stack_size() - 1;
       NotEnoughArgumentsError(index);
     }
-    // Silently create unreachable values out of thin air. Since we push them
-    // onto the stack, while conceptually we should be inserting them under
-    // any existing elements, we have to avoid validation failures that would
-    // be caused by finding non-unreachable values in the wrong slot, so we
-    // replace the entire current scope's values.
-    Drop(static_cast<int>(stack_size() - limit));
-    EnsureStackSpace(count + limit - stack_size());
-    while (stack_size() < count + limit) {
-      Push(UnreachableValue(this->pc_));
+    // Silently create unreachable values out of thin air underneath the
+    // existing stack values. To do so, we have to move existing stack values
+    // upwards in the stack, then instantiate the new Values as
+    // {UnreachableValue}.
+    int current_values = stack_size() - limit;
+    int additional_values = count - current_values;
+    DCHECK_GT(additional_values, 0);
+    EnsureStackSpace(additional_values);
+    stack_end_ += additional_values;
+    Value* stack_base = stack_value(current_values + additional_values);
+    for (int i = current_values - 1; i >= 0; i--) {
+      stack_base[additional_values + i] = stack_base[i];
+    }
+    for (int i = 0; i < additional_values; i++) {
+      stack_base[i] = UnreachableValue(this->pc_);
     }
   }
 
@@ -3578,6 +3622,8 @@ class WasmFullDecoder : public WasmDecoder<validate> {
     }
     return args;
   }
+  // Drops a number of stack elements equal to the {sig}'s parameter count (0 if
+  // {sig} is null), or all of them if less are present.
   V8_INLINE void DropArgs(const FunctionSig* sig) {
     int count = sig ? static_cast<int>(sig->parameter_count()) : 0;
     Drop(count);
@@ -3593,6 +3639,8 @@ class WasmFullDecoder : public WasmDecoder<validate> {
     }
     return args;
   }
+  // Drops a number of stack elements equal to the struct's field count, or all
+  // of them if less are present.
   V8_INLINE void DropArgs(const StructType* type) {
     Drop(static_cast<int>(type->field_count()));
   }
@@ -4726,22 +4774,20 @@ class WasmFullDecoder : public WasmDecoder<validate> {
     }
   }
 
+  // Drop the top {count} stack elements, or all of them if less than {count}
+  // are present.
   V8_INLINE void Drop(int count = 1) {
     DCHECK(!control_.empty());
     uint32_t limit = control_.back().stack_depth;
-    // TODO(wasm): This check is often redundant.
     if (V8_UNLIKELY(stack_size() < limit + count)) {
-      // Popping past the current control start in reachable code.
-      if (!VALIDATE(!current_code_reachable_and_ok_)) {
-        NotEnoughArgumentsError(0);
-      }
       // Pop what we can.
       count = std::min(count, static_cast<int>(stack_size() - limit));
     }
     DCHECK_LE(stack_, stack_end_ - count);
     stack_end_ -= count;
   }
-  // For more descriptive call sites:
+  // Drop the top stack element if present. Takes a Value input for more
+  // descriptive call sites.
   V8_INLINE void Drop(const Value& /* unused */) { Drop(1); }
 
   enum StackElementsCountMode : bool {
@@ -4774,7 +4820,9 @@ class WasmFullDecoder : public WasmDecoder<validate> {
             : merge_type == kReturnMerge ? "return" : "fallthru";
     uint32_t arity = merge->arity;
     uint32_t actual = stack_size() - control_.back().stack_depth;
-    if (V8_LIKELY(current_code_reachable_and_ok_)) {
+    // Here we have to check for !unreachable(), because we need to typecheck as
+    // if the current code is reachable even if it is spec-only reachable.
+    if (V8_LIKELY(!control_.back().unreachable())) {
       if (V8_UNLIKELY(strict_count ? actual != drop_values + arity
                                    : actual < drop_values + arity)) {
         this->DecodeError("expected %u elements on the stack for %s, found %u",

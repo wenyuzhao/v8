@@ -363,7 +363,7 @@ void Builtins::Generate_ResumeGeneratorTrampoline(MacroAssembler* masm) {
   ExternalReference debug_hook =
       ExternalReference::debug_hook_on_function_call_address(masm->isolate());
   __ Move(scratch, debug_hook);
-  __ LoadByte(scratch, MemOperand(scratch), r0);
+  __ LoadU8(scratch, MemOperand(scratch), r0);
   __ extsb(scratch, scratch);
   __ CmpSmiLiteral(scratch, Smi::zero(), r0);
   __ bne(&prepare_step_in_if_stepping);
@@ -396,7 +396,7 @@ void Builtins::Generate_ResumeGeneratorTrampoline(MacroAssembler* masm) {
   // Copy the function arguments from the generator object's register file.
   __ LoadTaggedPointerField(
       r6, FieldMemOperand(r7, JSFunction::kSharedFunctionInfoOffset));
-  __ LoadHalfWord(
+  __ LoadU16(
       r6, FieldMemOperand(r6, SharedFunctionInfo::kFormalParameterCountOffset));
   __ LoadTaggedPointerField(
       r5,
@@ -436,9 +436,8 @@ void Builtins::Generate_ResumeGeneratorTrampoline(MacroAssembler* masm) {
   {
     __ LoadTaggedPointerField(
         r3, FieldMemOperand(r7, JSFunction::kSharedFunctionInfoOffset));
-    __ LoadHalfWord(
-        r3,
-        FieldMemOperand(r3, SharedFunctionInfo::kFormalParameterCountOffset));
+    __ LoadU16(r3, FieldMemOperand(
+                       r3, SharedFunctionInfo::kFormalParameterCountOffset));
     // We abuse new.target both to indicate that this is a resume call and to
     // pass in the generator object.  In ordinary calls, new.target is always
     // undefined because generator functions are non-constructable.
@@ -867,7 +866,7 @@ static void TailCallOptimizedCodeSlot(MacroAssembler* masm,
   __ LoadTaggedPointerField(
       scratch,
       FieldMemOperand(optimized_code_entry, Code::kCodeDataContainerOffset));
-  __ LoadWordArith(
+  __ LoadS32(
       scratch,
       FieldMemOperand(scratch, CodeDataContainer::kKindSpecificFlagsOffset));
   __ TestBit(scratch, Code::kMarkedForDeoptimizationBit, r0);
@@ -1073,16 +1072,16 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
   // and update invocation count. Otherwise, setup the stack frame.
   __ LoadTaggedPointerField(
       r7, FieldMemOperand(feedback_vector, HeapObject::kMapOffset));
-  __ LoadHalfWord(r7, FieldMemOperand(r7, Map::kInstanceTypeOffset));
+  __ LoadU16(r7, FieldMemOperand(r7, Map::kInstanceTypeOffset));
   __ cmpi(r7, Operand(FEEDBACK_VECTOR_TYPE));
   __ bne(&push_stack_frame);
 
   Register optimization_state = r7;
 
   // Read off the optimization state in the feedback vector.
-  __ LoadWord(optimization_state,
-              FieldMemOperand(feedback_vector, FeedbackVector::kFlagsOffset),
-              r0);
+  __ LoadU32(optimization_state,
+             FieldMemOperand(feedback_vector, FeedbackVector::kFlagsOffset),
+             r0);
 
   // Check if the optimized code slot is not empty or has a optimization marker.
   Label has_optimized_code_or_marker;
@@ -1095,7 +1094,7 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
   __ bind(&not_optimized);
 
   // Increment invocation count for the function.
-  __ LoadWord(
+  __ LoadU32(
       r8,
       FieldMemOperand(feedback_vector, FeedbackVector::kInvocationCountOffset),
       r0);
@@ -1163,10 +1162,10 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
   // If the bytecode array has a valid incoming new target or generator object
   // register, initialize it with incoming value which was passed in r6.
   Label no_incoming_new_target_or_generator_register;
-  __ LoadWordArith(
-      r8, FieldMemOperand(
-              kInterpreterBytecodeArrayRegister,
-              BytecodeArray::kIncomingNewTargetOrGeneratorRegisterOffset));
+  __ LoadS32(r8,
+             FieldMemOperand(
+                 kInterpreterBytecodeArrayRegister,
+                 BytecodeArray::kIncomingNewTargetOrGeneratorRegisterOffset));
   __ cmpi(r8, Operand::Zero());
   __ beq(&no_incoming_new_target_or_generator_register);
   __ ShiftLeftImm(r8, r8, Operand(kSystemPointerSizeLog2));
@@ -1193,8 +1192,8 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
   __ lbzx(r6, MemOperand(kInterpreterBytecodeArrayRegister,
                          kInterpreterBytecodeOffsetRegister));
   __ ShiftLeftImm(r6, r6, Operand(kSystemPointerSizeLog2));
-  __ LoadPX(kJavaScriptCallCodeStartRegister,
-            MemOperand(kInterpreterDispatchTableRegister, r6));
+  __ LoadU64(kJavaScriptCallCodeStartRegister,
+             MemOperand(kInterpreterDispatchTableRegister, r6));
   __ Call(kJavaScriptCallCodeStartRegister);
 
   masm->isolate()->heap()->SetInterpreterEntryReturnPCOffset(masm->pc_offset());
@@ -1471,8 +1470,8 @@ static void Generate_InterpreterEnterBytecode(MacroAssembler* masm) {
   __ lbzx(ip, MemOperand(kInterpreterBytecodeArrayRegister,
                          kInterpreterBytecodeOffsetRegister));
   __ ShiftLeftImm(scratch, scratch, Operand(kSystemPointerSizeLog2));
-  __ LoadPX(kJavaScriptCallCodeStartRegister,
-            MemOperand(kInterpreterDispatchTableRegister, scratch));
+  __ LoadU64(kJavaScriptCallCodeStartRegister,
+             MemOperand(kInterpreterDispatchTableRegister, scratch));
   __ Jump(kJavaScriptCallCodeStartRegister);
 }
 
@@ -1864,8 +1863,7 @@ void Builtins::Generate_CallOrConstructVarargs(MacroAssembler* masm,
     __ AssertNotSmi(r5);
     __ LoadTaggedPointerField(scratch,
                               FieldMemOperand(r5, HeapObject::kMapOffset));
-    __ LoadHalfWord(scratch,
-                    FieldMemOperand(scratch, Map::kInstanceTypeOffset));
+    __ LoadU16(scratch, FieldMemOperand(scratch, Map::kInstanceTypeOffset));
     __ cmpi(scratch, Operand(FIXED_ARRAY_TYPE));
     __ beq(&ok);
     __ cmpi(scratch, Operand(FIXED_DOUBLE_ARRAY_TYPE));
@@ -2016,7 +2014,7 @@ void Builtins::Generate_CallOrConstructForwardVarargs(MacroAssembler* masm,
       {
         __ subi(r8, r8, Operand(1));
         __ ShiftLeftImm(scratch, r8, Operand(kSystemPointerSizeLog2));
-        __ LoadPX(r0, MemOperand(r7, scratch));
+        __ LoadU64(r0, MemOperand(r7, scratch));
         __ StorePX(r0, MemOperand(r5, scratch));
         __ cmpi(r8, Operand::Zero());
         __ bne(&loop);
@@ -2122,7 +2120,7 @@ void Builtins::Generate_CallFunction(MacroAssembler* masm,
   //  -- cp : the function context.
   // -----------------------------------
 
-  __ LoadHalfWord(
+  __ LoadU16(
       r5, FieldMemOperand(r5, SharedFunctionInfo::kFormalParameterCountOffset));
   __ InvokeFunctionCode(r4, no_reg, r5, r3, InvokeType::kJump);
 
@@ -2438,7 +2436,7 @@ void Builtins::Generate_WasmCompileLazy(MacroAssembler* masm) {
     // Check the comments under crrev.com/c/2645694 for more details.
     Label push_empty_simd, simd_pushed;
     __ Move(ip, ExternalReference::supports_wasm_simd_128_address());
-    __ LoadByte(ip, MemOperand(ip), r0);
+    __ LoadU8(ip, MemOperand(ip), r0);
     __ cmpi(ip, Operand::Zero());  // If > 0 then simd is available.
     __ ble(&push_empty_simd);
     __ MultiPushV128(simd_regs);
@@ -2466,7 +2464,7 @@ void Builtins::Generate_WasmCompileLazy(MacroAssembler* masm) {
     // Restore registers.
     Label pop_empty_simd, simd_popped;
     __ Move(ip, ExternalReference::supports_wasm_simd_128_address());
-    __ LoadByte(ip, MemOperand(ip), r0);
+    __ LoadU8(ip, MemOperand(ip), r0);
     __ cmpi(ip, Operand::Zero());  // If > 0 then simd is available.
     __ ble(&pop_empty_simd);
     __ MultiPopV128(simd_regs);

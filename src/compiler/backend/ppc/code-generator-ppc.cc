@@ -200,7 +200,7 @@ class OutOfLineRecordWrite final : public OutOfLineCode {
 #if V8_ENABLE_WEBASSEMBLY
     } else if (stub_mode_ == StubCallMode::kCallWasmRuntimeStub) {
       __ CallRecordWriteStub(object_, scratch1_, remembered_set_action,
-                             save_fp_mode, wasm::WasmCode::kRecordWrite);
+                             save_fp_mode, StubCallMode::kCallWasmRuntimeStub);
 #endif  // V8_ENABLE_WEBASSEMBLY
     } else {
       __ CallRecordWriteStub(object_, scratch1_, remembered_set_action,
@@ -822,8 +822,8 @@ void CodeGenerator::BailoutIfDeoptimized() {
   int offset = Code::kCodeDataContainerOffset - Code::kHeaderSize;
   __ LoadTaggedPointerField(
       r11, MemOperand(kJavaScriptCallCodeStartRegister, offset));
-  __ LoadWordArith(
-      r11, FieldMemOperand(r11, CodeDataContainer::kKindSpecificFlagsOffset));
+  __ LoadS32(r11,
+             FieldMemOperand(r11, CodeDataContainer::kKindSpecificFlagsOffset));
   __ TestBit(r11, Code::kMarkedForDeoptimizationBit);
   __ Jump(BUILTIN_CODE(isolate(), CompileLazyDeoptimizedCode),
           RelocInfo::CODE_TARGET, ne, cr0);
@@ -3108,15 +3108,14 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kPPC_I8x16Shuffle: {
-      constexpr int lane_width_in_bytes = 8;
       Simd128Register dst = i.OutputSimd128Register(),
                       src0 = i.InputSimd128Register(0),
                       src1 = i.InputSimd128Register(1);
-      __ mov(r0, Operand(make_uint64(i.InputUint32(3), i.InputUint32(2))));
-      __ mov(ip, Operand(make_uint64(i.InputUint32(5), i.InputUint32(4))));
-      __ mtvsrd(kScratchSimd128Reg, r0);
-      __ mtvsrd(dst, ip);
-      __ vinsertd(dst, kScratchSimd128Reg, Operand(1 * lane_width_in_bytes));
+      uint64_t low = make_uint64(i.InputUint32(3), i.InputUint32(2));
+      uint64_t high = make_uint64(i.InputUint32(5), i.InputUint32(4));
+      __ mov(r0, Operand(low));
+      __ mov(ip, Operand(high));
+      __ mtvsrdd(dst, ip, r0);
       __ vperm(dst, src0, src1, dst);
       break;
     }
@@ -4001,7 +4000,7 @@ void CodeGenerator::AssembleArchTableSwitch(Instruction* instr) {
   __ bge(GetLabel(i.InputRpo(1)));
   __ mov_label_addr(kScratchReg, table);
   __ ShiftLeftImm(r0, input, Operand(kSystemPointerSizeLog2));
-  __ LoadPX(kScratchReg, MemOperand(kScratchReg, r0));
+  __ LoadU64(kScratchReg, MemOperand(kScratchReg, r0));
   __ Jump(kScratchReg);
 }
 

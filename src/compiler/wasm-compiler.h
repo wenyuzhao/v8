@@ -122,8 +122,7 @@ V8_EXPORT_PRIVATE wasm::WasmCompilationResult CompileWasmImportCallWrapper(
 // Compiles a host call wrapper, which allows Wasm to call host functions.
 wasm::WasmCode* CompileWasmCapiCallWrapper(wasm::WasmEngine*,
                                            wasm::NativeModule*,
-                                           const wasm::FunctionSig*,
-                                           Address address);
+                                           const wasm::FunctionSig*);
 
 // Returns an OptimizedCompilationJob object for a JS to Wasm wrapper.
 std::unique_ptr<OptimizedCompilationJob> NewJSToWasmCompilationJob(
@@ -281,6 +280,7 @@ class WasmGraphBuilder {
   //-----------------------------------------------------------------------
   Node* BranchNoHint(Node* cond, Node** true_node, Node** false_node);
   Node* BranchExpectFalse(Node* cond, Node** true_node, Node** false_node);
+  Node* BranchExpectTrue(Node* cond, Node** true_node, Node** false_node);
 
   void TrapIfTrue(wasm::TrapReason reason, Node* cond,
                   wasm::WasmCodePosition position);
