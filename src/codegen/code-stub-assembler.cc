@@ -11162,13 +11162,13 @@ void CodeStubAssembler::TransitionElementsKind(TNode<JSObject> object,
 
 void CodeStubAssembler::TrapAllocationMemento(TNode<JSObject> object,
                                               Label* memento_found) {
+  if (FLAG_single_generation) return;
   Comment("[ TrapAllocationMemento");
   Label no_memento_found(this);
   Label top_check(this), map_check(this);
 
   TNode<ExternalReference> new_space_top_address = ExternalConstant(
       ExternalReference::new_space_allocation_top_address(isolate()));
-  GotoIf(BoolConstant(FLAG_single_generation), &no_memento_found);
   const int kMementoMapOffset = JSArray::kHeaderSize;
   const int kMementoLastWordOffset =
       kMementoMapOffset + AllocationMemento::kSize - kTaggedSize;
@@ -11234,8 +11234,7 @@ void CodeStubAssembler::TrapAllocationMemento(TNode<JSObject> object,
 }
 
 TNode<IntPtrT> CodeStubAssembler::PageFromAddress(TNode<IntPtrT> address) {
-  if (FLAG_enable_third_party_heap)
-    AbortCSAAssert(StringConstant("Unreachable"));
+  DCHECK(!FLAG_enable_third_party_heap);
   return WordAnd(address, IntPtrConstant(~kPageAlignmentMask));
 }
 
