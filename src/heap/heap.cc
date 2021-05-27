@@ -3164,11 +3164,7 @@ bool Heap::CanMoveObjectStart(HeapObject object) {
 }
 
 bool Heap::IsImmovable(HeapObject object) {
-  if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) {
-    // TODO(steveblackburn): For now all objects are immovable.
-    // Will need to revisit once moving is supported.
-    return true;
-  }
+  if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) return third_party_heap::Heap::IsImmovable(object);
 
   BasicMemoryChunk* chunk = BasicMemoryChunk::FromHeapObject(object);
   return chunk->NeverEvacuate() || IsLargeObject(object);
@@ -5930,7 +5926,7 @@ void Heap::CompactWeakArrayLists() {
 
   // Find known WeakArrayLists and compact them.
   Handle<WeakArrayList> scripts(script_list(), isolate());
-  DCHECK(InOldSpace(*scripts));
+  DCHECK_IMPLIES(!V8_ENABLE_THIRD_PARTY_HEAP_BOOL, InOldSpace(*scripts));
   scripts = CompactWeakArrayList(this, scripts, AllocationType::kOld);
   set_script_list(*scripts);
 }

@@ -3847,6 +3847,7 @@ bool Isolate::Init(SnapshotData* startup_snapshot_data,
     PrintF("[Initializing isolate from scratch took %0.3f ms]\n", ms);
   }
 
+  heap()->tp_heap_->FinishInitialization();
   return true;
 }
 

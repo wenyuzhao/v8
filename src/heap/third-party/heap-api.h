@@ -38,12 +38,20 @@ class Heap {
 
   static bool IsValidHeapObject(HeapObject object);
 
+  static bool IsImmovable(HeapObject object);
+
   void ResetIterator();
   HeapObject NextObject();
 
   bool CollectGarbage();
 
   size_t Capacity();
+
+  void FinishInitialization() {
+    initialization_finished_ = true;
+  }
+ private:
+  bool initialization_finished_ = false;
 };
 
 }  // namespace third_party_heap
