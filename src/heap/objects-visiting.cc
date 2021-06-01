@@ -38,7 +38,8 @@ Object VisitWeakList(Heap* heap, Object list, WeakObjectRetainer* retainer) {
     Object retained = retainer->RetainAs(list);
 
     // Move to the next element before the WeakNext is cleared.
-    list = WeakListVisitor<T>::WeakNext(candidate);
+    list = WeakListVisitor<T>::WeakNext(retained != Object() ? T::cast(retained)
+                                                             : candidate);
 
     if (retained != Object()) {
       if (head == undefined) {

@@ -1415,6 +1415,8 @@ class Heap {
 
   int gc_count() const { return gc_count_; }
 
+  void increase_gc_count() { gc_count_++; }
+
   bool is_current_gc_forced() const { return is_current_gc_forced_; }
 
   // Returns the size of objects residing in non-new spaces.

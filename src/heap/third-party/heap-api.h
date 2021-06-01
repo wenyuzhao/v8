@@ -47,9 +47,8 @@ class Heap {
 
   size_t Capacity();
 
-  void FinishInitialization() {
-    initialization_finished_ = true;
-  }
+  void FinishInitialization() { initialization_finished_ = true; }
+
  private:
   bool initialization_finished_ = false;
 };
