@@ -69,6 +69,8 @@ void StaticCallInterfaceDescriptor<DerivedDescriptor>::Initialize(
 
   if (DerivedDescriptor::kRestrictAllocatableRegisters) {
     data->RestrictAllocatableRegisters(registers.data(), registers.size());
+  } else {
+    DCHECK(!DerivedDescriptor::kCalleeSaveRegisters);
   }
 
   data->InitializeRegisters(
@@ -184,6 +186,42 @@ constexpr Register FastNewObjectDescriptor::TargetRegister() {
 // static
 constexpr Register FastNewObjectDescriptor::NewTargetRegister() {
   return kJavaScriptCallNewTargetRegister;
+}
+
+// static
+constexpr Register WriteBarrierDescriptor::ObjectRegister() {
+  return std::get<kObject>(registers());
+}
+// static
+constexpr Register WriteBarrierDescriptor::SlotAddressRegister() {
+  return std::get<kSlotAddress>(registers());
+}
+
+// static
+constexpr Register WriteBarrierDescriptor::ValueRegister() {
+  return std::get<kSlotAddress + 1>(registers());
+}
+
+// static
+constexpr RegList WriteBarrierDescriptor::ComputeSavedRegisters(
+    Register object, Register slot_address) {
+  DCHECK(!AreAliased(object, slot_address));
+  RegList saved_registers = 0;
+#if V8_TARGET_ARCH_X64
+  // Only push clobbered registers.
+  if (object != ObjectRegister()) saved_registers |= ObjectRegister().bit();
+  if (slot_address != no_reg && slot_address != SlotAddressRegister()) {
+    saved_registers |= SlotAddressRegister().bit();
+  }
+#else
+  // TODO(cbruni): Enable callee-saved registers for other platforms.
+  // This is a temporary workaround to prepare code for callee-saved registers.
+  auto allocated_registers = registers();
+  for (size_t i = 0; i < allocated_registers.size(); ++i) {
+    saved_registers |= allocated_registers[i].bit();
+  }
+#endif
+  return saved_registers;
 }
 
 // static

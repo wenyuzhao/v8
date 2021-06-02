@@ -3939,6 +3939,7 @@ TNode<JSArray> CodeStubAssembler::AllocateJSArray(
 
   int base_size = array_header_size;
   if (allocation_site) {
+    DCHECK(V8_ALLOCATION_SITE_TRACKING_BOOL);
     base_size += AllocationMemento::kSize;
   }
 
@@ -3991,6 +3992,7 @@ CodeStubAssembler::AllocateUninitializedJSArrayWithElements(
   {
     int base_size = array_header_size;
     if (allocation_site) {
+      DCHECK(V8_ALLOCATION_SITE_TRACKING_BOOL);
       base_size += AllocationMemento::kSize;
     }
 
@@ -4084,6 +4086,7 @@ TNode<JSArray> CodeStubAssembler::AllocateUninitializedJSArray(
                        RootIndex::kEmptyFixedArray);
 
   if (allocation_site) {
+    DCHECK(V8_ALLOCATION_SITE_TRACKING_BOOL);
     InitializeAllocationMemento(array, IntPtrConstant(JSArray::kHeaderSize),
                                 *allocation_site);
   }
@@ -5378,6 +5381,7 @@ template TNode<FixedArrayBase> CodeStubAssembler::GrowElementsCapacity<IntPtrT>(
 void CodeStubAssembler::InitializeAllocationMemento(
     TNode<HeapObject> base, TNode<IntPtrT> base_allocation_size,
     TNode<AllocationSite> allocation_site) {
+  DCHECK(V8_ALLOCATION_SITE_TRACKING_BOOL);
   Comment("[Initialize AllocationMemento");
   TNode<HeapObject> memento =
       InnerAllocate(base, base_allocation_size,
@@ -11198,7 +11202,7 @@ void CodeStubAssembler::TransitionElementsKind(TNode<JSObject> object,
 
 void CodeStubAssembler::TrapAllocationMemento(TNode<JSObject> object,
                                               Label* memento_found) {
-  if (FLAG_single_generation) return;
+  DCHECK(V8_ALLOCATION_SITE_TRACKING_BOOL);
   Comment("[ TrapAllocationMemento");
   Label no_memento_found(this);
   Label top_check(this), map_check(this);
