@@ -5,12 +5,14 @@
 #ifndef V8_HEAP_HEAP_INL_H_
 #define V8_HEAP_HEAP_INL_H_
 
+#include <atomic>
 #include <cmath>
 
 // Clients of this interface shouldn't depend on lots of heap internals.
 // Avoid including anything but `heap.h` from `src/heap` where possible.
 #include "src/base/atomic-utils.h"
 #include "src/base/atomicops.h"
+#include "src/base/platform/mutex.h"
 #include "src/base/platform/platform.h"
 #include "src/base/sanitizer/msan.h"
 #include "src/common/assert-scope.h"
@@ -24,6 +26,7 @@
 #include "src/heap/memory-chunk.h"
 #include "src/heap/new-spaces-inl.h"
 #include "src/heap/paged-spaces-inl.h"
+#include "src/heap/read-only-heap.h"
 #include "src/heap/read-only-spaces.h"
 #include "src/heap/spaces-inl.h"
 #include "src/heap/third-party/heap-api.h"
@@ -583,6 +586,11 @@ void Heap::UpdateAllocationSite(Map map, HeapObject object,
 }
 
 bool Heap::IsPendingAllocation(HeapObject object) {
+  if (ReadOnlyHeap::Contains(object)) return false;
+
+  // Prevents concurrent modification by main thread
+  base::SharedMutexGuard<base::kShared> guard(&pending_allocation_mutex_);
+
   // TODO(ulan): Optimize this function to perform 3 loads at most.
   Address addr = object.address();
   Address top, limit;
@@ -590,14 +598,16 @@ bool Heap::IsPendingAllocation(HeapObject object) {
   if (new_space_) {
     top = new_space_->original_top_acquire();
     limit = new_space_->original_limit_relaxed();
+    DCHECK_LE(top, limit);
     if (top && top <= addr && addr < limit) return true;
   }
 
   PagedSpaceIterator spaces(this);
   for (PagedSpace* space = spaces.Next(); space != nullptr;
        space = spaces.Next()) {
-    top = space->original_top_acquire();
-    limit = space->original_limit_relaxed();
+    top = space->original_top();
+    limit = space->original_limit();
+    DCHECK_LE(top, limit);
     if (top && top <= addr && addr < limit) return true;
   }
   if (addr == lo_space_->pending_object()) return true;
@@ -677,14 +687,16 @@ int Heap::MaxNumberToStringCacheSize() const {
 
 void Heap::IncrementExternalBackingStoreBytes(ExternalBackingStoreType type,
                                               size_t amount) {
-  base::CheckedIncrement(&backing_store_bytes_, amount);
+  base::CheckedIncrement(&backing_store_bytes_, static_cast<uint64_t>(amount),
+                         std::memory_order_relaxed);
   // TODO(mlippautz): Implement interrupt for global memory allocations that can
   // trigger garbage collections.
 }
 
 void Heap::DecrementExternalBackingStoreBytes(ExternalBackingStoreType type,
                                               size_t amount) {
-  base::CheckedDecrement(&backing_store_bytes_, amount);
+  base::CheckedDecrement(&backing_store_bytes_, static_cast<uint64_t>(amount),
+                         std::memory_order_relaxed);
 }
 
 bool Heap::HasDirtyJSFinalizationRegistries() {

@@ -280,14 +280,16 @@ DEFINE_BOOL(harmony_shipping, true, "enable all shipped harmony features")
 #ifdef V8_INTL_SUPPORT
 #define HARMONY_INPROGRESS(V) \
   HARMONY_INPROGRESS_BASE(V)  \
-  V(harmony_intl_displaynames_date_types, "Intl.DisplayNames date types")
+  V(harmony_intl_displaynames_date_types, "Intl.DisplayNames date types") \
+  V(harmony_intl_more_timezone, "More Timezone")
 #else
 #define HARMONY_INPROGRESS(V) HARMONY_INPROGRESS_BASE(V)
 #endif
 
 // Features that are complete (but still behind --harmony/es-staging flag).
-#define HARMONY_STAGED_BASE(V) \
-  V(harmony_class_static_blocks, "harmony static initializer blocks")
+#define HARMONY_STAGED_BASE(V)                                        \
+  V(harmony_class_static_blocks, "harmony static initializer blocks") \
+  V(harmony_object_has_own, "Object.hasOwn")
 
 #ifdef V8_INTL_SUPPORT
 #define HARMONY_STAGED(V)                                 \
@@ -966,6 +968,7 @@ DEFINE_STRING(dump_wasm_module_path, nullptr,
 FOREACH_WASM_FEATURE_FLAG(DECL_WASM_FLAG)
 #undef DECL_WASM_FLAG
 
+DEFINE_IMPLICATION(experimental_wasm_gc_experiments, experimental_wasm_gc)
 DEFINE_IMPLICATION(experimental_wasm_gc, experimental_wasm_typed_funcref)
 DEFINE_IMPLICATION(experimental_wasm_typed_funcref, experimental_wasm_reftypes)
 

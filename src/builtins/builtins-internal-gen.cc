@@ -345,7 +345,7 @@ class WriteBarrierCodeStubAssembler : public CodeStubAssembler {
 
   void GenerateRecordWrite(RememberedSetAction rs_mode,
                            SaveFPRegsMode fp_mode) {
-    if (FLAG_disable_write_barriers) {
+    if (V8_DISABLE_WRITE_BARRIERS_BOOL) {
       Return(TrueConstant());
       return;
     }

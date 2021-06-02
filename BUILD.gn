@@ -213,11 +213,8 @@ declare_args() {
 
   # Enable mitigations for executing untrusted code.
   # Disabled by default on ia32 due to conflicting requirements with embedded
-  # builtins. Enabled by default on Android since it doesn't support
-  # site-isolation in Chrome and on simulator builds which test code generation
-  # on these platforms.
-  v8_untrusted_code_mitigations =
-      v8_current_cpu != "x86" && (is_android || target_is_simulator)
+  # builtins.
+  v8_untrusted_code_mitigations = false
 
   # Enable minor mark compact.
   v8_enable_minor_mc = true
@@ -457,8 +454,8 @@ assert(
     "Can't share a pointer compression cage if pointers aren't compressed")
 
 assert(!v8_enable_pointer_compression_shared_cage || v8_current_cpu == "x64" ||
-           v8_current_cpu == "arm64",
-       "Sharing a pointer compression cage is only supported on x64 and arm64")
+           v8_current_cpu == "arm64" || v8_current_cpu == "riscv64",
+       "Sharing a pointer compression cage is only supported on x64,arm64 and riscv64")
 
 assert(!v8_enable_unconditional_write_barriers || !v8_disable_write_barriers,
        "Write barriers can't be both enabled and disabled")

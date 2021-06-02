@@ -1269,6 +1269,15 @@ Local<FunctionTemplate> FunctionTemplate::NewWithCFunctionOverloads(
     v8::Local<Signature> signature, int length, ConstructorBehavior behavior,
     SideEffectType side_effect_type,
     const MemorySpan<const CFunction>& c_function_overloads) {
+  // TODO(mslekova): Once runtime overload resolution between sequences is
+  // supported, check that if (c_function_overloads.size() == 2), then
+  // c_function_overloads.data()[0].
+  //   CanResolveOverload(c_function_overloads.data()[1]). We won't support
+  // the case where the size is greater than 2 for runtime resolution, until
+  // we've added support for ArrayBuffers and ArrayBufferViews. OTOH the
+  // overloads list might contain more than 2 functions with different arity,
+  // the resolution between which is available at compile time.
+
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
   LOG_API(i_isolate, FunctionTemplate, New);
   ENTER_V8_NO_SCRIPT_NO_EXCEPTION(i_isolate);
@@ -7003,7 +7012,7 @@ MaybeLocal<v8::RegExp> v8::RegExp::NewWithBacktrackLimit(
 Local<v8::String> v8::RegExp::GetSource() const {
   i::Handle<i::JSRegExp> obj = Utils::OpenHandle(this);
   return Utils::ToLocal(
-      i::Handle<i::String>(obj->Pattern(), obj->GetIsolate()));
+      i::Handle<i::String>(obj->EscapedPattern(), obj->GetIsolate()));
 }
 
 // Assert that the static flags cast in GetFlags is valid.
@@ -8530,7 +8539,12 @@ void Isolate::GetHeapStatistics(HeapStatistics* heap_statistics) {
   heap_statistics->malloced_memory_ =
       isolate->allocator()->GetCurrentMemoryUsage() +
       isolate->string_table()->GetCurrentMemoryUsage();
-  heap_statistics->external_memory_ = isolate->heap()->backing_store_bytes();
+  // On 32-bit systems backing_store_bytes() might overflow size_t temporarily
+  // due to concurrent array buffer sweeping.
+  heap_statistics->external_memory_ =
+      isolate->heap()->backing_store_bytes() < SIZE_MAX
+          ? static_cast<size_t>(isolate->heap()->backing_store_bytes())
+          : SIZE_MAX;
   heap_statistics->peak_malloced_memory_ =
       isolate->allocator()->GetMaxMemoryUsage();
   heap_statistics->number_of_native_contexts_ = heap->NumberOfNativeContexts();
@@ -8820,7 +8834,7 @@ void Isolate::SetAddHistogramSampleFunction(
 void Isolate::SetMetricsRecorder(
     const std::shared_ptr<metrics::Recorder>& metrics_recorder) {
   i::Isolate* isolate = reinterpret_cast<i::Isolate*>(this);
-  isolate->metrics_recorder()->SetRecorder(isolate, metrics_recorder);
+  isolate->metrics_recorder()->SetEmbedderRecorder(isolate, metrics_recorder);
 }
 
 void Isolate::SetAddCrashKeyCallback(AddCrashKeyCallback callback) {

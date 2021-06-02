@@ -18941,6 +18941,13 @@ TEST(RegExp) {
   CHECK(re->GetSource()->Equals(context.local(), v8_str("foo")).FromJust());
   CHECK_EQ(v8::RegExp::kNone, re->GetFlags());
 
+  re = v8::RegExp::New(context.local(), v8_str("foo/bar"), v8::RegExp::kNone)
+           .ToLocalChecked();
+  CHECK(re->IsRegExp());
+  CHECK(
+      re->GetSource()->Equals(context.local(), v8_str("foo\\/bar")).FromJust());
+  CHECK_EQ(v8::RegExp::kNone, re->GetFlags());
+
   re = v8::RegExp::New(context.local(), v8_str("bar"),
                        static_cast<v8::RegExp::Flags>(v8::RegExp::kIgnoreCase |
                                                       v8::RegExp::kGlobal))
@@ -18971,6 +18978,11 @@ TEST(RegExp) {
   re = CompileRun("/quux/").As<v8::RegExp>();
   CHECK(re->IsRegExp());
   CHECK(re->GetSource()->Equals(context.local(), v8_str("quux")).FromJust());
+  CHECK_EQ(v8::RegExp::kNone, re->GetFlags());
+
+  re = CompileRun("RegExp('qu/ux')").As<v8::RegExp>();
+  CHECK(re->IsRegExp());
+  CHECK(re->GetSource()->Equals(context.local(), v8_str("qu\\/ux")).FromJust());
   CHECK_EQ(v8::RegExp::kNone, re->GetFlags());
 
   re = CompileRun("/quux/gm").As<v8::RegExp>();
@@ -28114,8 +28126,8 @@ void CallWithLessArguments() {
             "%OptimizeFunctionOnNextCall(func);"
             "func();");
 
-  // Passing not enough arguments should go through the fast path.
-  CHECK(checker.DidCallFast());
+  // Passing not enough arguments should not go through the fast path.
+  CHECK(checker.DidCallSlow());
 }
 
 void CallWithMoreArguments() {
@@ -28204,6 +28216,7 @@ TEST(FastApiStackSlot) {
   // Disable --always_opt, otherwise we haven't generated the necessary
   // feedback to go down the "best optimization" path for the fast call.
   v8::internal::FLAG_always_opt = false;
+  v8::internal::FlagList::EnforceFlagImplications();
 
   v8::Isolate* isolate = CcTest::isolate();
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
@@ -28255,6 +28268,7 @@ TEST(FastApiCalls) {
   // Disable --always_opt, otherwise we haven't generated the necessary
   // feedback to go down the "best optimization" path for the fast call.
   v8::internal::FLAG_always_opt = false;
+  v8::internal::FlagList::EnforceFlagImplications();
 
   v8::Isolate* isolate = CcTest::isolate();
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
@@ -28710,6 +28724,108 @@ TEST(FastApiCalls) {
   // TODO(mslekova): Restructure the tests so that the fast optimized calls
   // are compared against the slow optimized calls.
   // TODO(mslekova): Add tests for FTI that requires access check.
+#endif  // V8_LITE_MODE
+}
+
+namespace {
+void FastCallback1TypedArray(v8::Local<v8::Object> receiver, int arg0,
+                             v8::FastApiTypedArray<double> arg1) {
+  // TODO(mslekova): Use the TypedArray parameter
+}
+
+void FastCallback2JSArray(v8::Local<v8::Object> receiver, int arg0,
+                          v8::Local<v8::Array> arg1) {
+  // TODO(mslekova): Use the JSArray parameter
+}
+
+void FastCallback3SwappedParams(v8::Local<v8::Object> receiver,
+                                v8::Local<v8::Array> arg0, int arg1) {}
+
+void FastCallback4Scalar(v8::Local<v8::Object> receiver, int arg0, float arg1) {
+}
+
+void FastCallback5DifferentArity(v8::Local<v8::Object> receiver, int arg0,
+                                 v8::Local<v8::Array> arg1, float arg2) {}
+}  // namespace
+
+TEST(FastApiSequenceOverloads) {
+#ifndef V8_LITE_MODE
+  if (i::FLAG_jitless) return;
+
+  v8::internal::FLAG_opt = true;
+  v8::internal::FLAG_turbo_fast_api_calls = true;
+  v8::internal::FLAG_allow_natives_syntax = true;
+  // Disable --always_opt, otherwise we haven't generated the necessary
+  // feedback to go down the "best optimization" path for the fast call.
+  v8::internal::FLAG_always_opt = false;
+  v8::internal::FlagList::EnforceFlagImplications();
+
+  v8::CFunction typed_array_callback =
+      v8::CFunctionBuilder()
+          .Fn(FastCallback1TypedArray)
+          .Arg<0, v8::CTypeInfo::Flags::kNone>()
+          .Arg<1, v8::CTypeInfo::Flags::kNone>()
+          .Arg<2, v8::CTypeInfo::Flags::kAllowSharedBit>()
+          .Build();
+  v8::CFunction js_array_callback = v8::CFunctionBuilder()
+                                        .Fn(FastCallback2JSArray)
+                                        .Arg<0, v8::CTypeInfo::Flags::kNone>()
+                                        .Arg<1, v8::CTypeInfo::Flags::kNone>()
+                                        .Arg<2, v8::CTypeInfo::Flags::kNone>()
+                                        .Build();
+
+  // TODO(mslekova): Create a FunctionTemplate with the 2 overloads.
+  USE(typed_array_callback);
+  USE(js_array_callback);
+
+#endif  // V8_LITE_MODE
+}
+
+TEST(FastApiOverloadResolution) {
+#ifndef V8_LITE_MODE
+  if (i::FLAG_jitless) return;
+
+  v8::internal::FLAG_opt = true;
+  v8::internal::FLAG_turbo_fast_api_calls = true;
+  v8::internal::FLAG_allow_natives_syntax = true;
+  // Disable --always_opt, otherwise we haven't generated the necessary
+  // feedback to go down the "best optimization" path for the fast call.
+  v8::internal::FLAG_always_opt = false;
+  v8::internal::FlagList::EnforceFlagImplications();
+
+  v8::CFunction typed_array_callback =
+      v8::CFunctionBuilder().Fn(FastCallback1TypedArray).Build();
+  v8::CFunction js_array_callback =
+      v8::CFunctionBuilder().Fn(FastCallback2JSArray).Build();
+
+  // Check that a general runtime overload resolution is possible.
+  CHECK_EQ(v8::CFunction::OverloadResolution::kAtRuntime,
+           typed_array_callback.GetOverloadResolution(&js_array_callback));
+
+  v8::CFunction swapped_params_callback =
+      v8::CFunctionBuilder().Fn(FastCallback3SwappedParams).Build();
+
+  // Check that difference in > 1 position is not possible.
+  CHECK_EQ(
+      v8::CFunction::OverloadResolution::kImpossible,
+      typed_array_callback.GetOverloadResolution(&swapped_params_callback));
+
+  v8::CFunction scalar_callback =
+      v8::CFunctionBuilder().Fn(FastCallback4Scalar).Build();
+
+  // Check that resolving when there is a scalar at the difference position
+  // is not possible.
+  CHECK_EQ(v8::CFunction::OverloadResolution::kImpossible,
+           typed_array_callback.GetOverloadResolution(&scalar_callback));
+
+  v8::CFunction diff_arity_callback =
+      v8::CFunctionBuilder().Fn(FastCallback5DifferentArity).Build();
+
+  // Check that overload resolution between different number of arguments
+  // is possible.
+  CHECK_EQ(v8::CFunction::OverloadResolution::kAtCompileTime,
+           typed_array_callback.GetOverloadResolution(&diff_arity_callback));
+
 #endif  // V8_LITE_MODE
 }
 

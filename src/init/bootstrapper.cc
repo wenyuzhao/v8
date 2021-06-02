@@ -4434,9 +4434,18 @@ EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_error_cause)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_intl_best_fit_matcher)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_intl_displaynames_date_types)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_intl_dateformat_day_period)
+EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_intl_more_timezone)
 #endif  // V8_INTL_SUPPORT
 
 #undef EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE
+
+void Genesis::InitializeGlobal_harmony_object_has_own() {
+  if (!FLAG_harmony_object_has_own) return;
+
+  Handle<JSFunction> object_function = isolate_->object_function();
+  SimpleInstallFunction(isolate_, object_function, "hasOwn",
+                        Builtins::kObjectHasOwn, 2, true);
+}
 
 void Genesis::InitializeGlobal_harmony_sharedarraybuffer() {
   if (!FLAG_harmony_sharedarraybuffer ||

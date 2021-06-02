@@ -11270,7 +11270,7 @@ void CodeStubAssembler::TrapAllocationMemento(TNode<JSObject> object,
 }
 
 TNode<IntPtrT> CodeStubAssembler::PageFromAddress(TNode<IntPtrT> address) {
-  DCHECK(!FLAG_enable_third_party_heap);
+  DCHECK(!V8_ENABLE_THIRD_PARTY_HEAP_BOOL);
   return WordAnd(address, IntPtrConstant(~kPageAlignmentMask));
 }
 

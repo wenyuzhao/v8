@@ -249,7 +249,7 @@ class V8_EXPORT_PRIVATE StatsCollector final {
   // reasonably interesting sizes.
   static constexpr size_t kAllocationThresholdBytes = 1024;
 
-  StatsCollector(std::unique_ptr<MetricRecorder>, Platform*);
+  explicit StatsCollector(Platform*);
   StatsCollector(const StatsCollector&) = delete;
   StatsCollector& operator=(const StatsCollector&) = delete;
 
@@ -293,8 +293,7 @@ class V8_EXPORT_PRIVATE StatsCollector final {
   void NotifyAllocatedMemory(int64_t);
   void NotifyFreedMemory(int64_t);
 
-  void SetMetricRecorderForTesting(
-      std::unique_ptr<MetricRecorder> histogram_recorder) {
+  void SetMetricRecorder(std::unique_ptr<MetricRecorder> histogram_recorder) {
     metric_recorder_ = std::move(histogram_recorder);
   }
 
@@ -326,6 +325,9 @@ class V8_EXPORT_PRIVATE StatsCollector final {
   // arithmetic for simplicity.
   int64_t allocated_bytes_since_safepoint_ = 0;
   int64_t explicitly_freed_bytes_since_safepoint_ = 0;
+#ifdef CPPGC_VERIFY_LIVE_BYTES
+  size_t live_bytes_ = 0;
+#endif  // CPPGC_VERIFY_LIVE_BYTES
 
   int64_t memory_allocated_bytes_ = 0;
   int64_t memory_freed_bytes_since_end_of_marking_ = 0;
@@ -344,6 +346,7 @@ class V8_EXPORT_PRIVATE StatsCollector final {
 
   std::unique_ptr<MetricRecorder> metric_recorder_;
 
+  // |platform_| is used by the TRACE_EVENT_* macros.
   Platform* platform_;
 };
 
