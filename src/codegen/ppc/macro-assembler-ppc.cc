@@ -332,8 +332,8 @@ void TurboAssembler::PushArray(Register array, Register size, Register scratch,
     mtctr(size);
 
     bind(&loop);
-    LoadPU(scratch2, MemOperand(scratch, -kSystemPointerSize));
-    StorePU(scratch2, MemOperand(sp, -kSystemPointerSize));
+    LoadU64WithUpdate(scratch2, MemOperand(scratch, -kSystemPointerSize));
+    StoreU64WithUpdate(scratch2, MemOperand(sp, -kSystemPointerSize));
     bdnz(&loop);
 
     bind(&done);
@@ -345,8 +345,8 @@ void TurboAssembler::PushArray(Register array, Register size, Register scratch,
     subi(scratch, array, Operand(kSystemPointerSize));
 
     bind(&loop);
-    LoadPU(scratch2, MemOperand(scratch, kSystemPointerSize));
-    StorePU(scratch2, MemOperand(sp, -kSystemPointerSize));
+    LoadU64WithUpdate(scratch2, MemOperand(scratch, kSystemPointerSize));
+    StoreU64WithUpdate(scratch2, MemOperand(sp, -kSystemPointerSize));
     bdnz(&loop);
     bind(&done);
   }
@@ -402,7 +402,7 @@ void TurboAssembler::MultiPush(RegList regs, Register location) {
   for (int16_t i = Register::kNumRegisters - 1; i >= 0; i--) {
     if ((regs & (1 << i)) != 0) {
       stack_offset -= kSystemPointerSize;
-      StoreP(ToRegister(i), MemOperand(location, stack_offset));
+      StoreU64(ToRegister(i), MemOperand(location, stack_offset));
     }
   }
 }
@@ -525,7 +525,7 @@ void TurboAssembler::StoreTaggedFieldX(const Register& value,
     stwx(value, dst_field_operand);
     RecordComment("]");
   } else {
-    StorePX(value, dst_field_operand);
+    StoreU64(value, dst_field_operand);
   }
 }
 
@@ -534,10 +534,10 @@ void TurboAssembler::StoreTaggedField(const Register& value,
                                       const Register& scratch) {
   if (COMPRESS_POINTERS_BOOL) {
     RecordComment("[ StoreTagged");
-    StoreWord(value, dst_field_operand, scratch);
+    StoreU32(value, dst_field_operand, scratch);
     RecordComment("]");
   } else {
-    StoreP(value, dst_field_operand, scratch);
+    StoreU64(value, dst_field_operand, scratch);
   }
 }
 
@@ -679,6 +679,7 @@ void TurboAssembler::CallRecordWriteStub(
     Register object, Register address,
     RememberedSetAction remembered_set_action, SaveFPRegsMode fp_mode,
     StubCallMode mode) {
+  DCHECK(!AreAliased(object, address));
   WriteBarrierDescriptor descriptor;
   RegList registers = descriptor.allocatable_registers();
   SaveRegisters(registers);
@@ -694,11 +695,15 @@ void TurboAssembler::CallRecordWriteStub(
   pop(slot_parameter);
   pop(object_parameter);
 
+#if V8_ENABLE_WEBASSEMBLY
   if (mode == StubCallMode::kCallWasmRuntimeStub) {
     // Use {near_call} for direct Wasm call within a module.
     auto wasm_target =
         wasm::WasmCode::GetRecordWriteStub(remembered_set_action, fp_mode);
     Call(wasm_target, RelocInfo::WASM_STUB_CALL);
+#else
+  if (false) {
+#endif
   } else {
     auto builtin_index =
         Builtins::GetRecordWriteStub(remembered_set_action, fp_mode);
@@ -728,7 +733,7 @@ void MacroAssembler::RecordWrite(Register object, Register address,
                                  SaveFPRegsMode fp_mode,
                                  RememberedSetAction remembered_set_action,
                                  SmiCheck smi_check) {
-  DCHECK(object != value);
+  DCHECK(!AreAliased(object, value, address));
   if (FLAG_debug_code) {
     LoadTaggedPointerField(r0, MemOperand(address));
     cmp(r0, value);
@@ -1200,20 +1205,20 @@ void MacroAssembler::EnterExitFrame(bool save_doubles, int stack_space,
 
   if (FLAG_debug_code) {
     li(r8, Operand::Zero());
-    StoreP(r8, MemOperand(fp, ExitFrameConstants::kSPOffset));
+    StoreU64(r8, MemOperand(fp, ExitFrameConstants::kSPOffset));
   }
   if (FLAG_enable_embedded_constant_pool) {
-    StoreP(kConstantPoolRegister,
-           MemOperand(fp, ExitFrameConstants::kConstantPoolOffset));
+    StoreU64(kConstantPoolRegister,
+             MemOperand(fp, ExitFrameConstants::kConstantPoolOffset));
   }
 
   // Save the frame pointer and the context in top.
   Move(r8, ExternalReference::Create(IsolateAddressId::kCEntryFPAddress,
                                      isolate()));
-  StoreP(fp, MemOperand(r8));
+  StoreU64(fp, MemOperand(r8));
   Move(r8,
        ExternalReference::Create(IsolateAddressId::kContextAddress, isolate()));
-  StoreP(cp, MemOperand(r8));
+  StoreU64(cp, MemOperand(r8));
 
   // Optionally save all volatile double registers.
   if (save_doubles) {
@@ -1235,13 +1240,13 @@ void MacroAssembler::EnterExitFrame(bool save_doubles, int stack_space,
                   Operand(base::bits::WhichPowerOfTwo(frame_alignment)));
   }
   li(r0, Operand::Zero());
-  StorePU(r0,
-          MemOperand(sp, -kNumRequiredStackFrameSlots * kSystemPointerSize));
+  StoreU64WithUpdate(
+      r0, MemOperand(sp, -kNumRequiredStackFrameSlots * kSystemPointerSize));
 
   // Set the exit frame sp value to point just before the return address
   // location.
   addi(r8, sp, Operand((kStackFrameExtraParamSlot + 1) * kSystemPointerSize));
-  StoreP(r8, MemOperand(fp, ExitFrameConstants::kSPOffset));
+  StoreU64(r8, MemOperand(fp, ExitFrameConstants::kSPOffset));
 }
 
 int TurboAssembler::ActivationFrameAlignment() {
@@ -1277,7 +1282,7 @@ void MacroAssembler::LeaveExitFrame(bool save_doubles, Register argument_count,
   li(r6, Operand::Zero());
   Move(ip, ExternalReference::Create(IsolateAddressId::kCEntryFPAddress,
                                      isolate()));
-  StoreP(r6, MemOperand(ip));
+  StoreU64(r6, MemOperand(ip));
 
   // Restore current context from top and clear it in debug mode.
   Move(ip,
@@ -1288,7 +1293,7 @@ void MacroAssembler::LeaveExitFrame(bool save_doubles, Register argument_count,
   mov(r6, Operand(Context::kInvalidContext));
   Move(ip,
        ExternalReference::Create(IsolateAddressId::kContextAddress, isolate()));
-  StoreP(r6, MemOperand(ip));
+  StoreU64(r6, MemOperand(ip));
 #endif
 
   // Tear down the exit frame, pop the arguments, and return.
@@ -1350,8 +1355,8 @@ void TurboAssembler::PrepareForTailCall(Register callee_args_count,
   addi(tmp_reg, callee_args_count, Operand(1));  // +1 for receiver
   mtctr(tmp_reg);
   bind(&loop);
-  LoadPU(tmp_reg, MemOperand(src_reg, -kSystemPointerSize));
-  StorePU(tmp_reg, MemOperand(dst_reg, -kSystemPointerSize));
+  LoadU64WithUpdate(tmp_reg, MemOperand(src_reg, -kSystemPointerSize));
+  StoreU64WithUpdate(tmp_reg, MemOperand(dst_reg, -kSystemPointerSize));
   bdnz(&loop);
 
   // Leave current frame.
@@ -1430,8 +1435,8 @@ void MacroAssembler::InvokePrologue(Register expected_parameter_count,
     mtctr(r0);
 
     bind(&copy);
-    LoadPU(r0, MemOperand(src, kSystemPointerSize));
-    StorePU(r0, MemOperand(dest, kSystemPointerSize));
+    LoadU64WithUpdate(r0, MemOperand(src, kSystemPointerSize));
+    StoreU64WithUpdate(r0, MemOperand(dest, kSystemPointerSize));
     bdnz(&copy);
   }
 
@@ -1442,7 +1447,7 @@ void MacroAssembler::InvokePrologue(Register expected_parameter_count,
 
     Label loop;
     bind(&loop);
-    StorePU(scratch, MemOperand(r8, kSystemPointerSize));
+    StoreU64WithUpdate(scratch, MemOperand(r8, kSystemPointerSize));
     bdnz(&loop);
   }
   b(&regular_invoke);
@@ -1597,7 +1602,7 @@ void MacroAssembler::PushStackHandler() {
   push(r0);
 
   // Set this new handler as the current one.
-  StoreP(sp, MemOperand(r3));
+  StoreU64(sp, MemOperand(r3));
 }
 
 void MacroAssembler::PopStackHandler() {
@@ -1607,7 +1612,7 @@ void MacroAssembler::PopStackHandler() {
   pop(r4);
   Move(ip,
        ExternalReference::Create(IsolateAddressId::kHandlerAddress, isolate()));
-  StoreP(r4, MemOperand(ip));
+  StoreU64(r4, MemOperand(ip));
 
   Drop(1);  // Drop padding.
 }
@@ -2082,8 +2087,8 @@ void TurboAssembler::PrepareCallCFunction(int num_reg_arguments,
     DCHECK(base::bits::IsPowerOfTwo(frame_alignment));
     ClearRightImm(sp, sp,
                   Operand(base::bits::WhichPowerOfTwo(frame_alignment)));
-    StoreP(scratch,
-           MemOperand(sp, stack_passed_arguments * kSystemPointerSize));
+    StoreU64(scratch,
+             MemOperand(sp, stack_passed_arguments * kSystemPointerSize));
   } else {
     // Make room for stack arguments
     stack_space += stack_passed_arguments;
@@ -2091,7 +2096,7 @@ void TurboAssembler::PrepareCallCFunction(int num_reg_arguments,
 
   // Allocate frame with required slots to make ABI work.
   li(r0, Operand::Zero());
-  StorePU(r0, MemOperand(sp, -stack_space * kSystemPointerSize));
+  StoreU64WithUpdate(r0, MemOperand(sp, -stack_space * kSystemPointerSize));
 }
 
 void TurboAssembler::PrepareCallCFunction(int num_reg_arguments,
@@ -2158,10 +2163,10 @@ void TurboAssembler::CallCFunctionHelper(Register function,
   // See x64 code for reasoning about how to address the isolate data fields.
   if (root_array_available()) {
     LoadPC(r0);
-    StoreP(r0, MemOperand(kRootRegister,
-                          IsolateData::fast_c_call_caller_pc_offset()));
-    StoreP(fp, MemOperand(kRootRegister,
-                          IsolateData::fast_c_call_caller_fp_offset()));
+    StoreU64(r0, MemOperand(kRootRegister,
+                            IsolateData::fast_c_call_caller_pc_offset()));
+    StoreU64(fp, MemOperand(kRootRegister,
+                            IsolateData::fast_c_call_caller_fp_offset()));
   } else {
     DCHECK_NOT_NULL(isolate());
     Push(addr_scratch);
@@ -2169,10 +2174,10 @@ void TurboAssembler::CallCFunctionHelper(Register function,
     Move(addr_scratch,
          ExternalReference::fast_c_call_caller_pc_address(isolate()));
     LoadPC(r0);
-    StoreP(r0, MemOperand(addr_scratch));
+    StoreU64(r0, MemOperand(addr_scratch));
     Move(addr_scratch,
          ExternalReference::fast_c_call_caller_fp_address(isolate()));
-    StoreP(fp, MemOperand(addr_scratch));
+    StoreU64(fp, MemOperand(addr_scratch));
     Pop(addr_scratch);
   }
   mtlr(scratch);
@@ -2202,7 +2207,7 @@ void TurboAssembler::CallCFunctionHelper(Register function,
   mov(zero_scratch, Operand::Zero());
 
   if (root_array_available()) {
-    StoreP(
+    StoreU64(
         zero_scratch,
         MemOperand(kRootRegister, IsolateData::fast_c_call_caller_fp_offset()));
   } else {
@@ -2210,7 +2215,7 @@ void TurboAssembler::CallCFunctionHelper(Register function,
     Push(addr_scratch);
     Move(addr_scratch,
          ExternalReference::fast_c_call_caller_fp_address(isolate()));
-    StoreP(zero_scratch, MemOperand(addr_scratch));
+    StoreU64(zero_scratch, MemOperand(addr_scratch));
     Pop(addr_scratch);
   }
 
@@ -2711,72 +2716,93 @@ void TurboAssembler::LoadU64(Register dst, const MemOperand& mem,
   }
 }
 
-void TurboAssembler::LoadPU(Register dst, const MemOperand& mem,
-                            Register scratch) {
+void TurboAssembler::LoadU64WithUpdate(Register dst, const MemOperand& mem,
+                                       Register scratch) {
   int offset = mem.offset();
 
-  if (!is_int16(offset)) {
-    /* cannot use d-form */
-    DCHECK(scratch != no_reg);
-    mov(scratch, Operand(offset));
-    LoadPUX(dst, MemOperand(mem.ra(), scratch));
+  if (mem.rb() == no_reg) {
+    if (!is_int16(offset)) {
+      /* cannot use d-form */
+      CHECK_NE(scratch, no_reg);
+      mov(scratch, Operand(offset));
+      ldux(dst, MemOperand(mem.ra(), scratch));
+    } else {
+      ldu(dst, mem);
+    }
   } else {
-#if V8_TARGET_ARCH_PPC64
-    ldu(dst, mem);
-#else
-    lwzu(dst, mem);
-#endif
+    if (offset == 0) {
+      ldux(dst, mem);
+    } else if (is_int16(offset)) {
+      CHECK_NE(scratch, no_reg);
+      addi(scratch, mem.rb(), Operand(offset));
+      ldux(dst, MemOperand(mem.ra(), scratch));
+    } else {
+      CHECK_NE(scratch, no_reg);
+      mov(scratch, Operand(offset));
+      add(scratch, scratch, mem.rb());
+      ldux(dst, MemOperand(mem.ra(), scratch));
+    }
   }
 }
 
 // Store a "pointer" sized value to the memory location
-void TurboAssembler::StoreP(Register src, const MemOperand& mem,
-                            Register scratch) {
+void TurboAssembler::StoreU64(Register src, const MemOperand& mem,
+                              Register scratch) {
   int offset = mem.offset();
+  int misaligned = (offset & 3);
 
-  if (!is_int16(offset)) {
-    /* cannot use d-form */
-    DCHECK(scratch != no_reg);
-    mov(scratch, Operand(offset));
-    StorePX(src, MemOperand(mem.ra(), scratch));
-  } else {
-#if V8_TARGET_ARCH_PPC64
-    int misaligned = (offset & 3);
-    if (misaligned) {
-      // adjust base to conform to offset alignment requirements
-      // a suitable scratch is required here
-      DCHECK(scratch != no_reg);
-      if (scratch == r0) {
-        LoadIntLiteral(scratch, offset);
-        stdx(src, MemOperand(mem.ra(), scratch));
-      } else {
-        addi(scratch, mem.ra(), Operand((offset & 3) - 4));
-        std(src, MemOperand(scratch, (offset & ~3) + 4));
-      }
+  if (mem.rb() == no_reg) {
+    if (!is_int16(offset) || misaligned) {
+      /* cannot use d-form */
+      CHECK_NE(scratch, no_reg);
+      mov(scratch, Operand(offset));
+      stdx(src, MemOperand(mem.ra(), scratch));
     } else {
       std(src, mem);
     }
-#else
-    stw(src, mem);
-#endif
+  } else {
+    if (offset == 0) {
+      stdx(src, mem);
+    } else if (is_int16(offset)) {
+      CHECK_NE(scratch, no_reg);
+      addi(scratch, mem.rb(), Operand(offset));
+      stdx(src, MemOperand(mem.ra(), scratch));
+    } else {
+      CHECK_NE(scratch, no_reg);
+      mov(scratch, Operand(offset));
+      add(scratch, scratch, mem.rb());
+      stdx(src, MemOperand(mem.ra(), scratch));
+    }
   }
 }
 
-void TurboAssembler::StorePU(Register src, const MemOperand& mem,
-                             Register scratch) {
+void TurboAssembler::StoreU64WithUpdate(Register src, const MemOperand& mem,
+                                        Register scratch) {
   int offset = mem.offset();
+  int misaligned = (offset & 3);
 
-  if (!is_int16(offset)) {
-    /* cannot use d-form */
-    DCHECK(scratch != no_reg);
-    mov(scratch, Operand(offset));
-    StorePUX(src, MemOperand(mem.ra(), scratch));
+  if (mem.rb() == no_reg) {
+    if (!is_int16(offset) || misaligned) {
+      /* cannot use d-form */
+      CHECK_NE(scratch, no_reg);
+      mov(scratch, Operand(offset));
+      stdux(src, MemOperand(mem.ra(), scratch));
+    } else {
+      stdu(src, mem);
+    }
   } else {
-#if V8_TARGET_ARCH_PPC64
-    stdu(src, mem);
-#else
-    stwu(src, mem);
-#endif
+    if (offset == 0) {
+      stdux(src, mem);
+    } else if (is_int16(offset)) {
+      CHECK_NE(scratch, no_reg);
+      addi(scratch, mem.rb(), Operand(offset));
+      stdux(src, MemOperand(mem.ra(), scratch));
+    } else {
+      CHECK_NE(scratch, no_reg);
+      mov(scratch, Operand(offset));
+      add(scratch, scratch, mem.rb());
+      stdux(src, MemOperand(mem.ra(), scratch));
+    }
   }
 }
 
@@ -2821,8 +2847,8 @@ void TurboAssembler::LoadU32(Register dst, const MemOperand& mem,
 
 // Variable length depending on whether offset fits into immediate field
 // MemOperand current only supports d-form
-void TurboAssembler::StoreWord(Register src, const MemOperand& mem,
-                               Register scratch) {
+void TurboAssembler::StoreU32(Register src, const MemOperand& mem,
+                              Register scratch) {
   Register base = mem.ra();
   int offset = mem.offset();
 
@@ -2865,8 +2891,8 @@ void TurboAssembler::LoadU16(Register dst, const MemOperand& mem,
 
 // Variable length depending on whether offset fits into immediate field
 // MemOperand current only supports d-form
-void MacroAssembler::StoreHalfWord(Register src, const MemOperand& mem,
-                                   Register scratch) {
+void TurboAssembler::StoreU16(Register src, const MemOperand& mem,
+                              Register scratch) {
   Register base = mem.ra();
   int offset = mem.offset();
 
@@ -2895,8 +2921,8 @@ void TurboAssembler::LoadU8(Register dst, const MemOperand& mem,
 
 // Variable length depending on whether offset fits into immediate field
 // MemOperand current only supports d-form
-void MacroAssembler::StoreByte(Register src, const MemOperand& mem,
-                               Register scratch) {
+void TurboAssembler::StoreU8(Register src, const MemOperand& mem,
+                             Register scratch) {
   Register base = mem.ra();
   int offset = mem.offset();
 
@@ -3070,7 +3096,7 @@ void TurboAssembler::SwapP(Register src, MemOperand dst, Register scratch) {
   DCHECK(!AreAliased(src, scratch));
   mr(scratch, src);
   LoadU64(src, dst, r0);
-  StoreP(scratch, dst, r0);
+  StoreU64(scratch, dst, r0);
 }
 
 void TurboAssembler::SwapP(MemOperand src, MemOperand dst, Register scratch_0,
@@ -3093,15 +3119,15 @@ void TurboAssembler::SwapP(MemOperand src, MemOperand dst, Register scratch_0,
     }
     LoadU64(scratch_1, dst, scratch_0);
     LoadU64(scratch_0, src);
-    StoreP(scratch_1, src);
-    StoreP(scratch_0, dst, scratch_1);
+    StoreU64(scratch_1, src);
+    StoreU64(scratch_0, dst, scratch_1);
   } else {
     LoadU64(scratch_1, dst, scratch_0);
     push(scratch_1);
     LoadU64(scratch_0, src, scratch_1);
-    StoreP(scratch_0, dst, scratch_1);
+    StoreU64(scratch_0, dst, scratch_1);
     pop(scratch_1);
-    StoreP(scratch_1, src, scratch_0);
+    StoreU64(scratch_1, src, scratch_0);
   }
 }
 
@@ -3331,7 +3357,7 @@ void TurboAssembler::StoreReturnAddressAndCall(Register target) {
   LoadPC(r7);
   bind(&start_call);
   addi(r7, r7, Operand(after_call_offset));
-  StoreP(r7, MemOperand(sp, kStackFrameExtraParamSlot * kSystemPointerSize));
+  StoreU64(r7, MemOperand(sp, kStackFrameExtraParamSlot * kSystemPointerSize));
   Call(dest);
 
   DCHECK_EQ(after_call_offset - kInstrSize,

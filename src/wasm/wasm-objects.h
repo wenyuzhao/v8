@@ -17,6 +17,7 @@
 #include "src/debug/debug.h"
 #include "src/heap/heap.h"
 #include "src/objects/js-function.h"
+#include "src/objects/js-objects.h"
 #include "src/objects/objects.h"
 #include "src/wasm/struct-types.h"
 #include "src/wasm/value-type.h"
@@ -935,7 +936,23 @@ class WasmTypeInfo : public TorqueGeneratedWasmTypeInfo<WasmTypeInfo, Foreign> {
   TQ_OBJECT_CONSTRUCTORS(WasmTypeInfo)
 };
 
-class WasmStruct : public TorqueGeneratedWasmStruct<WasmStruct, HeapObject> {
+class WasmObject : public JSReceiver {
+ public:
+  DECL_CAST(WasmObject)
+  DECL_VERIFIER(WasmObject)
+
+ protected:
+  // Returns boxed value of the object's field/element with given type and
+  // offset.
+  static inline Handle<Object> ReadValueAt(Isolate* isolate,
+                                           Handle<HeapObject> obj,
+                                           wasm::ValueType type,
+                                           uint32_t offset);
+
+  OBJECT_CONSTRUCTORS(WasmObject, JSReceiver);
+};
+
+class WasmStruct : public TorqueGeneratedWasmStruct<WasmStruct, WasmObject> {
  public:
   static inline wasm::StructType* type(Map map);
   inline wasm::StructType* type() const;
@@ -943,9 +960,18 @@ class WasmStruct : public TorqueGeneratedWasmStruct<WasmStruct, HeapObject> {
   static inline int Size(const wasm::StructType* type);
   static inline int GcSafeSize(Map map);
 
+  // Returns the address of the field at given offset.
+  inline Address RawFieldAddress(int raw_offset);
+
+  // Returns the ObjectSlot for tagged value at given offset.
   inline ObjectSlot RawField(int raw_offset);
 
   wasm::WasmValue GetFieldValue(uint32_t field_index);
+
+  // Returns boxed value of the object's field.
+  static inline Handle<Object> GetField(Isolate* isolate,
+                                        Handle<WasmStruct> obj,
+                                        uint32_t field_index);
 
   DECL_CAST(WasmStruct)
   DECL_PRINTER(WasmStruct)
@@ -955,7 +981,7 @@ class WasmStruct : public TorqueGeneratedWasmStruct<WasmStruct, HeapObject> {
   TQ_OBJECT_CONSTRUCTORS(WasmStruct)
 };
 
-class WasmArray : public TorqueGeneratedWasmArray<WasmArray, HeapObject> {
+class WasmArray : public TorqueGeneratedWasmArray<WasmArray, WasmObject> {
  public:
   static inline wasm::ArrayType* type(Map map);
   inline wasm::ArrayType* type() const;
@@ -965,6 +991,11 @@ class WasmArray : public TorqueGeneratedWasmArray<WasmArray, HeapObject> {
 
   static inline int SizeFor(Map map, int length);
   static inline int GcSafeSizeFor(Map map, int length);
+
+  // Returns boxed value of the array's element.
+  static inline Handle<Object> GetElement(Isolate* isolate,
+                                          Handle<WasmArray> array,
+                                          uint32_t index);
 
   DECL_CAST(WasmArray)
   DECL_PRINTER(WasmArray)

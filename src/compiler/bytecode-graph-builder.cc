@@ -11,6 +11,7 @@
 #include "src/common/assert-scope.h"
 #include "src/compiler/access-builder.h"
 #include "src/compiler/bytecode-analysis.h"
+#include "src/compiler/common-operator.h"
 #include "src/compiler/compiler-source-position-table.h"
 #include "src/compiler/js-heap-broker.h"
 #include "src/compiler/linkage.h"
@@ -69,6 +70,11 @@ class BytecodeGraphBuilder {
 
   // Get or create the node that represents the outer function closure.
   Node* GetFunctionClosure();
+
+  // Get or create the node for this parameter index. If such a node is
+  // already cached, it is returned directly and the {debug_name_hint} is
+  // ignored.
+  Node* GetParameter(int index, const char* debug_name_hint = nullptr);
 
   CodeKind code_kind() const { return code_kind_; }
   bool native_context_independent() const {
@@ -518,6 +524,8 @@ class BytecodeGraphBuilder {
   // the "resuming" ones. They are indexed by the suspend id of the resume.
   ZoneMap<int, Environment*> generator_merge_environments_;
 
+  ZoneVector<Node*> cached_parameters_;
+
   // Exception handlers currently entered by the iteration.
   ZoneStack<ExceptionHandler> exception_handlers_;
   int current_exception_handler_;
@@ -697,8 +705,7 @@ BytecodeGraphBuilder::Environment::Environment(
   // Parameters including the receiver
   for (int i = 0; i < parameter_count; i++) {
     const char* debug_name = (i == 0) ? "%this" : nullptr;
-    const Operator* op = common()->Parameter(i, debug_name);
-    Node* parameter = builder->graph()->NewNode(op, graph()->start());
+    Node* parameter = builder->GetParameter(i, debug_name);
     values()->push_back(parameter);
   }
 
@@ -713,15 +720,14 @@ BytecodeGraphBuilder::Environment::Environment(
 
   // Context
   int context_index = Linkage::GetJSCallContextParamIndex(parameter_count);
-  const Operator* op = common()->Parameter(context_index, "%context");
-  context_ = builder->graph()->NewNode(op, graph()->start());
+  context_ = builder->GetParameter(context_index, "%context");
 
   // Incoming new.target or generator register
   if (incoming_new_target_or_generator.is_valid()) {
     int new_target_index =
         Linkage::GetJSCallNewTargetParamIndex(parameter_count);
-    const Operator* op = common()->Parameter(new_target_index, "%new.target");
-    Node* new_target_node = builder->graph()->NewNode(op, graph()->start());
+    Node* new_target_node =
+        builder->GetParameter(new_target_index, "%new.target");
 
     int values_index = RegisterToValuesIndex(incoming_new_target_or_generator);
     values()->at(values_index) = new_target_node;
@@ -1101,6 +1107,7 @@ BytecodeGraphBuilder::BytecodeGraphBuilder(
                               BytecodeGraphBuilderFlag::kSkipFirstStackCheck),
       merge_environments_(local_zone),
       generator_merge_environments_(local_zone),
+      cached_parameters_(local_zone),
       exception_handlers_(local_zone),
       current_exception_handler_(0),
       input_buffer_size_(0),
@@ -1120,11 +1127,30 @@ BytecodeGraphBuilder::BytecodeGraphBuilder(
 Node* BytecodeGraphBuilder::GetFunctionClosure() {
   if (!function_closure_.is_set()) {
     int index = Linkage::kJSCallClosureParamIndex;
-    const Operator* op = common()->Parameter(index, "%closure");
-    Node* node = NewNode(op, graph()->start());
+    Node* node = GetParameter(index, "%closure");
     function_closure_.set(node);
   }
   return function_closure_.get();
+}
+
+Node* BytecodeGraphBuilder::GetParameter(int parameter_index,
+                                         const char* debug_name_hint) {
+  // We use negative indices for some parameters.
+  DCHECK_LE(ParameterInfo::kMinIndex, parameter_index);
+  const size_t index =
+      static_cast<size_t>(parameter_index - ParameterInfo::kMinIndex);
+
+  if (cached_parameters_.size() <= index) {
+    cached_parameters_.resize(index + 1, nullptr);
+  }
+
+  if (cached_parameters_[index] == nullptr) {
+    cached_parameters_[index] =
+        NewNode(common()->Parameter(parameter_index, debug_name_hint),
+                graph()->start());
+  }
+
+  return cached_parameters_[index];
 }
 
 void BytecodeGraphBuilder::CreateFeedbackCellNode() {
@@ -1203,15 +1229,10 @@ void BytecodeGraphBuilder::MaybeBuildTierUpCheck() {
 
   int parameter_count = bytecode_array().parameter_count();
   Node* target = GetFunctionClosure();
-  Node* new_target = graph()->NewNode(
-      common()->Parameter(
-          Linkage::GetJSCallNewTargetParamIndex(parameter_count),
-          "%new.target"),
-      graph()->start());
-  Node* argc = graph()->NewNode(
-      common()->Parameter(Linkage::GetJSCallArgCountParamIndex(parameter_count),
-                          "%argc"),
-      graph()->start());
+  Node* new_target = GetParameter(
+      Linkage::GetJSCallNewTargetParamIndex(parameter_count), "%new.target");
+  Node* argc = GetParameter(
+      Linkage::GetJSCallArgCountParamIndex(parameter_count), "%argc");
   DCHECK_EQ(environment()->Context()->opcode(), IrOpcode::kParameter);
   Node* context = environment()->Context();
 
@@ -1569,20 +1590,8 @@ void BytecodeGraphBuilder::VisitBytecodes() {
     BuildFunctionEntryStackCheck();
   }
 
-  bool has_one_shot_bytecode = false;
   for (; !bytecode_iterator().done(); bytecode_iterator().Advance()) {
-    if (interpreter::Bytecodes::IsOneShotBytecode(
-            bytecode_iterator().current_bytecode())) {
-      has_one_shot_bytecode = true;
-    }
     VisitSingleBytecode();
-  }
-
-  // TODO(leszeks): Increment usage counter on BG thread.
-  if (!broker()->is_concurrent_inlining() && has_one_shot_bytecode) {
-    // (For concurrent inlining this is done in the serializer instead.)
-    isolate()->CountUsage(
-        v8::Isolate::UseCounterFeature::kOptimizedFunctionWithOneShotBytecode);
   }
 
   DCHECK(exception_handlers_.empty());
@@ -2103,17 +2112,6 @@ void BytecodeGraphBuilder::VisitLdaNamedProperty() {
   environment()->BindAccumulator(node, Environment::kAttachFrameState);
 }
 
-void BytecodeGraphBuilder::VisitLdaNamedPropertyNoFeedback() {
-  PrepareEagerCheckpoint();
-  Node* object =
-      environment()->LookupRegister(bytecode_iterator().GetRegisterOperand(0));
-  NameRef name = MakeRefForConstantForIndexOperand<Name>(1);
-  const Operator* op = javascript()->LoadNamed(name.object(), FeedbackSource());
-  DCHECK(IrOpcode::IsFeedbackCollectingOpcode(op->opcode()));
-  Node* node = NewNode(op, object, feedback_vector_node());
-  environment()->BindAccumulator(node, Environment::kAttachFrameState);
-}
-
 void BytecodeGraphBuilder::VisitLdaNamedPropertyFromSuper() {
   PrepareEagerCheckpoint();
   Node* receiver =
@@ -2207,21 +2205,6 @@ void BytecodeGraphBuilder::BuildNamedStore(StoreMode store_mode) {
 
 void BytecodeGraphBuilder::VisitStaNamedProperty() {
   BuildNamedStore(StoreMode::kNormal);
-}
-
-void BytecodeGraphBuilder::VisitStaNamedPropertyNoFeedback() {
-  PrepareEagerCheckpoint();
-  Node* value = environment()->LookupAccumulator();
-  Node* object =
-      environment()->LookupRegister(bytecode_iterator().GetRegisterOperand(0));
-  NameRef name = MakeRefForConstantForIndexOperand<Name>(1);
-  LanguageMode language_mode =
-      static_cast<LanguageMode>(bytecode_iterator().GetFlagOperand(2));
-  const Operator* op =
-      javascript()->StoreNamed(language_mode, name.object(), FeedbackSource());
-  DCHECK(IrOpcode::IsFeedbackCollectingOpcode(op->opcode()));
-  Node* node = NewNode(op, object, value, feedback_vector_node());
-  environment()->RecordAfterState(node, Environment::kAttachFrameState);
 }
 
 void BytecodeGraphBuilder::VisitStaNamedOwnProperty() {
@@ -2580,34 +2563,6 @@ void BytecodeGraphBuilder::BuildCallVarArgs(ConvertReceiverMode receiver_mode) {
 
 void BytecodeGraphBuilder::VisitCallAnyReceiver() {
   BuildCallVarArgs(ConvertReceiverMode::kAny);
-}
-
-void BytecodeGraphBuilder::VisitCallNoFeedback() {
-  DCHECK_EQ(interpreter::Bytecodes::GetReceiverMode(
-                bytecode_iterator().current_bytecode()),
-            ConvertReceiverMode::kAny);
-
-  PrepareEagerCheckpoint();
-  Node* callee =
-      environment()->LookupRegister(bytecode_iterator().GetRegisterOperand(0));
-
-  interpreter::Register first_reg = bytecode_iterator().GetRegisterOperand(1);
-  size_t reg_count = bytecode_iterator().GetRegisterCountOperand(2);
-
-  // The receiver is the first register, followed by the arguments in the
-  // consecutive registers.
-  int arg_count = static_cast<int>(reg_count) - 1;
-  int arity = JSCallNode::ArityForArgc(arg_count);
-
-  // Setting call frequency to a value less than min_inlining frequency to
-  // prevent inlining of one-shot call node.
-  DCHECK(CallFrequency::kNoFeedbackCallFrequency < FLAG_min_inlining_frequency);
-  const Operator* call = javascript()->Call(
-      arity, CallFrequency(CallFrequency::kNoFeedbackCallFrequency));
-  Node* const* call_args = ProcessCallVarArgs(ConvertReceiverMode::kAny, callee,
-                                              first_reg, arg_count);
-  Node* value = MakeNode(call, arity, call_args);
-  environment()->BindAccumulator(value, Environment::kAttachFrameState);
 }
 
 void BytecodeGraphBuilder::VisitCallProperty() {
@@ -4421,6 +4376,11 @@ Node* BytecodeGraphBuilder::MakeNode(const Operator* op, int value_input_count,
                                      Node* const* value_inputs,
                                      bool incomplete) {
   DCHECK_EQ(op->ValueInputCount(), value_input_count);
+  // Parameter nodes must be created through GetParameter.
+  DCHECK_IMPLIES(
+      op->opcode() == IrOpcode::kParameter,
+      (nullptr == cached_parameters_[static_cast<std::size_t>(
+                      ParameterIndexOf(op) - ParameterInfo::kMinIndex)]));
 
   bool has_context = OperatorProperties::HasContextInput(op);
   bool has_frame_state = OperatorProperties::HasFrameStateInput(op);

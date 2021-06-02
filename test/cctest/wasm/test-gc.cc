@@ -457,6 +457,63 @@ WASM_COMPILED_EXEC_TEST(BrOnCast) {
   tester.CheckResult(kTypedAfterBranch, 42);
 }
 
+WASM_COMPILED_EXEC_TEST(BrOnCastFail) {
+  WasmGCTester tester(execution_tier);
+  ValueType kDataRefNull = ValueType::Ref(HeapType::kData, kNullable);
+  const byte type0 = tester.DefineStruct({F(kWasmI32, true)});
+  const byte type1 =
+      tester.DefineStruct({F(kWasmI64, true), F(kWasmI32, true)});
+
+  const int field0_value = 5;
+  const int field1_value = 25;
+  const int null_value = 45;
+
+  //  local_0 = value;
+  //  if (!(local_0 instanceof type0)) goto block1;
+  //  return static_cast<type0>(local_0).field_0;
+  // block1:
+  //  if (local_0 == nullptr) goto block2;
+  //  return static_cast<type1>(local_0).field_1;
+  // block2:
+  //  return null_value;
+#define FUNCTION_BODY(value)                                                 \
+  WASM_LOCAL_SET(0, WASM_SEQ(value)),                                        \
+      WASM_BLOCK(                                                            \
+          WASM_BLOCK_R(kDataRefNull, WASM_LOCAL_GET(0),                      \
+                       WASM_BR_ON_CAST_FAIL(0, WASM_RTT_CANON(type0)),       \
+                       WASM_GC_OP(kExprStructGet), type0, 0, kExprReturn),   \
+          kExprBrOnNull, 0, WASM_RTT_CANON(type1), WASM_GC_OP(kExprRefCast), \
+          WASM_GC_OP(kExprStructGet), type1, 1, kExprReturn),                \
+      WASM_I32V(null_value), kExprEnd
+
+  const byte kBranchTaken =
+      tester.DefineFunction(tester.sigs.i_v(), {kDataRefNull},
+                            {FUNCTION_BODY(WASM_STRUCT_NEW_WITH_RTT(
+                                type1, WASM_I64V(10), WASM_I32V(field1_value),
+                                WASM_RTT_CANON(type1)))});
+
+  const byte kBranchNotTaken = tester.DefineFunction(
+      tester.sigs.i_v(), {kDataRefNull},
+      {FUNCTION_BODY(WASM_STRUCT_NEW_WITH_RTT(type0, WASM_I32V(field0_value),
+                                              WASM_RTT_CANON(type0)))});
+
+  const byte kNull = tester.DefineFunction(
+      tester.sigs.i_v(), {kDataRefNull}, {FUNCTION_BODY(WASM_REF_NULL(type0))});
+
+  const byte kUnrelatedTypes = tester.DefineFunction(
+      tester.sigs.i_v(), {ValueType::Ref(type1, kNullable)},
+      {FUNCTION_BODY(WASM_STRUCT_NEW_WITH_RTT(type1, WASM_I64V(10),
+                                              WASM_I32V(field1_value),
+                                              WASM_RTT_CANON(type1)))});
+#undef FUNCTION_BODY
+
+  tester.CompileModule();
+  tester.CheckResult(kBranchTaken, field1_value);
+  tester.CheckResult(kBranchNotTaken, field0_value);
+  tester.CheckResult(kNull, null_value);
+  tester.CheckResult(kUnrelatedTypes, field1_value);
+}
+
 WASM_COMPILED_EXEC_TEST(WasmRefEq) {
   WasmGCTester tester(execution_tier);
   byte type_index = tester.DefineStruct({F(kWasmI32, true), F(kWasmI32, true)});
@@ -1342,13 +1399,13 @@ WASM_COMPILED_EXEC_TEST(AbstractTypeChecks) {
 
 // If the branch is not taken, we return 0. If it is taken, then the respective
 // type check should succeed, and we return 1.
-#define BR_ON(TYPE, type, value)                                      \
-  tester.DefineFunction(                                              \
-      tester.sigs.i_v(), {kWasmAnyRef},                               \
-      {WASM_LOCAL_SET(0, WASM_SEQ(value)),                            \
-       WASM_REF_IS_##TYPE(WASM_BLOCK_R(                               \
-           kWasm##type##Ref, WASM_BR_ON_##TYPE(0, WASM_LOCAL_GET(0)), \
-           WASM_RETURN(WASM_I32V(0)))),                               \
+#define BR_ON(TYPE, type, value)                                            \
+  tester.DefineFunction(                                                    \
+      tester.sigs.i_v(), {kWasmAnyRef},                                     \
+      {WASM_LOCAL_SET(0, WASM_SEQ(value)),                                  \
+       WASM_REF_IS_##TYPE(WASM_BLOCK_R(kWasm##type##Ref, WASM_LOCAL_GET(0), \
+                                       WASM_BR_ON_##TYPE(0),                \
+                                       WASM_RETURN(WASM_I32V(0)))),         \
        kExprEnd})
 
   byte kBrOnDataTaken =
@@ -1365,34 +1422,71 @@ WASM_COMPILED_EXEC_TEST(AbstractTypeChecks) {
                                    WASM_RTT_CANON(array_index)));
 #undef BR_ON
 
+// If the branch is not taken, we return 1. If it is taken, then the respective
+// type check should fail, and we return 0.
+#define BR_ON_NON(TYPE, type, value)                                   \
+  tester.DefineFunction(                                               \
+      tester.sigs.i_v(), {kWasmAnyRef},                                \
+      {WASM_LOCAL_SET(0, WASM_SEQ(value)),                             \
+       WASM_REF_IS_##TYPE(WASM_BLOCK_R(kWasmAnyRef, WASM_LOCAL_GET(0), \
+                                       WASM_BR_ON_NON_##TYPE(0),       \
+                                       WASM_RETURN(WASM_I32V(1)))),    \
+       kExprEnd})
+
+  byte kBrOnNonDataNotTaken =
+      BR_ON_NON(DATA, Data,
+                WASM_ARRAY_NEW_DEFAULT(array_index, WASM_I32V(10),
+                                       WASM_RTT_CANON(array_index)));
+  byte kBrOnNonDataTaken = BR_ON_NON(DATA, Data, WASM_REF_FUNC(function_index));
+  byte kBrOnNonFuncNotTaken =
+      BR_ON_NON(FUNC, Func, WASM_REF_FUNC(function_index));
+  byte kBrOnNonFuncTaken = BR_ON_NON(FUNC, Func, WASM_I31_NEW(WASM_I32V(42)));
+  byte kBrOnNonI31NotTaken = BR_ON_NON(I31, I31, WASM_I31_NEW(WASM_I32V(42)));
+  byte kBrOnNonI31Taken =
+      BR_ON_NON(I31, I31,
+                WASM_ARRAY_NEW_DEFAULT(array_index, WASM_I32V(10),
+                                       WASM_RTT_CANON(array_index)));
+#undef BR_ON_NON
+
   tester.CompileModule();
 
   tester.CheckResult(kDataCheckNull, 0);
+  tester.CheckResult(kFuncCheckNull, 0);
+  tester.CheckResult(kI31CheckNull, 0);
+
   tester.CheckHasThrown(kDataCastNull);
+  tester.CheckHasThrown(kFuncCastNull);
+  tester.CheckHasThrown(kI31CastNull);
+
   tester.CheckResult(kDataCheckSuccess, 1);
+  tester.CheckResult(kFuncCheckSuccess, 1);
+  tester.CheckResult(kI31CheckSuccess, 1);
+
   tester.CheckResult(kDataCheckFailure, 0);
+  tester.CheckResult(kFuncCheckFailure, 0);
+  tester.CheckResult(kI31CheckFailure, 0);
+
   tester.CheckResult(kDataCastSuccess, 1);
+  tester.CheckResult(kFuncCastSuccess, 1);
+  tester.CheckResult(kI31CastSuccess, 1);
+
   tester.CheckHasThrown(kDataCastFailure);
+  tester.CheckHasThrown(kFuncCastFailure);
+  tester.CheckHasThrown(kI31CastFailure);
+
   tester.CheckResult(kBrOnDataTaken, 1);
   tester.CheckResult(kBrOnDataNotTaken, 0);
-
-  tester.CheckResult(kFuncCheckNull, 0);
-  tester.CheckHasThrown(kFuncCastNull);
-  tester.CheckResult(kFuncCheckSuccess, 1);
-  tester.CheckResult(kFuncCheckFailure, 0);
-  tester.CheckResult(kFuncCastSuccess, 1);
-  tester.CheckHasThrown(kFuncCastFailure);
   tester.CheckResult(kBrOnFuncTaken, 1);
   tester.CheckResult(kBrOnFuncNotTaken, 0);
-
-  tester.CheckResult(kI31CheckNull, 0);
-  tester.CheckHasThrown(kI31CastNull);
-  tester.CheckResult(kI31CheckSuccess, 1);
-  tester.CheckResult(kI31CheckFailure, 0);
-  tester.CheckResult(kI31CastSuccess, 1);
-  tester.CheckHasThrown(kI31CastFailure);
   tester.CheckResult(kBrOnI31Taken, 1);
   tester.CheckResult(kBrOnI31NotTaken, 0);
+
+  tester.CheckResult(kBrOnNonDataTaken, 0);
+  tester.CheckResult(kBrOnNonDataNotTaken, 1);
+  tester.CheckResult(kBrOnNonFuncTaken, 0);
+  tester.CheckResult(kBrOnNonFuncNotTaken, 1);
+  tester.CheckResult(kBrOnNonI31Taken, 0);
+  tester.CheckResult(kBrOnNonI31NotTaken, 1);
 }
 
 WASM_COMPILED_EXEC_TEST(BasicI31) {

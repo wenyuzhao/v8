@@ -422,21 +422,13 @@ class WasmGraphAssembler : public GraphAssembler {
 
   Node* IsDataRefMap(Node* map) {
     Node* instance_type = LoadInstanceType(map);
-    // We're going to test a range of instance types with a single unsigned
-    // comparison. Statically assert that this is safe, i.e. that there are
-    // no instance types between array and struct types that might possibly
-    // occur (i.e. internal types are OK, types of Wasm objects are not).
-    // At the time of this writing:
-    // WASM_ARRAY_TYPE = 184
-    // WASM_STRUCT_TYPE = 185
-    // The specific values don't matter; the relative order does.
-    static_assert(
-        WASM_STRUCT_TYPE == static_cast<InstanceType>(WASM_ARRAY_TYPE + 1),
-        "Relying on specific InstanceType values here");
+    // We're going to test a range of WasmObject instance types with a single
+    // unsigned comparison.
     Node* comparison_value =
-        Int32Sub(instance_type, Int32Constant(WASM_ARRAY_TYPE));
+        Int32Sub(instance_type, Int32Constant(FIRST_WASM_OBJECT_TYPE));
     return Uint32LessThanOrEqual(
-        comparison_value, Int32Constant(WASM_STRUCT_TYPE - WASM_ARRAY_TYPE));
+        comparison_value,
+        Int32Constant(LAST_WASM_OBJECT_TYPE - FIRST_WASM_OBJECT_TYPE));
   }
 
   // Generic HeapObject helpers.
@@ -3020,9 +3012,18 @@ void WasmGraphBuilder::LoadIndirectFunctionTable(uint32_t table_index,
                                                  Node** ift_sig_ids,
                                                  Node** ift_targets,
                                                  Node** ift_instances) {
+  bool needs_dynamic_size = true;
+  const wasm::WasmTable& table = env_->module->tables[table_index];
+  if (table.has_maximum_size && table.maximum_size == table.initial_size) {
+    *ift_size = Int32Constant(table.initial_size);
+    needs_dynamic_size = false;
+  }
+
   if (table_index == 0) {
-    *ift_size = LOAD_MUTABLE_INSTANCE_FIELD(IndirectFunctionTableSize,
-                                            MachineType::Uint32());
+    if (needs_dynamic_size) {
+      *ift_size = LOAD_MUTABLE_INSTANCE_FIELD(IndirectFunctionTableSize,
+                                              MachineType::Uint32());
+    }
     *ift_sig_ids = LOAD_MUTABLE_INSTANCE_FIELD(IndirectFunctionTableSigIds,
                                                MachineType::Pointer());
     *ift_targets = LOAD_MUTABLE_INSTANCE_FIELD(IndirectFunctionTableTargets,
@@ -3036,9 +3037,11 @@ void WasmGraphBuilder::LoadIndirectFunctionTable(uint32_t table_index,
                                                  MachineType::TaggedPointer());
   Node* ift_table = gasm_->LoadFixedArrayElementAny(ift_tables, table_index);
 
-  *ift_size = gasm_->LoadFromObject(
-      MachineType::Int32(), ift_table,
-      wasm::ObjectAccess::ToTagged(WasmIndirectFunctionTable::kSizeOffset));
+  if (needs_dynamic_size) {
+    *ift_size = gasm_->LoadFromObject(
+        MachineType::Int32(), ift_table,
+        wasm::ObjectAccess::ToTagged(WasmIndirectFunctionTable::kSizeOffset));
+  }
 
   *ift_sig_ids = gasm_->LoadFromObject(
       MachineType::Pointer(), ift_table,
@@ -3707,7 +3710,8 @@ Node* WasmGraphBuilder::CheckBoundsAndAlignment(
   // Atomic operations need bounds checks until the backend can emit protected
   // loads.
   index =
-      BoundsCheckMem(access_size, index, offset, position, kNeedsBoundsCheck);
+      BoundsCheckMem(access_size, index, offset, position, kNeedsBoundsCheck)
+          .first;
 
   const uintptr_t align_mask = access_size - 1;
 
@@ -3740,17 +3744,12 @@ Node* WasmGraphBuilder::CheckBoundsAndAlignment(
 // Insert code to bounds check a memory access if necessary. Return the
 // bounds-checked index, which is guaranteed to have (the equivalent of)
 // {uintptr_t} representation.
-Node* WasmGraphBuilder::BoundsCheckMem(uint8_t access_size, Node* index,
-                                       uint64_t offset,
-                                       wasm::WasmCodePosition position,
-                                       EnforceBoundsCheck enforce_check) {
+std::pair<Node*, WasmGraphBuilder::BoundsCheckResult>
+WasmGraphBuilder::BoundsCheckMem(uint8_t access_size, Node* index,
+                                 uint64_t offset,
+                                 wasm::WasmCodePosition position,
+                                 EnforceBoundsCheck enforce_check) {
   DCHECK_LE(1, access_size);
-  if (!env_->module->is_memory64) index = BuildChangeUint32ToUintPtr(index);
-  if (!FLAG_wasm_bounds_checks) return index;
-
-  if (use_trap_handler() && enforce_check == kCanOmitBoundsCheck) {
-    return index;
-  }
 
   // If the offset does not fit in a uintptr_t, this can never succeed on this
   // machine.
@@ -3759,20 +3758,28 @@ Node* WasmGraphBuilder::BoundsCheckMem(uint8_t access_size, Node* index,
                                    env_->max_memory_size)) {
     // The access will be out of bounds, even for the largest memory.
     TrapIfEq32(wasm::kTrapMemOutOfBounds, Int32Constant(0), 0, position);
-    return gasm_->UintPtrConstant(0);
+    return {gasm_->UintPtrConstant(0), kOutOfBounds};
   }
-  uintptr_t end_offset = offset + access_size - 1u;
-  Node* end_offset_node = mcgraph_->UintPtrConstant(end_offset);
 
-  // In memory64 mode on 32-bit systems, the upper 32 bits need to be zero to
-  // succeed the bounds check.
-  if (kSystemPointerSize == kInt32Size && env_->module->is_memory64) {
-    Node* high_word =
-        gasm_->TruncateInt64ToInt32(gasm_->Word64Shr(index, Int32Constant(32)));
-    TrapIfTrue(wasm::kTrapMemOutOfBounds, high_word, position);
+  // Convert the index to uintptr.
+  if (!env_->module->is_memory64) {
+    index = BuildChangeUint32ToUintPtr(index);
+  } else if (kSystemPointerSize == kInt32Size) {
+    // In memory64 mode on 32-bit systems, the upper 32 bits need to be zero to
+    // succeed the bounds check.
+    DCHECK(!use_trap_handler());
+    if (FLAG_wasm_bounds_checks) {
+      Node* high_word = gasm_->TruncateInt64ToInt32(
+          gasm_->Word64Shr(index, Int32Constant(32)));
+      TrapIfTrue(wasm::kTrapMemOutOfBounds, high_word, position);
+    }
     // Only use the low word for the following bounds check.
     index = gasm_->TruncateInt64ToInt32(index);
   }
+
+  // If no bounds checks should be performed (for testing), just return the
+  // converted index and assume it to be in-bounds.
+  if (!FLAG_wasm_bounds_checks) return {index, kInBounds};
 
   // The accessed memory is [index + offset, index + end_offset].
   // Check that the last read byte (at {index + end_offset}) is in bounds.
@@ -3783,24 +3790,27 @@ Node* WasmGraphBuilder::BoundsCheckMem(uint8_t access_size, Node* index,
   //    - computing {effective_size} as {mem_size - end_offset} and
   //    - checking that {index < effective_size}.
 
+  uintptr_t end_offset = offset + access_size - 1u;
+
+  UintPtrMatcher match(index);
+  if (match.HasResolvedValue() && end_offset <= env_->min_memory_size &&
+      match.ResolvedValue() < env_->min_memory_size - end_offset) {
+    // The input index is a constant and everything is statically within
+    // bounds of the smallest possible memory.
+    return {index, kInBounds};
+  }
+
+  if (use_trap_handler() && enforce_check == kCanOmitBoundsCheck) {
+    return {index, kTrapHandler};
+  }
+
   Node* mem_size = instance_cache_->mem_size;
+  Node* end_offset_node = mcgraph_->UintPtrConstant(end_offset);
   if (end_offset > env_->min_memory_size) {
     // The end offset is larger than the smallest memory.
     // Dynamically check the end offset against the dynamic memory size.
     Node* cond = gasm_->UintLessThan(end_offset_node, mem_size);
     TrapIfFalse(wasm::kTrapMemOutOfBounds, cond, position);
-  } else {
-    // The end offset is <= the smallest memory, so only one check is
-    // required. Check to see if the index is also a constant.
-    UintPtrMatcher match(index);
-    if (match.HasResolvedValue()) {
-      uintptr_t index_val = match.ResolvedValue();
-      if (index_val < env_->min_memory_size - end_offset) {
-        // The input index is a constant and everything is statically within
-        // bounds of the smallest possible memory.
-        return index;
-      }
-    }
   }
 
   // This produces a positive number since {end_offset <= min_size <= mem_size}.
@@ -3816,7 +3826,7 @@ Node* WasmGraphBuilder::BoundsCheckMem(uint8_t access_size, Node* index,
     DCHECK_NOT_NULL(mem_mask);
     index = gasm_->WordAnd(index, mem_mask);
   }
-  return index;
+  return {index, kDynamicallyChecked};
 }
 
 const Operator* WasmGraphBuilder::GetSafeLoadOperator(int offset,
@@ -3946,18 +3956,22 @@ LoadTransformation GetLoadTransformation(
   UNREACHABLE();
 }
 
-MemoryAccessKind GetMemoryAccessKind(MachineGraph* mcgraph, MachineType memtype,
-                                     bool use_trap_handler) {
-  if (memtype.representation() == MachineRepresentation::kWord8 ||
-      mcgraph->machine()->UnalignedLoadSupported(memtype.representation())) {
-    if (use_trap_handler) {
-      return MemoryAccessKind::kProtected;
-    }
-    return MemoryAccessKind::kNormal;
+MemoryAccessKind GetMemoryAccessKind(
+    MachineGraph* mcgraph, MachineRepresentation memrep,
+    WasmGraphBuilder::BoundsCheckResult bounds_check_result) {
+  if (bounds_check_result == WasmGraphBuilder::kTrapHandler) {
+    // Protected instructions do not come in an 'unaligned' flavor, so the trap
+    // handler can currently only be used on systems where all memory accesses
+    // are allowed to be unaligned.
+    DCHECK(memrep == MachineRepresentation::kWord8 ||
+           mcgraph->machine()->UnalignedLoadSupported(memrep));
+    return MemoryAccessKind::kProtected;
   }
-  // TODO(eholk): Support unaligned loads with trap handlers.
-  DCHECK(!use_trap_handler);
-  return MemoryAccessKind::kUnaligned;
+  if (memrep != MachineRepresentation::kWord8 &&
+      !mcgraph->machine()->UnalignedLoadSupported(memrep)) {
+    return MemoryAccessKind::kUnaligned;
+  }
+  return MemoryAccessKind::kNormal;
 }
 }  // namespace
 
@@ -4058,7 +4072,8 @@ Node* WasmGraphBuilder::LoadLane(wasm::ValueType type, MachineType memtype,
   has_simd_ = true;
   Node* load;
   uint8_t access_size = memtype.MemSize();
-  index =
+  BoundsCheckResult bounds_check_result;
+  std::tie(index, bounds_check_result) =
       BoundsCheckMem(access_size, index, offset, position, kCanOmitBoundsCheck);
 
   // {offset} is validated to be within uintptr_t range in {BoundsCheckMem}.
@@ -4081,8 +4096,8 @@ Node* WasmGraphBuilder::LoadLane(wasm::ValueType type, MachineType memtype,
     UNREACHABLE();
   }
 #else
-  MemoryAccessKind load_kind =
-      GetMemoryAccessKind(mcgraph(), memtype, use_trap_handler());
+  MemoryAccessKind load_kind = GetMemoryAccessKind(
+      mcgraph_, memtype.representation(), bounds_check_result);
 
   load = SetEffect(graph()->NewNode(
       mcgraph()->machine()->LoadLane(load_kind, memtype, laneidx),
@@ -4126,12 +4141,13 @@ Node* WasmGraphBuilder::LoadTransform(wasm::ValueType type, MachineType memtype,
   uint8_t access_size = transform == wasm::LoadTransformationKind::kExtend
                             ? 8
                             : memtype.MemSize();
-  index =
+  BoundsCheckResult bounds_check_result;
+  std::tie(index, bounds_check_result) =
       BoundsCheckMem(access_size, index, offset, position, kCanOmitBoundsCheck);
 
   LoadTransformation transformation = GetLoadTransformation(memtype, transform);
-  MemoryAccessKind load_kind =
-      GetMemoryAccessKind(mcgraph(), memtype, use_trap_handler());
+  MemoryAccessKind load_kind = GetMemoryAccessKind(
+      mcgraph_, memtype.representation(), bounds_check_result);
 
   load = SetEffect(graph()->NewNode(
       mcgraph()->machine()->LoadTransform(load_kind, transformation),
@@ -4161,23 +4177,25 @@ Node* WasmGraphBuilder::LoadMem(wasm::ValueType type, MachineType memtype,
 
   // Wasm semantics throw on OOB. Introduce explicit bounds check and
   // conditioning when not using the trap handler.
-  index = BoundsCheckMem(memtype.MemSize(), index, offset, position,
-                         kCanOmitBoundsCheck);
+  BoundsCheckResult bounds_check_result;
+  std::tie(index, bounds_check_result) = BoundsCheckMem(
+      memtype.MemSize(), index, offset, position, kCanOmitBoundsCheck);
 
   // {offset} is validated to be within uintptr_t range in {BoundsCheckMem}.
   uintptr_t capped_offset = static_cast<uintptr_t>(offset);
-  if (memtype.representation() == MachineRepresentation::kWord8 ||
-      mcgraph()->machine()->UnalignedLoadSupported(memtype.representation())) {
-    if (use_trap_handler()) {
+
+  switch (GetMemoryAccessKind(mcgraph_, memtype.representation(),
+                              bounds_check_result)) {
+    case MemoryAccessKind::kUnaligned:
+      load = gasm_->LoadUnaligned(memtype, MemBuffer(capped_offset), index);
+      break;
+    case MemoryAccessKind::kProtected:
       load = gasm_->ProtectedLoad(memtype, MemBuffer(capped_offset), index);
       SetSourcePosition(load, position);
-    } else {
+      break;
+    case MemoryAccessKind::kNormal:
       load = gasm_->Load(memtype, MemBuffer(capped_offset), index);
-    }
-  } else {
-    // TODO(eholk): Support unaligned loads with trap handlers.
-    DCHECK(!use_trap_handler());
-    load = gasm_->LoadUnaligned(memtype, MemBuffer(capped_offset), index);
+      break;
   }
 
 #if defined(V8_TARGET_BIG_ENDIAN)
@@ -4206,8 +4224,10 @@ void WasmGraphBuilder::StoreLane(MachineRepresentation mem_rep, Node* index,
                                  wasm::WasmCodePosition position,
                                  wasm::ValueType type) {
   has_simd_ = true;
-  index = BoundsCheckMem(i::ElementSizeInBytes(mem_rep), index, offset,
-                         position, kCanOmitBoundsCheck);
+  BoundsCheckResult bounds_check_result;
+  std::tie(index, bounds_check_result) =
+      BoundsCheckMem(i::ElementSizeInBytes(mem_rep), index, offset, position,
+                     kCanOmitBoundsCheck);
 
   // {offset} is validated to be within uintptr_t range in {BoundsCheckMem}.
   uintptr_t capped_offset = static_cast<uintptr_t>(offset);
@@ -4230,9 +4250,8 @@ void WasmGraphBuilder::StoreLane(MachineRepresentation mem_rep, Node* index,
   }
   StoreMem(mem_rep, index, offset, alignment, output, position, type);
 #else
-  MachineType memtype = MachineType(mem_rep, MachineSemantic::kNone);
   MemoryAccessKind load_kind =
-      GetMemoryAccessKind(mcgraph(), memtype, use_trap_handler());
+      GetMemoryAccessKind(mcgraph_, mem_rep, bounds_check_result);
 
   Node* store = SetEffect(graph()->NewNode(
       mcgraph()->machine()->StoreLane(load_kind, mem_rep, laneidx),
@@ -4255,8 +4274,10 @@ void WasmGraphBuilder::StoreMem(MachineRepresentation mem_rep, Node* index,
     has_simd_ = true;
   }
 
-  index = BoundsCheckMem(i::ElementSizeInBytes(mem_rep), index, offset,
-                         position, kCanOmitBoundsCheck);
+  BoundsCheckResult bounds_check_result;
+  std::tie(index, bounds_check_result) =
+      BoundsCheckMem(i::ElementSizeInBytes(mem_rep), index, offset, position,
+                     kCanOmitBoundsCheck);
 
 #if defined(V8_TARGET_BIG_ENDIAN)
   val = BuildChangeEndiannessStore(val, mem_rep, type);
@@ -4264,21 +4285,21 @@ void WasmGraphBuilder::StoreMem(MachineRepresentation mem_rep, Node* index,
 
   // {offset} is validated to be within uintptr_t range in {BoundsCheckMem}.
   uintptr_t capped_offset = static_cast<uintptr_t>(offset);
-  if (mem_rep == MachineRepresentation::kWord8 ||
-      mcgraph()->machine()->UnalignedStoreSupported(mem_rep)) {
-    if (use_trap_handler()) {
-      Node* store =
-          gasm_->ProtectedStore(mem_rep, MemBuffer(capped_offset), index, val);
-      SetSourcePosition(store, position);
-    } else {
+
+  switch (GetMemoryAccessKind(mcgraph_, mem_rep, bounds_check_result)) {
+    case MemoryAccessKind::kUnaligned:
+      gasm_->StoreUnaligned(UnalignedStoreRepresentation{mem_rep},
+                            MemBuffer(capped_offset), index, val);
+      break;
+    case MemoryAccessKind::kProtected:
+      SetSourcePosition(
+          gasm_->ProtectedStore(mem_rep, MemBuffer(capped_offset), index, val),
+          position);
+      break;
+    case MemoryAccessKind::kNormal:
       gasm_->Store(StoreRepresentation{mem_rep, kNoWriteBarrier},
                    MemBuffer(capped_offset), index, val);
-    }
-  } else {
-    // TODO(eholk): Support unaligned stores with trap handlers.
-    DCHECK(!use_trap_handler());
-    UnalignedStoreRepresentation rep(mem_rep);
-    gasm_->StoreUnaligned(rep, MemBuffer(capped_offset), index, val);
+      break;
   }
 
   if (FLAG_trace_wasm_memory) {
@@ -5538,16 +5559,11 @@ Node* WasmGraphBuilder::StructNewWithRtt(uint32_t struct_index,
   for (uint32_t i = 0; i < type->field_count(); i++) {
     gasm_->StoreStructField(s, type, i, fields[i]);
   }
-  if (type->field_count() == 0) {
-    static_assert(Heap::kMinObjectSizeInTaggedWords == 2 &&
-                      WasmStruct::kHeaderSize == kTaggedSize,
-                  "empty structs need exactly one padding field");
-    wasm::ValueType fake_type = wasm::kWasmAnyRef;
-    Node* padding_offset = gasm_->IntPtrConstant(
-        wasm::ObjectAccess::ToTagged(WasmStruct::kHeaderSize));
-    gasm_->StoreToObject(ObjectAccessForGCStores(fake_type), s, padding_offset,
-                         RefNull());
-  }
+  // If this assert fails then initialization of padding field might be
+  // necessary.
+  static_assert(Heap::kMinObjectSizeInTaggedWords == 2 &&
+                    WasmStruct::kHeaderSize == 2 * kTaggedSize,
+                "empty struct might require initialization of padding field");
   return s;
 }
 
@@ -6254,6 +6270,7 @@ class WasmWrapperGraphBuilder : public WasmGraphBuilder {
   // through JavaScript, where they show up as opaque boxes. This will disappear
   // once we have a proper WasmGC <-> JS interaction story.
   Node* BuildAllocateObjectWrapper(Node* input) {
+    if (FLAG_wasm_gc_js_interop) return input;
     return gasm_->CallBuiltin(
         Builtins::kWasmAllocateObjectWrapper, Operator::kEliminatable, input,
         LOAD_INSTANCE_FIELD(NativeContext, MachineType::TaggedPointer()));
@@ -6264,6 +6281,7 @@ class WasmWrapperGraphBuilder : public WasmGraphBuilder {
   // {wasm_wrapped_object_symbol} in {input}, or {input} itself if the property
   // is not found.
   Node* BuildUnpackObjectWrapper(Node* input) {
+    if (FLAG_wasm_gc_js_interop) return input;
     Node* obj = gasm_->CallBuiltin(
         Builtins::kWasmGetOwnProperty, Operator::kEliminatable, input,
         LOAD_ROOT(wasm_wrapped_object_symbol, wasm_wrapped_object_symbol),

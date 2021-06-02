@@ -892,7 +892,6 @@ Handle<Map> CreateNonConstructorMap(Isolate* isolate, Handle<Map> source_map,
   // inital map even when the prototype property is not required).
   if (!map->has_prototype_slot()) {
     // Re-set the unused property fields after changing the instance size.
-    // TODO(ulan): Do not change instance size after map creation.
     int unused_property_fields = map->UnusedPropertyFields();
     map->set_instance_size(map->instance_size() + kTaggedSize);
     // The prototype slot shifts the in-object properties area by one slot.
@@ -1412,7 +1411,6 @@ static void InstallError(
   Factory* factory = isolate->factory();
 
   if (FLAG_harmony_error_cause) {
-    error_function_length += 1;
     in_object_properties += 1;
   }
 

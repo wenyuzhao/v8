@@ -17,7 +17,7 @@ namespace internal {
 Handle<ScriptContextTable> ScriptContextTable::Extend(
     Handle<ScriptContextTable> table, Handle<Context> script_context) {
   Handle<ScriptContextTable> result;
-  int used = table->synchronized_used();
+  int used = table->used(kAcquireLoad);
   int length = table->length();
   CHECK(used >= 0 && length > 0 && used < length);
   if (used + kFirstContextSlotIndex == length) {
@@ -33,7 +33,7 @@ Handle<ScriptContextTable> ScriptContextTable::Extend(
   DCHECK(script_context->IsScriptContext());
   result->set(used + kFirstContextSlotIndex, *script_context);
 
-  result->synchronized_set_used(used + 1);
+  result->set_used(used + 1, kReleaseStore);
   return result;
 }
 
@@ -51,7 +51,7 @@ bool ScriptContextTable::Lookup(Isolate* isolate, ScriptContextTable table,
                                 String name, VariableLookupResult* result) {
   DisallowGarbageCollection no_gc;
   // Static variables cannot be in script contexts.
-  for (int i = 0; i < table.synchronized_used(); i++) {
+  for (int i = 0; i < table.used(kAcquireLoad); i++) {
     Context context = table.get_context(i);
     DCHECK(context.IsScriptContext());
     int slot_index =
@@ -373,9 +373,9 @@ Handle<Object> Context::Lookup(Handle<Context> context, Handle<String> name,
       }
 
       // Check blocklist. Names that are listed, cannot be resolved further.
-      Object blocklist = context->get(BLOCK_LIST_INDEX);
-      if (blocklist.IsStringSet() &&
-          StringSet::cast(blocklist).Has(isolate, name)) {
+      ScopeInfo scope_info = context->scope_info();
+      if (scope_info.HasLocalsBlockList() &&
+          scope_info.LocalsBlockList().Has(isolate, name)) {
         if (FLAG_trace_contexts) {
           PrintF(" - name is blocklisted. Aborting.\n");
         }

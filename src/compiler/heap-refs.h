@@ -88,7 +88,7 @@ enum class RefSerializationKind {
   V(JSGlobalProxy, RefSerializationKind::kSerialized)                     \
   V(JSTypedArray, RefSerializationKind::kSerialized)                      \
   /* Subtypes of Context */                                               \
-  V(NativeContext, RefSerializationKind::kSerialized)                     \
+  V(NativeContext, RefSerializationKind::kNeverSerialized)                \
   /* Subtypes of FixedArray */                                            \
   V(ObjectBoilerplateDescription, RefSerializationKind::kNeverSerialized) \
   V(ScriptContextTable, RefSerializationKind::kBackgroundSerialized)      \
@@ -111,7 +111,7 @@ enum class RefSerializationKind {
   V(CallHandlerInfo, RefSerializationKind::kNeverSerialized)              \
   V(Cell, RefSerializationKind::kNeverSerialized)                         \
   V(Code, RefSerializationKind::kNeverSerialized)                         \
-  V(Context, RefSerializationKind::kSerialized)                           \
+  V(Context, RefSerializationKind::kNeverSerialized)                      \
   V(DescriptorArray, RefSerializationKind::kNeverSerialized)              \
   V(FeedbackCell, RefSerializationKind::kNeverSerialized)                 \
   V(FeedbackVector, RefSerializationKind::kNeverSerialized)               \
@@ -160,12 +160,11 @@ struct ref_traits<Object> {
 
 class V8_EXPORT_PRIVATE ObjectRef {
  public:
-  ObjectRef(JSHeapBroker* broker, Handle<Object> object,
-            bool check_type = true);
   ObjectRef(JSHeapBroker* broker, ObjectData* data, bool check_type = true)
       : data_(data), broker_(broker) {
     CHECK_NOT_NULL(data_);
   }
+
   Handle<Object> object() const;
 
   bool equals(const ObjectRef& other) const;
@@ -337,7 +336,7 @@ class JSObjectRef : public JSReceiverRef {
 
   base::Optional<FixedArrayBaseRef> elements() const;
   void SerializeElements();
-  void EnsureElementsTenured();
+  bool IsElementsTenured();
   ElementsKind GetElementsKind() const;
 
   void SerializeObjectCreateMap();
@@ -870,6 +869,7 @@ class ScopeInfoRef : public HeapObjectRef {
 
 #define BROKER_SFI_FIELDS(V)                       \
   V(int, internal_formal_parameter_count)          \
+  V(bool, has_simple_parameters)                   \
   V(bool, has_duplicate_parameters)                \
   V(int, function_map_index)                       \
   V(FunctionKind, kind)                            \
@@ -923,14 +923,20 @@ class StringRef : public NameRef {
       uint32_t index, SerializationPolicy policy =
                           SerializationPolicy::kAssumeSerialized) const;
 
-  // When concurrently accessing non-read-only non-internalized strings, we
-  // return base::nullopt for these methods.
+  // When concurrently accessing non-read-only non-supported strings, we return
+  // base::nullopt for these methods.
   base::Optional<int> length() const;
   base::Optional<uint16_t> GetFirstChar();
   base::Optional<double> ToNumber();
 
   bool IsSeqString() const;
   bool IsExternalString() const;
+
+ private:
+  // With concurrent inlining on, we currently support reading directly
+  // internalized strings, and thin strings (which are pointers to internalized
+  // strings).
+  bool SupportedStringKind() const;
 };
 
 class SymbolRef : public NameRef {

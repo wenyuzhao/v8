@@ -159,9 +159,8 @@ MaybeHandle<Object> DebugEvaluate::WithTopmostArguments(Isolate* isolate,
   Handle<ScopeInfo> scope_info =
       ScopeInfo::CreateForWithScope(isolate, Handle<ScopeInfo>::null());
   scope_info->SetIsDebugEvaluateScope();
-  Handle<Context> evaluation_context =
-      factory->NewDebugEvaluateContext(native_context, scope_info, materialized,
-                                       Handle<Context>(), Handle<StringSet>());
+  Handle<Context> evaluation_context = factory->NewDebugEvaluateContext(
+      native_context, scope_info, materialized, Handle<Context>());
   Handle<SharedFunctionInfo> outer_info(
       native_context->empty_function().shared(), isolate);
   Handle<JSObject> receiver(native_context->global_proxy(), isolate);
@@ -257,9 +256,13 @@ DebugEvaluate::ContextBuilder::ContextBuilder(Isolate* isolate,
     ContextChainElement element = *rit;
     scope_info = ScopeInfo::CreateForWithScope(isolate, scope_info);
     scope_info->SetIsDebugEvaluateScope();
+    if (!element.blocklist.is_null()) {
+      scope_info = ScopeInfo::RecreateWithBlockList(isolate, scope_info,
+                                                    element.blocklist);
+    }
     evaluation_context_ = factory->NewDebugEvaluateContext(
         evaluation_context_, scope_info, element.materialized_object,
-        element.wrapped_context, element.blocklist);
+        element.wrapped_context);
   }
 }
 
@@ -431,7 +434,6 @@ bool BytecodeHasNoSideEffect(interpreter::Bytecode bytecode) {
     case Bytecode::kLdaLookupSlot:
     case Bytecode::kLdaGlobal:
     case Bytecode::kLdaNamedProperty:
-    case Bytecode::kLdaNamedPropertyNoFeedback:
     case Bytecode::kLdaKeyedProperty:
     case Bytecode::kLdaGlobalInsideTypeof:
     case Bytecode::kLdaLookupSlotInsideTypeof:
@@ -894,7 +896,6 @@ bool BytecodeRequiresRuntimeCheck(interpreter::Bytecode bytecode) {
   using interpreter::Bytecode;
   switch (bytecode) {
     case Bytecode::kStaNamedProperty:
-    case Bytecode::kStaNamedPropertyNoFeedback:
     case Bytecode::kStaNamedOwnProperty:
     case Bytecode::kStaKeyedProperty:
     case Bytecode::kStaInArrayLiteral:
@@ -1052,6 +1053,10 @@ static bool TransitivelyCalledBuiltinHasNoSideEffect(Builtins::Name caller,
     case Builtins::kToName:
     case Builtins::kToObject:
     case Builtins::kToString:
+#ifdef V8_IS_TSAN
+    case Builtins::kTSANRelaxedStoreIgnoreFP:
+    case Builtins::kTSANRelaxedStoreSaveFP:
+#endif  // V8_IS_TSAN
     case Builtins::kWeakMapLookupHashIndex:
       return true;
     case Builtins::kJoinStackPop:

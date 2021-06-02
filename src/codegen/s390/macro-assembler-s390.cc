@@ -895,6 +895,7 @@ void TurboAssembler::CallRecordWriteStub(
     Register object, Register address,
     RememberedSetAction remembered_set_action, SaveFPRegsMode fp_mode,
     StubCallMode mode) {
+  DCHECK(!AreAliased(object, address, value));
   WriteBarrierDescriptor descriptor;
   RegList registers = descriptor.allocatable_registers();
   SaveRegisters(registers);
@@ -910,10 +911,14 @@ void TurboAssembler::CallRecordWriteStub(
   Pop(slot_parameter);
   Pop(object_parameter);
 
+#if V8_ENABLE_WEBASSEMBLY
   if (mode == StubCallMode::kCallWasmRuntimeStub) {
     auto wasm_target =
         wasm::WasmCode::GetRecordWriteStub(remembered_set_action, fp_mode);
     Call(wasm_target, RelocInfo::WASM_STUB_CALL);
+#else
+  if (false) {
+#endif
   } else {
     auto builtin_index =
         Builtins::GetRecordWriteStub(remembered_set_action, fp_mode);
@@ -942,7 +947,7 @@ void MacroAssembler::RecordWrite(Register object, Register address,
                                  SaveFPRegsMode fp_mode,
                                  RememberedSetAction remembered_set_action,
                                  SmiCheck smi_check) {
-  DCHECK(object != value);
+  DCHECK(!AreAliased(object, address, value));
   if (FLAG_debug_code) {
     LoadTaggedPointerField(r0, MemOperand(address));
     CmpS64(value, r0);

@@ -594,6 +594,7 @@ base::Optional<typename ref_traits<T>::ref_type> TryMakeRef(
     JSHeapBroker* broker, Handle<T> object, GetOrCreateDataFlags flags = {}) {
   ObjectData* data = broker->TryGetOrCreateData(object, flags);
   if (data == nullptr) {
+    DCHECK_EQ(flags & kCrashOnError, 0);
     TRACE_BROKER_MISSING(broker, "ObjectData for " << Brief(*object));
     return {};
   }
@@ -603,28 +604,28 @@ base::Optional<typename ref_traits<T>::ref_type> TryMakeRef(
 template <class T,
           typename = std::enable_if_t<std::is_convertible<T*, Object*>::value>>
 typename ref_traits<T>::ref_type MakeRef(JSHeapBroker* broker, T object) {
-  return TryMakeRef(broker, object).value();
+  return TryMakeRef(broker, object, kCrashOnError).value();
 }
 
 template <class T,
           typename = std::enable_if_t<std::is_convertible<T*, Object*>::value>>
 typename ref_traits<T>::ref_type MakeRef(JSHeapBroker* broker,
                                          Handle<T> object) {
-  return TryMakeRef(broker, object).value();
+  return TryMakeRef(broker, object, kCrashOnError).value();
 }
 
 template <class T,
           typename = std::enable_if_t<std::is_convertible<T*, Object*>::value>>
 typename ref_traits<T>::ref_type MakeRefAssumeMemoryFence(JSHeapBroker* broker,
                                                           T object) {
-  return TryMakeRef(broker, object, kAssumeMemoryFence).value();
+  return TryMakeRef(broker, object, kAssumeMemoryFence | kCrashOnError).value();
 }
 
 template <class T,
           typename = std::enable_if_t<std::is_convertible<T*, Object*>::value>>
 typename ref_traits<T>::ref_type MakeRefAssumeMemoryFence(JSHeapBroker* broker,
                                                           Handle<T> object) {
-  return TryMakeRef(broker, object, kAssumeMemoryFence).value();
+  return TryMakeRef(broker, object, kAssumeMemoryFence | kCrashOnError).value();
 }
 
 }  // namespace compiler

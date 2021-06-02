@@ -4331,7 +4331,6 @@ TEST_F(FunctionBodyDecoderTest, RefTestCast) {
   WASM_FEATURE_SCOPE(reftypes);
   WASM_FEATURE_SCOPE(typed_funcref);
   WASM_FEATURE_SCOPE(gc);
-  WASM_FEATURE_SCOPE(eh);
 
   TestModuleBuilder builder;
   module = builder.module();
@@ -4422,6 +4421,137 @@ TEST_F(FunctionBodyDecoderTest, RefTestCast) {
       kAppendEnd,
       "ref.cast[0] expected subtype of (ref null func) or (ref null data), "
       "found i32.const of type i32");
+}
+
+TEST_F(FunctionBodyDecoderTest, BrOnCastOrCastFail) {
+  WASM_FEATURE_SCOPE(reftypes);
+  WASM_FEATURE_SCOPE(typed_funcref);
+  WASM_FEATURE_SCOPE(gc);
+
+  TestModuleBuilder builder;
+  module = builder.module();
+
+  byte super_struct = builder.AddStruct({F(kWasmI16, true)});
+  byte sub_struct = builder.AddStruct({F(kWasmI16, true), F(kWasmI32, false)});
+
+  ValueType supertype = ValueType::Ref(super_struct, kNullable);
+  ValueType subtype = ValueType::Ref(sub_struct, kNullable);
+
+  ExpectValidates(
+      FunctionSig::Build(this->zone(), {kWasmI32, subtype}, {supertype}),
+      {WASM_I32V(42), WASM_LOCAL_GET(0),
+       WASM_BR_ON_CAST(0, WASM_RTT_CANON(sub_struct)),
+       WASM_RTT_CANON(sub_struct), WASM_GC_OP(kExprRefCast)});
+  ExpectValidates(
+      FunctionSig::Build(this->zone(), {kWasmI32, supertype}, {supertype}),
+      {WASM_I32V(42), WASM_LOCAL_GET(0),
+       WASM_BR_ON_CAST_FAIL(0, WASM_RTT_CANON(sub_struct))});
+
+  // Wrong branch type.
+  ExpectFailure(
+      FunctionSig::Build(this->zone(), {}, {supertype}),
+      {WASM_LOCAL_GET(0), WASM_BR_ON_CAST(0, WASM_RTT_CANON(sub_struct)),
+       WASM_UNREACHABLE},
+      kAppendEnd, "br_on_cast must target a branch of arity at least 1");
+  ExpectFailure(
+      FunctionSig::Build(this->zone(), {subtype}, {supertype}),
+      {WASM_I32V(42), WASM_LOCAL_GET(0),
+       WASM_BR_ON_CAST_FAIL(0, WASM_RTT_CANON(sub_struct))},
+      kAppendEnd,
+      "type error in branch[0] (expected (ref null 1), got (ref null 0))");
+
+  // Wrong fallthrough type.
+  ExpectFailure(
+      FunctionSig::Build(this->zone(), {subtype}, {supertype}),
+      {WASM_LOCAL_GET(0), WASM_BR_ON_CAST(0, WASM_RTT_CANON(sub_struct))},
+      kAppendEnd,
+      "type error in fallthru[0] (expected (ref null 1), got (ref null 0))");
+  ExpectFailure(
+      FunctionSig::Build(this->zone(), {supertype}, {supertype}),
+      {WASM_BLOCK_I(WASM_LOCAL_GET(0),
+                    WASM_BR_ON_CAST_FAIL(0, WASM_RTT_CANON(sub_struct)))},
+      kAppendEnd, "type error in branch[0] (expected i32, got (ref null 0))");
+
+  // Argument type error.
+  ExpectFailure(
+      FunctionSig::Build(this->zone(), {subtype}, {kWasmAnyRef}),
+      {WASM_LOCAL_GET(0), WASM_BR_ON_CAST(0, WASM_RTT_CANON(sub_struct)),
+       WASM_RTT_CANON(sub_struct), WASM_GC_OP(kExprRefCast)},
+      kAppendEnd,
+      "br_on_cast[0] expected subtype of (ref null func) or (ref null data), "
+      "found local.get of type anyref");
+  ExpectFailure(
+      FunctionSig::Build(this->zone(), {supertype}, {kWasmAnyRef}),
+      {WASM_LOCAL_GET(0), WASM_BR_ON_CAST_FAIL(0, WASM_RTT_CANON(sub_struct))},
+      kAppendEnd,
+      "br_on_cast_fail[0] expected subtype of (ref null func) or (ref null "
+      "data), found local.get of type anyref");
+
+  // Trivial rtt type error.
+  ExpectFailure(FunctionSig::Build(this->zone(), {supertype}, {supertype}),
+                {WASM_LOCAL_GET(0), WASM_BR_ON_CAST_FAIL(0, WASM_I64V(42))},
+                kAppendEnd,
+                "br_on_cast_fail[1] expected rtt, found i64.const of type i64");
+}
+
+TEST_F(FunctionBodyDecoderTest, BrOnAbstractType) {
+  WASM_FEATURE_SCOPE(reftypes);
+  WASM_FEATURE_SCOPE(typed_funcref);
+  WASM_FEATURE_SCOPE(gc);
+
+  TestModuleBuilder builder;
+  module = builder.module();
+
+  ValueType kNonNullableFunc = ValueType::Ref(HeapType::kFunc, kNonNullable);
+
+  ExpectValidates(
+      FunctionSig::Build(this->zone(), {kNonNullableFunc}, {kWasmAnyRef}),
+      {WASM_LOCAL_GET(0), WASM_BR_ON_FUNC(0), WASM_GC_OP(kExprRefAsFunc)});
+  ExpectValidates(
+      FunctionSig::Build(this->zone(), {kWasmAnyRef}, {kWasmAnyRef}),
+      {WASM_LOCAL_GET(0), WASM_BR_ON_NON_FUNC(0)});
+  ExpectValidates(
+      FunctionSig::Build(this->zone(), {kWasmDataRef}, {kWasmAnyRef}),
+      {WASM_LOCAL_GET(0), WASM_BR_ON_DATA(0), WASM_GC_OP(kExprRefAsData)});
+  ExpectValidates(
+      FunctionSig::Build(this->zone(), {kWasmAnyRef}, {kWasmAnyRef}),
+      {WASM_LOCAL_GET(0), WASM_BR_ON_NON_DATA(0)});
+  ExpectValidates(
+      FunctionSig::Build(this->zone(), {kWasmI31Ref}, {kWasmAnyRef}),
+      {WASM_LOCAL_GET(0), WASM_BR_ON_I31(0), WASM_GC_OP(kExprRefAsI31)});
+  ExpectValidates(
+      FunctionSig::Build(this->zone(), {kWasmAnyRef}, {kWasmAnyRef}),
+      {WASM_LOCAL_GET(0), WASM_BR_ON_NON_I31(0)});
+  // Unrelated types are OK.
+  ExpectValidates(
+      FunctionSig::Build(this->zone(), {kNonNullableFunc}, {kWasmDataRef}),
+      {WASM_LOCAL_GET(0), WASM_BR_ON_FUNC(0), WASM_GC_OP(kExprRefAsFunc)});
+
+  // Wrong branch type.
+  ExpectFailure(FunctionSig::Build(this->zone(), {}, {kWasmAnyRef}),
+                {WASM_LOCAL_GET(0), WASM_BR_ON_FUNC(0), WASM_UNREACHABLE},
+                kAppendEnd,
+                "br_on_func must target a branch of arity at least 1");
+  ExpectFailure(
+      FunctionSig::Build(this->zone(), {kNonNullableFunc}, {kWasmAnyRef}),
+      {WASM_LOCAL_GET(0), WASM_BR_ON_NON_FUNC(0)}, kAppendEnd,
+      "type error in branch[0] (expected (ref func), got anyref)");
+
+  // Wrong fallthrough type.
+  ExpectFailure(FunctionSig::Build(this->zone(), {kWasmDataRef}, {kWasmAnyRef}),
+                {WASM_LOCAL_GET(0), WASM_BR_ON_DATA(0)}, kAppendEnd,
+                "type error in fallthru[0] (expected dataref, got anyref)");
+  ExpectFailure(FunctionSig::Build(this->zone(), {kWasmAnyRef}, {kWasmAnyRef}),
+                {WASM_BLOCK_I(WASM_LOCAL_GET(0), WASM_BR_ON_NON_DATA(0))},
+                kAppendEnd,
+                "type error in branch[0] (expected i32, got anyref)");
+
+  // Argument type error.
+  ExpectFailure(
+      FunctionSig::Build(this->zone(), {kWasmI31Ref}, {kWasmI32}),
+      {WASM_LOCAL_GET(0), WASM_BR_ON_I31(0), WASM_GC_OP(kExprRefAsI31)},
+      kAppendEnd,
+      "br_on_i31[0] expected type anyref, found local.get of type i32");
 }
 
 TEST_F(FunctionBodyDecoderTest, LocalTeeTyping) {

@@ -449,7 +449,7 @@ GarbageCollector Heap::SelectGarbageCollector(AllocationSpace space,
     return MARK_COMPACTOR;
   }
 
-  if (FLAG_gc_global || ShouldStressCompaction() || FLAG_single_generation) {
+  if (FLAG_gc_global || ShouldStressCompaction() || !new_space()) {
     *reason = "GC in old space forced by flags";
     return MARK_COMPACTOR;
   }
@@ -1291,7 +1291,6 @@ void Heap::GarbageCollectionEpilogueInSafepoint(GarbageCollector collector) {
 
   if (FLAG_print_global_handles) isolate_->global_handles()->Print();
   if (FLAG_print_handles) PrintHandles();
-  if (FLAG_gc_verbose) Print();
   if (FLAG_code_stats) ReportCodeStatistics("After GC");
   if (FLAG_check_handle_count) CheckHandleCount();
 #endif
@@ -1310,7 +1309,7 @@ void Heap::GarbageCollectionEpilogueInSafepoint(GarbageCollector collector) {
       main_thread_local_heap()->state_.exchange(LocalHeap::kRunning);
 
   CHECK(old_state == LocalHeap::kRunning ||
-        old_state == LocalHeap::kCollectionRequested);
+        old_state == LocalHeap::kSafepointRequested);
 
   // Resume all threads waiting for the GC.
   collection_barrier_->ResumeThreadsAwaitingCollection();
@@ -2085,7 +2084,7 @@ void Heap::EnsureFromSpaceIsCommitted() {
 }
 
 bool Heap::CollectionRequested() {
-  return collection_barrier_->CollectionRequested();
+  return collection_barrier_->WasGCRequested();
 }
 
 void Heap::CollectGarbageForBackground(LocalHeap* local_heap) {
@@ -2411,7 +2410,8 @@ void Heap::MarkCompact() {
 
 void Heap::MinorMarkCompact() {
 #ifdef ENABLE_MINOR_MC
-  DCHECK(FLAG_minor_mc && !FLAG_single_generation);
+  DCHECK(FLAG_minor_mc);
+  DCHECK(new_space());
 
   PauseAllocationObserversScope pause_observers(this);
   SetGCState(MINOR_MARK_COMPACT);
@@ -2518,7 +2518,7 @@ void Heap::EvacuateYoungGeneration() {
 }
 
 void Heap::Scavenge() {
-  DCHECK(!FLAG_single_generation);
+  DCHECK_NOT_NULL(new_space());
 
   if (fast_promotion_mode_ && CanPromoteYoungAndExpandOldGeneration(0)) {
     tracer()->NotifyYoungGenerationHandling(
@@ -4448,8 +4448,8 @@ void Heap::VerifyRememberedSetFor(HeapObject object) {
                                          &this->ephemeron_remembered_set_);
     object.IterateBody(&visitor);
   }
-  // TODO(ulan): Add old to old slot set verification once all weak objects
-  // have their own instance types and slots are recorded for all weal fields.
+  // TODO(v8:11797): Add old to old slot set verification once all weak objects
+  // have their own instance types and slots are recorded for all weak fields.
 }
 #endif
 
@@ -5433,7 +5433,8 @@ class StressConcurrentAllocationObserver : public AllocationObserver {
 void Heap::SetUpSpaces() {
   // Ensure SetUpFromReadOnlySpace has been ran.
   DCHECK_NOT_NULL(read_only_space_);
-  if (!FLAG_single_generation) {
+  const bool has_young_gen = !FLAG_single_generation && !IsShared();
+  if (has_young_gen) {
     space_[NEW_SPACE] = new_space_ =
         new NewSpace(this, memory_allocator_->data_page_allocator(),
                      initial_semispace_size_, max_semi_space_size_);
@@ -5442,7 +5443,7 @@ void Heap::SetUpSpaces() {
   space_[CODE_SPACE] = code_space_ = new CodeSpace(this);
   space_[MAP_SPACE] = map_space_ = new MapSpace(this);
   space_[LO_SPACE] = lo_space_ = new OldLargeObjectSpace(this);
-  if (!FLAG_single_generation) {
+  if (has_young_gen) {
     space_[NEW_LO_SPACE] = new_lo_space_ =
         new NewLargeObjectSpace(this, NewSpaceCapacity());
   }
@@ -5481,7 +5482,7 @@ void Heap::SetUpSpaces() {
   }
 #endif  // ENABLE_MINOR_MC
 
-  if (!FLAG_single_generation) {
+  if (new_space()) {
     scavenge_job_.reset(new ScavengeJob());
     scavenge_task_observer_.reset(new ScavengeTaskObserver(
         this, ScavengeJob::YoungGenerationTaskTriggerSize(this)));

@@ -296,7 +296,7 @@ int TurboAssembler::RequiredStackSizeForCallerSaved(SaveFPRegsMode fp_mode,
 
   if (fp_mode == SaveFPRegsMode::kSave) {
     // Count all XMM registers except XMM0.
-    bytes += kDoubleSize * (XMMRegister::kNumRegisters - 1);
+    bytes += kStackSavedSavedFPSize * (XMMRegister::kNumRegisters - 1);
   }
 
   return bytes;
@@ -318,11 +318,15 @@ int TurboAssembler::PushCallerSaved(SaveFPRegsMode fp_mode, Register exclusion1,
 
   if (fp_mode == SaveFPRegsMode::kSave) {
     // Save all XMM registers except XMM0.
-    int delta = kDoubleSize * (XMMRegister::kNumRegisters - 1);
+    const int delta = kStackSavedSavedFPSize * (XMMRegister::kNumRegisters - 1);
     AllocateStackSpace(delta);
     for (int i = XMMRegister::kNumRegisters - 1; i > 0; i--) {
       XMMRegister reg = XMMRegister::from_code(i);
-      movsd(Operand(esp, (i - 1) * kDoubleSize), reg);
+#if V8_ENABLE_WEBASSEMBLY
+      Movdqu(Operand(esp, (i - 1) * kStackSavedSavedFPSize), reg);
+#else
+      Movsd(Operand(esp, (i - 1) * kStackSavedSavedFPSize), reg);
+#endif  // V8_ENABLE_WEBASSEMBLY
     }
     bytes += delta;
   }
@@ -335,10 +339,14 @@ int TurboAssembler::PopCallerSaved(SaveFPRegsMode fp_mode, Register exclusion1,
   int bytes = 0;
   if (fp_mode == SaveFPRegsMode::kSave) {
     // Restore all XMM registers except XMM0.
-    int delta = kDoubleSize * (XMMRegister::kNumRegisters - 1);
+    const int delta = kStackSavedSavedFPSize * (XMMRegister::kNumRegisters - 1);
     for (int i = XMMRegister::kNumRegisters - 1; i > 0; i--) {
       XMMRegister reg = XMMRegister::from_code(i);
-      movsd(reg, Operand(esp, (i - 1) * kDoubleSize));
+#if V8_ENABLE_WEBASSEMBLY
+      Movdqu(reg, Operand(esp, (i - 1) * kStackSavedSavedFPSize));
+#else
+      Movsd(reg, Operand(esp, (i - 1) * kStackSavedSavedFPSize));
+#endif  // V8_ENABLE_WEBASSEMBLY
     }
     add(esp, Immediate(delta));
     bytes += delta;
@@ -442,6 +450,7 @@ void TurboAssembler::CallRecordWriteStub(
     Register object, Register address,
     RememberedSetAction remembered_set_action, SaveFPRegsMode fp_mode,
     StubCallMode mode) {
+  DCHECK(!AreAliased(object, address));
   WriteBarrierDescriptor descriptor;
   RegList registers = descriptor.allocatable_registers();
   SaveRegisters(registers);
@@ -457,11 +466,15 @@ void TurboAssembler::CallRecordWriteStub(
   pop(slot_parameter);
   pop(object_parameter);
 
+#if V8_ENABLE_WEBASSEMBLY
   if (mode == StubCallMode::kCallWasmRuntimeStub) {
     // Use {wasm_call} for direct Wasm call within a module.
     auto wasm_target =
         wasm::WasmCode::GetRecordWriteStub(remembered_set_action, fp_mode);
     wasm_call(wasm_target, RelocInfo::WASM_STUB_CALL);
+#else
+  if (false) {
+#endif
   } else {
     auto builtin_index =
         Builtins::GetRecordWriteStub(remembered_set_action, fp_mode);
@@ -481,9 +494,7 @@ void MacroAssembler::RecordWrite(Register object, Register address,
                                  Register value, SaveFPRegsMode fp_mode,
                                  RememberedSetAction remembered_set_action,
                                  SmiCheck smi_check) {
-  DCHECK(object != value);
-  DCHECK(object != address);
-  DCHECK(value != address);
+  DCHECK(!AreAliased(object, value, address));
   AssertNotSmi(object);
 
   if ((remembered_set_action == RememberedSetAction::kOmit &&

@@ -40,6 +40,7 @@ OBJECT_CONSTRUCTORS_IMPL(WasmCapiFunctionData, WasmFunctionData)
 OBJECT_CONSTRUCTORS_IMPL(WasmExportedFunctionData, WasmFunctionData)
 OBJECT_CONSTRUCTORS_IMPL(WasmGlobalObject, JSObject)
 OBJECT_CONSTRUCTORS_IMPL(WasmInstanceObject, JSObject)
+OBJECT_CONSTRUCTORS_IMPL(WasmObject, JSReceiver)
 OBJECT_CONSTRUCTORS_IMPL(WasmMemoryObject, JSObject)
 OBJECT_CONSTRUCTORS_IMPL(WasmModuleObject, JSObject)
 OBJECT_CONSTRUCTORS_IMPL(WasmTableObject, JSObject)
@@ -54,6 +55,7 @@ CAST_ACCESSOR(WasmExceptionObject)
 CAST_ACCESSOR(WasmExportedFunctionData)
 CAST_ACCESSOR(WasmGlobalObject)
 CAST_ACCESSOR(WasmInstanceObject)
+CAST_ACCESSOR(WasmObject)
 CAST_ACCESSOR(WasmMemoryObject)
 CAST_ACCESSOR(WasmModuleObject)
 CAST_ACCESSOR(WasmTableObject)
@@ -414,6 +416,47 @@ ACCESSORS(AsmWasmData, managed_native_module, Managed<wasm::NativeModule>,
 ACCESSORS(AsmWasmData, export_wrappers, FixedArray, kExportWrappersOffset)
 ACCESSORS(AsmWasmData, uses_bitset, HeapNumber, kUsesBitsetOffset)
 
+// static
+Handle<Object> WasmObject::ReadValueAt(Isolate* isolate, Handle<HeapObject> obj,
+                                       wasm::ValueType type, uint32_t offset) {
+  Address field_address = obj->GetFieldAddress(offset);
+  switch (type.kind()) {
+    case wasm::kI8: {
+      int8_t value = base::Memory<int8_t>(field_address);
+      return handle(Smi::FromInt(value), isolate);
+    }
+    case wasm::kI16: {
+      int16_t value = base::Memory<int16_t>(field_address);
+      return handle(Smi::FromInt(value), isolate);
+    }
+    case wasm::kI32: {
+      int32_t value = base::Memory<int32_t>(field_address);
+      return isolate->factory()->NewNumberFromInt(value);
+    }
+    case wasm::kI64:
+    case wasm::kF32:
+    case wasm::kF64:
+    case wasm::kS128:
+      // TODO(ishell): implement
+      UNREACHABLE();
+
+    case wasm::kRef:
+    case wasm::kOptRef: {
+      ObjectSlot slot(field_address);
+      return handle(slot.load(isolate), isolate);
+    }
+
+    case wasm::kRtt:
+    case wasm::kRttWithDepth:
+      // Rtt values are not supposed to be made available to JavaScript side.
+      UNREACHABLE();
+
+    case wasm::kVoid:
+    case wasm::kBottom:
+      UNREACHABLE();
+  }
+}
+
 wasm::StructType* WasmStruct::type(Map map) {
   WasmTypeInfo type_info = map.wasm_type_info();
   return reinterpret_cast<wasm::StructType*>(type_info.foreign_address());
@@ -445,9 +488,23 @@ int WasmStruct::GcSafeSize(Map map) {
 
 wasm::StructType* WasmStruct::type() const { return type(map()); }
 
-ObjectSlot WasmStruct::RawField(int raw_offset) {
+Address WasmStruct::RawFieldAddress(int raw_offset) {
   int offset = WasmStruct::kHeaderSize + raw_offset;
-  return ObjectSlot(FIELD_ADDR(*this, offset));
+  return FIELD_ADDR(*this, offset);
+}
+
+ObjectSlot WasmStruct::RawField(int raw_offset) {
+  return ObjectSlot(RawFieldAddress(raw_offset));
+}
+
+// static
+Handle<Object> WasmStruct::GetField(Isolate* isolate, Handle<WasmStruct> obj,
+                                    uint32_t field_index) {
+  wasm::StructType* type = obj->type();
+  CHECK_LT(field_index, type->field_count());
+  wasm::ValueType field_type = type->field(field_index);
+  int offset = WasmStruct::kHeaderSize + type->field_offset(field_index);
+  return ReadValueAt(isolate, obj, field_type, offset);
 }
 
 wasm::ArrayType* WasmArray::type(Map map) {
@@ -476,6 +533,18 @@ int WasmArray::SizeFor(Map map, int length) {
 int WasmArray::GcSafeSizeFor(Map map, int length) {
   int element_size = GcSafeType(map)->element_type().element_size_bytes();
   return kHeaderSize + RoundUp(element_size * length, kTaggedSize);
+}
+
+// static
+Handle<Object> WasmArray::GetElement(Isolate* isolate, Handle<WasmArray> array,
+                                     uint32_t index) {
+  if (index >= array->length()) {
+    return isolate->factory()->undefined_value();
+  }
+  wasm::ValueType element_type = array->type()->element_type();
+  uint32_t offset =
+      WasmArray::kHeaderSize + index * element_type.element_size_bytes();
+  return ReadValueAt(isolate, array, element_type, offset);
 }
 
 void WasmTypeInfo::clear_foreign_address(Isolate* isolate) {

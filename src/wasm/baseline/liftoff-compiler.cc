@@ -4833,18 +4833,11 @@ class LiftoffCompiler {
       StoreObjectField(obj.gp(), no_reg, offset, value, pinned, field_kind);
       pinned.clear(value);
     }
-    if (imm.struct_type->field_count() == 0) {
-      static_assert(Heap::kMinObjectSizeInTaggedWords == 2 &&
-                        WasmStruct::kHeaderSize == kTaggedSize,
-                    "empty structs need exactly one padding field");
-      ValueKind field_kind = ValueKind::kRef;
-      LiftoffRegister value = pinned.set(__ GetUnusedRegister(kGpReg, pinned));
-      LoadNullValue(value.gp(), pinned);
-      StoreObjectField(obj.gp(), no_reg,
-                       wasm::ObjectAccess::ToTagged(WasmStruct::kHeaderSize),
-                       value, pinned, field_kind);
-      pinned.clear(value);
-    }
+    // If this assert fails then initialization of padding field might be
+    // necessary.
+    static_assert(Heap::kMinObjectSizeInTaggedWords == 2 &&
+                      WasmStruct::kHeaderSize == 2 * kTaggedSize,
+                  "empty struct might require initialization of padding field");
     __ PushRegister(kRef, obj);
   }
 
@@ -5209,7 +5202,7 @@ class LiftoffCompiler {
   }
 
   void BrOnCast(FullDecoder* decoder, const Value& obj, const Value& rtt,
-                Value* result_on_branch, uint32_t depth) {
+                Value* /* result_on_branch */, uint32_t depth) {
     // Before branching, materialize all constants. This avoids repeatedly
     // materializing them for each conditional branch.
     if (depth != decoder->control_depth() - 1) {
@@ -5228,6 +5221,27 @@ class LiftoffCompiler {
     // Drop the branch's value, restore original value.
     Drop(decoder);
     __ PushRegister(obj.type.kind(), obj_reg);
+  }
+
+  void BrOnCastFail(FullDecoder* decoder, const Value& obj, const Value& rtt,
+                    Value* /* result_on_fallthrough */, uint32_t depth) {
+    // Before branching, materialize all constants. This avoids repeatedly
+    // materializing them for each conditional branch.
+    if (depth != decoder->control_depth() - 1) {
+      __ MaterializeMergedConstants(
+          decoder->control_at(depth)->br_merge()->arity);
+    }
+
+    Label cont_branch, fallthrough;
+    LiftoffRegister obj_reg =
+        SubtypeCheck(decoder, obj, rtt, &cont_branch, kNullFails);
+    __ PushRegister(obj.type.kind(), obj_reg);
+    __ emit_jump(&fallthrough);
+
+    __ bind(&cont_branch);
+    BrOrRet(decoder, depth, 0);
+
+    __ bind(&fallthrough);
   }
 
   // Abstract type checkers. They all return the object register and fall
@@ -5362,7 +5376,7 @@ class LiftoffCompiler {
 
   template <TypeChecker type_checker>
   void BrOnAbstractType(const Value& object, FullDecoder* decoder,
-                        uint32_t br_depth, ValueKind result_kind) {
+                        uint32_t br_depth) {
     // Before branching, materialize all constants. This avoids repeatedly
     // materializing them for each conditional branch.
     if (br_depth != decoder->control_depth() - 1) {
@@ -5370,36 +5384,72 @@ class LiftoffCompiler {
           decoder->control_at(br_depth)->br_merge()->arity);
     }
 
-    Label match, no_match;
+    Label no_match;
     LiftoffRegister obj_reg =
         (this->*type_checker)(object, &no_match, {}, no_reg);
 
-    __ bind(&match);
-    __ PushRegister(result_kind, obj_reg);
+    __ PushRegister(kRef, obj_reg);
     BrOrRet(decoder, br_depth, 0);
 
     __ bind(&no_match);
-    // Drop the branch's value, restore original value.
-    Drop(decoder);
-    __ PushRegister(object.type.kind(), obj_reg);
+  }
+
+  template <TypeChecker type_checker>
+  void BrOnNonAbstractType(const Value& object, FullDecoder* decoder,
+                           uint32_t br_depth) {
+    // Before branching, materialize all constants. This avoids repeatedly
+    // materializing them for each conditional branch.
+    if (br_depth != decoder->control_depth() - 1) {
+      __ MaterializeMergedConstants(
+          decoder->control_at(br_depth)->br_merge()->arity);
+    }
+
+    Label no_match, end;
+    LiftoffRegister obj_reg =
+        (this->*type_checker)(object, &no_match, {}, no_reg);
+    __ PushRegister(kRef, obj_reg);
+    __ emit_jump(&end);
+
+    __ bind(&no_match);
+    BrOrRet(decoder, br_depth, 0);
+
+    __ bind(&end);
   }
 
   void BrOnData(FullDecoder* decoder, const Value& object,
                 Value* /* value_on_branch */, uint32_t br_depth) {
     return BrOnAbstractType<&LiftoffCompiler::DataCheck>(object, decoder,
-                                                         br_depth, kRef);
+                                                         br_depth);
   }
 
   void BrOnFunc(FullDecoder* decoder, const Value& object,
                 Value* /* value_on_branch */, uint32_t br_depth) {
     return BrOnAbstractType<&LiftoffCompiler::FuncCheck>(object, decoder,
-                                                         br_depth, kRef);
+                                                         br_depth);
   }
 
   void BrOnI31(FullDecoder* decoder, const Value& object,
                Value* /* value_on_branch */, uint32_t br_depth) {
     return BrOnAbstractType<&LiftoffCompiler::I31Check>(object, decoder,
-                                                        br_depth, kRef);
+                                                        br_depth);
+  }
+
+  void BrOnNonData(FullDecoder* decoder, const Value& object,
+                   Value* /* value_on_branch */, uint32_t br_depth) {
+    return BrOnNonAbstractType<&LiftoffCompiler::DataCheck>(object, decoder,
+                                                            br_depth);
+  }
+
+  void BrOnNonFunc(FullDecoder* decoder, const Value& object,
+                   Value* /* value_on_branch */, uint32_t br_depth) {
+    return BrOnNonAbstractType<&LiftoffCompiler::FuncCheck>(object, decoder,
+                                                            br_depth);
+  }
+
+  void BrOnNonI31(FullDecoder* decoder, const Value& object,
+                  Value* /* value_on_branch */, uint32_t br_depth) {
+    return BrOnNonAbstractType<&LiftoffCompiler::I31Check>(object, decoder,
+                                                           br_depth);
   }
 
   void Forward(FullDecoder* decoder, const Value& from, Value* to) {
@@ -5870,20 +5920,11 @@ class LiftoffCompiler {
         wasm::ObjectAccess::ToTagged(Map::kInstanceTypeOffset);
     __ Load(tmp, map, no_reg, kInstanceTypeOffset, LoadType::kI32Load16U,
             pinned);
-    // We're going to test a range of instance types with a single unsigned
-    // comparison. Statically assert that this is safe, i.e. that there are
-    // no instance types between array and struct types that might possibly
-    // occur (i.e. internal types are OK, types of Wasm objects are not).
-    // At the time of this writing:
-    // WASM_ARRAY_TYPE = 184
-    // WASM_STRUCT_TYPE = 185
-    // The specific values don't matter; the relative order does.
-    static_assert(
-        WASM_STRUCT_TYPE == static_cast<InstanceType>(WASM_ARRAY_TYPE + 1),
-        "Relying on specific InstanceType values here");
-    __ emit_i32_subi(tmp.gp(), tmp.gp(), WASM_ARRAY_TYPE);
+    // We're going to test a range of WasmObject instance types with a single
+    // unsigned comparison.
+    __ emit_i32_subi(tmp.gp(), tmp.gp(), FIRST_WASM_OBJECT_TYPE);
     __ emit_i32_cond_jumpi(kUnsignedGreaterThan, not_data_ref, tmp.gp(),
-                           WASM_STRUCT_TYPE - WASM_ARRAY_TYPE);
+                           LAST_WASM_OBJECT_TYPE - FIRST_WASM_OBJECT_TYPE);
   }
 
   void MaybeOSR() {

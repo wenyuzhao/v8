@@ -358,8 +358,7 @@ class ScriptContextTable : public FixedArray {
  public:
   DECL_CAST(ScriptContextTable)
 
-  inline int synchronized_used() const;
-  inline void synchronized_set_used(int used);
+  DECL_RELEASE_ACQUIRE_INT_ACCESSORS(used)
 
   static inline Handle<Context> GetContext(Isolate* isolate,
                                            Handle<ScriptContextTable> table,
@@ -519,8 +518,7 @@ class Context : public TorqueGeneratedContext<Context, HeapObject> {
     THROWN_OBJECT_INDEX = MIN_CONTEXT_SLOTS,
 
     // These slots hold values in debug evaluate contexts.
-    WRAPPED_CONTEXT_INDEX = MIN_CONTEXT_EXTENDED_SLOTS,
-    BLOCK_LIST_INDEX = MIN_CONTEXT_EXTENDED_SLOTS + 1
+    WRAPPED_CONTEXT_INDEX = MIN_CONTEXT_EXTENDED_SLOTS
   };
 
   static const int kExtensionSize =
@@ -689,6 +687,17 @@ class NativeContext : public Context {
   inline void synchronized_set_script_context_table(
       ScriptContextTable script_context_table);
   inline ScriptContextTable synchronized_script_context_table() const;
+
+  // Caution, hack: this getter ignores the AcquireLoadTag. The global_object
+  // slot is safe to read concurrently since it is immutable after
+  // initialization.  This function should *not* be used from anywhere other
+  // than heap-refs.cc.
+  // TODO(jgruber): Remove this function after NativeContextRef is actually
+  // never serialized and BROKER_COMPULSORY_NATIVE_CONTEXT_FIELDS is removed.
+  JSGlobalObject global_object() { return Context::global_object(); }
+  JSGlobalObject global_object(AcquireLoadTag) {
+    return Context::global_object();
+  }
 
   // Dispatched behavior.
   DECL_PRINTER(NativeContext)

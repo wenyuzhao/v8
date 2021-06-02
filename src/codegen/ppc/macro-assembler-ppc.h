@@ -38,9 +38,6 @@ Register GetRegisterThatIsNotOneOf(Register reg1, Register reg2 = no_reg,
 
 // These exist to provide portability between 32 and 64bit
 #if V8_TARGET_ARCH_PPC64
-#define LoadPUX ldux
-#define StorePX stdx
-#define StorePUX stdux
 #define ShiftLeftImm sldi
 #define ShiftRightImm srdi
 #define ClearLeftImm clrldi
@@ -50,9 +47,6 @@ Register GetRegisterThatIsNotOneOf(Register reg1, Register reg2 = no_reg,
 #define ShiftRight_ srd
 #define ShiftRightArith srad
 #else
-#define LoadPUX lwzux
-#define StorePX stwx
-#define StorePUX stwux
 #define ShiftLeftImm slwi
 #define ShiftRightImm srwi
 #define ClearLeftImm clrlwi
@@ -144,13 +138,6 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
     mov(kRootRegister, Operand(isolate_root));
   }
 
-  // These exist to provide portability between 32 and 64bit
-  void LoadU64(Register dst, const MemOperand& mem, Register scratch = no_reg);
-  void LoadPU(Register dst, const MemOperand& mem, Register scratch = no_reg);
-  void LoadS32(Register dst, const MemOperand& mem, Register scratch = no_reg);
-  void StoreP(Register src, const MemOperand& mem, Register scratch = no_reg);
-  void StorePU(Register src, const MemOperand& mem, Register scratch = no_reg);
-
   void LoadDouble(DoubleRegister dst, const MemOperand& mem,
                   Register scratch = no_reg);
   void LoadFloat32(DoubleRegister dst, const MemOperand& mem,
@@ -209,33 +196,33 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
 
   // Push two registers.  Pushes leftmost register first (to highest address).
   void Push(Register src1, Register src2) {
-    StorePU(src2, MemOperand(sp, -2 * kSystemPointerSize));
-    StoreP(src1, MemOperand(sp, kSystemPointerSize));
+    StoreU64WithUpdate(src2, MemOperand(sp, -2 * kSystemPointerSize));
+    StoreU64(src1, MemOperand(sp, kSystemPointerSize));
   }
 
   // Push three registers.  Pushes leftmost register first (to highest address).
   void Push(Register src1, Register src2, Register src3) {
-    StorePU(src3, MemOperand(sp, -3 * kSystemPointerSize));
-    StoreP(src2, MemOperand(sp, kSystemPointerSize));
-    StoreP(src1, MemOperand(sp, 2 * kSystemPointerSize));
+    StoreU64WithUpdate(src3, MemOperand(sp, -3 * kSystemPointerSize));
+    StoreU64(src2, MemOperand(sp, kSystemPointerSize));
+    StoreU64(src1, MemOperand(sp, 2 * kSystemPointerSize));
   }
 
   // Push four registers.  Pushes leftmost register first (to highest address).
   void Push(Register src1, Register src2, Register src3, Register src4) {
-    StorePU(src4, MemOperand(sp, -4 * kSystemPointerSize));
-    StoreP(src3, MemOperand(sp, kSystemPointerSize));
-    StoreP(src2, MemOperand(sp, 2 * kSystemPointerSize));
-    StoreP(src1, MemOperand(sp, 3 * kSystemPointerSize));
+    StoreU64WithUpdate(src4, MemOperand(sp, -4 * kSystemPointerSize));
+    StoreU64(src3, MemOperand(sp, kSystemPointerSize));
+    StoreU64(src2, MemOperand(sp, 2 * kSystemPointerSize));
+    StoreU64(src1, MemOperand(sp, 3 * kSystemPointerSize));
   }
 
   // Push five registers.  Pushes leftmost register first (to highest address).
   void Push(Register src1, Register src2, Register src3, Register src4,
             Register src5) {
-    StorePU(src5, MemOperand(sp, -5 * kSystemPointerSize));
-    StoreP(src4, MemOperand(sp, kSystemPointerSize));
-    StoreP(src3, MemOperand(sp, 2 * kSystemPointerSize));
-    StoreP(src2, MemOperand(sp, 3 * kSystemPointerSize));
-    StoreP(src1, MemOperand(sp, 4 * kSystemPointerSize));
+    StoreU64WithUpdate(src5, MemOperand(sp, -5 * kSystemPointerSize));
+    StoreU64(src4, MemOperand(sp, kSystemPointerSize));
+    StoreU64(src3, MemOperand(sp, 2 * kSystemPointerSize));
+    StoreU64(src2, MemOperand(sp, 3 * kSystemPointerSize));
+    StoreU64(src1, MemOperand(sp, 4 * kSystemPointerSize));
   }
 
   enum PushArrayOrder { kNormal, kReverse };
@@ -708,11 +695,22 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   void DecompressAnyTagged(Register destination, MemOperand field_operand);
   void DecompressAnyTagged(Register destination, Register source);
 
-  void LoadU32(Register dst, const MemOperand& mem, Register scratch);
+  void LoadU64WithUpdate(Register dst, const MemOperand& mem,
+                         Register scratch = no_reg);
+  void StoreU64WithUpdate(Register src, const MemOperand& mem,
+                          Register scratch = no_reg);
+
+  void LoadU64(Register dst, const MemOperand& mem, Register scratch = no_reg);
+  void LoadU32(Register dst, const MemOperand& mem, Register scratch = no_reg);
+  void LoadS32(Register dst, const MemOperand& mem, Register scratch = no_reg);
   void LoadU16(Register dst, const MemOperand& mem, Register scratch = no_reg);
   void LoadS16(Register dst, const MemOperand& mem, Register scratch = no_reg);
-  void LoadU8(Register dst, const MemOperand& mem, Register scratch);
-  void StoreWord(Register src, const MemOperand& mem, Register scratch);
+  void LoadU8(Register dst, const MemOperand& mem, Register scratch = no_reg);
+
+  void StoreU64(Register src, const MemOperand& mem, Register scratch = no_reg);
+  void StoreU32(Register src, const MemOperand& mem, Register scratch);
+  void StoreU16(Register src, const MemOperand& mem, Register scratch);
+  void StoreU8(Register src, const MemOperand& mem, Register scratch);
 
  private:
   static const int kSmiShift = kSmiTagSize + kSmiShiftSize;
@@ -738,7 +736,7 @@ class V8_EXPORT_PRIVATE MacroAssembler : public TurboAssembler {
   }
 
   void StoreReceiver(Register rec, Register argc, Register scratch) {
-    StoreP(rec, MemOperand(sp, 0));
+    StoreU64(rec, MemOperand(sp, 0));
   }
 
   // ---------------------------------------------------------------------------
@@ -788,10 +786,6 @@ class V8_EXPORT_PRIVATE MacroAssembler : public TurboAssembler {
   // than assembler-ppc and may generate variable length sequences
 
   // load a literal double value <value> to FPR <result>
-
-  void StoreHalfWord(Register src, const MemOperand& mem, Register scratch);
-
-  void StoreByte(Register src, const MemOperand& mem, Register scratch);
 
   void LoadDoubleU(DoubleRegister dst, const MemOperand& mem,
                    Register scratch = no_reg);

@@ -40,6 +40,10 @@ namespace internal {
   TFC(EphemeronKeyBarrierSaveFP, WriteBarrier)                                 \
   TFC(EphemeronKeyBarrierIgnoreFP, WriteBarrier)                               \
                                                                                \
+  /* TSAN support for tagged stores in generated code.*/                       \
+  IF_TSAN(TFC, TSANRelaxedStoreIgnoreFP, TSANRelaxedStore)                     \
+  IF_TSAN(TFC, TSANRelaxedStoreSaveFP, TSANRelaxedStore)                       \
+                                                                               \
   /* Adaptor for CPP builtin */                                                \
   TFC(AdaptorWithBuiltinExitFrame, CppBuiltinAdaptor)                          \
                                                                                \

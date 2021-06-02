@@ -742,10 +742,14 @@ void TurboAssembler::CallRecordWriteStub(
 
   MoveObjectAndSlot(object_parameter, slot_parameter, object, offset);
 
+#if V8_ENABLE_WEBASSEMBLY
   if (mode == StubCallMode::kCallWasmRuntimeStub) {
     auto wasm_target =
         wasm::WasmCode::GetRecordWriteStub(remembered_set_action, fp_mode);
     Call(wasm_target, RelocInfo::WASM_STUB_CALL);
+#else
+  if (false) {
+#endif
   } else {
     auto builtin_index =
         Builtins::GetRecordWriteStub(remembered_set_action, fp_mode);
@@ -802,7 +806,7 @@ void MacroAssembler::RecordWrite(Register object, Operand offset,
                                  SaveFPRegsMode fp_mode,
                                  RememberedSetAction remembered_set_action,
                                  SmiCheck smi_check) {
-  DCHECK_NE(object, value);
+  DCHECK(!AreAliased(object, value));
   if (FLAG_debug_code) {
     {
       UseScratchRegisterScope temps(this);

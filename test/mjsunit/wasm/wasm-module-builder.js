@@ -466,6 +466,7 @@ let kExprRttSub = 0x31;
 let kExprRefTest = 0x40;
 let kExprRefCast = 0x41;
 let kExprBrOnCast = 0x42;
+let kExprBrOnCastFail = 0x43;
 let kExprRefIsFunc = 0x50;
 let kExprRefIsData = 0x51;
 let kExprRefIsI31 = 0x52;
@@ -1956,6 +1957,21 @@ function wasmSignedLeb(val, max_len = 5) {
     }
     res.push(v | 0x80);
     val = val >> 7;
+  }
+  throw new Error(
+      'Leb value <' + val + '> exceeds maximum length of ' + max_len);
+}
+
+function wasmUnsignedLeb(val, max_len = 5) {
+  let res = [];
+  for (let i = 0; i < max_len; ++i) {
+    let v = val & 0x7f;
+    if (v == val) {
+      res.push(v);
+      return res;
+    }
+    res.push(v | 0x80);
+    val = val >>> 7;
   }
   throw new Error(
       'Leb value <' + val + '> exceeds maximum length of ' + max_len);

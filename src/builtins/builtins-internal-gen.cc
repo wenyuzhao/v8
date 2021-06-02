@@ -412,6 +412,41 @@ TF_BUILTIN(EphemeronKeyBarrierIgnoreFP, WriteBarrierCodeStubAssembler) {
   GenerateEphemeronKeyBarrier(SaveFPRegsMode::kIgnore);
 }
 
+#ifdef V8_IS_TSAN
+class TSANRelaxedStoreCodeStubAssembler : public CodeStubAssembler {
+ public:
+  explicit TSANRelaxedStoreCodeStubAssembler(
+      compiler::CodeAssemblerState* state)
+      : CodeStubAssembler(state) {}
+};
+
+TF_BUILTIN(TSANRelaxedStoreIgnoreFP, TSANRelaxedStoreCodeStubAssembler) {
+  TNode<ExternalReference> function =
+      ExternalConstant(ExternalReference::tsan_relaxed_store_function());
+  auto address = UncheckedParameter<IntPtrT>(Descriptor::kAddress);
+  TNode<IntPtrT> value =
+      BitcastTaggedToWord(UncheckedParameter<Object>(Descriptor::kValue));
+    CallCFunctionWithCallerSavedRegisters(
+        function, MachineType::Int32(), SaveFPRegsMode::kIgnore,
+        std::make_pair(MachineType::IntPtr(), address),
+        std::make_pair(MachineType::IntPtr(), value));
+    Return(UndefinedConstant());
+}
+
+TF_BUILTIN(TSANRelaxedStoreSaveFP, TSANRelaxedStoreCodeStubAssembler) {
+  TNode<ExternalReference> function =
+      ExternalConstant(ExternalReference::tsan_relaxed_store_function());
+  auto address = UncheckedParameter<IntPtrT>(Descriptor::kAddress);
+  TNode<IntPtrT> value =
+      BitcastTaggedToWord(UncheckedParameter<Object>(Descriptor::kValue));
+  CallCFunctionWithCallerSavedRegisters(
+      function, MachineType::Int32(), SaveFPRegsMode::kSave,
+      std::make_pair(MachineType::IntPtr(), address),
+      std::make_pair(MachineType::IntPtr(), value));
+  Return(UndefinedConstant());
+}
+#endif  // V8_IS_TSAN
+
 class DeletePropertyBaseAssembler : public AccessorAssembler {
  public:
   explicit DeletePropertyBaseAssembler(compiler::CodeAssemblerState* state)

@@ -5,8 +5,11 @@
 #ifndef V8_WASM_BASELINE_PPC_LIFTOFF_ASSEMBLER_PPC_H_
 #define V8_WASM_BASELINE_PPC_LIFTOFF_ASSEMBLER_PPC_H_
 
+#include "src/base/platform/wrappers.h"
+#include "src/codegen/assembler.h"
+#include "src/heap/memory-chunk.h"
 #include "src/wasm/baseline/liftoff-assembler.h"
-
+#include "src/wasm/simd-shuffle.h"
 
 namespace v8 {
 namespace internal {
@@ -185,29 +188,29 @@ void LiftoffAssembler::LoadFromInstance(Register dst, Register instance,
 void LiftoffAssembler::LoadTaggedPointerFromInstance(Register dst,
                                                      Register instance,
                                                      int offset) {
-  bailout(kUnsupportedArchitecture, "LoadTaggedPointerFromInstance");
+  LoadTaggedPointerField(dst, MemOperand(instance, offset), r0);
 }
 
 void LiftoffAssembler::SpillInstance(Register instance) {
-  bailout(kUnsupportedArchitecture, "SpillInstance");
+  StoreU64(instance, liftoff::GetInstanceOperand(), r0);
 }
 
 void LiftoffAssembler::ResetOSRTarget() {}
 
 void LiftoffAssembler::FillInstanceInto(Register dst) {
-  bailout(kUnsupportedArchitecture, "FillInstanceInto");
+  LoadU64(dst, liftoff::GetInstanceOperand(), r0);
 }
 
 void LiftoffAssembler::LoadTaggedPointer(Register dst, Register src_addr,
                                          Register offset_reg,
                                          int32_t offset_imm,
                                          LiftoffRegList pinned) {
-  bailout(kUnsupportedArchitecture, "LoadTaggedPointer");
+  LoadTaggedPointerField(dst, MemOperand(src_addr, offset_reg, offset_imm), r0);
 }
 
 void LiftoffAssembler::LoadFullPointer(Register dst, Register src_addr,
                                        int32_t offset_imm) {
-  bailout(kUnsupportedArchitecture, "LoadFullPointer");
+  LoadU64(dst, MemOperand(src_addr, offset_imm), r0);
 }
 
 void LiftoffAssembler::StoreTaggedPointer(Register dst_addr,
@@ -216,7 +219,32 @@ void LiftoffAssembler::StoreTaggedPointer(Register dst_addr,
                                           LiftoffRegister src,
                                           LiftoffRegList pinned,
                                           SkipWriteBarrier skip_write_barrier) {
-  bailout(kRefTypes, "GlobalSet");
+  MemOperand dst_op = MemOperand(dst_addr, offset_reg, offset_imm);
+  StoreTaggedField(src.gp(), dst_op, r0);
+
+  if (skip_write_barrier || FLAG_disable_write_barriers) return;
+
+  Label write_barrier;
+  Label exit;
+  CheckPageFlag(dst_addr, r0, MemoryChunk::kPointersFromHereAreInterestingMask,
+                ne, &write_barrier);
+  b(&exit);
+  bind(&write_barrier);
+  JumpIfSmi(src.gp(), &exit);
+  if (COMPRESS_POINTERS_BOOL) {
+    DecompressTaggedPointer(src.gp(), src.gp());
+  }
+  CheckPageFlag(src.gp(), r0, MemoryChunk::kPointersToHereAreInterestingMask,
+                eq, &exit);
+  mov(ip, Operand(offset_imm));
+  add(ip, ip, dst_addr);
+  if (offset_reg != no_reg) {
+    add(ip, ip, offset_reg);
+  }
+  CallRecordWriteStub(dst_addr, ip, RememberedSetAction::kEmit,
+                      SaveFPRegsMode::kSave,
+                      StubCallMode::kCallWasmRuntimeStub);
+  bind(&exit);
 }
 
 void LiftoffAssembler::Load(LiftoffRegister dst, Register src_addr,
@@ -352,7 +380,7 @@ void LiftoffAssembler::FillStackSlotsWithZero(int start, int size) {
     // Special straight-line code for up to nine words. Generates one
     // instruction per word.
     for (int offset = 4; offset <= size; offset += 4) {
-      StoreP(r0, liftoff::GetHalfStackSlot(start + offset, kLowWord));
+      StoreU64(r0, liftoff::GetHalfStackSlot(start + offset, kLowWord));
     }
   } else {
     // General case for bigger counts (9 instructions).
@@ -364,7 +392,7 @@ void LiftoffAssembler::FillStackSlotsWithZero(int start, int size) {
 
     Label loop;
     bind(&loop);
-    StoreP(r0, MemOperand(r0));
+    StoreU64(r0, MemOperand(r0));
     addi(r0, r0, Operand(kSystemPointerSize));
     cmp(r4, r5);
     bne(&loop);
