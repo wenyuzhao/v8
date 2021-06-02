@@ -748,21 +748,6 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
                              AllocationFlags flags = kNone);
 
   TNode<HeapObject> Allocate(int size, AllocationFlags flags = kNone);
-  // Allocate space for a group of objects at once.
-  // If turbo_allocation_folding is disabled, this will only allocate the first
-  // object.
-  TNode<HeapObject> OuterAllocate(int group_size, int object_size);
-  // Get the start address of an object allocated by OuterAllocate.
-  // If turbo_allocation_folding is disabled, this will do an extra allocation
-  // instead of returning the biased address directly.
-  // Special case: Memento object allocations are always folded together with
-  // their base objects.
-  TNode<HeapObject> InnerAllocate(TNode<HeapObject> previous,
-                                  TNode<IntPtrT> offset,
-                                  TNode<IntPtrT> object_size,
-                                  bool is_memento = false);
-  TNode<HeapObject> InnerAllocate(TNode<HeapObject> previous, int offset,
-                                  int object_size, bool is_memento = false);
 
   TNode<BoolT> IsRegularHeapObjectSize(TNode<IntPtrT> size);
 
