@@ -37,8 +37,6 @@ class UnifiedHeapSnapshotTest : public UnifiedHeapTest {
 };
 
 bool IsValidSnapshot(const v8::HeapSnapshot* snapshot, int depth = 3) {
-  // Skip snapshot validation for TPH.
-  if (i::FLAG_enable_third_party_heap) return true;
   const HeapSnapshot* heap_snapshot =
       reinterpret_cast<const HeapSnapshot*>(snapshot);
   std::unordered_set<const HeapEntry*> visited;

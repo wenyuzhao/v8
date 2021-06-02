@@ -210,8 +210,6 @@ static void EnsureNoUninstrumentedInternals(v8::Isolate* isolate,
 
 // Check that snapshot has no unretained entries except root.
 static bool ValidateSnapshot(const v8::HeapSnapshot* snapshot, int depth = 3) {
-  // Skip snapshot validation for TPH.
-  if (i::FLAG_enable_third_party_heap) return true;
   i::HeapSnapshot* heap_snapshot = const_cast<i::HeapSnapshot*>(
       reinterpret_cast<const i::HeapSnapshot*>(snapshot));
 

@@ -1182,6 +1182,9 @@
   # Timeout (too many GCs)
   'test-heap/Regress8014': [SKIP],
   'test-accessors/HandleScopePop': [SKIP],
+  # Asserts on identical snapshot graph node-ids, which implicitly assumes on objects relative order.
+  'test-heap-profiler/HeapEntryIdsAndGC': [SKIP],
+  'test-heap-profiler/HeapEntryIdsAndArrayShift': [SKIP],
 }], # third_party_heap
 
 ################################################################################
