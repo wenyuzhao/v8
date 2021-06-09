@@ -341,8 +341,8 @@ RUNTIME_FUNCTION(Runtime_WasmI32AtomicWait) {
   // Should have trapped if address was OOB.
   DCHECK_LT(offset, array_buffer->byte_length());
 
-  // Trap if memory is not shared.
-  if (!array_buffer->is_shared()) {
+  // Trap if memory is not shared, or wait is not allowed on the isolate
+  if (!array_buffer->is_shared() || !isolate->allow_atomics_wait()) {
     return ThrowWasmError(isolate, MessageTemplate::kAtomicsWaitNotAllowed);
   }
   return FutexEmulation::WaitWasm32(isolate, array_buffer, offset,
@@ -364,8 +364,8 @@ RUNTIME_FUNCTION(Runtime_WasmI64AtomicWait) {
   // Should have trapped if address was OOB.
   DCHECK_LT(offset, array_buffer->byte_length());
 
-  // Trap if memory is not shared.
-  if (!array_buffer->is_shared()) {
+  // Trap if memory is not shared, or if wait is not allowed on the isolate
+  if (!array_buffer->is_shared() || !isolate->allow_atomics_wait()) {
     return ThrowWasmError(isolate, MessageTemplate::kAtomicsWaitNotAllowed);
   }
   return FutexEmulation::WaitWasm64(isolate, array_buffer, offset,
@@ -629,12 +629,14 @@ RUNTIME_FUNCTION(Runtime_WasmDebugBreak) {
 RUNTIME_FUNCTION(Runtime_WasmAllocateRtt) {
   ClearThreadInWasmScope flag_scope(isolate);
   HandleScope scope(isolate);
-  DCHECK_EQ(2, args.length());
+  DCHECK_EQ(3, args.length());
   CONVERT_UINT32_ARG_CHECKED(type_index, 0);
   CONVERT_ARG_HANDLE_CHECKED(Map, parent, 1);
+  CONVERT_SMI_ARG_CHECKED(raw_mode, 2);
   Handle<WasmInstanceObject> instance(GetWasmInstanceOnStackTop(isolate),
                                       isolate);
-  return *wasm::AllocateSubRtt(isolate, instance, type_index, parent);
+  return *wasm::AllocateSubRtt(isolate, instance, type_index, parent,
+                               static_cast<WasmRttSubMode>(raw_mode));
 }
 
 namespace {

@@ -2566,9 +2566,21 @@ Maybe<bool> Object::SetPropertyInternal(LookupIterator* it,
           if ((maybe_attributes.FromJust() & READ_ONLY) != 0) {
             return WriteToReadOnlyProperty(it, value, should_throw);
           }
-          if (maybe_attributes.FromJust() == ABSENT) break;
-          *found = false;
-          return Nothing<bool>();
+          // At this point we might have called interceptor's query or getter
+          // callback. Assuming that the callbacks have side effects, we use
+          // Object::SetSuperProperty() which works properly regardless on
+          // whether the property was present on the receiver or not when
+          // storing to the receiver.
+          if (maybe_attributes.FromJust() == ABSENT) {
+            // Proceed lookup from the next state.
+            it->Next();
+          } else {
+            // Finish lookup in order to make Object::SetSuperProperty() store
+            // property to the receiver.
+            it->NotFound();
+          }
+          return Object::SetSuperProperty(it, value, store_origin,
+                                          should_throw);
         }
         break;
       }
@@ -2643,6 +2655,8 @@ Maybe<bool> Object::SetProperty(LookupIterator* it, Handle<Object> value,
     if (found) return result;
   }
 
+  // TODO(ishell): refactor this: both SetProperty and and SetSuperProperty have
+  // this piece of code.
   // If the receiver is the JSGlobalObject, the store was contextual. In case
   // the property did not exist yet on the global object itself, we have to
   // throw a reference error in strict mode.  In sloppy mode, we continue.
@@ -2686,6 +2700,8 @@ Maybe<bool> Object::SetSuperProperty(LookupIterator* it, Handle<Object> value,
   }
   Handle<JSReceiver> receiver = Handle<JSReceiver>::cast(it->GetReceiver());
 
+  // Note, the callers rely on the fact that this code is redoing the full own
+  // lookup from scratch.
   LookupIterator::Configuration c = LookupIterator::OWN;
   LookupIterator own_lookup =
       it->IsElement() ? LookupIterator(isolate, receiver, it->index(), c)
@@ -2746,6 +2762,25 @@ Maybe<bool> Object::SetSuperProperty(LookupIterator* it, Handle<Object> value,
       case LookupIterator::TRANSITION:
         UNREACHABLE();
     }
+  }
+
+  // TODO(ishell): refactor this: both SetProperty and and SetSuperProperty have
+  // this piece of code.
+  // If the receiver is the JSGlobalObject, the store was contextual. In case
+  // the property did not exist yet on the global object itself, we have to
+  // throw a reference error in strict mode.  In sloppy mode, we continue.
+  if (receiver->IsJSGlobalObject() &&
+      (GetShouldThrow(isolate, should_throw) == ShouldThrow::kThrowOnError)) {
+    if (own_lookup.state() == LookupIterator::TRANSITION) {
+      // The property cell that we have created is garbage because we are going
+      // to throw now instead of putting it into the global dictionary. However,
+      // the cell might already have been stored into the feedback vector, so
+      // we must invalidate it nevertheless.
+      own_lookup.transition_cell()->ClearAndInvalidate(ReadOnlyRoots(isolate));
+    }
+    isolate->Throw(*isolate->factory()->NewReferenceError(
+        MessageTemplate::kNotDefined, own_lookup.GetName()));
+    return Nothing<bool>();
   }
 
   return AddDataProperty(&own_lookup, value, NONE, should_throw, store_origin);
@@ -3214,19 +3249,6 @@ MaybeHandle<JSProxy> JSProxy::New(Isolate* isolate, Handle<Object> target,
   }
   return isolate->factory()->NewJSProxy(Handle<JSReceiver>::cast(target),
                                         Handle<JSReceiver>::cast(handler));
-}
-
-// static
-MaybeHandle<NativeContext> JSProxy::GetFunctionRealm(Handle<JSProxy> proxy) {
-  DCHECK(proxy->map().is_constructor());
-  if (proxy->IsRevoked()) {
-    THROW_NEW_ERROR(proxy->GetIsolate(),
-                    NewTypeError(MessageTemplate::kProxyRevoked),
-                    NativeContext);
-  }
-  Handle<JSReceiver> target(JSReceiver::cast(proxy->target()),
-                            proxy->GetIsolate());
-  return JSReceiver::GetFunctionRealm(target);
 }
 
 Maybe<PropertyAttributes> JSProxy::GetPropertyAttributes(LookupIterator* it) {
@@ -6844,6 +6866,7 @@ void JSFinalizationRegistry::RemoveCellFromUnregisterTokenMap(
       JSFinalizationRegistry::cast(Object(raw_finalization_registry));
   WeakCell weak_cell = WeakCell::cast(Object(raw_weak_cell));
   DCHECK(!weak_cell.unregister_token().IsUndefined(isolate));
+  HeapObject undefined = ReadOnlyRoots(isolate).undefined_value();
 
   // Remove weak_cell from the linked list of other WeakCells with the same
   // unregister token and remove its unregister token from key_map if necessary
@@ -6852,7 +6875,7 @@ void JSFinalizationRegistry::RemoveCellFromUnregisterTokenMap(
   if (weak_cell.key_list_prev().IsUndefined(isolate)) {
     SimpleNumberDictionary key_map =
         SimpleNumberDictionary::cast(finalization_registry.key_map());
-    Object unregister_token = weak_cell.unregister_token();
+    HeapObject unregister_token = weak_cell.unregister_token();
     uint32_t key = Smi::ToInt(unregister_token.GetHash());
     InternalIndex entry = key_map.FindEntry(isolate, key);
     DCHECK(entry.is_found());
@@ -6867,8 +6890,7 @@ void JSFinalizationRegistry::RemoveCellFromUnregisterTokenMap(
       // of the key in the hash table.
       WeakCell next = WeakCell::cast(weak_cell.key_list_next());
       DCHECK_EQ(next.key_list_prev(), weak_cell);
-      next.set_key_list_prev(ReadOnlyRoots(isolate).undefined_value());
-      weak_cell.set_key_list_next(ReadOnlyRoots(isolate).undefined_value());
+      next.set_key_list_prev(undefined);
       key_map.ValueAtPut(entry, next);
     }
   } else {
@@ -6880,6 +6902,12 @@ void JSFinalizationRegistry::RemoveCellFromUnregisterTokenMap(
       next.set_key_list_prev(weak_cell.key_list_prev());
     }
   }
+
+  // weak_cell is now removed from the unregister token map, so clear its
+  // unregister token-related fields for heap verification.
+  weak_cell.set_unregister_token(undefined);
+  weak_cell.set_key_list_prev(undefined);
+  weak_cell.set_key_list_next(undefined);
 }
 
 }  // namespace internal

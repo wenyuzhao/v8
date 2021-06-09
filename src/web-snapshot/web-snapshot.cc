@@ -40,6 +40,49 @@ void WebSnapshotSerializerDeserializer::Throw(const char* message) {
   }
 }
 
+uint32_t WebSnapshotSerializerDeserializer::FunctionKindToFunctionFlags(
+    FunctionKind kind) {
+  // TODO(v8:11525): Support more function kinds.
+  switch (kind) {
+    case FunctionKind::kNormalFunction:
+    case FunctionKind::kArrowFunction:
+    case FunctionKind::kGeneratorFunction:
+    case FunctionKind::kAsyncFunction:
+    case FunctionKind::kAsyncArrowFunction:
+    case FunctionKind::kAsyncGeneratorFunction:
+      break;
+    default:
+      Throw("Web Snapshot: Unsupported function kind");
+  }
+  auto thing = ArrowFunctionBitField::encode(IsArrowFunction(kind)) +
+               AsyncFunctionBitField::encode(IsAsyncFunction(kind)) +
+               GeneratorFunctionBitField::encode(IsGeneratorFunction(kind));
+  return thing;
+}
+
+FunctionKind WebSnapshotSerializerDeserializer::FunctionFlagsToFunctionKind(
+    uint32_t flags) {
+  static const FunctionKind kFunctionKinds[] = {
+      // is_generator = false, is_async = false
+      FunctionKind::kNormalFunction,  // is_arrow = false
+      FunctionKind::kArrowFunction,   // is_arrow = true
+      // is_generator = false, is_async = true
+      FunctionKind::kAsyncFunction,       // is_arrow = false
+      FunctionKind::kAsyncArrowFunction,  // is_arrow = true
+      // is_generator = true, is_async = false
+      FunctionKind::kGeneratorFunction,  // is_arrow = false
+      FunctionKind::kInvalid,            // is_arrow = true
+      // is_generator = true, is_async = true
+      FunctionKind::kAsyncGeneratorFunction,  // is_arrow = false
+      FunctionKind::kInvalid};                // is_arrow = true
+
+  FunctionKind kind = kFunctionKinds[flags];
+  if (kind == FunctionKind::kInvalid) {
+    Throw("Web Snapshots: Invalid function flags\n");
+  }
+  return kind;
+}
+
 WebSnapshotSerializer::WebSnapshotSerializer(v8::Isolate* isolate)
     : WebSnapshotSerializerDeserializer(
           reinterpret_cast<v8::internal::Isolate*>(isolate)),
@@ -57,23 +100,21 @@ WebSnapshotSerializer::WebSnapshotSerializer(v8::Isolate* isolate)
 
 WebSnapshotSerializer::~WebSnapshotSerializer() {}
 
-bool WebSnapshotSerializer::TakeSnapshot(
-    v8::Local<v8::Context> context, const std::vector<std::string>& exports,
-    WebSnapshotData& data_out) {
+bool WebSnapshotSerializer::TakeSnapshot(v8::Local<v8::Context> context,
+                                         v8::Local<v8::PrimitiveArray> exports,
+                                         WebSnapshotData& data_out) {
   if (string_ids_.size() > 0) {
     Throw("Web snapshot: Can't reuse WebSnapshotSerializer");
     return false;
   }
   v8::Isolate* v8_isolate = reinterpret_cast<v8::Isolate*>(isolate_);
-  for (const std::string& export_name : exports) {
-    if (export_name.length() == 0) {
+  for (int i = 0, length = exports->Length(); i < length; ++i) {
+    v8::Local<v8::String> str =
+        exports->Get(v8_isolate, i)->ToString(context).ToLocalChecked();
+    if (str.IsEmpty()) {
       continue;
     }
-    v8::ScriptCompiler::Source source(
-        v8::String::NewFromUtf8(v8_isolate, export_name.c_str(),
-                                NewStringType::kNormal,
-                                static_cast<int>(export_name.length()))
-            .ToLocalChecked());
+    v8::ScriptCompiler::Source source(str);
     auto script = ScriptCompiler::Compile(context, &source).ToLocalChecked();
     v8::MaybeLocal<v8::Value> script_result = script->Run(context);
     v8::Local<v8::Object> v8_object;
@@ -85,7 +126,7 @@ bool WebSnapshotSerializer::TakeSnapshot(
     }
 
     auto object = Handle<JSObject>::cast(Utils::OpenHandle(*v8_object));
-    SerializeExport(object, export_name);
+    SerializeExport(object, Handle<String>::cast(Utils::OpenHandle(*str)));
   }
   WriteSnapshot(data_out.buffer, data_out.buffer_size);
   return !has_error();
@@ -245,6 +286,7 @@ void WebSnapshotSerializer::SerializeMap(Handle<Map> map, uint32_t& id) {
 // - String id (source snippet)
 // - Start position in the source snippet
 // - Length in the source snippet
+// - Flags (see FunctionFlags)
 // TODO(v8:11525): Investigate whether the length is really needed.
 void WebSnapshotSerializer::SerializeFunction(Handle<JSFunction> function,
                                               uint32_t& id) {
@@ -280,6 +322,9 @@ void WebSnapshotSerializer::SerializeFunction(Handle<JSFunction> function,
   function_serializer_.WriteUint32(start);
   int end = function->shared().EndPosition();
   function_serializer_.WriteUint32(end - start);
+
+  function_serializer_.WriteUint32(
+      FunctionKindToFunctionFlags(function->shared().kind()));
   // TODO(v8:11525): Serialize .prototype.
   // TODO(v8:11525): Support properties in functions.
 }
@@ -367,24 +412,22 @@ void WebSnapshotSerializer::SerializePendingObject(Handle<JSObject> object) {
 
 // Format (serialized export):
 // - String id (export name)
-// - Object id (exported object)
+// - Serialized value (export value)
 void WebSnapshotSerializer::SerializeExport(Handle<JSObject> object,
-                                            const std::string& export_name) {
-  // TODO(v8:11525): Support exporting functions.
+                                            Handle<String> export_name) {
   ++export_count_;
-  // TODO(v8:11525): How to avoid creating the String but still de-dupe?
-  Handle<String> export_name_string =
-      isolate_->factory()
-          ->NewStringFromOneByte(Vector<const uint8_t>(
-              reinterpret_cast<const uint8_t*>(export_name.c_str()),
-              static_cast<int>(export_name.length())))
-          .ToHandleChecked();
   uint32_t string_id = 0;
-  SerializeString(export_name_string, string_id);
-  uint32_t object_id = 0;
-  SerializeObject(object, object_id);
+  SerializeString(export_name, string_id);
   export_serializer_.WriteUint32(string_id);
-  export_serializer_.WriteUint32(object_id);
+  if (object->IsJSPrimitiveWrapper()) {
+    Handle<JSPrimitiveWrapper> wrapper =
+        Handle<JSPrimitiveWrapper>::cast(object);
+    Handle<Object> export_value =
+        handle(JSPrimitiveWrapper::cast(*wrapper).value(), isolate_);
+    WriteValue(export_value, export_serializer_);
+  } else {
+    WriteValue(object, export_serializer_);
+  }
 }
 
 // Format (serialized value):
@@ -725,17 +768,18 @@ void WebSnapshotDeserializer::DeserializeFunctions() {
   STATIC_ASSERT(kMaxItemCount + 1 <= FixedArray::kMaxLength);
   functions_ = isolate_->factory()->NewFixedArray(function_count_);
 
-  Handle<Script> script =
-      isolate_->factory()->NewScript(isolate_->factory()->empty_string());
-  script->set_type(Script::TYPE_WEB_SNAPSHOT);
   // Overallocate the array for SharedFunctionInfos; functions which we
   // deserialize soon will create more SharedFunctionInfos when called.
   Handle<WeakFixedArray> infos(isolate_->factory()->NewWeakFixedArray(
       WeakArrayList::CapacityForLength(function_count_ + 1),
       AllocationType::kOld));
-  script->set_shared_function_infos(*infos);
   Handle<ObjectHashTable> shared_function_info_table =
       ObjectHashTable::New(isolate_, function_count_);
+  Handle<Script> script =
+      isolate_->factory()->NewScript(isolate_->factory()->empty_string());
+  script->set_type(Script::TYPE_WEB_SNAPSHOT);
+  script->set_shared_function_infos(*infos);
+  script->set_shared_function_info_table(*shared_function_info_table);
 
   for (uint32_t i = 0; i < function_count_; ++i) {
     uint32_t context_id;
@@ -756,13 +800,14 @@ void WebSnapshotDeserializer::DeserializeFunctions() {
 
     uint32_t start_position;
     uint32_t length;
+    uint32_t flags;
     if (!deserializer_->ReadUint32(&start_position) ||
-        !deserializer_->ReadUint32(&length)) {
+        !deserializer_->ReadUint32(&length) ||
+        !deserializer_->ReadUint32(&flags)) {
       Throw("Web snapshot: Malformed function");
       return;
     }
 
-    // TODO(v8:11525): Support other function kinds.
     // TODO(v8:11525): Support (exported) top level functions.
 
     // TODO(v8:11525): Deduplicate the SFIs for inner functions the user creates
@@ -771,7 +816,7 @@ void WebSnapshotDeserializer::DeserializeFunctions() {
     Handle<SharedFunctionInfo> shared =
         isolate_->factory()->NewSharedFunctionInfo(
             isolate_->factory()->empty_string(), MaybeHandle<Code>(),
-            Builtins::kCompileLazy, FunctionKind::kNormalFunction);
+            Builtin::kCompileLazy, FunctionFlagsToFunctionKind(flags));
     shared->set_script(*script);
     // Index 0 is reserved for top-level shared function info (which web
     // snapshot scripts don't have).
@@ -804,7 +849,6 @@ void WebSnapshotDeserializer::DeserializeFunctions() {
     }
     functions_->set(i, *function);
   }
-  script->set_shared_function_info_table(*shared_function_info_table);
 }
 
 void WebSnapshotDeserializer::DeserializeObjects() {
@@ -862,12 +906,9 @@ void WebSnapshotDeserializer::DeserializeExports() {
   }
   for (uint32_t i = 0; i < count; ++i) {
     Handle<String> export_name = ReadString(true);
-    uint32_t object_id = 0;
-    if (!deserializer_->ReadUint32(&object_id) || object_id >= object_count_) {
-      Throw("Web snapshot: Malformed export");
-      return;
-    }
-    Handle<Object> exported_object = handle(objects_->get(object_id), isolate_);
+    Handle<Object> export_value;
+    Representation representation;
+    ReadValue(export_value, representation);
 
     // Check for the correctness of the snapshot (thus far) before producing
     // something observable. TODO(v8:11525): Strictly speaking, we should
@@ -878,7 +919,7 @@ void WebSnapshotDeserializer::DeserializeExports() {
     }
 
     auto result = Object::SetProperty(isolate_, isolate_->global_object(),
-                                      export_name, exported_object);
+                                      export_name, export_value);
     if (result.is_null()) {
       Throw("Web snapshot: Setting global property failed");
       return;

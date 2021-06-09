@@ -942,9 +942,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
         // We don't actually want to generate a pile of code for this, so just
         // claim there is a stack frame, without generating one.
         FrameScope scope(tasm(), StackFrame::NONE);
-        __ Call(
-            isolate()->builtins()->builtin_handle(Builtins::kAbortCSAAssert),
-            RelocInfo::CODE_TARGET);
+        __ Call(isolate()->builtins()->builtin_handle(Builtin::kAbortCSAAssert),
+                RelocInfo::CODE_TARGET);
       }
       __ Debug("kArchAbortCSAAssert", 0, BREAK);
       unwinding_info_writer_.MarkBlockWillExit();
@@ -1203,6 +1202,14 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     case kArm64Mul32:
       __ Mul(i.OutputRegister32(), i.InputRegister32(0), i.InputRegister32(1));
       break;
+    case kArm64Sadalp: {
+      DCHECK_EQ(i.OutputSimd128Register(), i.InputSimd128Register(0));
+      VectorFormat dst_f = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat src_f = VectorFormatHalfWidthDoubleLanes(dst_f);
+      __ Sadalp(i.OutputSimd128Register().Format(dst_f),
+                i.InputSimd128Register(1).Format(src_f));
+      break;
+    }
     case kArm64Saddlp: {
       VectorFormat dst_f = VectorFormatFillQ(LaneSizeField::decode(opcode));
       VectorFormat src_f = VectorFormatHalfWidthDoubleLanes(dst_f);
@@ -2987,7 +2994,7 @@ void CodeGenerator::AssembleArchSelect(Instruction* instr,
                                        FlagsCondition condition) {
   Arm64OperandConverter i(this, instr);
   MachineRepresentation rep =
-    LocationOperand::cast(instr->OutputAt(0))->representation();
+      LocationOperand::cast(instr->OutputAt(0))->representation();
   Condition cc = FlagsConditionToCondition(condition);
   // We don't now how many inputs were consumed by the condition, so we have to
   // calculate the indices of the last two inputs.
@@ -3380,12 +3387,12 @@ void CodeGenerator::PrepareForDeoptimizationExits(
     __ bind(&jump_deoptimization_entry_labels_[i]);
     DeoptimizeKind kind = static_cast<DeoptimizeKind>(i);
     if (kind == DeoptimizeKind::kEagerWithResume) {
-      __ LoadEntryFromBuiltinIndex(
+      __ LoadEntryFromBuiltin(
           Deoptimizer::GetDeoptWithResumeBuiltin(eager_with_resume_reason),
           scratch);
     } else {
-      __ LoadEntryFromBuiltinIndex(Deoptimizer::GetDeoptimizationEntry(kind),
-                                   scratch);
+      __ LoadEntryFromBuiltin(Deoptimizer::GetDeoptimizationEntry(kind),
+                              scratch);
     }
     __ Jump(scratch);
   }

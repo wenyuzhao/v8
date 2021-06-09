@@ -176,7 +176,7 @@ void TurboAssembler::Jump(Handle<Code> code, RelocInfo::Mode rmode,
   DCHECK_IMPLIES(options().isolate_independent_code,
                  Builtins::IsIsolateIndependentBuiltin(*code));
 
-  int builtin_index = Builtins::kNoBuiltinId;
+  int builtin_index = Builtin::kNoBuiltinId;
   bool target_is_builtin =
       isolate()->builtins()->IsBuiltinHandle(code, &builtin_index);
 
@@ -265,7 +265,7 @@ void TurboAssembler::Call(Handle<Code> code, RelocInfo::Mode rmode,
   DCHECK_IMPLIES(options().use_pc_relative_calls_and_jumps,
                  Builtins::IsIsolateIndependentBuiltin(*code));
 
-  int builtin_index = Builtins::kNoBuiltinId;
+  int builtin_index = Builtin::kNoBuiltinId;
   bool target_is_builtin =
       isolate()->builtins()->IsBuiltinHandle(code, &builtin_index);
 
@@ -1872,8 +1872,9 @@ void MacroAssembler::LoadWeakValue(Register out, Register in,
   and_(out, in, r0);
 }
 
-void MacroAssembler::IncrementCounter(StatsCounter* counter, int value,
-                                      Register scratch1, Register scratch2) {
+void MacroAssembler::EmitIncrementCounter(StatsCounter* counter, int value,
+                                          Register scratch1,
+                                          Register scratch2) {
   DCHECK_GT(value, 0);
   if (FLAG_native_code_counters && counter->Enabled()) {
     // This operation has to be exactly 32-bit wide in case the external
@@ -1886,8 +1887,9 @@ void MacroAssembler::IncrementCounter(StatsCounter* counter, int value,
   }
 }
 
-void MacroAssembler::DecrementCounter(StatsCounter* counter, int value,
-                                      Register scratch1, Register scratch2) {
+void MacroAssembler::EmitDecrementCounter(StatsCounter* counter, int value,
+                                          Register scratch1,
+                                          Register scratch2) {
   DCHECK_GT(value, 0);
   if (FLAG_native_code_counters && counter->Enabled()) {
     // This operation has to be exactly 32-bit wide in case the external
@@ -2742,7 +2744,6 @@ void MacroAssembler::AndSmiLiteral(Register dst, Register src, Smi smi,
     }                                                            \
   }
 
-// Load a "pointer" sized value from the memory location
 void TurboAssembler::LoadU64(Register dst, const MemOperand& mem,
                              Register scratch) {
   GenerateMemoryOperationWithAlign(dst, mem, ld, ldx);
@@ -2753,7 +2754,6 @@ void TurboAssembler::LoadU64WithUpdate(Register dst, const MemOperand& mem,
   GenerateMemoryOperation(dst, mem, ldu, ldux);
 }
 
-// Store a "pointer" sized value to the memory location
 void TurboAssembler::StoreU64(Register src, const MemOperand& mem,
                               Register scratch) {
   GenerateMemoryOperationWithAlign(src, mem, std, stdx);
@@ -2766,134 +2766,46 @@ void TurboAssembler::StoreU64WithUpdate(Register src, const MemOperand& mem,
 
 void TurboAssembler::LoadS32(Register dst, const MemOperand& mem,
                              Register scratch) {
-  int offset = mem.offset();
-
-  if (!is_int16(offset)) {
-    CHECK(scratch != no_reg);
-    mov(scratch, Operand(offset));
-    lwax(dst, MemOperand(mem.ra(), scratch));
-  } else {
-    int misaligned = (offset & 3);
-    if (misaligned) {
-      // adjust base to conform to offset alignment requirements
-      // Todo: enhance to use scratch if dst is unsuitable
-      CHECK(dst != r0);
-      addi(dst, mem.ra(), Operand((offset & 3) - 4));
-      lwa(dst, MemOperand(dst, (offset & ~3) + 4));
-    } else {
-      lwa(dst, mem);
-    }
-  }
+  GenerateMemoryOperationWithAlign(dst, mem, lwa, lwax);
 }
 
-// Variable length depending on whether offset fits into immediate field
-// MemOperand currently only supports d-form
 void TurboAssembler::LoadU32(Register dst, const MemOperand& mem,
                              Register scratch) {
-  Register base = mem.ra();
-  int offset = mem.offset();
-
-  if (!is_int16(offset)) {
-    CHECK(scratch != no_reg);
-    mov(scratch, Operand(offset));
-    lwzx(dst, MemOperand(base, scratch));
-  } else {
-    // lwz can handle offset misalign
-    lwz(dst, mem);
-  }
+  GenerateMemoryOperation(dst, mem, lwz, lwzx);
 }
 
-// Variable length depending on whether offset fits into immediate field
-// MemOperand current only supports d-form
 void TurboAssembler::StoreU32(Register src, const MemOperand& mem,
                               Register scratch) {
-  Register base = mem.ra();
-  int offset = mem.offset();
-
-  if (!is_int16(offset)) {
-    LoadIntLiteral(scratch, offset);
-    stwx(src, MemOperand(base, scratch));
-  } else {
-    stw(src, mem);
-  }
+  GenerateMemoryOperation(src, mem, stw, stwx);
 }
 
 void TurboAssembler::LoadS16(Register dst, const MemOperand& mem,
                              Register scratch) {
-  int offset = mem.offset();
-
-  if (!is_int16(offset)) {
-    DCHECK(scratch != no_reg);
-    mov(scratch, Operand(offset));
-    lhax(dst, MemOperand(mem.ra(), scratch));
-  } else {
-    lha(dst, mem);
-  }
+  GenerateMemoryOperation(dst, mem, lha, lhax);
 }
 
-// Variable length depending on whether offset fits into immediate field
-// MemOperand currently only supports d-form
 void TurboAssembler::LoadU16(Register dst, const MemOperand& mem,
                              Register scratch) {
-  Register base = mem.ra();
-  int offset = mem.offset();
-
-  if (!is_int16(offset)) {
-    DCHECK_NE(scratch, no_reg);
-    mov(scratch, Operand(offset));
-    lhzx(dst, MemOperand(base, scratch));
-  } else {
-    lhz(dst, mem);
-  }
+  GenerateMemoryOperation(dst, mem, lhz, lhzx);
 }
 
-// Variable length depending on whether offset fits into immediate field
-// MemOperand current only supports d-form
 void TurboAssembler::StoreU16(Register src, const MemOperand& mem,
                               Register scratch) {
-  Register base = mem.ra();
-  int offset = mem.offset();
-
-  if (!is_int16(offset)) {
-    LoadIntLiteral(scratch, offset);
-    sthx(src, MemOperand(base, scratch));
-  } else {
-    sth(src, mem);
-  }
+  GenerateMemoryOperation(src, mem, sth, sthx);
 }
 
-// Variable length depending on whether offset fits into immediate field
-// MemOperand currently only supports d-form
 void TurboAssembler::LoadU8(Register dst, const MemOperand& mem,
                             Register scratch) {
-  Register base = mem.ra();
-  int offset = mem.offset();
-
-  if (!is_int16(offset)) {
-    mov(scratch, Operand(offset));
-    lbzx(dst, MemOperand(base, scratch));
-  } else {
-    lbz(dst, mem);
-  }
+  GenerateMemoryOperation(dst, mem, lbz, lbzx);
 }
 
-// Variable length depending on whether offset fits into immediate field
-// MemOperand current only supports d-form
 void TurboAssembler::StoreU8(Register src, const MemOperand& mem,
                              Register scratch) {
-  Register base = mem.ra();
-  int offset = mem.offset();
-
-  if (!is_int16(offset)) {
-    LoadIntLiteral(scratch, offset);
-    stbx(src, MemOperand(base, scratch));
-  } else {
-    stb(src, mem);
-  }
+  GenerateMemoryOperation(src, mem, stb, stbx);
 }
 
-void TurboAssembler::LoadDouble(DoubleRegister dst, const MemOperand& mem,
-                                Register scratch) {
+void TurboAssembler::LoadF64(DoubleRegister dst, const MemOperand& mem,
+                             Register scratch) {
   Register base = mem.ra();
   int offset = mem.offset();
 
@@ -2905,8 +2817,8 @@ void TurboAssembler::LoadDouble(DoubleRegister dst, const MemOperand& mem,
   }
 }
 
-void TurboAssembler::LoadFloat32(DoubleRegister dst, const MemOperand& mem,
-                                 Register scratch) {
+void TurboAssembler::LoadF32(DoubleRegister dst, const MemOperand& mem,
+                             Register scratch) {
   Register base = mem.ra();
   int offset = mem.offset();
 
@@ -2918,8 +2830,9 @@ void TurboAssembler::LoadFloat32(DoubleRegister dst, const MemOperand& mem,
   }
 }
 
-void MacroAssembler::LoadDoubleU(DoubleRegister dst, const MemOperand& mem,
-                                 Register scratch) {
+void MacroAssembler::LoadF64WithUpdate(DoubleRegister dst,
+                                       const MemOperand& mem,
+                                       Register scratch) {
   Register base = mem.ra();
   int offset = mem.offset();
 
@@ -2931,21 +2844,9 @@ void MacroAssembler::LoadDoubleU(DoubleRegister dst, const MemOperand& mem,
   }
 }
 
-void TurboAssembler::LoadSingle(DoubleRegister dst, const MemOperand& mem,
-                                Register scratch) {
-  Register base = mem.ra();
-  int offset = mem.offset();
-
-  if (!is_int16(offset)) {
-    mov(scratch, Operand(offset));
-    lfsx(dst, MemOperand(base, scratch));
-  } else {
-    lfs(dst, mem);
-  }
-}
-
-void TurboAssembler::LoadSingleU(DoubleRegister dst, const MemOperand& mem,
-                                 Register scratch) {
+void TurboAssembler::LoadF32WithUpdate(DoubleRegister dst,
+                                       const MemOperand& mem,
+                                       Register scratch) {
   Register base = mem.ra();
   int offset = mem.offset();
 
@@ -3104,7 +3005,7 @@ void TurboAssembler::SwapFloat32(DoubleRegister src, MemOperand dst,
                                  DoubleRegister scratch) {
   DCHECK(!AreAliased(src, scratch));
   fmr(scratch, src);
-  LoadSingle(src, dst, r0);
+  LoadF32(src, dst, r0);
   StoreSingle(scratch, dst, r0);
 }
 
@@ -3112,8 +3013,8 @@ void TurboAssembler::SwapFloat32(MemOperand src, MemOperand dst,
                                  DoubleRegister scratch_0,
                                  DoubleRegister scratch_1) {
   DCHECK(!AreAliased(scratch_0, scratch_1));
-  LoadSingle(scratch_0, src, r0);
-  LoadSingle(scratch_1, dst, r0);
+  LoadF32(scratch_0, src, r0);
+  LoadF32(scratch_1, dst, r0);
   StoreSingle(scratch_0, dst, r0);
   StoreSingle(scratch_1, src, r0);
 }
@@ -3131,7 +3032,7 @@ void TurboAssembler::SwapDouble(DoubleRegister src, MemOperand dst,
                                 DoubleRegister scratch) {
   DCHECK(!AreAliased(src, scratch));
   fmr(scratch, src);
-  LoadDouble(src, dst, r0);
+  LoadF64(src, dst, r0);
   StoreDouble(scratch, dst, r0);
 }
 
@@ -3139,8 +3040,8 @@ void TurboAssembler::SwapDouble(MemOperand src, MemOperand dst,
                                 DoubleRegister scratch_0,
                                 DoubleRegister scratch_1) {
   DCHECK(!AreAliased(scratch_0, scratch_1));
-  LoadDouble(scratch_0, src, r0);
-  LoadDouble(scratch_1, dst, r0);
+  LoadF64(scratch_0, src, r0);
+  LoadF64(scratch_1, dst, r0);
   StoreDouble(scratch_0, dst, r0);
   StoreDouble(scratch_1, src, r0);
 }
@@ -3253,7 +3154,7 @@ void TurboAssembler::LoadCodeObjectEntry(Register destination,
     // Check whether the Code object is an off-heap trampoline. If so, call its
     // (off-heap) entry point directly without going through the (on-heap)
     // trampoline.  Otherwise, just call the Code object as always.
-    LoadS32(scratch, FieldMemOperand(code_object, Code::kFlagsOffset));
+    LoadS32(scratch, FieldMemOperand(code_object, Code::kFlagsOffset), r0);
     mov(r0, Operand(Code::IsOffHeapTrampoline::kMask));
     and_(r0, scratch, r0, SetRC);
     bne(&if_code_is_off_heap, cr0);
@@ -3266,7 +3167,8 @@ void TurboAssembler::LoadCodeObjectEntry(Register destination,
     // An off-heap trampoline, the entry point is loaded from the builtin entry
     // table.
     bind(&if_code_is_off_heap);
-    LoadS32(scratch, FieldMemOperand(code_object, Code::kBuiltinIndexOffset));
+    LoadS32(scratch, FieldMemOperand(code_object, Code::kBuiltinIndexOffset),
+            r0);
     ShiftLeftImm(destination, scratch, Operand(kSystemPointerSizeLog2));
     add(destination, destination, kRootRegister);
     LoadU64(destination,
@@ -3324,9 +3226,9 @@ void TurboAssembler::StoreReturnAddressAndCall(Register target) {
             SizeOfCodeGeneratedSince(&start_call));
 }
 
-void TurboAssembler::CallForDeoptimization(Builtins::Name target, int,
-                                           Label* exit, DeoptimizeKind kind,
-                                           Label* ret, Label*) {
+void TurboAssembler::CallForDeoptimization(Builtin target, int, Label* exit,
+                                           DeoptimizeKind kind, Label* ret,
+                                           Label*) {
   BlockTrampolinePoolScope block_trampoline_pool(this);
   LoadU64(ip, MemOperand(kRootRegister,
                          IsolateData::builtin_entry_slot_offset(target)));

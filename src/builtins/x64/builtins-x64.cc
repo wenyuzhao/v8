@@ -333,7 +333,7 @@ namespace {
 //   using JSEntryFunction = GeneratedCode<Address(
 //       Address root_register_value, MicrotaskQueue* microtask_queue)>;
 void Generate_JSEntryVariant(MacroAssembler* masm, StackFrame::Type type,
-                             Builtins::Name entry_trampoline) {
+                             Builtin entry_trampoline) {
   Label invoke, handler_entry, exit;
   Label not_outermost_js, not_outermost_js_2;
 
@@ -506,18 +506,17 @@ void Generate_JSEntryVariant(MacroAssembler* masm, StackFrame::Type type,
 }  // namespace
 
 void Builtins::Generate_JSEntry(MacroAssembler* masm) {
-  Generate_JSEntryVariant(masm, StackFrame::ENTRY,
-                          Builtins::kJSEntryTrampoline);
+  Generate_JSEntryVariant(masm, StackFrame::ENTRY, Builtin::kJSEntryTrampoline);
 }
 
 void Builtins::Generate_JSConstructEntry(MacroAssembler* masm) {
   Generate_JSEntryVariant(masm, StackFrame::CONSTRUCT_ENTRY,
-                          Builtins::kJSConstructEntryTrampoline);
+                          Builtin::kJSConstructEntryTrampoline);
 }
 
 void Builtins::Generate_JSRunMicrotasksEntry(MacroAssembler* masm) {
   Generate_JSEntryVariant(masm, StackFrame::ENTRY,
-                          Builtins::kRunMicrotasksTrampoline);
+                          Builtin::kRunMicrotasksTrampoline);
 }
 
 static void Generate_JSEntryTrampolineHelper(MacroAssembler* masm,
@@ -687,7 +686,10 @@ void Builtins::Generate_ResumeGeneratorTrampoline(MacroAssembler* masm) {
   // Store input value into generator object.
   __ StoreTaggedField(
       FieldOperand(rdx, JSGeneratorObject::kInputOrDebugPosOffset), rax);
-  __ RecordWriteField(rdx, JSGeneratorObject::kInputOrDebugPosOffset, rax, rcx,
+  Register object = WriteBarrierDescriptor::ObjectRegister();
+  __ Move(object, rdx);
+  __ RecordWriteField(object, JSGeneratorObject::kInputOrDebugPosOffset, rax,
+                      WriteBarrierDescriptor::SlotAddressRegister(),
                       SaveFPRegsMode::kIgnore);
 
   Register decompr_scratch1 = COMPRESS_POINTERS_BOOL ? r8 : no_reg;
@@ -1087,7 +1089,8 @@ static void MaybeOptimizeCodeOrTailCallOptimizedCodeSlot(
   __ LoadAnyTaggedField(
       optimized_code_entry,
       FieldOperand(feedback_vector, FeedbackVector::kMaybeOptimizedCodeOffset));
-  TailCallOptimizedCodeSlot(masm, optimized_code_entry, closure, r8, r15,
+  TailCallOptimizedCodeSlot(masm, optimized_code_entry, closure, r9,
+                            WriteBarrierDescriptor::SlotAddressRegister(),
                             jump_mode);
 }
 
@@ -1328,9 +1331,9 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
                               FieldOperand(kInterpreterBytecodeArrayRegister,
                                            BaselineData::kBaselineCodeOffset));
     static_assert(kJavaScriptCallCodeStartRegister == rcx, "ABI mismatch");
-    ReplaceClosureCodeWithOptimizedCode(masm, rcx, closure,
-                                        kInterpreterBytecodeArrayRegister,
-                                        kInterpreterBytecodeOffsetRegister);
+    ReplaceClosureCodeWithOptimizedCode(
+        masm, rcx, closure, kInterpreterBytecodeArrayRegister,
+        WriteBarrierDescriptor::SlotAddressRegister());
     __ JumpCodeObject(rcx);
 
     __ bind(&install_baseline_code);
@@ -1634,8 +1637,8 @@ void Builtins::Generate_BaselineOutOfLinePrologue(MacroAssembler* masm) {
   }
 #endif
 
-  auto descriptor = Builtins::CallInterfaceDescriptorFor(
-      Builtins::kBaselineOutOfLinePrologue);
+  auto descriptor =
+      Builtins::CallInterfaceDescriptorFor(Builtin::kBaselineOutOfLinePrologue);
   Register closure = descriptor.GetRegisterParameter(
       BaselineOutOfLinePrologueDescriptor::kClosure);
   // Load the feedback vector from the closure.
@@ -1726,6 +1729,7 @@ void Builtins::Generate_BaselineOutOfLinePrologue(MacroAssembler* masm) {
   // Push the return address back onto the stack for return.
   __ PushReturnAddressFrom(return_address);
   // Return to caller pushed pc, without any frame teardown.
+  __ LoadRoot(kInterpreterAccumulatorRegister, RootIndex::kUndefinedValue);
   __ Ret();
 
   __ bind(&has_optimized_code_or_marker);
@@ -1760,6 +1764,7 @@ void Builtins::Generate_BaselineOutOfLinePrologue(MacroAssembler* masm) {
     }
 
     // Return to caller pushed pc, without any frame teardown.
+    __ LoadRoot(kInterpreterAccumulatorRegister, RootIndex::kUndefinedValue);
     __ Ret();
     __ RecordComment("]");
   }
@@ -1855,7 +1860,8 @@ void Builtins::Generate_NotifyDeoptimized(MacroAssembler* masm) {
 void Builtins::Generate_TailCallOptimizedCodeSlot(MacroAssembler* masm) {
   Register optimized_code_entry = kJavaScriptCallCodeStartRegister;
   Register closure = kJSFunctionRegister;
-  TailCallOptimizedCodeSlot(masm, optimized_code_entry, closure, r8, r15,
+  TailCallOptimizedCodeSlot(masm, optimized_code_entry, closure, r9,
+                            WriteBarrierDescriptor::SlotAddressRegister(),
                             JumpMode::kJump);
 }
 

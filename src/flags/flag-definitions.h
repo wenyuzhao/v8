@@ -280,8 +280,7 @@ DEFINE_BOOL(harmony_shipping, true, "enable all shipped harmony features")
 #ifdef V8_INTL_SUPPORT
 #define HARMONY_INPROGRESS(V) \
   HARMONY_INPROGRESS_BASE(V)  \
-  V(harmony_intl_displaynames_date_types, "Intl.DisplayNames date types") \
-  V(harmony_intl_more_timezone, "More Timezone")
+  V(harmony_intl_displaynames_v2, "Intl.DisplayNames v2")
 #else
 #define HARMONY_INPROGRESS(V) HARMONY_INPROGRESS_BASE(V)
 #endif
@@ -295,7 +294,9 @@ DEFINE_BOOL(harmony_shipping, true, "enable all shipped harmony features")
 #define HARMONY_STAGED(V)                                 \
   HARMONY_STAGED_BASE(V)                                  \
   V(harmony_intl_best_fit_matcher, "Intl BestFitMatcher") \
-  V(harmony_intl_locale_info, "Intl locale info")
+  V(harmony_intl_locale_info, "Intl locale info")         \
+  V(harmony_intl_more_timezone,                           \
+    "Extend Intl.DateTimeFormat timeZoneName Option")
 #else
 #define HARMONY_STAGED(V) HARMONY_STAGED_BASE(V)
 #endif
@@ -484,6 +485,7 @@ DEFINE_WEAK_IMPLICATION(future, super_ic)
 DEFINE_WEAK_IMPLICATION(future, turbo_inline_js_wasm_calls)
 #if ENABLE_SPARKPLUG
 DEFINE_WEAK_IMPLICATION(future, sparkplug)
+DEFINE_WEAK_IMPLICATION(future, baseline_batch_compilation)
 #endif
 #if V8_SHORT_BUILTIN_CALLS
 DEFINE_WEAK_IMPLICATION(future, short_builtin_calls)
@@ -622,12 +624,10 @@ DEFINE_BOOL(
 #endif
 DEFINE_BOOL(trace_ignition_codegen, false,
             "trace the codegen of ignition interpreter bytecode handlers")
-DEFINE_BOOL(trace_ignition_dispatches, false,
-            "traces the dispatches to bytecode handlers by the ignition "
-            "interpreter")
-DEFINE_STRING(trace_ignition_dispatches_output_file, nullptr,
-              "the file to which the bytecode handler dispatch table is "
-              "written (by default, the table is not written to a file)")
+DEFINE_STRING(
+    trace_ignition_dispatches_output_file, nullptr,
+    "write the bytecode handler dispatch table to the specified file (d8 only) "
+    "(requires building with v8_enable_ignition_dispatch_counting)")
 
 DEFINE_BOOL(trace_track_allocation_sites, false,
             "trace the tracking of allocation sites")
@@ -665,7 +665,12 @@ DEFINE_BOOL(always_sparkplug, false, "directly tier up to Sparkplug code")
 DEFINE_IMPLICATION(always_sparkplug, sparkplug)
 #endif
 DEFINE_STRING(sparkplug_filter, "*", "filter for Sparkplug baseline compiler")
+DEFINE_BOOL(baseline_batch_compilation, false, "batch compile Sparkplug code")
+DEFINE_INT(baseline_batch_compilation_threshold, 4 * KB,
+           "the estimated instruction size of a batch to trigger compilation")
 DEFINE_BOOL(trace_baseline, false, "trace baseline compilation")
+DEFINE_BOOL(trace_baseline_batch_compilation, false,
+            "trace baseline batch compilation")
 
 #undef FLAG
 #define FLAG FLAG_FULL
@@ -1398,6 +1403,9 @@ DEFINE_IMPLICATION(expose_gc_as, expose_gc)
 DEFINE_BOOL(expose_externalize_string, false,
             "expose externalize string extension")
 DEFINE_BOOL(expose_trigger_failure, false, "expose trigger-failure extension")
+DEFINE_BOOL(expose_ignition_statistics, false,
+            "expose ignition-statistics extension (requires building with "
+            "v8_enable_ignition_dispatch_counting)")
 DEFINE_INT(stack_trace_limit, 10, "number of stack frames to capture")
 DEFINE_BOOL(builtins_in_stack_traces, false,
             "show built-in functions in stack traces")
@@ -2044,8 +2052,13 @@ DEFINE_IMPLICATION(print_all_code, print_regexp_code)
 //
 
 DEFINE_BOOL(predictable, false, "enable predictable mode")
-DEFINE_IMPLICATION(predictable, single_threaded)
 DEFINE_NEG_IMPLICATION(predictable, memory_reducer)
+// TODO(v8:11848): These flags were recursively implied via --single-threaded
+// before. Audit them, and remove any unneeded implications.
+DEFINE_IMPLICATION(predictable, single_threaded_gc)
+DEFINE_NEG_IMPLICATION(predictable, concurrent_recompilation)
+DEFINE_NEG_IMPLICATION(predictable, compiler_dispatcher)
+DEFINE_NEG_IMPLICATION(predictable, stress_concurrent_inlining)
 
 DEFINE_BOOL(predictable_gc_schedule, false,
             "Predictable garbage collection schedule. Fixes heap growing, "

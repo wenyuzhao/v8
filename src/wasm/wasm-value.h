@@ -48,6 +48,11 @@ class Simd128 {
   FOREACH_SIMD_TYPE(DEFINE_SIMD_TYPE_SPECIFIC_METHODS)
 #undef DEFINE_SIMD_TYPE_SPECIFIC_METHODS
 
+  explicit Simd128(byte* bytes) {
+    base::Memcpy(static_cast<void*>(val_), reinterpret_cast<void*>(bytes),
+                 kSimd128Size);
+  }
+
   const uint8_t* bytes() { return val_; }
 
   template <typename T>
@@ -126,6 +131,50 @@ class WasmValue {
   bool operator==(const WasmValue& other) const {
     return type_ == other.type_ &&
            !memcmp(bit_pattern_, other.bit_pattern_, 16);
+  }
+
+  void CopyTo(byte* to) {
+    DCHECK(type_.is_numeric());
+    base::Memcpy(static_cast<void*>(to), static_cast<void*>(bit_pattern_),
+                 type_.element_size_bytes());
+  }
+
+  void CopyToWithSystemEndianness(byte* to) {
+    DCHECK(type_.is_numeric());
+    switch (type_.kind()) {
+      case kI32: {
+        int32_t value = to_i32();
+        base::Memcpy(static_cast<void*>(to), &value, sizeof(value));
+        break;
+      }
+      case kI64: {
+        int64_t value = to_i64();
+        base::Memcpy(static_cast<void*>(to), &value, sizeof(value));
+        break;
+      }
+      case kF32: {
+        float value = to_f32();
+        base::Memcpy(static_cast<void*>(to), &value, sizeof(value));
+        break;
+      }
+      case kF64: {
+        double value = to_f64();
+        base::Memcpy(static_cast<void*>(to), &value, sizeof(value));
+        break;
+      }
+      case kS128:
+        base::Memcpy(static_cast<void*>(to), to_s128().bytes(), kSimd128Size);
+        break;
+      case kRtt:
+      case kRttWithDepth:
+      case kRef:
+      case kOptRef:
+      case kBottom:
+      case kVoid:
+      case kI8:
+      case kI16:
+        UNREACHABLE();
+    }
   }
 
   template <typename T>

@@ -340,7 +340,7 @@ namespace {
 //   using JSEntryFunction = GeneratedCode<Address(
 //       Address root_register_value, MicrotaskQueue* microtask_queue)>;
 void Generate_JSEntryVariant(MacroAssembler* masm, StackFrame::Type type,
-                             Builtins::Name entry_trampoline) {
+                             Builtin entry_trampoline) {
   Label invoke, handler_entry, exit;
   Label not_outermost_js, not_outermost_js_2;
 
@@ -452,18 +452,17 @@ void Generate_JSEntryVariant(MacroAssembler* masm, StackFrame::Type type,
 }  // namespace
 
 void Builtins::Generate_JSEntry(MacroAssembler* masm) {
-  Generate_JSEntryVariant(masm, StackFrame::ENTRY,
-                          Builtins::kJSEntryTrampoline);
+  Generate_JSEntryVariant(masm, StackFrame::ENTRY, Builtin::kJSEntryTrampoline);
 }
 
 void Builtins::Generate_JSConstructEntry(MacroAssembler* masm) {
   Generate_JSEntryVariant(masm, StackFrame::CONSTRUCT_ENTRY,
-                          Builtins::kJSConstructEntryTrampoline);
+                          Builtin::kJSConstructEntryTrampoline);
 }
 
 void Builtins::Generate_JSRunMicrotasksEntry(MacroAssembler* masm) {
   Generate_JSEntryVariant(masm, StackFrame::ENTRY,
-                          Builtins::kRunMicrotasksTrampoline);
+                          Builtin::kRunMicrotasksTrampoline);
 }
 
 static void Generate_JSEntryTrampolineHelper(MacroAssembler* masm,
@@ -798,8 +797,8 @@ static void TailCallOptimizedCodeSlot(MacroAssembler* masm,
   DCHECK(!AreAliased(edx, edi, optimized_code_entry));
 
   Register closure = edi;
-  __ movd(xmm0, eax);
-  __ movd(xmm1, edx);
+  __ Push(eax);
+  __ Push(edx);
 
   Label heal_optimized_code_slot;
 
@@ -821,16 +820,16 @@ static void TailCallOptimizedCodeSlot(MacroAssembler* masm,
                                       eax);
   static_assert(kJavaScriptCallCodeStartRegister == ecx, "ABI mismatch");
   __ LoadCodeObjectEntry(ecx, optimized_code_entry);
-  __ movd(edx, xmm1);
-  __ movd(eax, xmm0);
+  __ Pop(edx);
+  __ Pop(eax);
   __ jmp(ecx);
 
   // Optimized code slot contains deoptimized code or code is cleared and
   // optimized code marker isn't updated. Evict the code, update the marker
   // and re-enter the closure's code.
   __ bind(&heal_optimized_code_slot);
-  __ movd(edx, xmm1);
-  __ movd(eax, xmm0);
+  __ Pop(edx);
+  __ Pop(eax);
   GenerateTailCallToReturnedCode(masm, Runtime::kHealOptimizedCodeSlot);
 }
 
@@ -1256,9 +1255,10 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
     __ mov(ecx, FieldOperand(ecx, BaselineData::kBaselineCodeOffset));
     static_assert(kJavaScriptCallCodeStartRegister == ecx, "ABI mismatch");
     __ push(edx);  // Spill.
+    __ Push(xmm0, eax);  // Save the argument count (currently in xmm0).
     ReplaceClosureCodeWithOptimizedCode(masm, ecx, closure, eax, edx);
+    __ pop(eax);  // Restore the argument count.
     __ pop(edx);
-    __ movd(eax, xmm0);  // Recover argument count.
     __ JumpCodeObject(ecx);
 
     __ bind(&install_baseline_code);
@@ -1640,8 +1640,8 @@ void Builtins::Generate_InterpreterEnterAtBytecode(MacroAssembler* masm) {
 }
 // static
 void Builtins::Generate_BaselineOutOfLinePrologue(MacroAssembler* masm) {
-  auto descriptor = Builtins::CallInterfaceDescriptorFor(
-      Builtins::kBaselineOutOfLinePrologue);
+  auto descriptor =
+      Builtins::CallInterfaceDescriptorFor(Builtin::kBaselineOutOfLinePrologue);
   Register arg_count = descriptor.GetRegisterParameter(
       BaselineOutOfLinePrologueDescriptor::kJavaScriptCallArgCount);
   Register frame_size = descriptor.GetRegisterParameter(
@@ -1744,6 +1744,7 @@ void Builtins::Generate_BaselineOutOfLinePrologue(MacroAssembler* masm) {
   // Push the return address back onto the stack for return.
   __ PushReturnAddressFrom(return_address, scratch);
   // Return to caller pushed pc, without any frame teardown.
+  __ LoadRoot(kInterpreterAccumulatorRegister, RootIndex::kUndefinedValue);
   __ Ret();
 
   __ bind(&has_optimized_code_or_marker);
@@ -1778,6 +1779,7 @@ void Builtins::Generate_BaselineOutOfLinePrologue(MacroAssembler* masm) {
     }
 
     // Return to caller pushed pc, without any frame teardown.
+    __ LoadRoot(kInterpreterAccumulatorRegister, RootIndex::kUndefinedValue);
     __ Ret();
     __ RecordComment("]");
   }

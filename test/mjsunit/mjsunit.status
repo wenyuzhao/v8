@@ -83,8 +83,8 @@
   'regress/regress-crbug-491062': [PASS, NO_VARIANTS],
   'third_party/regexp-pcre/regexp-pcre': [PASS, NO_VARIANTS],
   'tools/compiler-trace-flags': [PASS, NO_VARIANTS],
-  'tools/dumpcpp': [PASS, NO_VARIANTS, ['mode != release or system not in (linux, macos) or simulator_run', SKIP]],
-  'tools/tickprocessor': [PASS, NO_VARIANTS, ['mode != release or system not in (linux, macos) or simulator_run', SKIP]],
+  'tools/dumpcpp': [PASS, SLOW, NO_VARIANTS, ['mode != release or system not in (linux, macos) or simulator_run or asan', SKIP]],
+  'tools/tickprocessor': [PASS, SLOW, NO_VARIANTS, ['mode != release or system not in (linux, macos) or simulator_run or asan', SKIP]],
    # Also skip example file which is not a test.
   'tools/tickprocessor-test-large': [SKIP],
 
@@ -1084,14 +1084,9 @@
   # BUG(v8:9975).
   'es6/typedarray-copywithin': [SKIP],
 
-  # BUG(v8:11319): Predictable crashes with --wasm-tier-up.
-  'wasm/compiled-module-serialization': [SKIP],
-  'wasm/graceful_shutdown_during_tierup': [SKIP],
-  'wasm/print-code': [SKIP],
-  'regress/wasm/regress-11024': [SKIP],
-  'regress/wasm/regress-7785': [SKIP],
-  'regress/wasm/regress-808848': [SKIP],
-  'regress/wasm/regress-808980': [SKIP],
+  # BUG(v8:11858): Deadlocks in predictable mode when waiting for the native
+  # module cache entry to be completed.
+  'regress/wasm/regress-709684': [SKIP],
 }],  # 'predictable == True'
 
 ##############################################################################

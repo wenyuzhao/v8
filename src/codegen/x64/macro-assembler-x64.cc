@@ -480,7 +480,7 @@ void TurboAssembler::CallRecordWriteStub(
 
 #ifdef V8_IS_TSAN
 void TurboAssembler::CallTSANRelaxedStoreStub(Register address, Register value,
-                                              SaveFPRegsMode fp_mode,
+                                              SaveFPRegsMode fp_mode, int size,
                                               StubCallMode mode) {
   DCHECK(!AreAliased(address, value));
   TSANRelaxedStoreDescriptor descriptor;
@@ -500,10 +500,10 @@ void TurboAssembler::CallTSANRelaxedStoreStub(Register address, Register value,
 
   if (mode == StubCallMode::kCallWasmRuntimeStub) {
     // Use {near_call} for direct Wasm call within a module.
-    auto wasm_target = wasm::WasmCode::GetTSANRelaxedStoreStub(fp_mode);
+    auto wasm_target = wasm::WasmCode::GetTSANRelaxedStoreStub(fp_mode, size);
     near_call(wasm_target, RelocInfo::WASM_STUB_CALL);
   } else {
-    auto builtin_index = Builtins::GetTSANRelaxedStoreStub(fp_mode);
+    auto builtin_index = Builtins::GetTSANRelaxedStoreStub(fp_mode, size);
     Handle<Code> code_target =
         isolate()->builtins()->builtin_handle(builtin_index);
     Call(code_target, RelocInfo::CODE_TARGET);
@@ -553,8 +553,7 @@ void MacroAssembler::RecordWrite(Register object, Register slot_address,
                 MemoryChunk::kPointersFromHereAreInterestingMask, zero, &done,
                 Label::kNear);
 
-  CallRecordWriteStubSaveRegisters(object, slot_address, remembered_set_action,
-                                   fp_mode);
+  CallRecordWriteStub(object, slot_address, remembered_set_action, fp_mode);
 
   bind(&done);
 
@@ -1640,7 +1639,7 @@ void TurboAssembler::Jump(Handle<Code> code_object, RelocInfo::Mode rmode,
   DCHECK_IMPLIES(options().isolate_independent_code,
                  Builtins::IsIsolateIndependentBuiltin(*code_object));
   if (options().inline_offheap_trampolines) {
-    int builtin_index = Builtins::kNoBuiltinId;
+    int builtin_index = Builtin::kNoBuiltinId;
     if (isolate()->builtins()->IsBuiltinHandle(code_object, &builtin_index)) {
       Label skip;
       if (cc != always) {
@@ -1683,7 +1682,7 @@ void TurboAssembler::Call(Handle<Code> code_object, RelocInfo::Mode rmode) {
   DCHECK_IMPLIES(options().isolate_independent_code,
                  Builtins::IsIsolateIndependentBuiltin(*code_object));
   if (options().inline_offheap_trampolines) {
-    int builtin_index = Builtins::kNoBuiltinId;
+    int builtin_index = Builtin::kNoBuiltinId;
     if (isolate()->builtins()->IsBuiltinHandle(code_object, &builtin_index)) {
       // Inline the trampoline.
       CallBuiltin(builtin_index);
@@ -1694,8 +1693,7 @@ void TurboAssembler::Call(Handle<Code> code_object, RelocInfo::Mode rmode) {
   call(code_object, rmode);
 }
 
-Operand TurboAssembler::EntryFromBuiltinIndexAsOperand(
-    Builtins::Name builtin_index) {
+Operand TurboAssembler::EntryFromBuiltinAsOperand(Builtin builtin_index) {
   DCHECK(root_array_available());
   return Operand(kRootRegister,
                  IsolateData::builtin_entry_slot_offset(builtin_index));
@@ -1725,7 +1723,7 @@ void TurboAssembler::CallBuiltinByIndex(Register builtin_index) {
 void TurboAssembler::CallBuiltin(int builtin_index) {
   DCHECK(Builtins::IsBuiltinId(builtin_index));
   RecordCommentForOffHeapTrampoline(builtin_index);
-  CHECK_NE(builtin_index, Builtins::kNoBuiltinId);
+  CHECK_NE(builtin_index, Builtin::kNoBuiltinId);
   if (options().short_builtin_calls) {
     EmbeddedData d = EmbeddedData::FromBlob(isolate());
     Address entry = d.InstructionStartOfBuiltin(builtin_index);
@@ -1743,7 +1741,7 @@ void TurboAssembler::CallBuiltin(int builtin_index) {
 void TurboAssembler::TailCallBuiltin(int builtin_index) {
   DCHECK(Builtins::IsBuiltinId(builtin_index));
   RecordCommentForOffHeapTrampoline(builtin_index);
-  CHECK_NE(builtin_index, Builtins::kNoBuiltinId);
+  CHECK_NE(builtin_index, Builtin::kNoBuiltinId);
   if (options().short_builtin_calls) {
     EmbeddedData d = EmbeddedData::FromBlob(isolate());
     Address entry = d.InstructionStartOfBuiltin(builtin_index);
@@ -2697,7 +2695,7 @@ void MacroAssembler::LoadWeakValue(Register in_out, Label* target_if_cleared) {
   andq(in_out, Immediate(~static_cast<int32_t>(kWeakHeapObjectMask)));
 }
 
-void MacroAssembler::IncrementCounter(StatsCounter* counter, int value) {
+void MacroAssembler::EmitIncrementCounter(StatsCounter* counter, int value) {
   DCHECK_GT(value, 0);
   if (FLAG_native_code_counters && counter->Enabled()) {
     Operand counter_operand =
@@ -2713,7 +2711,7 @@ void MacroAssembler::IncrementCounter(StatsCounter* counter, int value) {
   }
 }
 
-void MacroAssembler::DecrementCounter(StatsCounter* counter, int value) {
+void MacroAssembler::EmitDecrementCounter(StatsCounter* counter, int value) {
   DCHECK_GT(value, 0);
   if (FLAG_native_code_counters && counter->Enabled()) {
     Operand counter_operand =
@@ -3359,13 +3357,13 @@ void TurboAssembler::ResetSpeculationPoisonRegister() {
   Move(kSpeculationPoisonRegister, -1);
 }
 
-void TurboAssembler::CallForDeoptimization(Builtins::Name target, int,
-                                           Label* exit, DeoptimizeKind kind,
-                                           Label* ret, Label*) {
+void TurboAssembler::CallForDeoptimization(Builtin target, int, Label* exit,
+                                           DeoptimizeKind kind, Label* ret,
+                                           Label*) {
   // Note: Assembler::call is used here on purpose to guarantee fixed-size
   // exits even on Atom CPUs; see TurboAssembler::Call for Atom-specific
   // performance tuning which emits a different instruction sequence.
-  call(EntryFromBuiltinIndexAsOperand(target));
+  call(EntryFromBuiltinAsOperand(target));
   DCHECK_EQ(SizeOfCodeGeneratedSince(exit),
             (kind == DeoptimizeKind::kLazy)
                 ? Deoptimizer::kLazyDeoptExitSize

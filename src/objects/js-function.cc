@@ -119,7 +119,7 @@ bool JSFunction::ActiveTierIsIgnition() const {
   DCHECK_IMPLIES(result, code.is_interpreter_trampoline_builtin() ||
                              (CodeKindIsOptimizedJSFunction(code.kind()) &&
                               code.marked_for_deoptimization()) ||
-                             (code.builtin_index() == Builtins::kCompileLazy &&
+                             (code.builtin_index() == Builtin::kCompileLazy &&
                               shared().IsInterpreted()));
 #endif  // DEBUG
   return result;
@@ -187,14 +187,6 @@ bool JSFunction::CanDiscardCompiled() const {
 }
 
 // static
-MaybeHandle<NativeContext> JSBoundFunction::GetFunctionRealm(
-    Handle<JSBoundFunction> function) {
-  DCHECK(function->map().is_constructor());
-  return JSReceiver::GetFunctionRealm(
-      handle(function->bound_target_function(), function->GetIsolate()));
-}
-
-// static
 MaybeHandle<String> JSBoundFunction::GetName(Isolate* isolate,
                                              Handle<JSBoundFunction> function) {
   Handle<String> prefix = isolate->factory()->bound__string();
@@ -259,13 +251,6 @@ Handle<Object> JSFunction::GetName(Isolate* isolate,
     return isolate->factory()->anonymous_string();
   }
   return handle(function->shared().Name(), isolate);
-}
-
-// static
-Handle<NativeContext> JSFunction::GetFunctionRealm(
-    Handle<JSFunction> function) {
-  DCHECK(function->map().is_constructor());
-  return handle(function->context().native_context(), function->GetIsolate());
 }
 
 // static

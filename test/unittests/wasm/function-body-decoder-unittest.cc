@@ -1090,6 +1090,7 @@ TEST_F(FunctionBodyDecoderTest, UnreachableRefTypes) {
   WASM_FEATURE_SCOPE(reftypes);
   WASM_FEATURE_SCOPE(typed_funcref);
   WASM_FEATURE_SCOPE(gc);
+  WASM_FEATURE_SCOPE(gc_experiments);
   WASM_FEATURE_SCOPE(return_call);
 
   byte function_index = builder.AddFunction(sigs.i_ii());
@@ -1097,8 +1098,11 @@ TEST_F(FunctionBodyDecoderTest, UnreachableRefTypes) {
   byte array_index = builder.AddArray(kWasmI32, true);
 
   ValueType struct_type = ValueType::Ref(struct_index, kNonNullable);
+  ValueType struct_type_null = ValueType::Ref(struct_index, kNullable);
   FunctionSig sig_v_s(0, 1, &struct_type);
   byte struct_consumer = builder.AddFunction(&sig_v_s);
+  byte struct_consumer2 = builder.AddFunction(
+      FunctionSig::Build(zone(), {kWasmI32}, {struct_type, struct_type}));
 
   ExpectValidates(sigs.i_v(), {WASM_UNREACHABLE, kExprRefIsNull});
   ExpectValidates(sigs.v_v(), {WASM_UNREACHABLE, kExprRefAsNonNull, kExprDrop});
@@ -1156,15 +1160,23 @@ TEST_F(FunctionBodyDecoderTest, UnreachableRefTypes) {
   ExpectValidates(sigs.v_v(),
                   {WASM_UNREACHABLE, WASM_GC_OP(kExprRttSub), array_index,
                    WASM_GC_OP(kExprRttSub), array_index, kExprDrop});
+  ExpectValidates(sigs.v_v(),
+                  {WASM_UNREACHABLE, WASM_GC_OP(kExprRttFreshSub), array_index,
+                   WASM_GC_OP(kExprRttFreshSub), array_index, kExprDrop});
 
   ExpectValidates(sigs.v_v(), {WASM_UNREACHABLE, kExprBrOnNull, 0, WASM_DROP});
 
   ExpectValidates(&sig_v_s, {WASM_UNREACHABLE, WASM_LOCAL_GET(0), kExprBrOnNull,
                              0, kExprCallFunction, struct_consumer});
 
-  ValueType opt_struct_type = ValueType::Ref(struct_index, kNullable);
-  FunctionSig sig_v_os(0, 1, &opt_struct_type);
-  ExpectValidates(&sig_v_os,
+  ExpectValidates(FunctionSig::Build(zone(), {struct_type}, {}),
+                  {WASM_UNREACHABLE, WASM_RTT_CANON(struct_index),
+                   WASM_GC_OP(kExprRefCast)});
+
+  ExpectValidates(FunctionSig::Build(zone(), {kWasmDataRef}, {}),
+                  {WASM_UNREACHABLE, WASM_GC_OP(kExprRefAsData)});
+
+  ExpectValidates(FunctionSig::Build(zone(), {}, {struct_type_null}),
                   {WASM_UNREACHABLE, WASM_LOCAL_GET(0), kExprBrOnNull, 0,
                    kExprCallFunction, struct_consumer});
 
@@ -1172,6 +1184,16 @@ TEST_F(FunctionBodyDecoderTest, UnreachableRefTypes) {
       sigs.v_v(), {WASM_UNREACHABLE, WASM_I32V(42), kExprBrOnNull, 0},
       kAppendEnd,
       "br_on_null[0] expected object reference, found i32.const of type i32");
+
+  // This tests for a bug where {TypeCheckStackAgainstMerge} did not insert
+  // unreachable values into the stack correctly.
+  ExpectValidates(FunctionSig::Build(zone(), {kWasmI32}, {struct_type_null}),
+                  {WASM_BLOCK_R(struct_type_null, kExprUnreachable,   // --
+                                kExprLocalGet, 0, kExprRefAsNonNull,  // --
+                                kExprLocalGet, 0, kExprBrOnNull, 0,   // --
+                                kExprCallFunction, struct_consumer2,  // --
+                                kExprBr, 1),
+                   kExprDrop, WASM_I32V(1)});
 }
 
 TEST_F(FunctionBodyDecoderTest, If1) {
@@ -4268,7 +4290,7 @@ TEST_F(FunctionBodyDecoderTest, RttSub) {
   WASM_FEATURE_SCOPE(reftypes);
   WASM_FEATURE_SCOPE(typed_funcref);
   WASM_FEATURE_SCOPE(gc);
-  WASM_FEATURE_SCOPE(eh);
+  WASM_FEATURE_SCOPE(gc_experiments);
 
   TestModuleBuilder builder;
   module = builder.module();
@@ -4281,12 +4303,19 @@ TEST_F(FunctionBodyDecoderTest, RttSub) {
   ExpectFailure(
       sigs.v_v(), {WASM_RTT_SUB(array_type_index, WASM_I32V(42)), kExprDrop},
       kAppendEnd, "rtt.sub[0] expected rtt for a supertype of type 0");
+  ExpectFailure(
+      sigs.v_v(),
+      {WASM_RTT_FRESH_SUB(array_type_index, WASM_I32V(42)), kExprDrop},
+      kAppendEnd, "rtt.fresh_sub[0] expected rtt for a supertype of type 0");
 
   {
     ValueType type = ValueType::Rtt(array_type_index, 1);
     FunctionSig sig(1, 0, &type);
     // Can build an rtt.sub with self type for an array type.
     ExpectValidates(&sig, {WASM_RTT_SUB(array_type_index,
+                                        WASM_RTT_CANON(array_type_index))});
+    ExpectValidates(&sig,
+                    {WASM_RTT_FRESH_SUB(array_type_index,
                                         WASM_RTT_CANON(array_type_index))});
     // Fails when argument to rtt.sub is not a supertype.
     ExpectFailure(sigs.v_v(),
@@ -4295,6 +4324,12 @@ TEST_F(FunctionBodyDecoderTest, RttSub) {
                    kExprDrop},
                   kAppendEnd,
                   "rtt.sub[0] expected rtt for a supertype of type 1");
+    ExpectFailure(sigs.v_v(),
+                  {WASM_RTT_FRESH_SUB(super_struct_type_index,
+                                      WASM_RTT_CANON(array_type_index)),
+                   kExprDrop},
+                  kAppendEnd,
+                  "rtt.fresh_sub[0] expected rtt for a supertype of type 1");
   }
 
   {
@@ -4304,6 +4339,9 @@ TEST_F(FunctionBodyDecoderTest, RttSub) {
     ExpectValidates(&sig,
                     {WASM_RTT_SUB(super_struct_type_index,
                                   WASM_RTT_CANON(super_struct_type_index))});
+    ExpectValidates(
+        &sig, {WASM_RTT_FRESH_SUB(super_struct_type_index,
+                                  WASM_RTT_CANON(super_struct_type_index))});
     // Fails when argument to rtt.sub is not a supertype.
     ExpectFailure(sigs.v_v(),
                   {WASM_RTT_SUB(super_struct_type_index,
@@ -4311,10 +4349,20 @@ TEST_F(FunctionBodyDecoderTest, RttSub) {
                   kAppendEnd,
                   "rtt.sub[0] expected rtt for a supertype of type 1");
     ExpectFailure(sigs.v_v(),
+                  {WASM_RTT_FRESH_SUB(super_struct_type_index,
+                                      WASM_RTT_CANON(array_type_index))},
+                  kAppendEnd,
+                  "rtt.fresh_sub[0] expected rtt for a supertype of type 1");
+    ExpectFailure(sigs.v_v(),
                   {WASM_RTT_SUB(super_struct_type_index,
                                 WASM_RTT_CANON(sub_struct_type_index))},
                   kAppendEnd,
                   "rtt.sub[0] expected rtt for a supertype of type 1");
+    ExpectFailure(sigs.v_v(),
+                  {WASM_RTT_FRESH_SUB(super_struct_type_index,
+                                      WASM_RTT_CANON(sub_struct_type_index))},
+                  kAppendEnd,
+                  "rtt.fresh_sub[0] expected rtt for a supertype of type 1");
   }
 
   {
@@ -4323,6 +4371,9 @@ TEST_F(FunctionBodyDecoderTest, RttSub) {
     FunctionSig sig(1, 0, &type);
     ExpectValidates(&sig,
                     {WASM_RTT_SUB(sub_struct_type_index,
+                                  WASM_RTT_CANON(super_struct_type_index))});
+    ExpectValidates(
+        &sig, {WASM_RTT_FRESH_SUB(sub_struct_type_index,
                                   WASM_RTT_CANON(super_struct_type_index))});
   }
 }

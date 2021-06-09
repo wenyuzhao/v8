@@ -499,7 +499,7 @@ namespace {
 //   using JSEntryFunction = GeneratedCode<Address(
 //       Address root_register_value, MicrotaskQueue* microtask_queue)>;
 void Generate_JSEntryVariant(MacroAssembler* masm, StackFrame::Type type,
-                             Builtins::Name entry_trampoline) {
+                             Builtin entry_trampoline) {
   // The register state is either:
   //   r3: root_register_value
   //   r4: code entry
@@ -669,18 +669,17 @@ void Generate_JSEntryVariant(MacroAssembler* masm, StackFrame::Type type,
 }  // namespace
 
 void Builtins::Generate_JSEntry(MacroAssembler* masm) {
-  Generate_JSEntryVariant(masm, StackFrame::ENTRY,
-                          Builtins::kJSEntryTrampoline);
+  Generate_JSEntryVariant(masm, StackFrame::ENTRY, Builtin::kJSEntryTrampoline);
 }
 
 void Builtins::Generate_JSConstructEntry(MacroAssembler* masm) {
   Generate_JSEntryVariant(masm, StackFrame::CONSTRUCT_ENTRY,
-                          Builtins::kJSConstructEntryTrampoline);
+                          Builtin::kJSConstructEntryTrampoline);
 }
 
 void Builtins::Generate_JSRunMicrotasksEntry(MacroAssembler* masm) {
   Generate_JSEntryVariant(masm, StackFrame::ENTRY,
-                          Builtins::kRunMicrotasksTrampoline);
+                          Builtin::kRunMicrotasksTrampoline);
 }
 
 static void Generate_JSEntryTrampolineHelper(MacroAssembler* masm,
@@ -871,7 +870,8 @@ static void TailCallOptimizedCodeSlot(MacroAssembler* masm,
       r0);
   __ LoadS32(
       scratch,
-      FieldMemOperand(scratch, CodeDataContainer::kKindSpecificFlagsOffset));
+      FieldMemOperand(scratch, CodeDataContainer::kKindSpecificFlagsOffset),
+      r0);
   __ TestBit(scratch, Code::kMarkedForDeoptimizationBit, r0);
   __ bne(&heal_optimized_code_slot, cr0);
 
@@ -1170,7 +1170,8 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
   __ LoadS32(r8,
              FieldMemOperand(
                  kInterpreterBytecodeArrayRegister,
-                 BytecodeArray::kIncomingNewTargetOrGeneratorRegisterOffset));
+                 BytecodeArray::kIncomingNewTargetOrGeneratorRegisterOffset),
+             r0);
   __ cmpi(r8, Operand::Zero());
   __ beq(&no_incoming_new_target_or_generator_register);
   __ ShiftLeftImm(r8, r8, Operand(kSystemPointerSizeLog2));

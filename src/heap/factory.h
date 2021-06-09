@@ -69,6 +69,12 @@ class WasmCapiFunctionData;
 class WasmExportedFunctionData;
 class WasmJSFunctionData;
 class WeakCell;
+#if V8_ENABLE_WEBASSEMBLY
+namespace wasm {
+class StructType;
+class WasmValue;
+}  // namespace wasm
+#endif
 
 enum class SharedFlag : uint8_t;
 enum class InitializedFlag : uint8_t;
@@ -569,6 +575,8 @@ class V8_EXPORT_PRIVATE Factory : public FactoryBase<Factory> {
       Address opt_call_target, Handle<JSReceiver> callable, int return_count,
       int parameter_count, Handle<PodArray<wasm::ValueType>> serialized_sig,
       Handle<Code> wrapper_code);
+  Handle<WasmStruct> NewWasmStruct(const wasm::StructType* type,
+                                   wasm::WasmValue* args, Handle<Map> map);
 
   Handle<SharedFunctionInfo> NewSharedFunctionInfoForWasmExportedFunction(
       Handle<String> name, Handle<WasmExportedFunctionData> data);
@@ -840,7 +848,7 @@ class V8_EXPORT_PRIVATE Factory : public FactoryBase<Factory> {
     }
 
     CodeBuilder& set_builtin_index(int32_t builtin_index) {
-      DCHECK_IMPLIES(builtin_index != Builtins::kNoBuiltinId,
+      DCHECK_IMPLIES(builtin_index != Builtin::kNoBuiltinId,
                      !CodeKindIsJSFunction(kind_));
       builtin_index_ = builtin_index;
       return *this;
@@ -912,7 +920,7 @@ class V8_EXPORT_PRIVATE Factory : public FactoryBase<Factory> {
     const CodeKind kind_;
 
     MaybeHandle<Object> self_reference_;
-    int32_t builtin_index_ = Builtins::kNoBuiltinId;
+    int32_t builtin_index_ = Builtin::kNoBuiltinId;
     uint32_t inlined_bytecode_size_ = 0;
     int32_t kind_specific_flags_ = 0;
     // Either source_position_table for non-baseline code

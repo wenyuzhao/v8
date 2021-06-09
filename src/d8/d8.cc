@@ -730,8 +730,10 @@ bool Shell::ExecuteString(Isolate* isolate, Local<String> source,
     data->realm_current_ = data->realm_switch_;
 
     if (options.web_snapshot_config) {
-      std::vector<std::string> exports;
-      if (!ReadLines(options.web_snapshot_config, exports)) {
+      MaybeLocal<PrimitiveArray> maybe_exports =
+          ReadLines(isolate, options.web_snapshot_config);
+      Local<PrimitiveArray> exports;
+      if (!maybe_exports.ToLocal(&exports)) {
         isolate->ThrowError("Web snapshots: unable to read config");
         CHECK(try_catch.HasCaught());
         ReportException(isolate, &try_catch);
@@ -1515,6 +1517,24 @@ PerIsolateData::RealmScope::~RealmScope() {
   delete[] data_->realms_;
 }
 
+PerIsolateData::ExplicitRealmScope::ExplicitRealmScope(PerIsolateData* data,
+                                                       int index)
+    : data_(data), index_(index) {
+  realm_ = Local<Context>::New(data->isolate_, data->realms_[index_]);
+  realm_->Enter();
+  previous_index_ = data->realm_current_;
+  data->realm_current_ = data->realm_switch_ = index_;
+}
+
+PerIsolateData::ExplicitRealmScope::~ExplicitRealmScope() {
+  realm_->Exit();
+  data_->realm_current_ = data_->realm_switch_ = previous_index_;
+}
+
+Local<Context> PerIsolateData::ExplicitRealmScope::context() const {
+  return realm_;
+}
+
 int PerIsolateData::RealmFind(Local<Context> context) {
   for (int i = 0; i < realm_count_; ++i) {
     if (realms_[i] == context) return i;
@@ -1767,32 +1787,34 @@ void Shell::RealmEval(const v8::FunctionCallbackInfo<v8::Value>& args) {
   PerIsolateData* data = PerIsolateData::Get(isolate);
   int index = data->RealmIndexOrThrow(args, 0);
   if (index == -1) return;
-  if (args.Length() < 2 || !args[1]->IsString()) {
-    args.GetIsolate()->ThrowError("Invalid argument");
+  if (args.Length() < 2) {
+    isolate->ThrowError("Invalid argument");
+    return;
+  }
+
+  Local<String> source;
+  if (!ReadSource(args, 1, CodeType::kString).ToLocal(&source)) {
+    isolate->ThrowError("Invalid argument");
     return;
   }
   ScriptOrigin origin(isolate,
                       String::NewFromUtf8Literal(isolate, "(d8)",
                                                  NewStringType::kInternalized));
-  ScriptCompiler::Source script_source(
-      args[1]->ToString(isolate->GetCurrentContext()).ToLocalChecked(), origin);
+  ScriptCompiler::Source script_source(source, origin);
   Local<UnboundScript> script;
   if (!ScriptCompiler::CompileUnboundScript(isolate, &script_source)
            .ToLocal(&script)) {
     return;
   }
-  Local<Context> realm = Local<Context>::New(isolate, data->realms_[index]);
-  realm->Enter();
-  int previous_index = data->realm_current_;
-  data->realm_current_ = data->realm_switch_ = index;
   Local<Value> result;
-  if (!script->BindToCurrentContext()->Run(realm).ToLocal(&result)) {
-    realm->Exit();
-    data->realm_current_ = data->realm_switch_ = previous_index;
-    return;
+  {
+    PerIsolateData::ExplicitRealmScope realm_scope(data, index);
+    if (!script->BindToCurrentContext()
+             ->Run(realm_scope.context())
+             .ToLocal(&result)) {
+      return;
+    }
   }
-  realm->Exit();
-  data->realm_current_ = data->realm_switch_ = previous_index;
   args.GetReturnValue().Set(result);
 }
 
@@ -1824,37 +1846,32 @@ void Shell::RealmTakeWebSnapshot(
   PerIsolateData* data = PerIsolateData::Get(isolate);
   int index = data->RealmIndexOrThrow(args, 0);
   if (index == -1) return;
-  // Create a std::vector<std::string> from the list of exports.
-  // TODO(v8:11525): Add an API in the serializer that accepts a Local<String>
-  // Array.
+  // Create a Local<PrimitiveArray> from the exports array.
   Local<Context> current_context = isolate->GetCurrentContext();
   Local<Array> exports_array = args[1].As<Array>();
-  std::vector<std::string> exports;
-  for (int i = 0, length = exports_array->Length(); i < length; ++i) {
-    Local<String> local_str = exports_array->Get(current_context, i)
-                                  .ToLocalChecked()
-                                  ->ToString(current_context)
-                                  .ToLocalChecked();
-    std::string str = ToSTLString(isolate, local_str);
-    exports.push_back(str);
+  int length = exports_array->Length();
+  Local<PrimitiveArray> exports = PrimitiveArray::New(isolate, length);
+  for (int i = 0; i < length; ++i) {
+    Local<Value> value;
+    Local<String> str;
+    if (!exports_array->Get(current_context, i).ToLocal(&value) ||
+        !value->ToString(current_context).ToLocal(&str) || str.IsEmpty()) {
+      isolate->ThrowError("Invalid argument");
+      return;
+    }
+    exports->Set(isolate, i, str);
   }
-  // Enter the realm.
-  Local<Context> realm = Local<Context>::New(isolate, data->realms_[index]);
-  realm->Enter();
-  int previous_index = data->realm_current_;
-  data->realm_current_ = data->realm_switch_ = index;
-  // Take the snapshot.
-  i::WebSnapshotSerializer serializer(isolate);
+  // Take the snapshot in the specified Realm.
   auto snapshot_data_shared = std::make_shared<i::WebSnapshotData>();
-  if (!serializer.TakeSnapshot(realm, exports, *snapshot_data_shared)) {
-    realm->Exit();
-    data->realm_current_ = data->realm_switch_ = previous_index;
-    args.GetReturnValue().Set(Undefined(isolate));
-    return;
+  {
+    PerIsolateData::ExplicitRealmScope realm_scope(data, index);
+    i::WebSnapshotSerializer serializer(isolate);
+    if (!serializer.TakeSnapshot(realm_scope.context(), exports,
+                                 *snapshot_data_shared)) {
+      args.GetReturnValue().Set(Undefined(isolate));
+      return;
+    }
   }
-  // Exit the realm.
-  realm->Exit();
-  data->realm_current_ = data->realm_switch_ = previous_index;
   // Create a snapshot object and store the WebSnapshotData as an embedder
   // field. TODO(v8:11525): Use methods on global Snapshot objects with
   // signature checks.
@@ -1866,7 +1883,8 @@ void Shell::RealmTakeWebSnapshot(
   Local<ObjectTemplate> snapshot_template =
       data->GetSnapshotObjectCtor()->InstanceTemplate();
   Local<Object> snapshot_instance =
-      snapshot_template->NewInstance(realm).ToLocalChecked();
+      snapshot_template->NewInstance(isolate->GetCurrentContext())
+          .ToLocalChecked();
   snapshot_instance->SetInternalField(0, shapshot_data);
   args.GetReturnValue().Set(snapshot_instance);
 }
@@ -1896,18 +1914,14 @@ void Shell::RealmUseWebSnapshot(
       i::Handle<i::Managed<i::WebSnapshotData>>::cast(snapshot_data_handle);
   std::shared_ptr<i::WebSnapshotData> snapshot_data_shared =
       snapshot_data_managed->get();
-  // Enter the realm.
-  Local<Context> realm = Local<Context>::New(isolate, data->realms_[index]);
-  realm->Enter();
-  int previous_index = data->realm_current_;
-  data->realm_current_ = data->realm_switch_ = index;
-  // Deserialize the snapshot.
-  i::WebSnapshotDeserializer deserializer(isolate);
-  bool success = deserializer.UseWebSnapshot(snapshot_data_shared->buffer,
-                                             snapshot_data_shared->buffer_size);
-  args.GetReturnValue().Set(success);
-  realm->Exit();
-  data->realm_current_ = data->realm_switch_ = previous_index;
+  // Deserialize the snapshot in the specified Realm.
+  {
+    PerIsolateData::ExplicitRealmScope realm_scope(data, index);
+    i::WebSnapshotDeserializer deserializer(isolate);
+    bool success = deserializer.UseWebSnapshot(
+        snapshot_data_shared->buffer, snapshot_data_shared->buffer_size);
+    args.GetReturnValue().Set(success);
+  }
 }
 
 void Shell::LogGetAndStop(const v8::FunctionCallbackInfo<v8::Value>& args) {
@@ -2227,35 +2241,33 @@ void Shell::SetTimeout(const v8::FunctionCallbackInfo<v8::Value>& args) {
   PerIsolateData::Get(isolate)->SetTimeout(callback, context);
 }
 
-enum WorkerType { kClassic, kString, kFunction, kInvalid, kNone };
-
-void ReadWorkerTypeAndArguments(const v8::FunctionCallbackInfo<v8::Value>& args,
-                                WorkerType* worker_type,
-                                Local<Value>* arguments = nullptr) {
+void Shell::ReadCodeTypeAndArguments(
+    const v8::FunctionCallbackInfo<v8::Value>& args, int index,
+    CodeType* code_type, Local<Value>* arguments) {
   Isolate* isolate = args.GetIsolate();
-  if (args.Length() > 1 && args[1]->IsObject()) {
-    Local<Object> object = args[1].As<Object>();
+  if (args.Length() > index && args[index]->IsObject()) {
+    Local<Object> object = args[index].As<Object>();
     Local<Context> context = isolate->GetCurrentContext();
     Local<Value> value;
     if (!TryGetValue(isolate, context, object, "type").ToLocal(&value)) {
-      *worker_type = WorkerType::kNone;
+      *code_type = CodeType::kNone;
       return;
     }
     if (!value->IsString()) {
-      *worker_type = WorkerType::kInvalid;
+      *code_type = CodeType::kInvalid;
       return;
     }
     Local<String> worker_type_string =
         value->ToString(context).ToLocalChecked();
     String::Utf8Value str(isolate, worker_type_string);
-    if (strcmp("string", *str) == 0) {
-      *worker_type = WorkerType::kString;
-    } else if (strcmp("classic", *str) == 0) {
-      *worker_type = WorkerType::kClassic;
+    if (strcmp("classic", *str) == 0) {
+      *code_type = CodeType::kFileName;
+    } else if (strcmp("string", *str) == 0) {
+      *code_type = CodeType::kString;
     } else if (strcmp("function", *str) == 0) {
-      *worker_type = WorkerType::kFunction;
+      *code_type = CodeType::kFunction;
     } else {
-      *worker_type = WorkerType::kInvalid;
+      *code_type = CodeType::kInvalid;
     }
     if (arguments != nullptr) {
       bool got_arguments =
@@ -2263,13 +2275,14 @@ void ReadWorkerTypeAndArguments(const v8::FunctionCallbackInfo<v8::Value>& args,
       USE(got_arguments);
     }
   } else {
-    *worker_type = WorkerType::kNone;
+    *code_type = CodeType::kNone;
   }
 }
 
-bool FunctionAndArgumentsToString(Local<Function> function,
-                                  Local<Value> arguments, Local<String>* source,
-                                  Isolate* isolate) {
+bool Shell::FunctionAndArgumentsToString(Local<Function> function,
+                                         Local<Value> arguments,
+                                         Local<String>* source,
+                                         Isolate* isolate) {
   Local<Context> context = isolate->GetCurrentContext();
   MaybeLocal<String> maybe_function_string =
       function->FunctionProtoToString(context);
@@ -2312,6 +2325,54 @@ bool FunctionAndArgumentsToString(Local<Function> function,
   return true;
 }
 
+// ReadSource() supports reading source code through `args[index]` as specified
+// by the `default_type` or an optional options bag provided in `args[index+1]`
+// (e.g. `options={type: 'code_type', arguments:[...]}`).
+MaybeLocal<String> Shell::ReadSource(
+    const v8::FunctionCallbackInfo<v8::Value>& args, int index,
+    CodeType default_type) {
+  CodeType code_type;
+  Local<Value> arguments;
+  ReadCodeTypeAndArguments(args, index + 1, &code_type, &arguments);
+
+  Isolate* isolate = args.GetIsolate();
+  Local<String> source;
+  if (code_type == CodeType::kNone) {
+    code_type = default_type;
+  }
+  switch (code_type) {
+    case CodeType::kFunction:
+      if (!args[index]->IsFunction()) {
+        return MaybeLocal<String>();
+      }
+      // Source: ( function_to_string )( params )
+      if (!FunctionAndArgumentsToString(args[index].As<Function>(), arguments,
+                                        &source, isolate)) {
+        return MaybeLocal<String>();
+      }
+      break;
+    case CodeType::kFileName: {
+      if (!args[index]->IsString()) {
+        return MaybeLocal<String>();
+      }
+      String::Utf8Value filename(isolate, args[index]);
+      source = Shell::ReadFile(isolate, *filename);
+      if (source.IsEmpty()) return MaybeLocal<String>();
+      break;
+    }
+    case CodeType::kString:
+      if (!args[index]->IsString()) {
+        return MaybeLocal<String>();
+      }
+      source = args[index].As<String>();
+      break;
+    case CodeType::kNone:
+    case CodeType::kInvalid:
+      return MaybeLocal<String>();
+  }
+  return source;
+}
+
 void Shell::WorkerNew(const v8::FunctionCallbackInfo<v8::Value>& args) {
   Isolate* isolate = args.GetIsolate();
   HandleScope handle_scope(isolate);
@@ -2321,45 +2382,9 @@ void Shell::WorkerNew(const v8::FunctionCallbackInfo<v8::Value>& args) {
   }
 
   Local<String> source;
-  if (args[0]->IsFunction()) {
-    // d8 supports `options={type: 'function', arguments:[...]}`, which means
-    // the first argument is a function with the code to be ran. Restrictions
-    // apply; in particular the function will be converted to a string and the
-    // Worker constructed based on it.
-    WorkerType worker_type;
-    Local<Value> arguments;
-    ReadWorkerTypeAndArguments(args, &worker_type, &arguments);
-    if (worker_type != WorkerType::kFunction) {
-      isolate->ThrowError("Invalid or missing worker type");
-      return;
-    }
-
-    // Source: ( function_to_string )( params )
-    if (!FunctionAndArgumentsToString(args[0].As<Function>(), arguments,
-                                      &source, isolate)) {
-      return;
-    }
-  } else {
-    // d8 honors `options={type: 'string'}`, which means the first argument is
-    // not a filename but string of script to be run.
-    bool load_from_file = true;
-    WorkerType worker_type;
-    ReadWorkerTypeAndArguments(args, &worker_type);
-    if (worker_type == WorkerType::kString) {
-      load_from_file = false;
-    } else if (worker_type != WorkerType::kNone &&
-               worker_type != WorkerType::kClassic) {
-      isolate->ThrowError("Invalid worker type");
-      return;
-    }
-
-    if (load_from_file) {
-      String::Utf8Value filename(isolate, args[0]);
-      source = ReadFile(isolate, *filename);
-      if (source.IsEmpty()) return;
-    } else {
-      source = args[0].As<String>();
-    }
+  if (!ReadSource(args, 0, CodeType::kFileName).ToLocal(&source)) {
+    isolate->ThrowError("Invalid argument");
+    return;
   }
 
   if (!args.IsConstructCall()) {
@@ -2800,6 +2825,24 @@ Local<ObjectTemplate> Shell::CreateGlobalTemplate(Isolate* isolate) {
 Local<ObjectTemplate> Shell::CreateOSTemplate(Isolate* isolate) {
   Local<ObjectTemplate> os_template = ObjectTemplate::New(isolate);
   AddOSMethods(isolate, os_template);
+#if defined(V8_TARGET_OS_LINUX)
+  const char os_name[] = "linux";
+#elif defined(V8_TARGET_OS_WIN)
+  const char os_name[] = "windows";
+#elif defined(V8_TARGET_OS_MACOSX)
+  const char os_name[] = "macos";
+#elif defined(V8_TARGET_OS_ANDROID)
+  const char os_name[] = "android";
+#else
+  const char os_name[] = "unknown";
+#endif
+  os_template->Set(isolate, "name",
+                   v8::String::NewFromUtf8Literal(isolate, os_name),
+                   PropertyAttribute::ReadOnly);
+  os_template->Set(
+      isolate, "d8Path",
+      v8::String::NewFromUtf8(isolate, options.d8_path).ToLocalChecked(),
+      PropertyAttribute::ReadOnly);
   return os_template;
 }
 
@@ -3398,18 +3441,33 @@ char* Shell::ReadChars(const char* name, int* size_out) {
   return chars;
 }
 
-bool Shell::ReadLines(const char* name, std::vector<std::string>& lines) {
+MaybeLocal<PrimitiveArray> Shell::ReadLines(Isolate* isolate,
+                                            const char* name) {
   int length;
   const char* data = reinterpret_cast<const char*>(ReadChars(name, &length));
   if (data == nullptr) {
-    return false;
+    return MaybeLocal<PrimitiveArray>();
   }
   std::stringstream stream(data);
   std::string line;
+  std::vector<std::string> lines;
   while (std::getline(stream, line, '\n')) {
     lines.emplace_back(line);
   }
-  return true;
+  // Create a Local<PrimitiveArray> off the read lines.
+  int size = static_cast<int>(lines.size());
+  Local<PrimitiveArray> exports = PrimitiveArray::New(isolate, size);
+  for (int i = 0; i < size; ++i) {
+    MaybeLocal<String> maybe_str = v8::String::NewFromUtf8(
+        isolate, lines[i].c_str(), NewStringType::kNormal,
+        static_cast<int>(lines[i].length()));
+    Local<String> str;
+    if (!maybe_str.ToLocal(&str)) {
+      return MaybeLocal<PrimitiveArray>();
+    }
+    exports->Set(isolate, i, str);
+  }
+  return exports;
 }
 
 void Shell::ReadBuffer(const v8::FunctionCallbackInfo<v8::Value>& args) {
@@ -4064,7 +4122,7 @@ void Worker::ExecuteInThread() {
                                          NewStringType::kInternalized));
           Local<Value> onmessage;
           if (maybe_onmessage.ToLocal(&onmessage) && onmessage->IsFunction()) {
-            // Now wait for messages
+            // Now wait for messages.
             ProcessMessages();
           }
         }
@@ -4117,6 +4175,7 @@ void Worker::PostMessageOut(const v8::FunctionCallbackInfo<v8::Value>& args) {
 bool Shell::SetOptions(int argc, char* argv[]) {
   bool logfile_per_isolate = false;
   bool no_always_opt = false;
+  options.d8_path = argv[0];
   for (int i = 0; i < argc; i++) {
     if (strcmp(argv[i], "--") == 0) {
       argv[i] = nullptr;
@@ -4488,18 +4547,22 @@ bool ProcessMessages(
     i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
     i::SaveAndSwitchContext saved_context(i_isolate, i::Context());
     SealHandleScope shs(isolate);
-    while (v8::platform::PumpMessageLoop(g_default_platform, isolate,
-                                         behavior())) {
-      MicrotasksScope::PerformCheckpoint(isolate);
+    for (bool ran_tasks = true; ran_tasks;) {
+      // Execute one foreground task (if one exists), then microtasks.
+      ran_tasks = v8::platform::PumpMessageLoop(g_default_platform, isolate,
+                                                behavior());
+      if (ran_tasks) MicrotasksScope::PerformCheckpoint(isolate);
 
+      // In predictable mode we push all background tasks into the foreground
+      // task queue of the {kProcessGlobalPredictablePlatformWorkerTaskQueue}
+      // isolate. We execute all background tasks after running one foreground
+      // task.
       if (i::FLAG_verify_predictable) {
-        // In predictable mode we push all background tasks into the foreground
-        // task queue of the {kProcessGlobalPredictablePlatformWorkerTaskQueue}
-        // isolate. We execute the tasks after one foreground task has been
-        // executed.
         while (v8::platform::PumpMessageLoop(
             g_default_platform,
-            kProcessGlobalPredictablePlatformWorkerTaskQueue, behavior())) {
+            kProcessGlobalPredictablePlatformWorkerTaskQueue,
+            platform::MessageLoopBehavior::kDoNotWait)) {
+          ran_tasks = true;
         }
       }
     }
@@ -4508,13 +4571,9 @@ bool ProcessMessages(
                                  50.0 / base::Time::kMillisecondsPerSecond);
     }
     bool ran_set_timeout = false;
-    if (!RunSetTimeoutCallback(isolate, &ran_set_timeout)) {
-      return false;
-    }
-
+    if (!RunSetTimeoutCallback(isolate, &ran_set_timeout)) return false;
     if (!ran_set_timeout) return true;
   }
-  return true;
 }
 }  // anonymous namespace
 
@@ -4529,6 +4588,17 @@ bool Shell::CompleteMessageLoop(Isolate* isolate) {
     return should_wait ? platform::MessageLoopBehavior::kWaitForWork
                        : platform::MessageLoopBehavior::kDoNotWait;
   };
+  if (i::FLAG_verify_predictable) {
+    bool ran_tasks = ProcessMessages(
+        isolate, [] { return platform::MessageLoopBehavior::kDoNotWait; });
+    if (get_waiting_behaviour() ==
+        platform::MessageLoopBehavior::kWaitForWork) {
+      FATAL(
+          "There is outstanding work after executing all tasks in predictable "
+          "mode -- this would deadlock.");
+    }
+    return ran_tasks;
+  }
   return ProcessMessages(isolate, get_waiting_behaviour);
 }
 
@@ -5120,8 +5190,7 @@ int Shell::Main(int argc, char* argv[]) {
         RunShell(isolate);
       }
 
-      if (i::FLAG_trace_ignition_dispatches &&
-          i::FLAG_trace_ignition_dispatches_output_file != nullptr) {
+      if (i::FLAG_trace_ignition_dispatches_output_file != nullptr) {
         WriteIgnitionDispatchCountersFile(isolate);
       }
 

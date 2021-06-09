@@ -1885,7 +1885,7 @@ void WebAssemblyGlobalSetValue(
     thrower.TypeError("Can't set the value of an immutable global.");
     return;
   }
-  if (args[0]->IsUndefined()) {
+  if (args.Length() == 0) {
     thrower.TypeError("Argument 0 is required");
     return;
   }
@@ -2096,7 +2096,7 @@ void WasmJs::Install(Isolate* isolate, bool exposed_on_global_object) {
   Handle<String> name = v8_str(isolate, "WebAssembly");
   // Not supposed to be called, hence using the kIllegal builtin as code.
   Handle<SharedFunctionInfo> info =
-      factory->NewSharedFunctionInfoForBuiltin(name, Builtins::kIllegal);
+      factory->NewSharedFunctionInfoForBuiltin(name, Builtin::kIllegal);
   info->set_language_mode(LanguageMode::kStrict);
 
   Handle<JSFunction> cons =

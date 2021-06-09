@@ -300,7 +300,7 @@ void TurboAssembler::CallRecordWriteStub(
       // Inline the trampoline. //qj
       DCHECK(Builtins::IsBuiltinId(builtin_index));
       RecordCommentForOffHeapTrampoline(builtin_index);
-      CHECK_NE(builtin_index, Builtins::kNoBuiltinId);
+      CHECK_NE(builtin_index, Builtin::kNoBuiltinId);
       EmbeddedData d = EmbeddedData::FromBlob();
       Address entry = d.InstructionStartOfBuiltin(builtin_index);
 
@@ -2994,7 +2994,7 @@ void TurboAssembler::Jump(Handle<Code> code, RelocInfo::Mode rmode,
   DCHECK(RelocInfo::IsCodeTarget(rmode));
 
   BlockTrampolinePoolScope block_trampoline_pool(this);
-  int builtin_index = Builtins::kNoBuiltinId;
+  int builtin_index = Builtin::kNoBuiltinId;
   bool target_is_isolate_independent_builtin =
       isolate()->builtins()->IsBuiltinHandle(code, &builtin_index) &&
       Builtins::IsIsolateIndependent(builtin_index);
@@ -3021,7 +3021,7 @@ void TurboAssembler::Jump(Handle<Code> code, RelocInfo::Mode rmode,
              target_is_isolate_independent_builtin) {
     // Inline the trampoline.
     RecordCommentForOffHeapTrampoline(builtin_index);
-    CHECK_NE(builtin_index, Builtins::kNoBuiltinId);
+    CHECK_NE(builtin_index, Builtin::kNoBuiltinId);
     EmbeddedData d = EmbeddedData::FromBlob();
     Address entry = d.InstructionStartOfBuiltin(builtin_index);
     li(t6, Operand(entry, RelocInfo::OFF_HEAP_TARGET));
@@ -3074,7 +3074,7 @@ void TurboAssembler::Call(Address target, RelocInfo::Mode rmode, Condition cond,
 
 void TurboAssembler::Call(Handle<Code> code, RelocInfo::Mode rmode,
                           Condition cond, Register rs, const Operand& rt) {
-  int builtin_index = Builtins::kNoBuiltinId;
+  int builtin_index = Builtin::kNoBuiltinId;
   bool target_is_isolate_independent_builtin =
       isolate()->builtins()->IsBuiltinHandle(code, &builtin_index) &&
       Builtins::IsIsolateIndependent(builtin_index);
@@ -3103,7 +3103,7 @@ void TurboAssembler::Call(Handle<Code> code, RelocInfo::Mode rmode,
              target_is_isolate_independent_builtin) {
     // Inline the trampoline.
     RecordCommentForOffHeapTrampoline(builtin_index);
-    CHECK_NE(builtin_index, Builtins::kNoBuiltinId);
+    CHECK_NE(builtin_index, Builtin::kNoBuiltinId);
     EmbeddedData d = EmbeddedData::FromBlob();
     Address entry = d.InstructionStartOfBuiltin(builtin_index);
     li(t6, Operand(entry, RelocInfo::OFF_HEAP_TARGET));
@@ -3138,7 +3138,7 @@ void TurboAssembler::CallBuiltinByIndex(Register builtin_index) {
 void TurboAssembler::CallBuiltin(int builtin_index) {
   DCHECK(Builtins::IsBuiltinId(builtin_index));
   RecordCommentForOffHeapTrampoline(builtin_index);
-  CHECK_NE(builtin_index, Builtins::kNoBuiltinId);
+  CHECK_NE(builtin_index, Builtin::kNoBuiltinId);
   EmbeddedData d = EmbeddedData::FromBlob(isolate());
   Address entry = d.InstructionStartOfBuiltin(builtin_index);
   if (options().short_builtin_calls) {
@@ -3152,7 +3152,7 @@ void TurboAssembler::CallBuiltin(int builtin_index) {
 void TurboAssembler::TailCallBuiltin(int builtin_index) {
   DCHECK(Builtins::IsBuiltinId(builtin_index));
   RecordCommentForOffHeapTrampoline(builtin_index);
-  CHECK_NE(builtin_index, Builtins::kNoBuiltinId);
+  CHECK_NE(builtin_index, Builtin::kNoBuiltinId);
   EmbeddedData d = EmbeddedData::FromBlob(isolate());
   Address entry = d.InstructionStartOfBuiltin(builtin_index);
   if (options().short_builtin_calls) {
@@ -3163,13 +3163,12 @@ void TurboAssembler::TailCallBuiltin(int builtin_index) {
   RecordComment("]");
 }
 
-void TurboAssembler::LoadEntryFromBuiltinIndex(Builtins::Name builtin_index,
-                                               Register destination) {
+void TurboAssembler::LoadEntryFromBuiltin(Builtin builtin_index,
+                                          Register destination) {
   Ld(destination, EntryFromBuiltinIndexAsOperand(builtin_index));
 }
 
-MemOperand TurboAssembler::EntryFromBuiltinIndexAsOperand(
-    Builtins::Name builtin_index) {
+MemOperand TurboAssembler::EntryFromBuiltinAsOperand(Builtin builtin_index) {
   DCHECK(root_array_available());
   return MemOperand(kRootRegister,
                     IsolateData::builtin_entry_slot_offset(builtin_index));
@@ -3510,11 +3509,11 @@ void MacroAssembler::LoadStackLimit(Register destination, StackLimitKind kind) {
 
 void MacroAssembler::StackOverflowCheck(Register num_args, Register scratch1,
                                         Register scratch2,
-                                        Label* stack_overflow) {
+                                        Label* stack_overflow, Label* done) {
   // Check the stack for overflow. We are not trying to catch
   // interruptions (e.g. debug break and preemption) here, so the "real stack
   // limit" is checked.
-
+  DCHECK(stack_overflow != nullptr || done != nullptr);
   LoadStackLimit(scratch1, StackLimitKind::kRealStackLimit);
   // Make scratch1 the space we have left. The stack might already be overflowed
   // here which will cause scratch1 to become negative.
@@ -3522,7 +3521,13 @@ void MacroAssembler::StackOverflowCheck(Register num_args, Register scratch1,
   // Check if the arguments will overflow the stack.
   Sll64(scratch2, num_args, kSystemPointerSizeLog2);
   // Signed comparison.
-  Branch(stack_overflow, le, scratch1, Operand(scratch2));
+  if (stack_overflow != nullptr) {
+    Branch(stack_overflow, le, scratch1, Operand(scratch2));
+  } else if (done != nullptr) {
+    Branch(done, gt, scratch1, Operand(scratch2));
+  } else {
+    UNREACHABLE();
+  }
 }
 
 void MacroAssembler::InvokePrologue(Register expected_parameter_count,
@@ -3888,8 +3893,9 @@ void MacroAssembler::LoadWeakValue(Register out, Register in,
   And(out, in, Operand(~kWeakHeapObjectMask));
 }
 
-void MacroAssembler::IncrementCounter(StatsCounter* counter, int value,
-                                      Register scratch1, Register scratch2) {
+void MacroAssembler::EmitIncrementCounter(StatsCounter* counter, int value,
+                                          Register scratch1,
+                                          Register scratch2) {
   DCHECK_GT(value, 0);
   if (FLAG_native_code_counters && counter->Enabled()) {
     // This operation has to be exactly 32-bit wide in case the external
@@ -3902,8 +3908,9 @@ void MacroAssembler::IncrementCounter(StatsCounter* counter, int value,
   }
 }
 
-void MacroAssembler::DecrementCounter(StatsCounter* counter, int value,
-                                      Register scratch1, Register scratch2) {
+void MacroAssembler::EmitDecrementCounter(StatsCounter* counter, int value,
+                                          Register scratch1,
+                                          Register scratch2) {
   DCHECK_GT(value, 0);
   if (FLAG_native_code_counters && counter->Enabled()) {
     // This operation has to be exactly 32-bit wide in case the external
@@ -4621,9 +4628,9 @@ void TurboAssembler::ResetSpeculationPoisonRegister() {
   li(kSpeculationPoisonRegister, -1);
 }
 
-void TurboAssembler::CallForDeoptimization(Builtins::Name target, int,
-                                           Label* exit, DeoptimizeKind kind,
-                                           Label* ret, Label*) {
+void TurboAssembler::CallForDeoptimization(Builtin target, int, Label* exit,
+                                           DeoptimizeKind kind, Label* ret,
+                                           Label*) {
   BlockTrampolinePoolScope block_trampoline_pool(this);
   Ld(t6,
      MemOperand(kRootRegister, IsolateData::builtin_entry_slot_offset(target)));
@@ -4675,7 +4682,7 @@ void TurboAssembler::LoadCodeObjectEntry(Register destination,
     bind(&if_code_is_off_heap);
     Lw(scratch, FieldMemOperand(code_object, Code::kBuiltinIndexOffset));
     // TODO(RISCV): https://github.com/v8-riscv/v8/issues/373
-    Branch(&no_builtin_index, eq, scratch, Operand(Builtins::kNoBuiltinId));
+    Branch(&no_builtin_index, eq, scratch, Operand(Builtin::kNoBuiltinId));
     slli(destination, scratch, kSystemPointerSizeLog2);
     Add64(destination, destination, kRootRegister);
     Ld(destination,

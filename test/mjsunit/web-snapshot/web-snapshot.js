@@ -4,28 +4,22 @@
 
 // Flags: --experimental-d8-web-snapshot-api
 
-function callString(f) {
-  return '(' + f.toString() + ')()';
-}
-
-function use() {
+function use(exports) {
   const result = Object.create(null);
-  Realm.shared.exports.forEach(x => result[x] = globalThis[x]);
+  exports.forEach(x => result[x] = globalThis[x]);
   return result;
 }
 
 function takeAndUseWebSnapshot(createObjects, exports) {
-  // Make the exports list available across Realms.
-  Realm.shared = { exports };
   // Take a snapshot in Realm r1.
   const r1 = Realm.create();
-  Realm.eval(r1, callString(createObjects));
+  Realm.eval(r1, createObjects, {type: 'function'});
   const snapshot = Realm.takeWebSnapshot(r1, exports);
   // Use the snapshot in Realm r2.
   const r2 = Realm.create();
   const success = Realm.useWebSnapshot(r2, snapshot);
   assertTrue(success);
-  return Realm.eval(r2, callString(use));
+  return Realm.eval(r2, use, {type: 'function', arguments: [exports]});
 }
 
 (function TestMinimal() {
@@ -68,6 +62,16 @@ function takeAndUseWebSnapshot(createObjects, exports) {
   assertEquals(Number.NEGATIVE_INFINITY, foo.f);
 })();
 
+(function TestTopLevelNumbers() {
+  function createObjects() {
+    globalThis.a = 6;
+    globalThis.b = -7;
+  }
+  const { a, b } = takeAndUseWebSnapshot(createObjects, ['a', 'b']);
+  assertEquals(6, a);
+  assertEquals(-7, b);
+})();
+
 (function TestOddballs() {
   function createObjects() {
     globalThis.foo = {
@@ -82,6 +86,16 @@ function takeAndUseWebSnapshot(createObjects, exports) {
   assertFalse(foo.b);
   assertEquals(null, foo.c);
   assertEquals(undefined, foo.d);
+})();
+
+(function TestTopLevelOddballs() {
+  function createObjects() {
+    globalThis.a = true;
+    globalThis.b = false;
+  }
+  const { a, b } = takeAndUseWebSnapshot(createObjects, ['a', 'b']);
+  assertTrue(a);
+  assertFalse(b);
 })();
 
 (function TestFunction() {
@@ -128,6 +142,18 @@ function takeAndUseWebSnapshot(createObjects, exports) {
   assertEquals('snapshot', foo.key());
 })();
 
+(function TestTopLevelFunctionWithContext() {
+  function createObjects() {
+    globalThis.foo = (function () {
+      let result = 'bar';
+      function inner() { return result; }
+      return inner;
+    })();
+  }
+  const { foo } = takeAndUseWebSnapshot(createObjects, ['foo']);
+  assertEquals('bar', foo());
+})();
+
 (function TestRegExp() {
   function createObjects() {
     globalThis.foo = {
@@ -150,4 +176,14 @@ function takeAndUseWebSnapshot(createObjects, exports) {
   assertEquals('/ab+c/', foo.re.toString());
   assertTrue(foo.re.test('abc'));
   assertFalse(foo.re.test('ac'));
+})();
+
+(function TestTopLevelRegExp() {
+  function createObjects() {
+    globalThis.re = /ab+c/gi;
+  }
+  const { re } = takeAndUseWebSnapshot(createObjects, ['re']);
+  assertEquals('/ab+c/gi', re.toString());
+  assertTrue(re.test('aBc'));
+  assertFalse(re.test('ac'));
 })();

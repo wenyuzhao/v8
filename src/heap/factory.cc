@@ -67,6 +67,9 @@
 #include "src/objects/transitions-inl.h"
 #include "src/roots/roots.h"
 #include "src/strings/unicode-inl.h"
+#if V8_ENABLE_WEBASSEMBLY
+#include "src/wasm/wasm-value.h"
+#endif
 
 namespace v8 {
 namespace internal {
@@ -1407,7 +1410,7 @@ Handle<WasmJSFunctionData> Factory::NewWasmJSFunctionData(
   result.set_serialized_signature(*serialized_sig);
   // Default value, will be overwritten by the caller.
   result.set_wasm_to_js_wrapper_code(
-      isolate()->heap()->builtin(Builtins::kAbort));
+      isolate()->heap()->builtin(Builtin::kAbort));
   return handle(result, isolate());
 }
 
@@ -1454,21 +1457,40 @@ Handle<WasmCapiFunctionData> Factory::NewWasmCapiFunctionData(
   return handle(result, isolate());
 }
 
+Handle<WasmStruct> Factory::NewWasmStruct(const wasm::StructType* type,
+                                          wasm::WasmValue* args,
+                                          Handle<Map> map) {
+  DCHECK_EQ(WasmStruct::Size(type), map->wasm_type_info().instance_size());
+  HeapObject raw = AllocateRaw(WasmStruct::Size(type), AllocationType::kYoung);
+  raw.set_map_after_allocation(*map);
+  WasmStruct result = WasmStruct::cast(raw);
+  result.set_raw_properties_or_hash(*empty_fixed_array());
+  for (uint32_t i = 0; i < type->field_count(); i++) {
+    Address address = result.RawFieldAddress(type->field_offset(i));
+    if (type->field(i).is_numeric()) {
+      args[i].CopyToWithSystemEndianness(reinterpret_cast<byte*>(address));
+    } else {
+      base::WriteUnalignedValue<Object>(address, *args[i].to_ref());
+    }
+  }
+  return handle(result, isolate());
+}
+
 Handle<SharedFunctionInfo>
 Factory::NewSharedFunctionInfoForWasmExportedFunction(
     Handle<String> name, Handle<WasmExportedFunctionData> data) {
-  return NewSharedFunctionInfo(name, data, Builtins::kNoBuiltinId);
+  return NewSharedFunctionInfo(name, data, Builtin::kNoBuiltinId);
 }
 
 Handle<SharedFunctionInfo> Factory::NewSharedFunctionInfoForWasmJSFunction(
     Handle<String> name, Handle<WasmJSFunctionData> data) {
-  return NewSharedFunctionInfo(name, data, Builtins::kNoBuiltinId);
+  return NewSharedFunctionInfo(name, data, Builtin::kNoBuiltinId);
 }
 
 Handle<SharedFunctionInfo> Factory::NewSharedFunctionInfoForWasmCapiFunction(
     Handle<WasmCapiFunctionData> data) {
   return NewSharedFunctionInfo(MaybeHandle<String>(), data,
-                               Builtins::kNoBuiltinId, kConciseMethod);
+                               Builtin::kNoBuiltinId, kConciseMethod);
 }
 #endif  // V8_ENABLE_WEBASSEMBLY
 
@@ -2911,7 +2933,7 @@ Handle<SharedFunctionInfo> Factory::NewSharedFunctionInfoForApiFunction(
     MaybeHandle<String> maybe_name,
     Handle<FunctionTemplateInfo> function_template_info, FunctionKind kind) {
   Handle<SharedFunctionInfo> shared = NewSharedFunctionInfo(
-      maybe_name, function_template_info, Builtins::kNoBuiltinId, kind);
+      maybe_name, function_template_info, Builtin::kNoBuiltinId, kind);
   return shared;
 }
 
@@ -3605,7 +3627,7 @@ bool Factory::EmptyStringRootIsInitialized() {
 
 Handle<JSFunction> Factory::NewFunctionForTesting(Handle<String> name) {
   Handle<SharedFunctionInfo> info =
-      NewSharedFunctionInfoForBuiltin(name, Builtins::kIllegal);
+      NewSharedFunctionInfoForBuiltin(name, Builtin::kIllegal);
   info->set_language_mode(LanguageMode::kSloppy);
   return JSFunctionBuilder{isolate(), info, isolate()->native_context()}
       .Build();

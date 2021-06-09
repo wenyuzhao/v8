@@ -25,6 +25,7 @@
 #include "src/base/platform/time.h"
 #include "src/base/safe_conversions.h"
 #include "src/base/utils/random-number-generator.h"
+#include "src/baseline/baseline-batch-compiler.h"
 #include "src/builtins/accessors.h"
 #include "src/builtins/builtins-utils.h"
 #include "src/codegen/compiler.h"
@@ -409,6 +410,8 @@ SnapshotCreator::SnapshotCreator(Isolate* isolate,
     internal_isolate->InitWithoutSnapshot();
   }
   data_ = data;
+  // Disable batch compilation during snapshot creation.
+  internal_isolate->baseline_batch_compiler()->set_enabled(false);
 }
 
 SnapshotCreator::SnapshotCreator(const intptr_t* external_references,
@@ -6113,7 +6116,7 @@ Local<Context> NewContext(
   // TODO(jkummerow): This is for crbug.com/713699. Remove it if it doesn't
   // fail.
   // Sanity-check that the isolate is initialized and usable.
-  CHECK(isolate->builtins()->builtin(i::Builtins::kIllegal).IsCode());
+  CHECK(isolate->builtins()->builtin(i::Builtin::kIllegal).IsCode());
 
   TRACE_EVENT_CALL_STATS_SCOPED(isolate, "v8", "V8.NewContext");
   LOG_API(isolate, Context, New);
@@ -8245,6 +8248,11 @@ Isolate* Isolate::GetCurrent() {
   return reinterpret_cast<Isolate*>(isolate);
 }
 
+Isolate* Isolate::TryGetCurrent() {
+  i::Isolate* isolate = i::Isolate::TryGetCurrent();
+  return reinterpret_cast<Isolate*>(isolate);
+}
+
 // static
 Isolate* Isolate::Allocate() {
   return reinterpret_cast<Isolate*>(i::Isolate::New());
@@ -8961,10 +8969,10 @@ JSEntryStubs Isolate::GetJSEntryStubs() {
   JSEntryStubs entry_stubs;
 
   i::Isolate* isolate = reinterpret_cast<i::Isolate*>(this);
-  std::array<std::pair<i::Builtins::Name, JSEntryStub*>, 3> stubs = {
-      {{i::Builtins::kJSEntry, &entry_stubs.js_entry_stub},
-       {i::Builtins::kJSConstructEntry, &entry_stubs.js_construct_entry_stub},
-       {i::Builtins::kJSRunMicrotasksEntry,
+  std::array<std::pair<i::Builtin, JSEntryStub*>, 3> stubs = {
+      {{i::Builtin::kJSEntry, &entry_stubs.js_entry_stub},
+       {i::Builtin::kJSConstructEntry, &entry_stubs.js_construct_entry_stub},
+       {i::Builtin::kJSRunMicrotasksEntry,
         &entry_stubs.js_run_microtasks_entry_stub}}};
   for (auto& pair : stubs) {
     i::Code js_entry = isolate->heap()->builtin(pair.first);

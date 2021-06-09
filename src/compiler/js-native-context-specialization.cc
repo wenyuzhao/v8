@@ -269,7 +269,7 @@ Reduction JSNativeContextSpecialization::ReduceJSAsyncFunctionReject(
   // JSRejectPromise operation (which yields undefined).
   Node* parameters[] = {promise};
   frame_state = CreateStubBuiltinContinuationFrameState(
-      jsgraph(), Builtins::kAsyncFunctionLazyDeoptContinuation, context,
+      jsgraph(), Builtin::kAsyncFunctionLazyDeoptContinuation, context,
       parameters, arraysize(parameters), frame_state,
       ContinuationFrameStateMode::LAZY);
 
@@ -305,7 +305,7 @@ Reduction JSNativeContextSpecialization::ReduceJSAsyncFunctionResolve(
   // JSResolvePromise operation (which yields undefined).
   Node* parameters[] = {promise};
   frame_state = CreateStubBuiltinContinuationFrameState(
-      jsgraph(), Builtins::kAsyncFunctionLazyDeoptContinuation, context,
+      jsgraph(), Builtin::kAsyncFunctionLazyDeoptContinuation, context,
       parameters, arraysize(parameters), frame_state,
       ContinuationFrameStateMode::LAZY);
 
@@ -486,7 +486,7 @@ Reduction JSNativeContextSpecialization::ReduceJSInstanceOf(Node* node) {
     // ToBoolean stub that finishes the remaining work of instanceof and returns
     // to the caller without duplicating side-effects upon a lazy deopt.
     Node* continuation_frame_state = CreateStubBuiltinContinuationFrameState(
-        jsgraph(), Builtins::kToBooleanLazyDeoptContinuation, context, nullptr,
+        jsgraph(), Builtin::kToBooleanLazyDeoptContinuation, context, nullptr,
         0, frame_state, ContinuationFrameStateMode::LAZY);
 
     // Call the @@hasInstance handler.
@@ -1530,7 +1530,7 @@ Reduction JSNativeContextSpecialization::ReduceJSGetIterator(Node* node) {
   Node* call_feedback = jsgraph()->HeapConstant(p.callFeedback().vector);
   Node* lazy_deopt_parameters[] = {receiver, call_slot, call_feedback};
   Node* lazy_deopt_frame_state = CreateStubBuiltinContinuationFrameState(
-      jsgraph(), Builtins::kGetIteratorWithFeedbackLazyDeoptContinuation,
+      jsgraph(), Builtin::kGetIteratorWithFeedbackLazyDeoptContinuation,
       context, lazy_deopt_parameters, arraysize(lazy_deopt_parameters),
       frame_state, ContinuationFrameStateMode::LAZY);
   Node* load_property =
@@ -1570,7 +1570,7 @@ Reduction JSNativeContextSpecialization::ReduceJSGetIterator(Node* node) {
   // Eager deopt of call iterator property
   Node* parameters[] = {receiver, load_property, call_slot, call_feedback};
   Node* eager_deopt_frame_state = CreateStubBuiltinContinuationFrameState(
-      jsgraph(), Builtins::kCallIteratorWithFeedback, context, parameters,
+      jsgraph(), Builtin::kCallIteratorWithFeedback, context, parameters,
       arraysize(parameters), frame_state, ContinuationFrameStateMode::EAGER);
   Node* deopt_checkpoint = graph()->NewNode(
       common()->Checkpoint(), eager_deopt_frame_state, effect, control);
@@ -1952,22 +1952,24 @@ Reduction JSNativeContextSpecialization::ReduceElementLoadFromHeapConstant(
     base::Optional<ObjectRef> element;
 
     if (receiver_ref.IsJSObject()) {
-      element = receiver_ref.AsJSObject().GetOwnConstantElement(index);
-      if (!element.has_value() && receiver_ref.IsJSArray()) {
-        // We didn't find a constant element, but if the receiver is a cow-array
-        // we can exploit the fact that any future write to the element will
-        // replace the whole elements storage.
-        JSArrayRef array_ref = receiver_ref.AsJSArray();
-        base::Optional<FixedArrayBaseRef> array_elements = array_ref.elements();
-        if (array_elements.has_value()) {
-          element = array_ref.GetOwnCowElement(*array_elements, index);
+      JSObjectRef jsobject_ref = receiver_ref.AsJSObject();
+      base::Optional<FixedArrayBaseRef> elements =
+          jsobject_ref.elements(kRelaxedLoad);
+      if (elements.has_value()) {
+        element = jsobject_ref.GetOwnConstantElement(*elements, index,
+                                                     dependencies());
+        if (!element.has_value() && receiver_ref.IsJSArray()) {
+          // We didn't find a constant element, but if the receiver is a
+          // cow-array we can exploit the fact that any future write to the
+          // element will replace the whole elements storage.
+          element = receiver_ref.AsJSArray().GetOwnCowElement(*elements, index);
           if (element.has_value()) {
-            Node* elements = effect = graph()->NewNode(
+            Node* actual_elements = effect = graph()->NewNode(
                 simplified()->LoadField(AccessBuilder::ForJSObjectElements()),
                 receiver, effect, control);
-            Node* check =
-                graph()->NewNode(simplified()->ReferenceEqual(), elements,
-                                 jsgraph()->Constant(*array_elements));
+            Node* check = graph()->NewNode(simplified()->ReferenceEqual(),
+                                           actual_elements,
+                                           jsgraph()->Constant(*elements));
             effect = graph()->NewNode(
                 simplified()->CheckIf(
                     DeoptimizeReason::kCowArrayElementsChanged),

@@ -139,7 +139,7 @@ class V8_EXPORT_PRIVATE TurboAssembler : public SharedTurboAssembler {
   void Move(XMMRegister dst, float src) { Move(dst, bit_cast<uint32_t>(src)); }
   void Move(XMMRegister dst, double src) { Move(dst, bit_cast<uint64_t>(src)); }
 
-  Operand EntryFromBuiltinIndexAsOperand(Builtins::Name builtin_index);
+  Operand EntryFromBuiltinAsOperand(Builtin builtin_index);
 
   void Call(Register reg) { call(reg); }
   void Call(Operand op) { call(op); }
@@ -149,14 +149,14 @@ class V8_EXPORT_PRIVATE TurboAssembler : public SharedTurboAssembler {
   // Load the builtin given by the Smi in |builtin_index| into the same
   // register.
   void LoadEntryFromBuiltinIndex(Register builtin_index);
-  void CallBuiltinByIndex(Register builtin_index) override;
+  void CallBuiltinByIndex(Register builtin_index);
   void CallBuiltin(int builtin_index);
 
-  void LoadCodeObjectEntry(Register destination, Register code_object) override;
-  void CallCodeObject(Register code_object) override;
+  void LoadCodeObjectEntry(Register destination, Register code_object);
+  void CallCodeObject(Register code_object);
   void JumpCodeObject(Register code_object,
-                      JumpMode jump_mode = JumpMode::kJump) override;
-  void Jump(const ExternalReference& reference) override;
+                      JumpMode jump_mode = JumpMode::kJump);
+  void Jump(const ExternalReference& reference);
 
   void RetpolineCall(Register reg);
   void RetpolineCall(Address destination, RelocInfo::Mode rmode);
@@ -167,10 +167,10 @@ class V8_EXPORT_PRIVATE TurboAssembler : public SharedTurboAssembler {
 
   void RetpolineJump(Register reg);
 
-  void Trap() override;
-  void DebugBreak() override;
+  void Trap();
+  void DebugBreak();
 
-  void CallForDeoptimization(Builtins::Name target, int deopt_id, Label* exit,
+  void CallForDeoptimization(Builtin target, int deopt_id, Label* exit,
                              DeoptimizeKind kind, Label* ret,
                              Label* jump_deoptimization_entry_label);
 
@@ -269,13 +269,12 @@ class V8_EXPORT_PRIVATE TurboAssembler : public SharedTurboAssembler {
 
   void InitializeRootRegister();
 
-  void LoadRoot(Register destination, RootIndex index) override;
+  void LoadRoot(Register destination, RootIndex index) final;
 
   // Indirect root-relative loads.
-  void LoadFromConstantsTable(Register destination,
-                              int constant_index) override;
-  void LoadRootRegisterOffset(Register destination, intptr_t offset) override;
-  void LoadRootRelative(Register destination, int32_t offset) override;
+  void LoadFromConstantsTable(Register destination, int constant_index) final;
+  void LoadRootRegisterOffset(Register destination, intptr_t offset) final;
+  void LoadRootRelative(Register destination, int32_t offset) final;
 
   void PushPC();
 
@@ -710,8 +709,16 @@ class V8_EXPORT_PRIVATE MacroAssembler : public TurboAssembler {
   // ---------------------------------------------------------------------------
   // StatsCounter support
 
-  void IncrementCounter(StatsCounter* counter, int value, Register scratch);
-  void DecrementCounter(StatsCounter* counter, int value, Register scratch);
+  void IncrementCounter(StatsCounter* counter, int value, Register scratch) {
+    if (!FLAG_native_code_counters) return;
+    EmitIncrementCounter(counter, value, scratch);
+  }
+  void EmitIncrementCounter(StatsCounter* counter, int value, Register scratch);
+  void DecrementCounter(StatsCounter* counter, int value, Register scratch) {
+    if (!FLAG_native_code_counters) return;
+    EmitDecrementCounter(counter, value, scratch);
+  }
+  void EmitDecrementCounter(StatsCounter* counter, int value, Register scratch);
 
   // ---------------------------------------------------------------------------
   // Stack limit utilities

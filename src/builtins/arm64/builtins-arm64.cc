@@ -609,7 +609,7 @@ namespace {
 // Output:
 //   x0: result.
 void Generate_JSEntryVariant(MacroAssembler* masm, StackFrame::Type type,
-                             Builtins::Name entry_trampoline) {
+                             Builtin entry_trampoline) {
   Label invoke, handler_entry, exit;
 
   {
@@ -812,18 +812,17 @@ void Generate_JSEntryVariant(MacroAssembler* masm, StackFrame::Type type,
 }  // namespace
 
 void Builtins::Generate_JSEntry(MacroAssembler* masm) {
-  Generate_JSEntryVariant(masm, StackFrame::ENTRY,
-                          Builtins::kJSEntryTrampoline);
+  Generate_JSEntryVariant(masm, StackFrame::ENTRY, Builtin::kJSEntryTrampoline);
 }
 
 void Builtins::Generate_JSConstructEntry(MacroAssembler* masm) {
   Generate_JSEntryVariant(masm, StackFrame::CONSTRUCT_ENTRY,
-                          Builtins::kJSConstructEntryTrampoline);
+                          Builtin::kJSConstructEntryTrampoline);
 }
 
 void Builtins::Generate_JSRunMicrotasksEntry(MacroAssembler* masm) {
   Generate_JSEntryVariant(masm, StackFrame::ENTRY,
-                          Builtins::kRunMicrotasksTrampoline);
+                          Builtin::kRunMicrotasksTrampoline);
 }
 
 // Input:
@@ -1221,8 +1220,8 @@ void Builtins::Generate_BaselineOutOfLinePrologue(MacroAssembler* masm) {
   // Need a few extra registers
   temps.Include(x14, x15);
 
-  auto descriptor = Builtins::CallInterfaceDescriptorFor(
-      Builtins::kBaselineOutOfLinePrologue);
+  auto descriptor =
+      Builtins::CallInterfaceDescriptorFor(Builtin::kBaselineOutOfLinePrologue);
   Register closure = descriptor.GetRegisterParameter(
       BaselineOutOfLinePrologueDescriptor::kClosure);
   // Load the feedback vector from the closure.
@@ -1274,7 +1273,7 @@ void Builtins::Generate_BaselineOutOfLinePrologue(MacroAssembler* masm) {
       BaselineOutOfLinePrologueDescriptor::kJavaScriptCallArgCount);
   // We'll use the bytecode for both code age/OSR resetting, and pushing onto
   // the frame, so load it into a register.
-  Register bytecodeArray = descriptor.GetRegisterParameter(
+  Register bytecode_array = descriptor.GetRegisterParameter(
       BaselineOutOfLinePrologueDescriptor::kInterpreterBytecodeArray);
 
   // Reset code age and the OSR arming. The OSR field and BytecodeAgeOffset
@@ -1283,10 +1282,10 @@ void Builtins::Generate_BaselineOutOfLinePrologue(MacroAssembler* masm) {
   STATIC_ASSERT(BytecodeArray::kBytecodeAgeOffset ==
                 BytecodeArray::kOsrNestingLevelOffset + kCharSize);
   STATIC_ASSERT(BytecodeArray::kNoAgeBytecodeAge == 0);
-  __ Strh(wzr, FieldMemOperand(bytecodeArray,
+  __ Strh(wzr, FieldMemOperand(bytecode_array,
                                BytecodeArray::kOsrNestingLevelOffset));
 
-  __ Push(argc, bytecodeArray);
+  __ Push(argc, bytecode_array);
 
   // Baseline code frames store the feedback vector where interpreter would
   // store the bytecode offset.
@@ -1297,9 +1296,6 @@ void Builtins::Generate_BaselineOutOfLinePrologue(MacroAssembler* masm) {
   // Our stack is currently aligned. We have have to push something along with
   // the feedback vector to keep it that way -- we may as well start
   // initialising the register frame.
-  // TODO(v8:11429,leszeks): Consider guaranteeing that this call leaves
-  // `undefined` in the accumulator register, to skip the load in the baseline
-  // code.
   __ LoadRoot(kInterpreterAccumulatorRegister, RootIndex::kUndefinedValue);
   __ Push(feedback_vector, kInterpreterAccumulatorRegister);
   __ RecordComment("]");
@@ -1326,7 +1322,11 @@ void Builtins::Generate_BaselineOutOfLinePrologue(MacroAssembler* masm) {
   }
 
   // Do "fast" return to the caller pc in lr.
-  // TODO(v8:11429): Document this frame setup better.
+  if (FLAG_debug_code) {
+    // The accumulator should already be "undefined", we don't have to load it.
+    __ CompareRoot(kInterpreterAccumulatorRegister, RootIndex::kUndefinedValue);
+    __ Assert(eq, AbortReason::kUnexpectedValue);
+  }
   __ Ret();
 
   __ bind(&has_optimized_code_or_marker);
@@ -1355,6 +1355,7 @@ void Builtins::Generate_BaselineOutOfLinePrologue(MacroAssembler* masm) {
     __ Pop(new_target, padreg);
     __ RecordComment("]");
   }
+  __ LoadRoot(kInterpreterAccumulatorRegister, RootIndex::kUndefinedValue);
   __ Ret();
 }
 

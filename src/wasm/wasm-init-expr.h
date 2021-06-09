@@ -17,6 +17,9 @@ namespace v8 {
 namespace internal {
 namespace wasm {
 
+struct WasmModule;
+class WasmFeatures;
+
 // Representation of an initializer expression.
 class WasmInitExpr {
  public:
@@ -30,8 +33,10 @@ class WasmInitExpr {
     kS128Const,
     kRefNullConst,
     kRefFuncConst,
+    kStructNewWithRtt,
     kRttCanon,
-    kRttSub
+    kRttSub,
+    kRttFreshSub,
   };
 
   union Immediate {
@@ -84,6 +89,15 @@ class WasmInitExpr {
     return expr;
   }
 
+  static WasmInitExpr StructNewWithRtt(uint32_t index,
+                                       std::vector<WasmInitExpr> elements) {
+    WasmInitExpr expr;
+    expr.kind_ = kStructNewWithRtt;
+    expr.immediate_.index = index;
+    expr.operands_ = std::move(elements);
+    return expr;
+  }
+
   static WasmInitExpr RttCanon(uint32_t index) {
     WasmInitExpr expr;
     expr.kind_ = kRttCanon;
@@ -95,13 +109,21 @@ class WasmInitExpr {
     WasmInitExpr expr;
     expr.kind_ = kRttSub;
     expr.immediate_.index = index;
-    expr.operand_ = std::make_unique<WasmInitExpr>(std::move(supertype));
+    expr.operands_.push_back(std::move(supertype));
+    return expr;
+  }
+
+  static WasmInitExpr RttFreshSub(uint32_t index, WasmInitExpr supertype) {
+    WasmInitExpr expr;
+    expr.kind_ = kRttFreshSub;
+    expr.immediate_.index = index;
+    expr.operands_.push_back(std::move(supertype));
     return expr;
   }
 
   Immediate immediate() const { return immediate_; }
   Operator kind() const { return kind_; }
-  WasmInitExpr* operand() const { return operand_.get(); }
+  const std::vector<WasmInitExpr>& operands() const { return operands_; }
 
   bool operator==(const WasmInitExpr& other) const {
     if (kind() != other.kind()) return false;
@@ -124,20 +146,31 @@ class WasmInitExpr {
         return immediate().s128_const == other.immediate().s128_const;
       case kRefNullConst:
         return immediate().heap_type == other.immediate().heap_type;
+      case kStructNewWithRtt:
+        if (immediate().index != other.immediate().index) return false;
+        DCHECK_EQ(operands().size(), other.operands().size());
+        for (uint32_t i = 0; i < operands().size(); i++) {
+          if (operands()[i] != other.operands()[i]) return false;
+        }
+        return true;
       case kRttSub:
+      case kRttFreshSub:
         return immediate().index == other.immediate().index &&
-               *operand() == *other.operand();
+               operands()[0] == other.operands()[0];
     }
   }
 
-  V8_INLINE bool operator!=(const WasmInitExpr& other) {
+  V8_INLINE bool operator!=(const WasmInitExpr& other) const {
     return !(*this == other);
   }
+
+  ValueType type(const WasmModule* module,
+                 const WasmFeatures& enabled_features) const;
 
  private:
   Immediate immediate_;
   Operator kind_;
-  std::unique_ptr<WasmInitExpr> operand_ = nullptr;
+  std::vector<WasmInitExpr> operands_;
 };
 
 }  // namespace wasm

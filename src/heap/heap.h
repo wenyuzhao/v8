@@ -186,12 +186,13 @@ enum class SkipRoot {
   kWeak
 };
 
-class StrongRootsEntry {
-  StrongRootsEntry() = default;
+class StrongRootsEntry final {
+  explicit StrongRootsEntry(const char* label) : label(label) {}
 
+  // Label that identifies the roots in tooling.
+  const char* label;
   FullObjectSlot start;
   FullObjectSlot end;
-
   StrongRootsEntry* prev;
   StrongRootsEntry* next;
 
@@ -665,6 +666,18 @@ class Heap {
     return unprotected_memory_chunks_registry_enabled_;
   }
 
+  void IncrementCodePageCollectionMemoryModificationScopeDepth() {
+    code_page_collection_memory_modification_scope_depth_++;
+  }
+
+  void DecrementCodePageCollectionMemoryModificationScopeDepth() {
+    code_page_collection_memory_modification_scope_depth_--;
+  }
+
+  uintptr_t code_page_collection_memory_modification_scope_depth() {
+    return code_page_collection_memory_modification_scope_depth_;
+  }
+
   inline HeapState gc_state() const {
     return gc_state_.load(std::memory_order_relaxed);
   }
@@ -919,7 +932,7 @@ class Heap {
   V8_INLINE void SetMessageListeners(TemplateList value);
   V8_INLINE void SetPendingOptimizeForTestBytecode(Object bytecode);
 
-  StrongRootsEntry* RegisterStrongRoots(FullObjectSlot start,
+  StrongRootsEntry* RegisterStrongRoots(const char* label, FullObjectSlot start,
                                         FullObjectSlot end);
   void UnregisterStrongRoots(StrongRootsEntry* entry);
   void UpdateStrongRoots(StrongRootsEntry* entry, FullObjectSlot start,
@@ -1103,7 +1116,8 @@ class Heap {
   void CompleteSweepingFull();
   void CompleteSweepingYoung(GarbageCollector collector);
 
-  void EnsureSweepingCompleted();
+  // Ensures that sweeping is finished for that object's page.
+  void EnsureSweepingCompleted(Handle<HeapObject> object);
 
   IncrementalMarking* incremental_marking() const {
     return incremental_marking_.get();
@@ -1428,6 +1442,10 @@ class Heap {
   // Excludes external memory held by those objects.
   V8_EXPORT_PRIVATE size_t OldGenerationSizeOfObjects();
 
+  // Returns the size of objects held by the EmbedderHeapTracer.
+  V8_EXPORT_PRIVATE size_t EmbedderSizeOfObjects() const;
+
+  // Returns the global size of objects (embedder + V8 non-new spaces).
   V8_EXPORT_PRIVATE size_t GlobalSizeOfObjects();
 
   // We allow incremental marking to overshoot the V8 and global allocation
@@ -2005,7 +2023,12 @@ class Heap {
 
   double PercentToOldGenerationLimit();
   double PercentToGlobalMemoryLimit();
-  enum class IncrementalMarkingLimit { kNoLimit, kSoftLimit, kHardLimit };
+  enum class IncrementalMarkingLimit {
+    kNoLimit,
+    kSoftLimit,
+    kHardLimit,
+    kFallbackForEmbedderLimit
+  };
   IncrementalMarkingLimit IncrementalMarkingLimitReached();
 
   bool ShouldStressCompaction() const;
@@ -2198,6 +2221,9 @@ class Heap {
 
   // Holds the number of open CodeSpaceMemoryModificationScopes.
   uintptr_t code_space_memory_modification_scope_depth_ = 0;
+
+  // Holds the number of open CodePageCollectionMemoryModificationScopes.
+  uintptr_t code_page_collection_memory_modification_scope_depth_ = 0;
 
   std::atomic<HeapState> gc_state_{NOT_IN_GC};
 

@@ -922,31 +922,43 @@ int32_t WasmMemoryObject::Grow(Isolate* isolate,
   // therefore this memory cannot be grown.
   if (old_buffer->is_asmjs_memory()) return -1;
 
-  // Checks for maximum memory size.
-  uint32_t maximum_pages = wasm::max_mem_pages();
-  if (memory_object->has_maximum_pages()) {
-    maximum_pages = std::min(
-        maximum_pages, static_cast<uint32_t>(memory_object->maximum_pages()));
-  }
-  size_t old_size = old_buffer->byte_length();
-  DCHECK_EQ(0, old_size % wasm::kWasmPageSize);
-  size_t old_pages = old_size / wasm::kWasmPageSize;
-  CHECK_GE(wasm::max_mem_pages(), old_pages);
-  if (pages > maximum_pages - old_pages) return -1;
   std::shared_ptr<BackingStore> backing_store = old_buffer->GetBackingStore();
   if (!backing_store) return -1;
 
-  // Try to handle shared memory first.
+  // Check for maximum memory size.
+  // Note: The {wasm::max_mem_pages()} limit is already checked in
+  // {BackingStore::CopyWasmMemory}, and is irrelevant for
+  // {GrowWasmMemoryInPlace} because memory is never allocated with more
+  // capacity than that limit.
+  size_t old_size = old_buffer->byte_length();
+  DCHECK_EQ(0, old_size % wasm::kWasmPageSize);
+  size_t old_pages = old_size / wasm::kWasmPageSize;
+  uint32_t max_pages = wasm::kSpecMaxMemoryPages;
+  if (memory_object->has_maximum_pages()) {
+    DCHECK_GE(max_pages, memory_object->maximum_pages());
+    max_pages = static_cast<uint32_t>(memory_object->maximum_pages());
+  }
+  DCHECK_GE(max_pages, old_pages);
+  if (pages > max_pages - old_pages) return -1;
+
+  base::Optional<size_t> result_inplace =
+      backing_store->GrowWasmMemoryInPlace(isolate, pages, max_pages);
+  // Handle shared memory first.
   if (old_buffer->is_shared()) {
-    base::Optional<size_t> result =
-        backing_store->GrowWasmMemoryInPlace(isolate, pages, maximum_pages);
     // Shared memories can only be grown in place; no copying.
-    if (!result.has_value()) return -1;
+    if (!result_inplace.has_value()) {
+      // There are different limits per platform, thus crash if the correctness
+      // fuzzer is running.
+      if (FLAG_correctness_fuzzer_suppressions) {
+        FATAL("could not grow wasm memory");
+      }
+      return -1;
+    }
 
     BackingStore::BroadcastSharedWasmMemoryGrow(isolate, backing_store);
     // Broadcasting the update should update this memory object too.
     CHECK_NE(*old_buffer, memory_object->array_buffer());
-    size_t new_pages = result.value() + pages;
+    size_t new_pages = result_inplace.value() + pages;
     // If the allocation succeeded, then this can't possibly overflow:
     size_t new_byte_length = new_pages * wasm::kWasmPageSize;
     // This is a less than check, as it is not guaranteed that the SAB
@@ -958,13 +970,11 @@ int32_t WasmMemoryObject::Grow(Isolate* isolate,
     // As {old_pages} was read racefully, we return here the synchronized
     // value provided by {GrowWasmMemoryInPlace}, to provide the atomic
     // read-modify-write behavior required by the spec.
-    return static_cast<int32_t>(result.value());  // success
+    return static_cast<int32_t>(result_inplace.value());  // success
   }
 
-  base::Optional<size_t> result =
-      backing_store->GrowWasmMemoryInPlace(isolate, pages, maximum_pages);
-  // Try to grow non-shared memory in-place.
-  if (result.has_value()) {
+  // Check if the non-shared memory could grow in-place.
+  if (result_inplace.has_value()) {
     // Detach old and create a new one with the grown backing store.
     old_buffer->Detach(true);
     Handle<JSArrayBuffer> new_buffer =
@@ -975,11 +985,12 @@ int32_t WasmMemoryObject::Grow(Isolate* isolate,
     Handle<Symbol> symbol =
         isolate->factory()->array_buffer_wasm_memory_symbol();
     JSObject::SetProperty(isolate, new_buffer, symbol, memory_object).Check();
-    DCHECK_EQ(result.value(), old_pages);
-    return static_cast<int32_t>(result.value());  // success
+    DCHECK_EQ(result_inplace.value(), old_pages);
+    return static_cast<int32_t>(result_inplace.value());  // success
   }
 
   size_t new_pages = old_pages + pages;
+  DCHECK_LT(old_pages, new_pages);
   // Try allocating a new backing store and copying.
   std::unique_ptr<BackingStore> new_backing_store =
       backing_store->CopyWasmMemory(isolate, new_pages);
@@ -1841,7 +1852,7 @@ bool WasmExportedFunction::IsWasmExportedFunction(Object object) {
   if (!object.IsJSFunction()) return false;
   JSFunction js_function = JSFunction::cast(object);
   if (CodeKind::JS_TO_WASM_FUNCTION != js_function.code().kind() &&
-      js_function.code().builtin_index() != Builtins::kGenericJSToWasmWrapper) {
+      js_function.code().builtin_index() != Builtin::kGenericJSToWasmWrapper) {
     return false;
   }
   DCHECK(js_function.shared().HasWasmExportedFunctionData());
@@ -1875,7 +1886,7 @@ Handle<WasmCapiFunction> WasmCapiFunction::New(
   Handle<WasmCapiFunctionData> fun_data =
       isolate->factory()->NewWasmCapiFunctionData(
           call_target, embedder_data,
-          isolate->builtins()->builtin_handle(Builtins::kIllegal),
+          isolate->builtins()->builtin_handle(Builtin::kIllegal),
           serialized_signature);
   Handle<SharedFunctionInfo> shared =
       isolate->factory()->NewSharedFunctionInfoForWasmCapiFunction(fun_data);
@@ -1895,10 +1906,9 @@ int WasmExportedFunction::function_index() {
 Handle<WasmExportedFunction> WasmExportedFunction::New(
     Isolate* isolate, Handle<WasmInstanceObject> instance, int func_index,
     int arity, Handle<Code> export_wrapper) {
-  DCHECK(
-      CodeKind::JS_TO_WASM_FUNCTION == export_wrapper->kind() ||
-      (export_wrapper->is_builtin() &&
-       export_wrapper->builtin_index() == Builtins::kGenericJSToWasmWrapper));
+  DCHECK(CodeKind::JS_TO_WASM_FUNCTION == export_wrapper->kind() ||
+         (export_wrapper->is_builtin() &&
+          export_wrapper->builtin_index() == Builtin::kGenericJSToWasmWrapper));
   int num_imported_functions = instance->module()->num_imported_functions;
   Handle<Object> ref =
       func_index >= num_imported_functions

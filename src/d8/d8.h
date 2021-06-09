@@ -254,6 +254,22 @@ class PerIsolateData {
     PerIsolateData* data_;
   };
 
+  // Contrary to RealmScope (which creates a new Realm), ExplicitRealmScope
+  // allows for entering an existing Realm, as specified by its index.
+  class V8_NODISCARD ExplicitRealmScope {
+   public:
+    explicit ExplicitRealmScope(PerIsolateData* data, int index);
+    ~ExplicitRealmScope();
+
+    Local<Context> context() const;
+
+   private:
+    PerIsolateData* data_;
+    Local<Context> realm_;
+    int index_;
+    int previous_index_;
+  };
+
   inline void SetTimeout(Local<Function> callback, Local<Context> context);
   inline MaybeLocal<Function> GetTimeoutCallback();
   inline MaybeLocal<Context> GetTimeoutContext();
@@ -351,6 +367,7 @@ class ShellOptions {
     bool specified_ = false;
   };
 
+  DisallowReassignment<const char*> d8_path = {"d8-path", ""};
   DisallowReassignment<bool> fuzzilli_coverage_statistics = {
       "fuzzilli-coverage-statistics", false};
   DisallowReassignment<bool> fuzzilli_enable_builtins_coverage = {
@@ -426,6 +443,7 @@ class Shell : public i::AllStatic {
     kProcessMessageQueue = true,
     kNoProcessMessageQueue = false
   };
+  enum class CodeType { kFileName, kString, kFunction, kInvalid, kNone };
 
   static bool ExecuteString(Isolate* isolate, Local<String> source,
                             Local<Value> name, PrintResult print_result,
@@ -512,7 +530,8 @@ class Shell : public i::AllStatic {
   static void Version(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void ReadFile(const v8::FunctionCallbackInfo<v8::Value>& args);
   static char* ReadChars(const char* name, int* size_out);
-  static bool ReadLines(const char* name, std::vector<std::string>& lines);
+  static MaybeLocal<PrimitiveArray> ReadLines(Isolate* isolate,
+                                              const char* name);
   static void ReadBuffer(const v8::FunctionCallbackInfo<v8::Value>& args);
   static Local<String> ReadFromStdin(Isolate* isolate);
   static void ReadLine(const v8::FunctionCallbackInfo<v8::Value>& args) {
@@ -521,6 +540,16 @@ class Shell : public i::AllStatic {
   static void WriteChars(const char* name, uint8_t* buffer, size_t buffer_size);
   static void ExecuteFile(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void SetTimeout(const v8::FunctionCallbackInfo<v8::Value>& args);
+  static void ReadCodeTypeAndArguments(
+      const v8::FunctionCallbackInfo<v8::Value>& args, int index,
+      CodeType* code_type, Local<Value>* arguments = nullptr);
+  static bool FunctionAndArgumentsToString(Local<Function> function,
+                                           Local<Value> arguments,
+                                           Local<String>* source,
+                                           Isolate* isolate);
+  static MaybeLocal<String> ReadSource(
+      const v8::FunctionCallbackInfo<v8::Value>& args, int index,
+      CodeType default_type);
   static void WorkerNew(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void WorkerPostMessage(
       const v8::FunctionCallbackInfo<v8::Value>& args);
@@ -541,29 +570,30 @@ class Shell : public i::AllStatic {
   // milliseconds on the total running time of the program.  Exceptions are
   // thrown on timeouts or other errors or if the exit status of the program
   // indicates an error.
-  //
+  static void System(const v8::FunctionCallbackInfo<v8::Value>& args);
+
   // os.chdir(dir) changes directory to the given directory.  Throws an
   // exception/ on error.
-  //
+  static void ChangeDirectory(const v8::FunctionCallbackInfo<v8::Value>& args);
+
   // os.setenv(variable, value) sets an environment variable.  Repeated calls to
   // this method leak memory due to the API of setenv in the standard C library.
-  //
+  static void SetEnvironment(const v8::FunctionCallbackInfo<v8::Value>& args);
+  static void UnsetEnvironment(const v8::FunctionCallbackInfo<v8::Value>& args);
+
   // os.umask(alue) calls the umask system call and returns the old umask.
-  //
+  static void SetUMask(const v8::FunctionCallbackInfo<v8::Value>& args);
+
   // os.mkdirp(name, mask) creates a directory.  The mask (if present) is anded
   // with the current umask.  Intermediate directories are created if necessary.
   // An exception is not thrown if the directory already exists.  Analogous to
   // the "mkdir -p" command.
-  static void System(const v8::FunctionCallbackInfo<v8::Value>& args);
-  static void ChangeDirectory(const v8::FunctionCallbackInfo<v8::Value>& args);
-  static void SetEnvironment(const v8::FunctionCallbackInfo<v8::Value>& args);
-  static void UnsetEnvironment(const v8::FunctionCallbackInfo<v8::Value>& args);
-  static void SetUMask(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void MakeDirectory(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void RemoveDirectory(const v8::FunctionCallbackInfo<v8::Value>& args);
   static MaybeLocal<Promise> HostImportModuleDynamically(
       Local<Context> context, Local<ScriptOrModule> referrer,
       Local<String> specifier, Local<FixedArray> import_assertions);
+
   static void ModuleResolutionSuccessCallback(
       const v8::FunctionCallbackInfo<v8::Value>& info);
   static void ModuleResolutionFailureCallback(

@@ -99,10 +99,10 @@ TNode<Object> AsyncBuiltinsAssembler::AwaitOld(
                    &var_throwaway);
 
   // Perform ! Call(promiseCapability.[[Resolve]], undefined, « promise »).
-  CallBuiltin(Builtins::kResolvePromise, context, promise, value);
+  CallBuiltin(Builtin::kResolvePromise, context, promise, value);
 
-  return CallBuiltin(Builtins::kPerformPromiseThen, context, promise,
-                     on_resolve, on_reject, var_throwaway.value());
+  return CallBuiltin(Builtin::kPerformPromiseThen, context, promise, on_resolve,
+                     on_reject, var_throwaway.value());
 }
 
 TNode<Object> AsyncBuiltinsAssembler::AwaitOptimized(
@@ -157,7 +157,7 @@ TNode<Object> AsyncBuiltinsAssembler::AwaitOptimized(
                    outer_promise, on_reject, is_predicted_as_caught,
                    &var_throwaway);
 
-  return CallBuiltin(Builtins::kPerformPromiseThen, native_context, promise,
+  return CallBuiltin(Builtin::kPerformPromiseThen, native_context, promise,
                      on_resolve, on_reject, var_throwaway.value());
 }
 
@@ -186,7 +186,7 @@ void AsyncBuiltinsAssembler::InitAwaitPromise(
   // This call to NewJSPromise is to keep behaviour parity with what happens
   // in Runtime::kAwaitPromisesInit above if native hooks are set. It will
   // create a throwaway promise that will trigger an init event and will get
-  // passed into Builtins::kPerformPromiseThen below.
+  // passed into Builtin::kPerformPromiseThen below.
   Branch(IsContextPromiseHookEnabled(promiseHookFlags), &if_promise_hook,
          &do_nothing);
   BIND(&if_promise_hook);
@@ -319,7 +319,7 @@ TF_BUILTIN(AsyncIteratorValueUnwrap, AsyncBuiltinsAssembler) {
   CSA_ASSERT(this, IsBoolean(CAST(done)));
 
   const TNode<Object> unwrapped_value =
-      CallBuiltin(Builtins::kCreateIterResultObject, context, value, done);
+      CallBuiltin(Builtin::kCreateIterResultObject, context, value, done);
 
   Return(unwrapped_value);
 }

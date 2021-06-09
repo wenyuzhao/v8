@@ -23,6 +23,7 @@
 #include "src/codegen/compilation-cache.h"
 #include "src/common/assert-scope.h"
 #include "src/common/globals.h"
+#include "src/compiler-dispatcher/optimizing-compile-dispatcher.h"
 #include "src/debug/debug.h"
 #include "src/deoptimizer/deoptimizer.h"
 #include "src/execution/isolate-utils-inl.h"
@@ -1926,16 +1927,28 @@ void Heap::CompleteSweepingFull() {
 void Heap::StartIncrementalMarkingIfAllocationLimitIsReached(
     int gc_flags, const GCCallbackFlags gc_callback_flags) {
   if (incremental_marking()->IsStopped()) {
-    IncrementalMarkingLimit reached_limit = IncrementalMarkingLimitReached();
-    if (reached_limit == IncrementalMarkingLimit::kSoftLimit) {
-      incremental_marking()->incremental_marking_job()->ScheduleTask(this);
-    } else if (reached_limit == IncrementalMarkingLimit::kHardLimit) {
-      StartIncrementalMarking(
-          gc_flags,
-          OldGenerationSpaceAvailable() <= NewSpaceCapacity()
-              ? GarbageCollectionReason::kAllocationLimit
-              : GarbageCollectionReason::kGlobalAllocationLimit,
-          gc_callback_flags);
+    switch (IncrementalMarkingLimitReached()) {
+      case IncrementalMarkingLimit::kHardLimit:
+        StartIncrementalMarking(
+            gc_flags,
+            OldGenerationSpaceAvailable() <= NewSpaceCapacity()
+                ? GarbageCollectionReason::kAllocationLimit
+                : GarbageCollectionReason::kGlobalAllocationLimit,
+            gc_callback_flags);
+        break;
+      case IncrementalMarkingLimit::kSoftLimit:
+        incremental_marking()->incremental_marking_job()->ScheduleTask(this);
+        break;
+      case IncrementalMarkingLimit::kFallbackForEmbedderLimit:
+        // This is a fallback case where no appropriate limits have been
+        // configured yet.
+        MemoryReducer::Event event;
+        event.type = MemoryReducer::kPossibleGarbage;
+        event.time_ms = MonotonicallyIncreasingTimeInMs();
+        memory_reducer()->NotifyPossibleGarbage(event);
+        break;
+      case IncrementalMarkingLimit::kNoLimit:
+        break;
     }
   }
 }
@@ -2265,8 +2278,10 @@ void Heap::CompleteSweepingYoung(GarbageCollector collector) {
   array_buffer_sweeper()->EnsureFinished();
 }
 
-void Heap::EnsureSweepingCompleted() {
+void Heap::EnsureSweepingCompleted(Handle<HeapObject> object) {
+  // TODO(dinfuehr): Only sweep that object's page instead of whole heap.
   mark_compact_collector()->EnsureSweepingCompleted();
+  USE(object);
 }
 
 void Heap::UpdateCurrentEpoch(GarbageCollector collector) {
@@ -3162,6 +3177,12 @@ bool Heap::CanMoveObjectStart(HeapObject object) {
   if (isolate()->heap_profiler()->is_sampling_allocations()) return false;
 
   if (IsLargeObject(object)) return false;
+
+  // Compilation jobs may have references to the object.
+  if (isolate()->concurrent_recompilation_enabled() &&
+      isolate()->optimizing_compile_dispatcher()->HasJobs()) {
+    return false;
+  }
 
   // We can move the object start if the page was already swept.
   return Page::FromHeapObject(object)->SweepingDone();
@@ -4502,7 +4523,7 @@ Code Heap::builtin(int index) {
 }
 
 Address Heap::builtin_address(int index) {
-  DCHECK(Builtins::IsBuiltinId(index) || index == Builtins::builtin_count);
+  DCHECK(Builtins::IsBuiltinId(index) || index == Builtins::kBuiltinCount);
   return reinterpret_cast<Address>(&isolate()->builtins_table()[index]);
 }
 
@@ -4547,9 +4568,9 @@ void Heap::IterateSmiRoots(RootVisitor* v) {
 // sure all handles still needed are updated. Filter out a stale pointer
 // and clear the slot to allow post processing of handles (needed because
 // the sweeper might actually free the underlying page).
-class FixStaleLeftTrimmedHandlesVisitor : public RootVisitor {
+class ClearStaleLeftTrimmedHandlesVisitor : public RootVisitor {
  public:
-  explicit FixStaleLeftTrimmedHandlesVisitor(Heap* heap) : heap_(heap) {
+  explicit ClearStaleLeftTrimmedHandlesVisitor(Heap* heap) : heap_(heap) {
     USE(heap_);
   }
 
@@ -4664,19 +4685,22 @@ void Heap::IterateRoots(RootVisitor* v, base::EnumSet<SkipRoot> options) {
       v->Synchronize(VisitorSynchronization::kStackRoots);
     }
 
-    // Iterate over local handles in handle scopes.
-    FixStaleLeftTrimmedHandlesVisitor left_trim_visitor(this);
 #ifndef V8_ENABLE_CONSERVATIVE_STACK_SCANNING
+    // Iterate over main thread handles in handle scopes.
     if (!options.contains(SkipRoot::kMainThreadHandles)) {
+      // Clear main thread handles with stale references to left-trimmed
+      // objects. The GC would crash on such stale references.
+      ClearStaleLeftTrimmedHandlesVisitor left_trim_visitor(this);
       isolate_->handle_scope_implementer()->Iterate(&left_trim_visitor);
+
       isolate_->handle_scope_implementer()->Iterate(v);
     }
 #endif
 
-    safepoint_->Iterate(&left_trim_visitor);
+    // Iterate local handles for all local heaps.
     safepoint_->Iterate(v);
 
-    isolate_->persistent_handles_list()->Iterate(&left_trim_visitor, isolate_);
+    // Iterates all persistent handles.
     isolate_->persistent_handles_list()->Iterate(v, isolate_);
 
     v->Synchronize(VisitorSynchronization::kHandleScope);
@@ -4703,7 +4727,7 @@ void Heap::IterateRoots(RootVisitor* v, base::EnumSet<SkipRoot> options) {
     // deoptimization entries).
     for (StrongRootsEntry* current = strong_roots_head_; current;
          current = current->next) {
-      v->VisitRootPointers(Root::kStrongRoots, nullptr, current->start,
+      v->VisitRootPointers(Root::kStrongRoots, current->label, current->start,
                            current->end);
     }
     v->Synchronize(VisitorSynchronization::kStrongRoots);
@@ -4724,7 +4748,7 @@ void Heap::IterateWeakGlobalHandles(RootVisitor* v) {
 }
 
 void Heap::IterateBuiltins(RootVisitor* v) {
-  for (int i = 0; i < Builtins::builtin_count; i++) {
+  for (int i = 0; i < Builtins::kBuiltinCount; i++) {
     v->VisitRootPointer(Root::kBuiltins, Builtins::name(i),
                         FullObjectSlot(builtin_address(i)));
   }
@@ -4981,12 +5005,14 @@ size_t Heap::OldGenerationSizeOfObjects() {
   return total + lo_space_->SizeOfObjects() + code_lo_space_->SizeOfObjects();
 }
 
+size_t Heap::EmbedderSizeOfObjects() const {
+  return local_embedder_heap_tracer()
+             ? local_embedder_heap_tracer()->used_size()
+             : 0;
+}
+
 size_t Heap::GlobalSizeOfObjects() {
-  const size_t on_heap_size = OldGenerationSizeOfObjects();
-  const size_t embedder_size = local_embedder_heap_tracer()
-                                   ? local_embedder_heap_tracer()->used_size()
-                                   : 0;
-  return on_heap_size + embedder_size;
+  return OldGenerationSizeOfObjects() + EmbedderSizeOfObjects();
 }
 
 uint64_t Heap::AllocatedExternalMemorySinceMarkCompact() {
@@ -5137,11 +5163,13 @@ double Heap::PercentToGlobalMemoryLimit() {
   return total_bytes > 0 ? (current_bytes / total_bytes) * 100.0 : 0;
 }
 
-// This function returns either kNoLimit, kSoftLimit, or kHardLimit.
-// The kNoLimit means that either incremental marking is disabled or it is too
+// - kNoLimit means that either incremental marking is disabled or it is too
 // early to start incremental marking.
-// The kSoftLimit means that incremental marking should be started soon.
-// The kHardLimit means that incremental marking should be started immediately.
+// - kSoftLimit means that incremental marking should be started soon.
+// - kHardLimit means that incremental marking should be started immediately.
+// - kFallbackForEmbedderLimit means that incremental marking should be
+// started as soon as the embedder does not allocate with high throughput
+// anymore.
 Heap::IncrementalMarkingLimit Heap::IncrementalMarkingLimitReached() {
   // Code using an AlwaysAllocateScope assumes that the GC state does not
   // change; that implies that no marking steps must be performed.
@@ -5206,6 +5234,15 @@ Heap::IncrementalMarkingLimit Heap::IncrementalMarkingLimitReached() {
   if (old_generation_space_available > NewSpaceCapacity() &&
       (!global_memory_available ||
        global_memory_available > NewSpaceCapacity())) {
+    if (local_embedder_heap_tracer()->InUse() &&
+        !old_generation_size_configured_ && gc_count_ == 0) {
+      // At this point the embedder memory is above the activation
+      // threshold. No GC happened so far and it's thus unlikely to get a
+      // configured heap any time soon. Start a memory reducer in this case
+      // which will wait until the allocation rate is low to trigger garbage
+      // collection.
+      return IncrementalMarkingLimit::kFallbackForEmbedderLimit;
+    }
     return IncrementalMarkingLimit::kNoLimit;
   }
   if (ShouldOptimizeForMemoryUsage()) {
@@ -6409,11 +6446,12 @@ size_t Heap::OldArrayBufferBytes() {
   return array_buffer_sweeper()->OldBytes();
 }
 
-StrongRootsEntry* Heap::RegisterStrongRoots(FullObjectSlot start,
+StrongRootsEntry* Heap::RegisterStrongRoots(const char* label,
+                                            FullObjectSlot start,
                                             FullObjectSlot end) {
   base::MutexGuard guard(&strong_roots_mutex_);
 
-  StrongRootsEntry* entry = new StrongRootsEntry();
+  StrongRootsEntry* entry = new StrongRootsEntry(label);
   entry->start = start;
   entry->end = end;
   entry->prev = nullptr;
@@ -6460,7 +6498,7 @@ void Heap::SetDetachedContexts(WeakArrayList detached_contexts) {
 }
 
 void Heap::SetInterpreterEntryTrampolineForProfiling(Code code) {
-  DCHECK_EQ(Builtins::kInterpreterEntryTrampoline, code.builtin_index());
+  DCHECK_EQ(Builtin::kInterpreterEntryTrampoline, code.builtin_index());
   set_interpreter_entry_trampoline_for_profiling(code);
 }
 
@@ -6786,8 +6824,7 @@ Code Heap::GcSafeCastToCode(HeapObject object, Address inner_pointer) {
 bool Heap::GcSafeCodeContains(Code code, Address addr) {
   Map map = GcSafeMapOfCodeSpaceObject(code);
   DCHECK(map == ReadOnlyRoots(this).code_map());
-  Builtins::Name maybe_builtin =
-      InstructionStream::TryLookupCode(isolate(), addr);
+  Builtin maybe_builtin = InstructionStream::TryLookupCode(isolate(), addr);
   if (Builtins::IsBuiltinId(maybe_builtin) &&
       code.builtin_index() == maybe_builtin) {
     return true;
@@ -6798,7 +6835,7 @@ bool Heap::GcSafeCodeContains(Code code, Address addr) {
 }
 
 Code Heap::GcSafeFindCodeForInnerPointer(Address inner_pointer) {
-  Builtins::Name maybe_builtin =
+  Builtin maybe_builtin =
       InstructionStream::TryLookupCode(isolate(), inner_pointer);
   if (Builtins::IsBuiltinId(maybe_builtin)) {
     return builtin(maybe_builtin);
@@ -7074,8 +7111,8 @@ Address* StrongRootBlockAllocator::allocate(size_t n) {
                                             sizeof(StrongRootsEntry*));
 
   memset(ret, kNullAddress, n * sizeof(Address));
-  *header =
-      heap_->RegisterStrongRoots(FullObjectSlot(ret), FullObjectSlot(ret + n));
+  *header = heap_->RegisterStrongRoots(
+      "StrongRootBlockAllocator", FullObjectSlot(ret), FullObjectSlot(ret + n));
 
   return ret;
 }
