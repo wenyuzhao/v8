@@ -1438,6 +1438,9 @@ class Heap {
 
   bool is_current_gc_forced() const { return is_current_gc_forced_; }
 
+  template <class RootVisitor>
+  void UpdateExternalStringTable(RootVisitor* external_visitor);
+
   // Returns the size of objects residing in non-new spaces.
   // Excludes external memory held by those objects.
   V8_EXPORT_PRIVATE size_t OldGenerationSizeOfObjects();

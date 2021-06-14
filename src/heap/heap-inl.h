@@ -703,6 +703,12 @@ bool Heap::HasDirtyJSFinalizationRegistries() {
   return !dirty_js_finalization_registries_list().IsUndefined(isolate());
 }
 
+template <class RootVisitor>
+void Heap::UpdateExternalStringTable(RootVisitor* external_visitor) {
+  external_string_table_.IterateAll(external_visitor);
+  external_string_table_.CleanUpAll();
+}
+
 AlwaysAllocateScope::AlwaysAllocateScope(Heap* heap) : heap_(heap) {
   heap_->always_allocate_scope_count_++;
 }

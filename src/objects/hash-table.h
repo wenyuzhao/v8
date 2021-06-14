@@ -351,9 +351,10 @@ class EXPORT_TEMPLATE_DECLARE(V8_EXPORT_PRIVATE) ObjectHashTableBase
            Shape::kEntryValueIndex;
   }
 
+  void RemoveEntry(InternalIndex entry);
+
  protected:
   void AddEntry(InternalIndex entry, Object key, Object value);
-  void RemoveEntry(InternalIndex entry);
 
   OBJECT_CONSTRUCTORS(ObjectHashTableBase, HashTable<Derived, Shape>);
 };

@@ -6378,7 +6378,7 @@ void Heap::ExternalStringTable::CleanUpAll() {
   }
   old_strings_.resize(last);
 #ifdef VERIFY_HEAP
-  if (FLAG_verify_heap) {
+  if (FLAG_verify_heap && !FLAG_enable_third_party_heap) {
     Verify();
   }
 #endif

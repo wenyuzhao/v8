@@ -142,6 +142,10 @@ class V8_EXPORT_PRIVATE TransitionsAccessor {
   bool IsSortedNoDuplicates();
 #endif
 
+  static inline Map GetTargetFromRaw(MaybeObject raw);
+
+  bool HasSimpleTransitionTo(Map map);
+
  protected:
   // Allow tests to use inheritance to access internals.
   enum Encoding {
@@ -171,8 +175,6 @@ class V8_EXPORT_PRIVATE TransitionsAccessor {
 
   static inline Name GetSimpleTransitionKey(Map transition);
 
-  static inline Map GetTargetFromRaw(MaybeObject raw);
-
   void MarkNeedsReload() {
 #if DEBUG
     needs_reload_ = true;
@@ -182,7 +184,6 @@ class V8_EXPORT_PRIVATE TransitionsAccessor {
   inline void Initialize();
 
   inline Map GetSimpleTransition();
-  bool HasSimpleTransitionTo(Map map);
 
   void ReplaceTransitions(MaybeObject new_transitions);
 
@@ -282,14 +283,14 @@ class TransitionArray : public WeakFixedArray {
   inline Map SearchAndGetTargetForTesting(PropertyKind kind, Name name,
                                           PropertyAttributes attributes);
 
+  inline void SetNumberOfTransitions(int number_of_transitions);
+
+  inline int Capacity();
+
  private:
   friend class Factory;
   friend class MarkCompactCollector;
   friend class TransitionsAccessor;
-
-  inline void SetNumberOfTransitions(int number_of_transitions);
-
-  inline int Capacity();
 
   // ===== PROTOTYPE TRANSITIONS =====
   // Cache format:

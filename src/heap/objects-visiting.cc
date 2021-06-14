@@ -17,7 +17,7 @@ namespace internal {
 // have to record slots manually.
 static bool MustRecordSlots(Heap* heap) {
   return heap->gc_state() == Heap::MARK_COMPACT &&
-         heap->mark_compact_collector()->is_compacting();
+         heap->mark_compact_collector()->is_compacting() && !V8_ENABLE_THIRD_PARTY_HEAP_BOOL;
 }
 
 
@@ -130,7 +130,7 @@ struct WeakListVisitor<Context> {
 
   static void VisitLiveObject(Heap* heap, Context context,
                               WeakObjectRetainer* retainer) {
-    if (heap->gc_state() == Heap::MARK_COMPACT) {
+    if (heap->gc_state() == Heap::MARK_COMPACT && !V8_ENABLE_THIRD_PARTY_HEAP_BOOL) {
       // Record the slots of the weak entries in the native context.
       for (int idx = Context::FIRST_WEAK_SLOT;
            idx < Context::NATIVE_CONTEXT_SLOTS; ++idx) {
