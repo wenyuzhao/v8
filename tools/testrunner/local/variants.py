@@ -60,11 +60,10 @@ INCOMPATIBLE_FLAGS_PER_VARIANT = {
   "stress_concurrent_inlining": ["--single-threaded", "--predictable"],
   "stress": ["--always-opt", "--no-always-opt",
              "--max-inlined-bytecode-size=*",
-             "--max-inlined-bytecode-size-cumulative=*", "--stress-inline"],
+             "--max-inlined-bytecode-size-cumulative=*", "--stress-inline",
+             "--liftoff-only"],
   "sparkplug": ["--jitless"],
   "always_sparkplug": ["--jitless"],
-  "turboprop": ["--interrupt-budget=*"],
-  "turboprop_as_toptier": ["--interrupt-budget=*"],
   "code_serializer": ["--cache=after-execute", "--cache=full-code-cache",
                       "--cache=none"],
   "experimental_regexp": ["--no-enable-experimental-regexp-engine"],
@@ -83,7 +82,8 @@ INCOMPATIBLE_FLAGS_PER_BUILD_VARIABLE = {
                + INCOMPATIBLE_FLAGS_PER_VARIANT["jitless"],
   "predictable": ["--parallel-compile-tasks",
                   "--concurrent-recompilation",
-                  "--stress-concurrent-allocation"],
+                  "--stress-concurrent-allocation",
+                  "--stress-concurrent-inlining"],
 }
 
 # Flags that lead to a contradiction when a certain extra-flag is present.

@@ -356,11 +356,12 @@ class V8_EXPORT_PRIVATE JSHeapBroker {
   // occurrence. This is done to have a recursive shared lock on {mutex}.
   class V8_NODISCARD RecursiveSharedMutexGuardIfNeeded {
    protected:
-    RecursiveSharedMutexGuardIfNeeded(base::SharedMutex* mutex,
+    RecursiveSharedMutexGuardIfNeeded(LocalIsolate* local_isolate,
+                                      base::SharedMutex* mutex,
                                       int* mutex_depth_address)
         : mutex_depth_address_(mutex_depth_address),
           initial_mutex_depth_(*mutex_depth_address_),
-          shared_mutex_guard_(mutex, initial_mutex_depth_ == 0) {
+          shared_mutex_guard_(local_isolate, mutex, initial_mutex_depth_ == 0) {
       (*mutex_depth_address_)++;
     }
 
@@ -373,7 +374,7 @@ class V8_EXPORT_PRIVATE JSHeapBroker {
    private:
     int* const mutex_depth_address_;
     const int initial_mutex_depth_;
-    base::SharedMutexGuardIf<base::kShared> shared_mutex_guard_;
+    ParkedSharedMutexGuardIf<base::kShared> shared_mutex_guard_;
   };
 
   class MapUpdaterGuardIfNeeded final
@@ -381,6 +382,7 @@ class V8_EXPORT_PRIVATE JSHeapBroker {
    public:
     explicit MapUpdaterGuardIfNeeded(JSHeapBroker* broker)
         : RecursiveSharedMutexGuardIfNeeded(
+              broker->local_isolate_or_isolate(),
               broker->isolate()->map_updater_access(),
               &broker->map_updater_mutex_depth_) {}
   };
@@ -390,21 +392,23 @@ class V8_EXPORT_PRIVATE JSHeapBroker {
    public:
     explicit BoilerplateMigrationGuardIfNeeded(JSHeapBroker* broker)
         : RecursiveSharedMutexGuardIfNeeded(
+              broker->local_isolate_or_isolate(),
               broker->isolate()->boilerplate_migration_access(),
               &broker->boilerplate_migration_mutex_depth_) {}
   };
+
+  // If this returns false, the object is guaranteed to be fully initialized and
+  // thus safe to read from a memory safety perspective. The converse does not
+  // necessarily hold.
+  bool ObjectMayBeUninitialized(Handle<Object> object) const;
+  bool ObjectMayBeUninitialized(Object object) const;
+  bool ObjectMayBeUninitialized(HeapObject object) const;
 
  private:
   friend class HeapObjectRef;
   friend class ObjectRef;
   friend class ObjectData;
   friend class PropertyCellData;
-
-  // If this returns false, the object is guaranteed to be fully initialized and
-  // thus safe to read from a memory safety perspective. The converse does not
-  // necessarily hold.
-  bool ObjectMayBeUninitialized(Handle<Object> object) const;
-  bool ObjectMayBeUninitialized(HeapObject object) const;
 
   bool CanUseFeedback(const FeedbackNexus& nexus) const;
   const ProcessedFeedback& NewInsufficientFeedback(FeedbackSlotKind kind) const;

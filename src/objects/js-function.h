@@ -24,6 +24,9 @@ class JSFunctionOrBoundFunction
     : public TorqueGeneratedJSFunctionOrBoundFunction<JSFunctionOrBoundFunction,
                                                       JSObject> {
  public:
+  static const int kLengthDescriptorIndex = 0;
+  static const int kNameDescriptorIndex = 1;
+
   STATIC_ASSERT(kHeaderSize == JSObject::kHeaderSize);
   TQ_OBJECT_CONSTRUCTORS(JSFunctionOrBoundFunction)
 };
@@ -59,9 +62,6 @@ class JSFunction : public JSFunctionOrBoundFunction {
   // can be shared by instances.
   DECL_ACCESSORS(shared, SharedFunctionInfo)
 
-  static const int kLengthDescriptorIndex = 0;
-  static const int kNameDescriptorIndex = 1;
-
   // Fast binding requires length and name accessors.
   static const int kMinDescriptorsForFastBind = 2;
 
@@ -84,9 +84,11 @@ class JSFunction : public JSFunctionOrBoundFunction {
   // optimized code object, or when reading from the background thread.
   // Storing a builtin doesn't require release semantics because these objects
   // are fully initialized.
-  inline Code code() const;
-  inline void set_code(Code code);
+  DECL_ACCESSORS(code, Code)
   DECL_RELEASE_ACQUIRE_ACCESSORS(code, Code)
+
+  // Returns the address of the function code's instruction start.
+  inline Address code_entry_point() const;
 
   // Get the abstract code associated with the function, which will either be
   // a Code object or a BytecodeArray.
@@ -310,6 +312,9 @@ class JSFunction : public JSFunctionOrBoundFunction {
       FieldOffsets::kPrototypeOrInitialMapOffset;
 
  private:
+  DECL_ACCESSORS(raw_code, CodeT)
+  DECL_RELEASE_ACQUIRE_ACCESSORS(raw_code, CodeT)
+
   // JSFunction doesn't have a fixed header size:
   // Hide JSFunctionOrBoundFunction::kHeaderSize to avoid confusion.
   static const int kHeaderSize;

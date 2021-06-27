@@ -111,6 +111,7 @@ enum class RefSerializationKind {
   V(CallHandlerInfo, RefSerializationKind::kNeverSerialized)              \
   V(Cell, RefSerializationKind::kNeverSerialized)                         \
   V(Code, RefSerializationKind::kNeverSerialized)                         \
+  V(CodeDataContainer, RefSerializationKind::kNeverSerialized)            \
   V(Context, RefSerializationKind::kNeverSerialized)                      \
   V(DescriptorArray, RefSerializationKind::kNeverSerialized)              \
   V(FeedbackCell, RefSerializationKind::kNeverSerialized)                 \
@@ -322,13 +323,15 @@ class JSObjectRef : public JSReceiverRef {
   // value can be an uninitialized-sentinel, or if HeapNumber construction must
   // be avoided for some reason. Otherwise, use the higher-level
   // GetOwnFastDataProperty.
-  base::Optional<ObjectRef> RawFastPropertyAt(FieldIndex index) const;
+  base::Optional<ObjectRef> RawInobjectPropertyAt(FieldIndex index) const;
 
   // Return the element at key {index} if {index} is known to be an own data
-  // property of the object that is non-writable and non-configurable.
+  // property of the object that is non-writable and non-configurable. If
+  // {dependencies} is non-null, a dependency will be taken to protect
+  // against inconsistency due to weak memory concurrency.
   base::Optional<ObjectRef> GetOwnConstantElement(
       const FixedArrayBaseRef& elements_ref, uint32_t index,
-      CompilationDependencies* dependencies = nullptr,
+      CompilationDependencies* dependencies,
       SerializationPolicy policy =
           SerializationPolicy::kAssumeSerialized) const;
   // The direct-read implementation of the above, extracted into a helper since
@@ -340,16 +343,21 @@ class JSObjectRef : public JSReceiverRef {
 
   // Return the value of the property identified by the field {index}
   // if {index} is known to be an own data property of the object.
+  // If {dependencies} is non-null, and a property was successfully read,
+  // then the function will take a dependency to check the value of the
+  // property at code finalization time.
   base::Optional<ObjectRef> GetOwnFastDataProperty(
       Representation field_representation, FieldIndex index,
+      CompilationDependencies* dependencies,
       SerializationPolicy policy =
           SerializationPolicy::kAssumeSerialized) const;
 
   // Return the value of the dictionary property at {index} in the dictionary
   // if {index} is known to be an own data property of the object.
-  ObjectRef GetOwnDictionaryProperty(
-      InternalIndex index, SerializationPolicy policy =
-                               SerializationPolicy::kAssumeSerialized) const;
+  base::Optional<ObjectRef> GetOwnDictionaryProperty(
+      InternalIndex index, CompilationDependencies* dependencies,
+      SerializationPolicy policy =
+          SerializationPolicy::kAssumeSerialized) const;
 
   // When concurrent inlining is enabled, reads the elements through a direct
   // relaxed read. This is to ease the transition to unserialized (or
@@ -706,8 +714,6 @@ class V8_EXPORT_PRIVATE MapRef : public HeapObjectRef {
   bool TrySerializePrototype();
   base::Optional<HeapObjectRef> prototype() const;
 
-  void SerializeForElementLoad();
-
   void SerializeForElementStore();
   bool HasOnlyStablePrototypesWithFastElements(
       ZoneVector<MapRef>* prototype_maps);
@@ -911,7 +917,7 @@ class V8_EXPORT_PRIVATE SharedFunctionInfoRef : public HeapObjectRef {
 
   Handle<SharedFunctionInfo> object() const;
 
-  int builtin_id() const;
+  Builtin builtin_id() const;
   int context_header_size() const;
   BytecodeArrayRef GetBytecodeArray() const;
   SharedFunctionInfo::Inlineability GetInlineability() const;
@@ -1042,6 +1048,13 @@ class CodeRef : public HeapObjectRef {
   Handle<Code> object() const;
 
   unsigned GetInlinedBytecodeSize() const;
+};
+
+class CodeDataContainerRef : public HeapObjectRef {
+ public:
+  DEFINE_REF_CONSTRUCTOR(CodeDataContainer, HeapObjectRef)
+
+  Handle<CodeDataContainer> object() const;
 };
 
 class InternalizedStringRef : public StringRef {

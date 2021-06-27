@@ -133,10 +133,6 @@ class NodeObserver;
 class PerIsolateCompilerCache;
 }  // namespace compiler
 
-namespace wasm {
-class WasmEngine;
-}  // namespace wasm
-
 namespace win64_unwindinfo {
 class BuiltinUnwindInfo;
 }  // namespace win64_unwindinfo
@@ -457,7 +453,6 @@ using DebugObjectCache = std::vector<Handle<HeapObject>>;
   V(MicrotaskQueue*, default_microtask_queue, nullptr)                        \
   V(CompilationStatistics*, turbo_statistics, nullptr)                        \
   V(CodeTracer*, code_tracer, nullptr)                                        \
-  V(uint32_t, per_isolate_assert_data, 0xFFFFFFFFu)                           \
   V(PromiseRejectCallback, promise_reject_callback, nullptr)                  \
   V(const v8::StartupData*, snapshot_blob, nullptr)                           \
   V(int, code_and_metadata_size, 0)                                           \
@@ -480,7 +475,13 @@ using DebugObjectCache = std::vector<Handle<HeapObject>>;
   V(int, embedder_wrapper_object_index, -1)                                   \
   V(compiler::NodeObserver*, node_observer, nullptr)                          \
   /* Used in combination with --script-run-delay-once */                      \
-  V(bool, did_run_script_delay, false)
+  V(bool, did_run_script_delay, false)                                        \
+  V(bool, javascript_execution_assert, true)                                  \
+  V(bool, javascript_execution_throws, true)                                  \
+  V(bool, javascript_execution_dump, true)                                    \
+  V(bool, deoptimization_assert, true)                                        \
+  V(bool, compilation_assert, true)                                           \
+  V(bool, no_exception_assert, true)
 
 #define THREAD_LOCAL_TOP_ACCESSOR(type, name)                         \
   inline void set_##name(type v) { thread_local_top()->name##_ = v; } \
@@ -1664,7 +1665,7 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
 
 #if defined(V8_OS_WIN64)
   void SetBuiltinUnwindData(
-      int builtin_index,
+      Builtin builtin,
       const win64_unwindinfo::BuiltinUnwindInfo& unwinding_info);
 #endif  // V8_OS_WIN64
 
@@ -1725,10 +1726,6 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   }
 
 #if V8_ENABLE_WEBASSEMBLY
-  // TODO(wasm): Replace all uses by {WasmEngine::GetWasmEngine}?
-  wasm::WasmEngine* wasm_engine() const { return wasm_engine_; }
-  void SetWasmEngine(wasm::WasmEngine* engine);
-
   void AddSharedWasmMemory(Handle<WasmMemoryObject> memory_object);
 #endif  // V8_ENABLE_WEBASSEMBLY
 
@@ -2178,10 +2175,6 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   size_t total_regexp_code_generated_ = 0;
 
   size_t elements_deletion_counter_ = 0;
-
-#if V8_ENABLE_WEBASSEMBLY
-  wasm::WasmEngine* wasm_engine_ = nullptr;
-#endif  // V8_ENABLE_WEBASSEMBLY
 
   std::unique_ptr<TracingCpuProfilerImpl> tracing_cpu_profiler_;
 

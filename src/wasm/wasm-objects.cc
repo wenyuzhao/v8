@@ -5,6 +5,7 @@
 #include "src/wasm/wasm-objects.h"
 
 #include "src/base/iterator.h"
+#include "src/base/vector.h"
 #include "src/codegen/assembler-inl.h"
 #include "src/codegen/code-factory.h"
 #include "src/compiler/wasm-compiler.h"
@@ -16,7 +17,6 @@
 #include "src/objects/struct-inl.h"
 #include "src/trap-handler/trap-handler.h"
 #include "src/utils/utils.h"
-#include "src/utils/vector.h"
 #include "src/wasm/jump-table-assembler.h"
 #include "src/wasm/module-compiler.h"
 #include "src/wasm/module-decoder.h"
@@ -190,24 +190,25 @@ Handle<WasmModuleObject> WasmModuleObject::New(
 Handle<String> WasmModuleObject::ExtractUtf8StringFromModuleBytes(
     Isolate* isolate, Handle<WasmModuleObject> module_object,
     wasm::WireBytesRef ref, InternalizeString internalize) {
-  Vector<const uint8_t> wire_bytes =
+  base::Vector<const uint8_t> wire_bytes =
       module_object->native_module()->wire_bytes();
   return ExtractUtf8StringFromModuleBytes(isolate, wire_bytes, ref,
                                           internalize);
 }
 
 Handle<String> WasmModuleObject::ExtractUtf8StringFromModuleBytes(
-    Isolate* isolate, Vector<const uint8_t> wire_bytes, wasm::WireBytesRef ref,
-    InternalizeString internalize) {
-  Vector<const uint8_t> name_vec =
+    Isolate* isolate, base::Vector<const uint8_t> wire_bytes,
+    wasm::WireBytesRef ref, InternalizeString internalize) {
+  base::Vector<const uint8_t> name_vec =
       wire_bytes.SubVector(ref.offset(), ref.end_offset());
   // UTF8 validation happens at decode time.
   DCHECK(unibrow::Utf8::ValidateEncoding(name_vec.begin(), name_vec.length()));
   auto* factory = isolate->factory();
   return internalize
              ? factory->InternalizeUtf8String(
-                   Vector<const char>::cast(name_vec))
-             : factory->NewStringFromUtf8(Vector<const char>::cast(name_vec))
+                   base::Vector<const char>::cast(name_vec))
+             : factory
+                   ->NewStringFromUtf8(base::Vector<const char>::cast(name_vec))
                    .ToHandleChecked();
 }
 
@@ -232,9 +233,10 @@ MaybeHandle<String> WasmModuleObject::GetFunctionNameOrNull(
                                           kNoInternalize);
 }
 
-Vector<const uint8_t> WasmModuleObject::GetRawFunctionName(int func_index) {
+base::Vector<const uint8_t> WasmModuleObject::GetRawFunctionName(
+    int func_index) {
   if (func_index == wasm::kAnonymousFuncIndex) {
-    return Vector<const uint8_t>({nullptr, 0});
+    return base::Vector<const uint8_t>({nullptr, 0});
   }
   DCHECK_GT(module()->functions.size(), func_index);
   wasm::ModuleWireBytes wire_bytes(native_module()->wire_bytes());
@@ -242,7 +244,7 @@ Vector<const uint8_t> WasmModuleObject::GetRawFunctionName(int func_index) {
       module()->lazily_generated_names.LookupFunctionName(wire_bytes,
                                                           func_index);
   wasm::WasmName name = wire_bytes.GetNameOrNull(name_ref);
-  return Vector<const uint8_t>::cast(name);
+  return base::Vector<const uint8_t>::cast(name);
 }
 
 Handle<WasmTableObject> WasmTableObject::New(
@@ -622,8 +624,7 @@ void WasmTableObject::UpdateDispatchTables(
     if (wasm_code == nullptr) {
       wasm::WasmCodeRefScope code_ref_scope;
       wasm::WasmImportWrapperCache::ModificationScope cache_scope(cache);
-      wasm_code = compiler::CompileWasmCapiCallWrapper(isolate->wasm_engine(),
-                                                       native_module, &sig);
+      wasm_code = compiler::CompileWasmCapiCallWrapper(native_module, &sig);
       wasm::WasmImportWrapperCache::CacheKey key(kind, &sig, param_count);
       cache_scope[key] = wasm_code;
       wasm_code->IncRef();
@@ -1481,7 +1482,7 @@ WasmInstanceObject::GetOrCreateWasmExternalFunction(
     // later use.
     wrapper = wasm::JSToWasmWrapperCompilationUnit::CompileJSToWasmWrapper(
         isolate, function.sig, instance->module(), function.imported);
-    module_object->export_wrappers().set(wrapper_index, *wrapper);
+    module_object->export_wrappers().set(wrapper_index, ToCodeT(*wrapper));
   }
   result = Handle<WasmExternalFunction>::cast(WasmExportedFunction::New(
       isolate, instance, function_index,
@@ -1542,7 +1543,7 @@ void WasmInstanceObject::ImportWasmJSFunctionIntoTable(
                            .internal_formal_parameter_count();
     }
     wasm::WasmCompilationResult result = compiler::CompileWasmImportCallWrapper(
-        isolate->wasm_engine(), &env, kind, sig, false, expected_arity);
+        &env, kind, sig, false, expected_arity);
     std::unique_ptr<wasm::WasmCode> wasm_code = native_module->AddCode(
         result.func_index, result.code_desc, result.frame_slot_count,
         result.tagged_parameter_slots,
@@ -1612,7 +1613,7 @@ wasm::WasmValue WasmInstanceObject::GetGlobalValue(
   switch (global.type.kind()) {
 #define CASE_TYPE(valuetype, ctype) \
   case wasm::valuetype:             \
-    return wasm::WasmValue(base::ReadLittleEndianValue<ctype>(ptr));
+    return wasm::WasmValue(base::ReadUnalignedValue<ctype>(ptr));
     FOREACH_WASMVALUE_CTYPES(CASE_TYPE)
 #undef CASE_TYPE
     default:
@@ -1628,7 +1629,7 @@ wasm::WasmValue WasmStruct::GetFieldValue(uint32_t index) {
   switch (field_type.kind()) {
 #define CASE_TYPE(valuetype, ctype) \
   case wasm::valuetype:             \
-    return wasm::WasmValue(base::ReadLittleEndianValue<ctype>(field_address));
+    return wasm::WasmValue(base::ReadUnalignedValue<ctype>(field_address));
     CASE_TYPE(kI8, int8_t)
     CASE_TYPE(kI16, int16_t)
     FOREACH_WASMVALUE_CTYPES(CASE_TYPE)
@@ -1658,7 +1659,7 @@ wasm::WasmValue WasmArray::GetElement(uint32_t index) {
   switch (element_type.kind()) {
 #define CASE_TYPE(value_type, ctype) \
   case wasm::value_type:             \
-    return wasm::WasmValue(base::ReadLittleEndianValue<ctype>(element_address));
+    return wasm::WasmValue(base::ReadUnalignedValue<ctype>(element_address));
     CASE_TYPE(kI8, int8_t)
     CASE_TYPE(kI16, int16_t)
     FOREACH_WASMVALUE_CTYPES(CASE_TYPE)
@@ -1683,6 +1684,12 @@ ObjectSlot WasmArray::ElementSlot(uint32_t index) {
   DCHECK_LE(index, length());
   DCHECK(type()->element_type().is_reference());
   return RawField(kHeaderSize + kTaggedSize * index);
+}
+
+Address WasmArray::ElementAddress(uint32_t index) {
+  DCHECK_LE(index, length());
+  return ptr() + WasmArray::kHeaderSize +
+         index * type()->element_type().element_size_bytes() - kHeapObjectTag;
 }
 
 // static
@@ -1851,8 +1858,9 @@ uint32_t WasmExceptionPackage::GetEncodedSize(
 bool WasmExportedFunction::IsWasmExportedFunction(Object object) {
   if (!object.IsJSFunction()) return false;
   JSFunction js_function = JSFunction::cast(object);
-  if (CodeKind::JS_TO_WASM_FUNCTION != js_function.code().kind() &&
-      js_function.code().builtin_index() != Builtin::kGenericJSToWasmWrapper) {
+  Code code = js_function.code();
+  if (CodeKind::JS_TO_WASM_FUNCTION != code.kind() &&
+      code.builtin_id() != Builtin::kGenericJSToWasmWrapper) {
     return false;
   }
   DCHECK(js_function.shared().HasWasmExportedFunctionData());
@@ -1886,7 +1894,7 @@ Handle<WasmCapiFunction> WasmCapiFunction::New(
   Handle<WasmCapiFunctionData> fun_data =
       isolate->factory()->NewWasmCapiFunctionData(
           call_target, embedder_data,
-          isolate->builtins()->builtin_handle(Builtin::kIllegal),
+          isolate->builtins()->code_handle(Builtin::kIllegal),
           serialized_signature);
   Handle<SharedFunctionInfo> shared =
       isolate->factory()->NewSharedFunctionInfoForWasmCapiFunction(fun_data);
@@ -1908,7 +1916,7 @@ Handle<WasmExportedFunction> WasmExportedFunction::New(
     int arity, Handle<Code> export_wrapper) {
   DCHECK(CodeKind::JS_TO_WASM_FUNCTION == export_wrapper->kind() ||
          (export_wrapper->is_builtin() &&
-          export_wrapper->builtin_index() == Builtin::kGenericJSToWasmWrapper));
+          export_wrapper->builtin_id() == Builtin::kGenericJSToWasmWrapper));
   int num_imported_functions = instance->module()->num_imported_functions;
   Handle<Object> ref =
       func_index >= num_imported_functions
@@ -1933,11 +1941,11 @@ Handle<WasmExportedFunction> WasmExportedFunction::New(
   }
   Handle<String> name;
   if (!maybe_name.ToHandle(&name)) {
-    EmbeddedVector<char, 16> buffer;
+    base::EmbeddedVector<char, 16> buffer;
     int length = SNPrintF(buffer, "%d", func_index);
     name = factory
                ->NewStringFromOneByte(
-                   Vector<uint8_t>::cast(buffer.SubVector(0, length)))
+                   base::Vector<uint8_t>::cast(buffer.SubVector(0, length)))
                .ToHandleChecked();
   }
   Handle<Map> function_map;
@@ -2012,7 +2020,7 @@ std::unique_ptr<char[]> WasmExportedFunction::GetDebugName(
   constexpr const char kPrefix[] = "js-to-wasm:";
   // prefix + parameters + delimiter + returns + zero byte
   size_t len = strlen(kPrefix) + sig->all().size() + 2;
-  auto buffer = OwnedVector<char>::New(len);
+  auto buffer = base::OwnedVector<char>::New(len);
   memcpy(buffer.start(), kPrefix, strlen(kPrefix));
   PrintSignature(buffer.as_vector() + strlen(kPrefix), sig);
   return buffer.ReleaseData();

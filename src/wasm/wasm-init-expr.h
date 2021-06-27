@@ -34,6 +34,7 @@ class WasmInitExpr {
     kRefNullConst,
     kRefFuncConst,
     kStructNewWithRtt,
+    kArrayInit,
     kRttCanon,
     kRttSub,
     kRttFreshSub,
@@ -63,7 +64,7 @@ class WasmInitExpr {
     immediate_.f64_const = v;
   }
   explicit WasmInitExpr(uint8_t v[kSimd128Size]) : kind_(kS128Const) {
-    base::Memcpy(immediate_.s128_const.data(), v, kSimd128Size);
+    memcpy(immediate_.s128_const.data(), v, kSimd128Size);
   }
 
   MOVE_ONLY_NO_DEFAULT_CONSTRUCTOR(WasmInitExpr);
@@ -93,6 +94,15 @@ class WasmInitExpr {
                                        std::vector<WasmInitExpr> elements) {
     WasmInitExpr expr;
     expr.kind_ = kStructNewWithRtt;
+    expr.immediate_.index = index;
+    expr.operands_ = std::move(elements);
+    return expr;
+  }
+
+  static WasmInitExpr ArrayInit(uint32_t index,
+                                std::vector<WasmInitExpr> elements) {
+    WasmInitExpr expr;
+    expr.kind_ = kArrayInit;
     expr.immediate_.index = index;
     expr.operands_ = std::move(elements);
     return expr;
@@ -149,6 +159,13 @@ class WasmInitExpr {
       case kStructNewWithRtt:
         if (immediate().index != other.immediate().index) return false;
         DCHECK_EQ(operands().size(), other.operands().size());
+        for (uint32_t i = 0; i < operands().size(); i++) {
+          if (operands()[i] != other.operands()[i]) return false;
+        }
+        return true;
+      case kArrayInit:
+        if (immediate().index != other.immediate().index) return false;
+        if (operands().size() != other.operands().size()) return false;
         for (uint32_t i = 0; i < operands().size(); i++) {
           if (operands()[i] != other.operands()[i]) return false;
         }

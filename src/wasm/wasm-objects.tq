@@ -22,7 +22,8 @@ extern class WasmFunctionData extends Foreign {
   // the module's imported_function_refs array.
   ref: WasmInstanceObject|Tuple2;
   // Used for calling this function from JavaScript.
-  wrapper_code: Code;
+  @if(V8_EXTERNAL_CODE_SPACE) wrapper_code: CodeDataContainer;
+  @ifnot(V8_EXTERNAL_CODE_SPACE) wrapper_code: Code;
 }
 
 extern class WasmExportedFunctionData extends WasmFunctionData {
@@ -32,12 +33,14 @@ extern class WasmExportedFunctionData extends WasmFunctionData {
   wrapper_budget: Smi;
   // The remaining fields are for fast calling from C++. The contract is
   // that they are lazily populated, and either all will be present or none.
-  c_wrapper_code: Object;
+  @if(V8_EXTERNAL_CODE_SPACE) c_wrapper_code: CodeDataContainer;
+  @ifnot(V8_EXTERNAL_CODE_SPACE) c_wrapper_code: Code;
   packed_args_size: Smi;
 }
 
 extern class WasmJSFunctionData extends WasmFunctionData {
-  wasm_to_js_wrapper_code: Code;
+  @if(V8_EXTERNAL_CODE_SPACE) wasm_to_js_wrapper_code: CodeDataContainer;
+  @ifnot(V8_EXTERNAL_CODE_SPACE) wasm_to_js_wrapper_code: Code;
   serialized_return_count: Smi;
   serialized_parameter_count: Smi;
   serialized_signature: PodArrayOfWasmValueType;

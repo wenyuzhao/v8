@@ -220,18 +220,16 @@ BreakIterator::BreakIterator(Handle<DebugInfo> debug_info)
 }
 
 int BreakIterator::BreakIndexFromPosition(int source_position) {
-  int first_break = break_index();
-  bool first = true;
-  while (!Done()) {
-    int next_position = position();
-    if (source_position == next_position) return break_index();
-    if (source_position <= next_position && first) {
-      first_break = break_index();
-      first = false;
+  for (; !Done(); Next()) {
+    if (source_position <= position()) {
+      int first_break = break_index();
+      for (; !Done(); Next()) {
+        if (source_position == position()) return break_index();
+      }
+      return first_break;
     }
-    Next();
   }
-  return first_break;
+  return break_index();
 }
 
 void BreakIterator::Next() {
@@ -311,6 +309,7 @@ BreakLocation BreakIterator::GetBreakLocation() {
       AbstractCode::cast(debug_info_->DebugBytecodeArray()), isolate());
   DebugBreakType type = GetDebugBreakType();
   int generator_object_reg_index = -1;
+  int generator_suspend_id = -1;
   if (type == DEBUG_BREAK_SLOT_AT_SUSPEND) {
     // For suspend break, we'll need the generator object to be able to step
     // over the suspend as if it didn't return. We get the interpreter register
@@ -325,9 +324,13 @@ BreakLocation BreakIterator::GetBreakLocation() {
               interpreter::Bytecode::kSuspendGenerator);
     interpreter::Register generator_obj_reg = iterator.GetRegisterOperand(0);
     generator_object_reg_index = generator_obj_reg.index();
+
+    // Also memorize the suspend ID, to be able to decide whether
+    // we are paused on the implicit initial yield later.
+    generator_suspend_id = iterator.GetUnsignedImmediateOperand(3);
   }
   return BreakLocation(code, type, code_offset(), position_,
-                       generator_object_reg_index);
+                       generator_object_reg_index, generator_suspend_id);
 }
 
 Isolate* BreakIterator::isolate() { return debug_info_->GetIsolate(); }
@@ -510,8 +513,12 @@ void Debug::Break(JavaScriptFrame* frame, Handle<JSFunction> break_target) {
       V8_FALLTHROUGH;
     case StepInto: {
       // Special case StepInto and StepOver for generators that are about to
-      // suspend.
-      if (location.IsSuspend()) {
+      // suspend, in which case we go into "generator stepping" mode. The
+      // exception here is the initial implicit yield in generators (which
+      // always has a suspend ID of 0), where we return to the caller first,
+      // instead of triggering "generator stepping" mode straight away.
+      if (location.IsSuspend() && (!IsGeneratorFunction(shared->kind()) ||
+                                   location.generator_suspend_id() > 0)) {
         DCHECK(!has_suspended_generator());
         thread_local_.suspended_generator_ =
             location.GetGeneratorObjectForSuspendedFrame(frame);
@@ -1065,7 +1072,9 @@ void Debug::PrepareStep(StepAction step_action) {
     // Any step at a return is a step-out, and a step-out at a suspend behaves
     // like a return.
     if (location.IsReturn() ||
-        (location.IsSuspend() && step_action == StepOut)) {
+        (location.IsSuspend() &&
+         (step_action == StepOut || (IsGeneratorFunction(shared->kind()) &&
+                                     location.generator_suspend_id() == 0)))) {
       // On StepOut we'll ignore our further calls to current function in
       // PrepareStepIn callback.
       if (last_step_action() == StepOut) {
@@ -1254,15 +1263,15 @@ class DiscardBaselineCodeVisitor : public ThreadVisitor {
         // we deoptimized in the debugger and are stepping into it.
         JavaScriptFrame* frame = it.frame();
         Address pc = frame->pc();
-        Builtin builtin_index = InstructionStream::TryLookupCode(isolate, pc);
-        if (builtin_index == Builtin::kBaselineEnterAtBytecode ||
-            builtin_index == Builtin::kBaselineEnterAtNextBytecode) {
+        Builtin builtin = InstructionStream::TryLookupCode(isolate, pc);
+        if (builtin == Builtin::kBaselineEnterAtBytecode ||
+            builtin == Builtin::kBaselineEnterAtNextBytecode) {
           Address* pc_addr = frame->pc_address();
-          Builtin advance = builtin_index == Builtin::kBaselineEnterAtBytecode
+          Builtin advance = builtin == Builtin::kBaselineEnterAtBytecode
                                 ? Builtin::kInterpreterEnterAtBytecode
                                 : Builtin::kInterpreterEnterAtNextBytecode;
           Address advance_pc =
-              isolate->builtins()->builtin(advance).InstructionStart();
+              isolate->builtins()->code(advance).InstructionStart();
           PointerAuthentication::ReplacePC(pc_addr, advance_pc,
                                            kSystemPointerSize);
         }

@@ -74,18 +74,6 @@ Reduction JSIntrinsicLowering::Reduce(Node* node) {
       return ReduceAsyncGeneratorYield(node);
     case Runtime::kInlineGeneratorGetResumeMode:
       return ReduceGeneratorGetResumeMode(node);
-    case Runtime::kInlineIsArray:
-      return ReduceIsInstanceType(node, JS_ARRAY_TYPE);
-    case Runtime::kInlineIsJSReceiver:
-      return ReduceIsJSReceiver(node);
-    case Runtime::kInlineIsSmi:
-      return ReduceIsSmi(node);
-    case Runtime::kInlineToLength:
-      return ReduceToLength(node);
-    case Runtime::kInlineToObject:
-      return ReduceToObject(node);
-    case Runtime::kInlineCall:
-      return ReduceCall(node);
     case Runtime::kInlineIncBlockCounter:
       return ReduceIncBlockCounter(node);
     case Runtime::kInlineGetImportMetaObject:
@@ -271,10 +259,6 @@ Reduction JSIntrinsicLowering::ReduceIsJSReceiver(Node* node) {
   return Change(node, simplified()->ObjectIsReceiver());
 }
 
-
-Reduction JSIntrinsicLowering::ReduceIsSmi(Node* node) {
-  return Change(node, simplified()->ObjectIsSmi());
-}
 
 Reduction JSIntrinsicLowering::ReduceTurbofanStaticAssert(Node* node) {
   if (FLAG_always_opt) {

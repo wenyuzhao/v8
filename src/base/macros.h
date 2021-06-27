@@ -105,7 +105,7 @@ V8_INLINE Dest bit_cast(Source const& source) {
   static_assert(sizeof(Dest) == sizeof(Source),
                 "source and dest must be same size");
   Dest dest;
-  v8::base::Memcpy(&dest, &source, sizeof(dest));
+  memcpy(&dest, &source, sizeof(dest));
   return dest;
 }
 
@@ -421,5 +421,10 @@ bool is_inbounds(float_t v) {
 #else
 #define IF_TSAN(V, ...)
 #endif  // V8_ENABLE_WEBASSEMBLY
+
+#ifdef GOOGLE3
+// Disable FRIEND_TEST macro in Google3.
+#define FRIEND_TEST(test_case_name, test_name)
+#endif
 
 #endif  // V8_BASE_MACROS_H_

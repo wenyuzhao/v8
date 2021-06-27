@@ -137,7 +137,7 @@
   'regress/regress-605470': [PASS, SLOW],
   'regress/regress-655573': [PASS, SLOW],
   'regress/regress-1200351': [PASS, SLOW],
-  'regress/regress-crbug-808192': [PASS, SLOW, NO_VARIANTS, ['arch not in (ia32, x64)', SKIP]],
+  'regress/regress-crbug-808192': [PASS, SLOW, NO_VARIANTS, ['arch not in (ia32, x64)', SKIP], ['tsan', SKIP]],
   'regress/regress-crbug-918301': [PASS, SLOW, NO_VARIANTS, ['mode != release or dcheck_always_on', SKIP], ['(arch == arm or arch == arm64) and simulator_run', SKIP], ['tsan', SKIP]],
   'regress/wasm/regress-810973': [PASS, SLOW],
   'sealed-array-reduce': [PASS, SLOW],
@@ -175,6 +175,10 @@
 
   # Needs to be adapted after changes to Function constructor. chromium:1065094
   'cross-realm-filtering': [SKIP],
+
+  # Re-enable again with dynamic map checks. (https://crbug.com/v8/9684)
+  'const-field-tracking-2': [SKIP],
+  'regress/regress-1141502': [SKIP],
 
   # Tests that need to run sequentially (e.g. due to memory consumption).
   'compiler/array-subclass': [PASS, HEAVY],
@@ -630,6 +634,8 @@
   'regress/regress-500980': [PASS, SLOW],
   'regress/regress-crbug-941743': [PASS, SLOW],
   'wasm/shared-memory-worker-stress': [PASS, SLOW],
+  # https://crbug.com/v8/11780 - Flakily times out on TSAN.
+  'wasm/memory_1gb_oob': [PASS, SLOW],
 
   # BUG(v8:9506): times out.
   'wasm/shared-memory-worker-explicit-gc-stress': [SKIP],
@@ -994,6 +1000,9 @@
 
   # https://crbug.com/v8/9984
   'compiler/opt-higher-order-functions': [SKIP],
+
+  # BUG(v8:11656) Skipped until we make progress on NumFuzz.
+  'baseline/test-osr': [SKIP],
 }],  # 'deopt_fuzzer'
 
 ##############################################################################
@@ -1027,9 +1036,11 @@
   'compiler/serializer-transition-propagation': [SKIP],
   'opt-elements-kind': [SKIP],
   'regress/regress-trap-allocation-memento': [SKIP],
-  'regress/regress-v8-9267-*': [SKIP],
+  'regress/regrtoess-v8-9267-*': [SKIP],
   'shared-function-tier-up-turbo': [SKIP],
 
+  # BUG(v8:11656) Skipped until we make progress on NumFuzz.
+  'baseline/test-osr': [SKIP],
 }],  # 'gc_fuzzer'
 
 ##############################################################################
@@ -1075,10 +1086,12 @@
   'regress/regress-356053': [SKIP],
   'regress/regress-embedded-cons-string': [SKIP],
 
-  # Intentionally non-deterministic using shared arraybuffers.
+  # Intentionally non-deterministic using shared arraybuffers between workers.
   'wasm/atomics-stress': [SKIP],
   'wasm/atomics64-stress': [SKIP],
   'wasm/futex': [SKIP],
+  'regress/regress-1205290': [SKIP],
+  'regress/regress-1212404': [SKIP],
   'regress/wasm/regress-1067621': [SKIP],
 
   # BUG(v8:9975).
@@ -1239,6 +1252,7 @@
 # TODO(clemensb): Implement on all other platforms (crbug.com/v8/6600).
 ['arch not in (x64, ia32, arm64, arm)', {
   'wasm/liftoff': [SKIP],
+  'wasm/liftoff-debug': [SKIP],
   'wasm/tier-up-testing-flag': [SKIP],
   'wasm/tier-down-to-liftoff': [SKIP],
   'wasm/wasm-dynamic-tiering': [SKIP],
@@ -1299,16 +1313,18 @@
   'compiler/field-representation-tracking': [SKIP],
   'field-type-tracking': [SKIP],
 
-  # We don't migrate deprecated maps with dynamic map checks. This will be
-  # fixed in a later cl.
-  # TODO(mythria): Reenable this when the cl that migrates deprecated maps
-  # lands
-  'regress/regress-932953': [FAIL],
-
   # Tests failing for the lack of function context specialization in Turboprop.
   'compiler/abstract-equal-receiver': [FAIL],
   'compiler/constant-fold-cow-array': [FAIL],
   'compiler/promise-resolve-stable-maps': [FAIL],
+
+  # Tests failing due to reduced constant propagation in Turboprop.
+  'compiler/js-create-arguments': [FAIL],
+  'compiler/catch-block-load': [FAIL],
+  'compiler/construct-bound-function': [FAIL],
+  'compiler/construct-object': [FAIL],
+  'compiler/construct-receiver': [FAIL],
+  'compiler/js-create': [FAIL],
 }],  # variant == turboprop or variant = turboprop_as_toptier
 
 ##############################################################################
@@ -1476,7 +1492,7 @@
 
 ##############################################################################
 # TODO(v8:11421): Port baseline compiler to other architectures.
-['arch not in (x64, arm64, ia32, arm)', {
+['arch not in (x64, arm64, ia32, arm, mips64el, mipsel)', {
   'baseline/*': [SKIP],
 }],
 

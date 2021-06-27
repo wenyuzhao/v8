@@ -9,7 +9,7 @@
 #include "src/execution/frames.h"
 #include "src/execution/isolate-inl.h"
 #include "src/execution/vm-state-inl.h"
-#include "src/logging/counters.h"
+#include "src/logging/runtime-call-stats-scope.h"
 
 #if V8_ENABLE_WEBASSEMBLY
 #include "src/compiler/wasm-compiler.h"  // Only for static asserts.
@@ -526,7 +526,7 @@ STATIC_ASSERT(offsetof(StackHandlerMarker, padding) ==
 STATIC_ASSERT(sizeof(StackHandlerMarker) == StackHandlerConstants::kSize);
 
 #if V8_ENABLE_WEBASSEMBLY
-void Execution::CallWasm(Isolate* isolate, Handle<Code> wrapper_code,
+void Execution::CallWasm(Isolate* isolate, Handle<CodeT> wrapper_code,
                          Address wasm_call_target, Handle<Object> object_ref,
                          Address packed_args) {
   using WasmEntryStub = GeneratedCode<Address(

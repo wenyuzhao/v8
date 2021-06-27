@@ -13,6 +13,7 @@ namespace v8 {
 namespace bigint {
 
 constexpr int kKaratsubaThreshold = 34;
+constexpr int kBurnikelThreshold = 57;
 
 class ProcessorImpl : public Processor {
  public:
@@ -30,7 +31,19 @@ class ProcessorImpl : public Processor {
   void KaratsubaChunk(RWDigits Z, Digits X, Digits Y, RWDigits scratch);
   void KaratsubaMain(RWDigits Z, Digits X, Digits Y, RWDigits scratch, int n);
 
- private:
+  void Divide(RWDigits Q, Digits A, Digits B);
+  void DivideSingle(RWDigits Q, digit_t* remainder, Digits A, digit_t b);
+  void DivideSchoolbook(RWDigits Q, RWDigits R, Digits A, Digits B);
+  void DivideBurnikelZiegler(RWDigits Q, RWDigits R, Digits A, Digits B);
+
+  void Modulo(RWDigits R, Digits A, Digits B);
+
+  // {out_length} initially contains the allocated capacity of {out}, and
+  // upon return will be set to the actual length of the result string.
+  void ToString(char* out, int* out_length, Digits X, int radix, bool sign);
+
+  bool should_terminate() { return status_ == Status::kInterrupted; }
+
   // Each unit is supposed to represent approximately one CPU {mul} instruction.
   // Doesn't need to be accurate; we just want to make sure to check for
   // interrupt requests every now and then (roughly every 10-100 ms; often
@@ -48,8 +61,7 @@ class ProcessorImpl : public Processor {
     }
   }
 
-  bool should_terminate() { return status_ == Status::kInterrupted; }
-
+ private:
   uintptr_t work_estimate_{0};
   Status status_{Status::kOk};
   Platform* platform_;

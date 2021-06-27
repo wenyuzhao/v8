@@ -252,14 +252,137 @@ void LiftoffAssembler::Load(LiftoffRegister dst, Register src_addr,
                             LoadType type, LiftoffRegList pinned,
                             uint32_t* protected_load_pc, bool is_load_mem,
                             bool i64_offset) {
-  bailout(kUnsupportedArchitecture, "Load");
+  if (!i64_offset && offset_reg != no_reg) {
+    ZeroExtWord32(ip, offset_reg);
+    offset_reg = ip;
+  }
+  MemOperand src_op = MemOperand(src_addr, offset_reg, offset_imm);
+  if (protected_load_pc) *protected_load_pc = pc_offset();
+  switch (type.value()) {
+    case LoadType::kI32Load8U:
+    case LoadType::kI64Load8U:
+      LoadU8(dst.gp(), src_op, r0);
+      break;
+    case LoadType::kI32Load8S:
+    case LoadType::kI64Load8S:
+      LoadS8(dst.gp(), src_op, r0);
+      break;
+    case LoadType::kI32Load16U:
+    case LoadType::kI64Load16U:
+      if (is_load_mem) {
+        LoadU16LE(dst.gp(), src_op, r0);
+      } else {
+        LoadU16(dst.gp(), src_op, r0);
+      }
+      break;
+    case LoadType::kI32Load16S:
+    case LoadType::kI64Load16S:
+      if (is_load_mem) {
+        LoadS16LE(dst.gp(), src_op, r0);
+      } else {
+        LoadS16(dst.gp(), src_op, r0);
+      }
+      break;
+    case LoadType::kI64Load32U:
+      if (is_load_mem) {
+        LoadU32LE(dst.gp(), src_op, r0);
+      } else {
+        LoadU32(dst.gp(), src_op, r0);
+      }
+      break;
+    case LoadType::kI32Load:
+    case LoadType::kI64Load32S:
+      if (is_load_mem) {
+        LoadS32LE(dst.gp(), src_op, r0);
+      } else {
+        LoadS32(dst.gp(), src_op, r0);
+      }
+      break;
+    case LoadType::kI64Load:
+      if (is_load_mem) {
+        LoadU64LE(dst.gp(), src_op, r0);
+      } else {
+        LoadU64(dst.gp(), src_op, r0);
+      }
+      break;
+    case LoadType::kF32Load:
+      if (is_load_mem) {
+        LoadF32LE(dst.fp(), src_op, r0, ip);
+      } else {
+        LoadF32(dst.fp(), src_op, r0);
+      }
+      break;
+    case LoadType::kF64Load:
+      if (is_load_mem) {
+        LoadF64LE(dst.fp(), src_op, r0, ip);
+      } else {
+        LoadF64(dst.fp(), src_op, r0);
+      }
+      break;
+    case LoadType::kS128Load:
+    default:
+      UNREACHABLE();
+  }
 }
 
 void LiftoffAssembler::Store(Register dst_addr, Register offset_reg,
                              uintptr_t offset_imm, LiftoffRegister src,
                              StoreType type, LiftoffRegList pinned,
                              uint32_t* protected_store_pc, bool is_store_mem) {
-  bailout(kUnsupportedArchitecture, "Store");
+  MemOperand dst_op =
+      MemOperand(dst_addr, offset_reg, offset_imm);
+  if (protected_store_pc) *protected_store_pc = pc_offset();
+  switch (type.value()) {
+    case StoreType::kI32Store8:
+    case StoreType::kI64Store8:
+      StoreU8(src.gp(), dst_op, r0);
+      break;
+    case StoreType::kI32Store16:
+    case StoreType::kI64Store16:
+      if (is_store_mem) {
+        StoreU16LE(src.gp(), dst_op, r0);
+      } else {
+        StoreU16(src.gp(), dst_op, r0);
+      }
+      break;
+    case StoreType::kI32Store:
+    case StoreType::kI64Store32:
+      if (is_store_mem) {
+        StoreU32LE(src.gp(), dst_op, r0);
+      } else {
+        StoreU32(src.gp(), dst_op, r0);
+      }
+      break;
+    case StoreType::kI64Store:
+      if (is_store_mem) {
+        StoreU64LE(src.gp(), dst_op, r0);
+      } else {
+        StoreU64(src.gp(), dst_op, r0);
+      }
+      break;
+    case StoreType::kF32Store:
+      if (is_store_mem) {
+        Register scratch2 = GetUnusedRegister(kGpReg, pinned).gp();
+        StoreF32LE(src.fp(), dst_op, r0, scratch2);
+      } else {
+        StoreF32(src.fp(), dst_op, r0);
+      }
+      break;
+    case StoreType::kF64Store:
+      if (is_store_mem) {
+        Register scratch2 = GetUnusedRegister(kGpReg, pinned).gp();
+        StoreF64LE(src.fp(), dst_op, r0, scratch2);
+      } else {
+        StoreF64(src.fp(), dst_op, r0);
+      }
+      break;
+    case StoreType::kS128Store: {
+      bailout(kUnsupportedArchitecture, "SIMD");
+      break;
+    }
+    default:
+      UNREACHABLE();
+  }
 }
 
 void LiftoffAssembler::AtomicLoad(LiftoffRegister dst, Register src_addr,
@@ -323,13 +446,78 @@ void LiftoffAssembler::AtomicFence() { sync(); }
 void LiftoffAssembler::LoadCallerFrameSlot(LiftoffRegister dst,
                                            uint32_t caller_slot_idx,
                                            ValueKind kind) {
-  bailout(kUnsupportedArchitecture, "LoadCallerFrameSlot");
+  int32_t offset = (caller_slot_idx + 1) * kSystemPointerSize;
+  switch (kind) {
+    case kI32: {
+#if defined(V8_TARGET_BIG_ENDIAN)
+      LoadS32(dst.gp(), MemOperand(fp, offset + 4), r0);
+      break;
+#else
+      LoadS32(dst.gp(), MemOperand(fp, offset), r0);
+      break;
+#endif
+    }
+    case kRef:
+    case kRtt:
+    case kOptRef:
+    case kRttWithDepth:
+    case kI64: {
+      LoadU64(dst.gp(), MemOperand(fp, offset), r0);
+      break;
+    }
+    case kF32: {
+      LoadF32(dst.fp(), MemOperand(fp, offset), r0);
+      break;
+    }
+    case kF64: {
+      LoadF64(dst.fp(), MemOperand(fp, offset), r0);
+      break;
+    }
+    case kS128: {
+      bailout(kSimd, "simd load");
+      break;
+    }
+    default:
+      UNREACHABLE();
+  }
 }
 
 void LiftoffAssembler::StoreCallerFrameSlot(LiftoffRegister src,
                                             uint32_t caller_slot_idx,
                                             ValueKind kind) {
-  bailout(kUnsupportedArchitecture, "StoreCallerFrameSlot");
+  int32_t offset = (caller_slot_idx + 1) * kSystemPointerSize;
+  switch (kind) {
+    case kI32: {
+#if defined(V8_TARGET_BIG_ENDIAN)
+      StoreU32(src.gp(), MemOperand(fp, offset + 4), r0);
+      break;
+#else
+      StoreU32(src.gp(), MemOperand(fp, offset), r0);
+      break;
+#endif
+    }
+    case kRef:
+    case kRtt:
+    case kOptRef:
+    case kI64: {
+      StoreU64(src.gp(), MemOperand(fp, offset), r0);
+      break;
+    }
+    case kF32: {
+      StoreF32(src.fp(), MemOperand(fp, offset), r0);
+      break;
+    }
+    case kF64: {
+      StoreF64(src.fp(), MemOperand(fp, offset), r0);
+      break;
+    }
+    case kS128: {
+      bailout(kSimd, "simd load");
+      break;
+    }
+    default:
+      UNREACHABLE();
+  }
 }
 
 void LiftoffAssembler::LoadReturnStackSlot(LiftoffRegister dst, int offset,
@@ -1983,6 +2171,11 @@ void LiftoffAssembler::DeallocateStackSlot(uint32_t size) {
 }
 
 void LiftoffAssembler::MaybeOSR() {}
+
+void LiftoffAssembler::emit_set_if_nan(Register dst, DoubleRegister src,
+                                       ValueKind kind) {
+  UNIMPLEMENTED();
+}
 
 void LiftoffStackSlots::Construct(int param_slots) {
   asm_->bailout(kUnsupportedArchitecture, "LiftoffStackSlots::Construct");

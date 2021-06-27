@@ -59,9 +59,6 @@
   'language/expressions/assignment/S11.13.1_A5*': [FAIL],
   'language/expressions/assignment/S11.13.1_A6*': [FAIL],
 
-  # https://bugs.chromium.org/p/v8/issues/detail?id=4709
-  'language/expressions/assignment/fn-name-lhs-cover': [FAIL],
-
   # https://code.google.com/p/v8/issues/detail?id=4251
   'language/expressions/postfix-increment/S11.3.1_A5_T1': [FAIL],
   'language/expressions/postfix-increment/S11.3.1_A5_T2': [FAIL],
@@ -73,11 +70,6 @@
 
   # https://code.google.com/p/v8/issues/detail?id=10958
   'language/module-code/eval-gtbndng-indirect-faux-assertion': [FAIL],
-
-  # https://code.google.com/p/v8/issues/detail?id=8771
-  'language/computed-property-names/class/static/method-number': [FAIL],
-  'language/computed-property-names/class/static/method-string': [FAIL],
-  'language/computed-property-names/class/static/method-symbol': [FAIL],
 
   # https://bugs.chromium.org/p/v8/issues/detail?id=4895
   # Some TypedArray methods throw due to the same bug, from Get
@@ -594,6 +586,18 @@
 
   ######################## NEEDS INVESTIGATION ###########################
 
+  # https://bugs.chromium.org/p/v8/issues/detail?id=11903
+  'language/import/json-idempotency': [FAIL],
+  'language/import/json-value-array': [FAIL],
+  'language/import/json-value-boolean': [FAIL],
+  'language/import/json-value-null': [FAIL],
+  'language/import/json-value-number': [FAIL],
+  'language/import/json-value-object': [FAIL],
+  'language/import/json-value-string': [FAIL],
+  'language/import/json-via-namespace': [FAIL],
+  'language/import/json-extensibility-array': [FAIL],
+  'language/import/json-extensibility-object': [FAIL],
+
   # https://bugs.chromium.org/p/v8/issues/detail?id=7833
   #
   # Test262 needs to expose CanBlock
@@ -750,6 +754,9 @@
   'built-ins/RegExp/property-escapes/generated/*': [PASS, HEAVY],
   'language/comments/S7.4_A5': [PASS, HEAVY],
   'language/comments/S7.4_A6': [PASS, HEAVY],
+
+  # Times out on TSAN - https://bugs.chromium.org/p/v8/issues/detail?id=11898
+  'intl402/supportedLocalesOf-unicode-extensions-ignored': [SKIP],
 }],  # asan == True or msan == True or tsan == True
 
 ['system == android', {

@@ -27,15 +27,15 @@
 
 #include <stdlib.h>
 
-#include "src/init/v8.h"
-
 #include "src/api/api-inl.h"
+#include "src/base/strings.h"
 #include "src/codegen/compilation-cache.h"
 #include "src/debug/debug-interface.h"
 #include "src/debug/debug.h"
 #include "src/deoptimizer/deoptimizer.h"
 #include "src/execution/frames.h"
 #include "src/execution/microtask-queue.h"
+#include "src/init/v8.h"
 #include "src/objects/objects-inl.h"
 #include "src/snapshot/snapshot.h"
 #include "src/utils/utils.h"
@@ -3256,7 +3256,7 @@ class EmptyExternalStringResource : public v8::String::ExternalStringResource {
   const uint16_t* data() const override { return empty_.begin(); }
 
  private:
-  ::v8::internal::EmbeddedVector<uint16_t, 1> empty_;
+  ::v8::base::EmbeddedVector<uint16_t, 1> empty_;
 };
 
 TEST(DebugScriptLineEndsAreAscending) {
@@ -3694,9 +3694,9 @@ static void TestDebugBreakInLoop(const char* loop_head,
     // Perform a lazy deoptimization after various numbers of breaks
     // have been hit.
 
-    i::EmbeddedVector<char, 1024> buffer;
-    SNPrintF(buffer, "function f() {%s%s%s}", loop_head, loop_bodies[i],
-             loop_tail);
+    v8::base::EmbeddedVector<char, 1024> buffer;
+    v8::base::SNPrintF(buffer, "function f() {%s%s%s}", loop_head,
+                       loop_bodies[i], loop_tail);
 
     i::PrintF("%s\n", buffer.begin());
 
@@ -4486,10 +4486,11 @@ TEST(BuiltinsExceptionPrediction) {
 
   i::Builtins* builtins = iisolate->builtins();
   bool fail = false;
-  for (int i = 0; i < i::Builtins::kBuiltinCount; i++) {
-    i::Code builtin = builtins->builtin(i);
-    if (builtin.kind() != i::CodeKind::BUILTIN) continue;
-    auto prediction = builtin.GetBuiltinCatchPrediction();
+  for (i::Builtin builtin = i::Builtins::kFirst; builtin <= i::Builtins::kLast;
+       ++builtin) {
+    i::Code code = builtins->code(builtin);
+    if (code.kind() != i::CodeKind::BUILTIN) continue;
+    auto prediction = code.GetBuiltinCatchPrediction();
     USE(prediction);
   }
   CHECK(!fail);

@@ -9,10 +9,10 @@
 #ifndef V8_CODEGEN_PPC_MACRO_ASSEMBLER_PPC_H_
 #define V8_CODEGEN_PPC_MACRO_ASSEMBLER_PPC_H_
 
+#include "src/base/numbers/double.h"
 #include "src/codegen/bailout-reason.h"
 #include "src/codegen/ppc/assembler-ppc.h"
 #include "src/common/globals.h"
-#include "src/numbers/double.h"
 #include "src/objects/contexts.h"
 
 namespace v8 {
@@ -138,11 +138,8 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
     mov(kRootRegister, Operand(isolate_root));
   }
 
-  void LoadF64(DoubleRegister dst, const MemOperand& mem,
-               Register scratch = no_reg);
-  void LoadF32(DoubleRegister dst, const MemOperand& mem,
-               Register scratch = no_reg);
-  void LoadDoubleLiteral(DoubleRegister result, Double value, Register scratch);
+  void LoadDoubleLiteral(DoubleRegister result, base::Double value,
+                         Register scratch);
   void LoadSimd128(Simd128Register dst, const MemOperand& mem);
 
   // load a literal signed int value <value> to GPR <dst>
@@ -150,21 +147,8 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   // load an SMI value <value> to GPR <dst>
   void LoadSmiLiteral(Register dst, Smi smi);
 
-  void LoadF32WithUpdate(DoubleRegister dst, const MemOperand& mem,
-                         Register scratch = no_reg);
   void LoadPC(Register dst);
   void ComputeCodeStartAddress(Register dst);
-
-  void StoreDouble(DoubleRegister src, const MemOperand& mem,
-                   Register scratch = no_reg);
-  void StoreDoubleU(DoubleRegister src, const MemOperand& mem,
-                    Register scratch = no_reg);
-
-  void StoreSingle(DoubleRegister src, const MemOperand& mem,
-                   Register scratch = no_reg);
-  void StoreSingleU(DoubleRegister src, const MemOperand& mem,
-                    Register scratch = no_reg);
-  void StoreSimd128(Simd128Register src, const MemOperand& mem);
 
   void Cmpi(Register src1, const Operand& src2, Register scratch,
             CRegister cr = cr7);
@@ -287,6 +271,11 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
 
   void MultiPushV128(RegList dregs, Register location = sp);
   void MultiPopV128(RegList dregs, Register location = sp);
+
+  void MultiPushF64AndV128(RegList dregs, RegList simd_regs,
+                           Register location = sp);
+  void MultiPopF64AndV128(RegList dregs, RegList simd_regs,
+                          Register location = sp);
 
   // Calculate how much stack space (in bytes) are required to store caller
   // registers excluding those specified in the arguments.
@@ -683,9 +672,6 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   void StoreTaggedField(const Register& value,
                         const MemOperand& dst_field_operand,
                         const Register& scratch = no_reg);
-  void StoreTaggedFieldX(const Register& value,
-                         const MemOperand& dst_field_operand,
-                         const Register& scratch = no_reg);
 
   void DecompressTaggedSigned(Register destination, MemOperand field_operand);
   void DecompressTaggedSigned(Register destination, Register src);
@@ -694,10 +680,27 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   void DecompressAnyTagged(Register destination, MemOperand field_operand);
   void DecompressAnyTagged(Register destination, Register source);
 
-  void LoadU64WithUpdate(Register dst, const MemOperand& mem,
+  void LoadF64(DoubleRegister dst, const MemOperand& mem,
+               Register scratch = no_reg);
+  void LoadF32(DoubleRegister dst, const MemOperand& mem,
+               Register scratch = no_reg);
+
+  void StoreF32(DoubleRegister src, const MemOperand& mem,
+                Register scratch = no_reg);
+  void StoreF64(DoubleRegister src, const MemOperand& mem,
+                Register scratch = no_reg);
+
+  void LoadF32WithUpdate(DoubleRegister dst, const MemOperand& mem,
                          Register scratch = no_reg);
-  void StoreU64WithUpdate(Register src, const MemOperand& mem,
+  void LoadF64WithUpdate(DoubleRegister dst, const MemOperand& mem,
+                         Register scratch = no_reg);
+
+  void StoreF32WithUpdate(DoubleRegister src, const MemOperand& mem,
                           Register scratch = no_reg);
+  void StoreF64WithUpdate(DoubleRegister src, const MemOperand& mem,
+                          Register scratch = no_reg);
+
+  void StoreSimd128(Simd128Register src, const MemOperand& mem);
 
   void LoadU64(Register dst, const MemOperand& mem, Register scratch = no_reg);
   void LoadU32(Register dst, const MemOperand& mem, Register scratch = no_reg);
@@ -705,11 +708,37 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   void LoadU16(Register dst, const MemOperand& mem, Register scratch = no_reg);
   void LoadS16(Register dst, const MemOperand& mem, Register scratch = no_reg);
   void LoadU8(Register dst, const MemOperand& mem, Register scratch = no_reg);
+  void LoadS8(Register dst, const MemOperand& mem, Register scratch = no_reg);
 
   void StoreU64(Register src, const MemOperand& mem, Register scratch = no_reg);
   void StoreU32(Register src, const MemOperand& mem, Register scratch);
   void StoreU16(Register src, const MemOperand& mem, Register scratch);
   void StoreU8(Register src, const MemOperand& mem, Register scratch);
+
+  void LoadU64WithUpdate(Register dst, const MemOperand& mem,
+                         Register scratch = no_reg);
+  void StoreU64WithUpdate(Register src, const MemOperand& mem,
+                          Register scratch = no_reg);
+
+  void LoadU64LE(Register dst, const MemOperand& mem, Register scratch);
+  void LoadU32LE(Register dst, const MemOperand& mem, Register scratch);
+  void LoadU16LE(Register dst, const MemOperand& mem, Register scratch);
+  void StoreU64LE(Register src, const MemOperand& mem, Register scratch);
+  void StoreU32LE(Register src, const MemOperand& mem, Register scratch);
+  void StoreU16LE(Register src, const MemOperand& mem, Register scratch);
+
+  void LoadS32LE(Register dst, const MemOperand& mem, Register scratch);
+  void LoadS16LE(Register dst, const MemOperand& mem, Register scratch);
+
+  void LoadF64LE(DoubleRegister dst, const MemOperand& mem, Register scratch,
+                 Register scratch2);
+  void LoadF32LE(DoubleRegister dst, const MemOperand& mem, Register scratch,
+                 Register scratch2);
+
+  void StoreF32LE(DoubleRegister src, const MemOperand& mem, Register scratch,
+                  Register scratch2);
+  void StoreF64LE(DoubleRegister src, const MemOperand& mem, Register scratch,
+                  Register scratch2);
 
  private:
   static const int kSmiShift = kSmiTagSize + kSmiShiftSize;
@@ -747,7 +776,7 @@ class V8_EXPORT_PRIVATE MacroAssembler : public TurboAssembler {
   // The offset is the offset from the start of the object, not the offset from
   // the tagged HeapObject pointer.  For use with FieldMemOperand(reg, off).
   void RecordWriteField(
-      Register object, int offset, Register value, Register scratch,
+      Register object, int offset, Register value, Register slot_address,
       LinkRegisterStatus lr_status, SaveFPRegsMode save_fp,
       RememberedSetAction remembered_set_action = RememberedSetAction::kEmit,
       SmiCheck smi_check = SmiCheck::kInline);
@@ -756,7 +785,7 @@ class V8_EXPORT_PRIVATE MacroAssembler : public TurboAssembler {
   // has been written.  |value| is the object being stored. The value and
   // address registers are clobbered by the operation.
   void RecordWrite(
-      Register object, Register address, Register value,
+      Register object, Register slot_address, Register value,
       LinkRegisterStatus lr_status, SaveFPRegsMode save_fp,
       RememberedSetAction remembered_set_action = RememberedSetAction::kEmit,
       SmiCheck smi_check = SmiCheck::kInline);
@@ -785,9 +814,6 @@ class V8_EXPORT_PRIVATE MacroAssembler : public TurboAssembler {
   // than assembler-ppc and may generate variable length sequences
 
   // load a literal double value <value> to FPR <result>
-
-  void LoadF64WithUpdate(DoubleRegister dst, const MemOperand& mem,
-                         Register scratch = no_reg);
 
   void Cmplwi(Register src1, const Operand& src2, Register scratch,
               CRegister cr = cr7);

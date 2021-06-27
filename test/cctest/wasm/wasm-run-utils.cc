@@ -63,8 +63,7 @@ TestingModuleBuilder::TestingModuleBuilder(
     auto import_wrapper = cache_scope[key];
     if (import_wrapper == nullptr) {
       import_wrapper = CompileImportWrapper(
-          isolate_->wasm_engine(), native_module_, isolate_->counters(), kind,
-          maybe_import->sig,
+          native_module_, isolate_->counters(), kind, maybe_import->sig,
           static_cast<int>(maybe_import->sig->parameter_count()), &cache_scope);
     }
 
@@ -142,7 +141,8 @@ uint32_t TestingModuleBuilder::AddFunction(const FunctionSig* sig,
             test_module_->num_imported_functions +
                 test_module_->num_declared_functions);
   if (name) {
-    Vector<const byte> name_vec = Vector<const byte>::cast(CStrVector(name));
+    base::Vector<const byte> name_vec =
+        base::Vector<const byte>::cast(base::CStrVector(name));
     test_module_->lazily_generated_names.AddForTesting(
         index, {AddBytes(name_vec), static_cast<uint32_t>(name_vec.length())});
   }
@@ -222,14 +222,15 @@ void TestingModuleBuilder::AddIndirectFunctionTable(
   instance_object_->set_tables(*new_tables);
 }
 
-uint32_t TestingModuleBuilder::AddBytes(Vector<const byte> bytes) {
-  Vector<const uint8_t> old_bytes = native_module_->wire_bytes();
+uint32_t TestingModuleBuilder::AddBytes(base::Vector<const byte> bytes) {
+  base::Vector<const uint8_t> old_bytes = native_module_->wire_bytes();
   uint32_t old_size = static_cast<uint32_t>(old_bytes.size());
   // Avoid placing strings at offset 0, this might be interpreted as "not
   // set", e.g. for function names.
   uint32_t bytes_offset = old_size ? old_size : 1;
   size_t new_size = bytes_offset + bytes.size();
-  OwnedVector<uint8_t> new_bytes = OwnedVector<uint8_t>::New(new_size);
+  base::OwnedVector<uint8_t> new_bytes =
+      base::OwnedVector<uint8_t>::New(new_size);
   if (old_size > 0) {
     memcpy(new_bytes.start(), old_bytes.begin(), old_size);
   } else {
@@ -254,7 +255,8 @@ uint32_t TestingModuleBuilder::AddException(const FunctionSig* sig) {
   return index;
 }
 
-uint32_t TestingModuleBuilder::AddPassiveDataSegment(Vector<const byte> bytes) {
+uint32_t TestingModuleBuilder::AddPassiveDataSegment(
+    base::Vector<const byte> bytes) {
   uint32_t index = static_cast<uint32_t>(test_module_->data_segments.size());
   DCHECK_EQ(index, test_module_->data_segments.size());
   DCHECK_EQ(index, data_segment_starts_.size());
@@ -335,13 +337,13 @@ Handle<WasmInstanceObject> TestingModuleBuilder::InitInstanceObject() {
   size_t code_size_estimate =
       wasm::WasmCodeManager::EstimateNativeModuleCodeSize(test_module_.get(),
                                                           kUsesLiftoff);
-  auto native_module = isolate_->wasm_engine()->NewNativeModule(
+  auto native_module = GetWasmEngine()->NewNativeModule(
       isolate_, enabled_features_, test_module_, code_size_estimate);
-  native_module->SetWireBytes(OwnedVector<const uint8_t>());
+  native_module->SetWireBytes(base::OwnedVector<const uint8_t>());
   native_module->compilation_state()->set_compilation_id(0);
-  constexpr Vector<const char> kNoSourceUrl{"", 0};
-  Handle<Script> script = isolate_->wasm_engine()->GetOrCreateScript(
-      isolate_, native_module, kNoSourceUrl);
+  constexpr base::Vector<const char> kNoSourceUrl{"", 0};
+  Handle<Script> script =
+      GetWasmEngine()->GetOrCreateScript(isolate_, native_module, kNoSourceUrl);
 
   Handle<WasmModuleObject> module_object =
       WasmModuleObject::New(isolate_, std::move(native_module), script);
@@ -409,7 +411,7 @@ WasmFunctionWrapper::WasmFunctionWrapper(Zone* zone, int num_params)
 
 void WasmFunctionWrapper::Init(CallDescriptor* call_descriptor,
                                MachineType return_type,
-                               Vector<MachineType> param_types) {
+                               base::Vector<MachineType> param_types) {
   DCHECK_NOT_NULL(call_descriptor);
   DCHECK_EQ(signature_->parameter_count(), param_types.length() + 1);
 
@@ -486,7 +488,7 @@ Handle<Code> WasmFunctionWrapper::GetWrapperCode(Isolate* isolate) {
       r.LowerGraph();
     }
 
-    OptimizedCompilationInfo info(ArrayVector("testing"), graph()->zone(),
+    OptimizedCompilationInfo info(base::ArrayVector("testing"), graph()->zone(),
                                   CodeKind::C_WASM_ENTRY);
     code_ = compiler::Pipeline::GenerateCodeForTesting(
         &info, isolate, call_descriptor, graph(),
@@ -524,7 +526,7 @@ void WasmFunctionCompiler::Build(const byte* start, const byte* end) {
 
   CHECK_GE(kMaxInt, end - start);
   int len = static_cast<int>(end - start);
-  function_->code = {builder_->AddBytes(Vector<const byte>(start, len)),
+  function_->code = {builder_->AddBytes(base::Vector<const byte>(start, len)),
                      static_cast<uint32_t>(len)};
 
   if (interpreter_) {
@@ -533,13 +535,13 @@ void WasmFunctionCompiler::Build(const byte* start, const byte* end) {
     return;
   }
 
-  Vector<const uint8_t> wire_bytes = builder_->instance_object()
-                                         ->module_object()
-                                         .native_module()
-                                         ->wire_bytes();
+  base::Vector<const uint8_t> wire_bytes = builder_->instance_object()
+                                               ->module_object()
+                                               .native_module()
+                                               ->wire_bytes();
 
   CompilationEnv env = builder_->CreateCompilationEnv();
-  ScopedVector<uint8_t> func_wire_bytes(function_->code.length());
+  base::ScopedVector<uint8_t> func_wire_bytes(function_->code.length());
   memcpy(func_wire_bytes.begin(), wire_bytes.begin() + function_->code.offset(),
          func_wire_bytes.length());
 
@@ -556,15 +558,14 @@ void WasmFunctionCompiler::Build(const byte* start, const byte* end) {
   if (builder_->test_execution_tier() ==
       TestExecutionTier::kLiftoffForFuzzing) {
     result.emplace(ExecuteLiftoffCompilation(
-        isolate()->wasm_engine()->allocator(), &env, func_body,
-        function_->func_index, kForDebugging, isolate()->counters(),
-        &unused_detected_features, {}, nullptr, 0, builder_->max_steps_ptr()));
+        &env, func_body, function_->func_index, kForDebugging,
+        isolate()->counters(), &unused_detected_features, {}, nullptr, 0,
+        builder_->max_steps_ptr(), builder_->non_determinism_ptr()));
   } else {
     WasmCompilationUnit unit(function_->func_index, builder_->execution_tier(),
                              for_debugging);
     result.emplace(unit.ExecuteCompilation(
-        isolate()->wasm_engine(), &env,
-        native_module->compilation_state()->GetWireBytesStorage(),
+        &env, native_module->compilation_state()->GetWireBytesStorage().get(),
         isolate()->counters(), &unused_detected_features));
   }
   WasmCode* code = native_module->PublishCode(
@@ -599,7 +600,7 @@ WasmFunctionCompiler::~WasmFunctionCompiler() = default;
 
 /* static */
 FunctionSig* WasmRunnerBase::CreateSig(Zone* zone, MachineType return_type,
-                                       Vector<MachineType> param_types) {
+                                       base::Vector<MachineType> param_types) {
   int return_count = return_type.IsNone() ? 0 : 1;
   int param_count = param_types.length();
 

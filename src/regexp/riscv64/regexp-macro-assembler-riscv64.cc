@@ -161,7 +161,7 @@ void RegExpMacroAssemblerRISCV::Backtrack() {
     __ Ld(a0, MemOperand(frame_pointer(), kBacktrackCount));
     __ Add64(a0, a0, Operand(1));
     __ Sd(a0, MemOperand(frame_pointer(), kBacktrackCount));
-    __ Branch(&next, ne, a0, Operand(backtrack_limit()));
+    __ BranchShort(&next, ne, a0, Operand(backtrack_limit()));
 
     // Backtrack limit exceeded.
     if (can_fallback()) {
@@ -185,7 +185,7 @@ void RegExpMacroAssemblerRISCV::CheckCharacter(uint32_t c, Label* on_equal) {
   BranchOrBacktrack(on_equal, eq, current_character(), Operand(c));
 }
 
-void RegExpMacroAssemblerRISCV::CheckCharacterGT(uc16 limit,
+void RegExpMacroAssemblerRISCV::CheckCharacterGT(base::uc16 limit,
                                                  Label* on_greater) {
   BranchOrBacktrack(on_greater, gt, current_character(), Operand(limit));
 }
@@ -206,14 +206,15 @@ void RegExpMacroAssemblerRISCV::CheckNotAtStart(int cp_offset,
   BranchOrBacktrack(on_not_at_start, ne, a0, Operand(a1));
 }
 
-void RegExpMacroAssemblerRISCV::CheckCharacterLT(uc16 limit, Label* on_less) {
+void RegExpMacroAssemblerRISCV::CheckCharacterLT(base::uc16 limit,
+                                                 Label* on_less) {
   BranchOrBacktrack(on_less, lt, current_character(), Operand(limit));
 }
 
 void RegExpMacroAssemblerRISCV::CheckGreedyLoop(Label* on_equal) {
   Label backtrack_non_equal;
   __ Lw(a0, MemOperand(backtrack_stackpointer(), 0));
-  __ Branch(&backtrack_non_equal, ne, current_input_offset(), Operand(a0));
+  __ BranchShort(&backtrack_non_equal, ne, current_input_offset(), Operand(a0));
   __ Add64(backtrack_stackpointer(), backtrack_stackpointer(),
            Operand(kIntSize));
   __ bind(&backtrack_non_equal);
@@ -230,7 +231,7 @@ void RegExpMacroAssemblerRISCV::CheckNotBackReferenceIgnoreCase(
   // At this point, the capture registers are either both set or both cleared.
   // If the capture length is zero, then the capture is either empty or cleared.
   // Fall through in both cases.
-  __ Branch(&fallthrough, eq, a1, Operand(zero_reg));
+  __ BranchShort(&fallthrough, eq, a1, Operand(zero_reg));
 
   if (read_backward) {
     __ Ld(t1, MemOperand(frame_pointer(), kStringStartMinusOne));
@@ -267,20 +268,20 @@ void RegExpMacroAssemblerRISCV::CheckNotBackReferenceIgnoreCase(
     __ Lbu(a4, MemOperand(a2, 0));
     __ addi(a2, a2, char_size());
 
-    __ Branch(&loop_check, eq, a4, Operand(a3));
+    __ BranchShort(&loop_check, eq, a4, Operand(a3));
 
     // Mismatch, try case-insensitive match (converting letters to lower-case).
     __ Or(a3, a3, Operand(0x20));  // Convert capture character to lower-case.
     __ Or(a4, a4, Operand(0x20));  // Also convert input character.
-    __ Branch(&fail, ne, a4, Operand(a3));
+    __ BranchShort(&fail, ne, a4, Operand(a3));
     __ Sub64(a3, a3, Operand('a'));
-    __ Branch(&loop_check, Uless_equal, a3, Operand('z' - 'a'));
+    __ BranchShort(&loop_check, Uless_equal, a3, Operand('z' - 'a'));
     // Latin-1: Check for values in range [224,254] but not 247.
     __ Sub64(a3, a3, Operand(224 - 'a'));
     // Weren't Latin-1 letters.
-    __ Branch(&fail, Ugreater, a3, Operand(254 - 224));
+    __ BranchShort(&fail, Ugreater, a3, Operand(254 - 224));
     // Check for 247.
-    __ Branch(&fail, eq, a3, Operand(247 - 224));
+    __ BranchShort(&fail, eq, a3, Operand(247 - 224));
 
     __ bind(&loop_check);
     __ Branch(&loop, lt, a0, Operand(a1));
@@ -374,7 +375,7 @@ void RegExpMacroAssemblerRISCV::CheckNotBackReference(int start_reg,
   // At this point, the capture registers are either both set or both cleared.
   // If the capture length is zero, then the capture is either empty or cleared.
   // Fall through in both cases.
-  __ Branch(&fallthrough, eq, a1, Operand(zero_reg));
+  __ BranchShort(&fallthrough, eq, a1, Operand(zero_reg));
 
   if (read_backward) {
     __ Ld(t1, MemOperand(frame_pointer(), kStringStartMinusOne));
@@ -444,14 +445,15 @@ void RegExpMacroAssemblerRISCV::CheckNotCharacterAfterAnd(uint32_t c,
 }
 
 void RegExpMacroAssemblerRISCV::CheckNotCharacterAfterMinusAnd(
-    uc16 c, uc16 minus, uc16 mask, Label* on_not_equal) {
+    base::uc16 c, base::uc16 minus, base::uc16 mask, Label* on_not_equal) {
   DCHECK_GT(String::kMaxUtf16CodeUnit, minus);
   __ Sub64(a0, current_character(), Operand(minus));
   __ And(a0, a0, Operand(mask));
   BranchOrBacktrack(on_not_equal, ne, a0, Operand(c));
 }
 
-void RegExpMacroAssemblerRISCV::CheckCharacterInRange(uc16 from, uc16 to,
+void RegExpMacroAssemblerRISCV::CheckCharacterInRange(base::uc16 from,
+                                                      base::uc16 to,
                                                       Label* on_in_range) {
   __ Sub64(a0, current_character(), Operand(from));
   // Unsigned lower-or-same condition.
@@ -459,7 +461,7 @@ void RegExpMacroAssemblerRISCV::CheckCharacterInRange(uc16 from, uc16 to,
 }
 
 void RegExpMacroAssemblerRISCV::CheckCharacterNotInRange(
-    uc16 from, uc16 to, Label* on_not_in_range) {
+    base::uc16 from, base::uc16 to, Label* on_not_in_range) {
   __ Sub64(a0, current_character(), Operand(from));
   // Unsigned higher condition.
   BranchOrBacktrack(on_not_in_range, Ugreater, a0, Operand(to - from));
@@ -479,7 +481,7 @@ void RegExpMacroAssemblerRISCV::CheckBitInTable(Handle<ByteArray> table,
   BranchOrBacktrack(on_bit_set, ne, a0, Operand(zero_reg));
 }
 
-bool RegExpMacroAssemblerRISCV::CheckSpecialCharacterClass(uc16 type,
+bool RegExpMacroAssemblerRISCV::CheckSpecialCharacterClass(base::uc16 type,
                                                            Label* on_no_match) {
   // Range checks (c in min..max) are generally implemented by an unsigned
   // (c - min) <= (max - min) check.
@@ -489,10 +491,10 @@ bool RegExpMacroAssemblerRISCV::CheckSpecialCharacterClass(uc16 type,
       if (mode_ == LATIN1) {
         // One byte space characters are '\t'..'\r', ' ' and \u00a0.
         Label success;
-        __ Branch(&success, eq, current_character(), Operand(' '));
+        __ BranchShort(&success, eq, current_character(), Operand(' '));
         // Check range 0x09..0x0D.
         __ Sub64(a0, current_character(), Operand('\t'));
-        __ Branch(&success, Uless_equal, a0, Operand('\r' - '\t'));
+        __ BranchShort(&success, Uless_equal, a0, Operand('\r' - '\t'));
         // \u00a0 (NBSP).
         BranchOrBacktrack(on_no_match, ne, a0, Operand(0x00A0 - '\t'));
         __ bind(&success);
@@ -564,7 +566,7 @@ bool RegExpMacroAssemblerRISCV::CheckSpecialCharacterClass(uc16 type,
       Label done;
       if (mode_ != LATIN1) {
         // Table is 256 entries, so all Latin1 characters can be tested.
-        __ Branch(&done, Ugreater, current_character(), Operand('z'));
+        __ BranchShort(&done, Ugreater, current_character(), Operand('z'));
       }
       ExternalReference map =
           ExternalReference::re_word_character_map(isolate());
@@ -665,11 +667,11 @@ Handle<HeapObject> RegExpMacroAssemblerRISCV::GetCode(Handle<String> source) {
     __ Ld(a0, MemOperand(a0));
     __ Sub64(a0, sp, a0);
     // Handle it if the stack pointer is already below the stack limit.
-    __ Branch(&stack_limit_hit, le, a0, Operand(zero_reg));
+    __ BranchShort(&stack_limit_hit, le, a0, Operand(zero_reg));
     // Check if there is room for the variable number of registers above
     // the stack limit.
-    __ Branch(&stack_ok, Ugreater_equal, a0,
-              Operand(num_registers_ * kSystemPointerSize));
+    __ BranchShort(&stack_ok, Ugreater_equal, a0,
+                   Operand(num_registers_ * kSystemPointerSize));
     // Exit with OutOfMemory exception. There is not enough space on the stack
     // for our working registers.
     __ li(a0, Operand(EXCEPTION));
@@ -704,7 +706,7 @@ Handle<HeapObject> RegExpMacroAssemblerRISCV::GetCode(Handle<String> source) {
 
     Label load_char_start_regexp, start_regexp;
     // Load newline if index is at start, previous character otherwise.
-    __ Branch(&load_char_start_regexp, ne, a1, Operand(zero_reg));
+    __ BranchShort(&load_char_start_regexp, ne, a1, Operand(zero_reg));
     __ li(current_character(), Operand('\n'));
     __ jmp(&start_regexp);
 
@@ -814,8 +816,8 @@ Handle<HeapObject> RegExpMacroAssemblerRISCV::GetCode(Handle<String> source) {
           __ Branch(&load_char_start_regexp, ne, current_input_offset(),
                     Operand(s3));
           // Offset from the end is zero if we already reached the end.
-          __ Branch(&exit_label_, eq, current_input_offset(),
-                    Operand(zero_reg));
+          __ BranchShort(&exit_label_, eq, current_input_offset(),
+                         Operand(zero_reg));
           // Advance current position after a zero-length match.
           Label advance;
           __ bind(&advance);
@@ -894,7 +896,7 @@ Handle<HeapObject> RegExpMacroAssemblerRISCV::GetCode(Handle<String> source) {
       __ MultiPop(regexp_registers);
       // If return nullptr, we have failed to grow the stack, and
       // must exit with a stack-overflow exception.
-      __ Branch(&exit_with_exception, eq, a0, Operand(zero_reg));
+      __ BranchShort(&exit_with_exception, eq, a0, Operand(zero_reg));
       // Otherwise use return value as new stack pointer.
       __ mv(backtrack_stackpointer(), a0);
       // Restore saved registers and continue.
@@ -976,7 +978,7 @@ void RegExpMacroAssemblerRISCV::PushBacktrack(Label* label) {
   } else {
     Assembler::BlockTrampolinePoolScope block_trampoline_pool(masm_);
     Label after_constant;
-    __ Branch(&after_constant);
+    __ BranchShort(&after_constant);
     int offset = masm_->pc_offset();
     int cp_offset = offset + Code::kHeaderSize - kHeapObjectTag;
     __ emit(0);
@@ -1016,8 +1018,8 @@ void RegExpMacroAssemblerRISCV::ReadStackPointerFromRegister(int reg) {
 
 void RegExpMacroAssemblerRISCV::SetCurrentPositionFromEnd(int by) {
   Label after_position;
-  __ Branch(&after_position, ge, current_input_offset(),
-            Operand(-by * char_size()));
+  __ BranchShort(&after_position, ge, current_input_offset(),
+                 Operand(-by * char_size()));
   __ li(current_input_offset(), -by * char_size());
   // On RegExp code entry (where this operation is used), the character before
   // the current position is expected to be already loaded.

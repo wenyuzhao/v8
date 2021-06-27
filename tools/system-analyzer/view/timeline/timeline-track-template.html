@@ -6,67 +6,37 @@ found in the LICENSE file. -->
   <link href="./index.css" rel="stylesheet">
 </head>
 <style>
+  :host {
+    --view-height: 200px;
+    --data-height: 200px;
+    --text-scale: scale(1, 1);
+  }
+
   #timeline {
     position: relative;
-    height: calc(200px + 12px);
+    height: calc(var(--view-height) + 12px);
     overflow-y: hidden;
     overflow-x: scroll;
     user-select: none;
   }
 
-  #timelineLabel {
-    transform: rotate(90deg);
-    transform-origin: left bottom 0;
-    position: absolute;
-    left: 0;
-    width: 200px;
-    text-align: center;
-    font-size: 10px;
-    opacity: 0.5;
+  .dataSized {
+    min-height: var(--data-height);
   }
 
   #timelineSamples, #timelineChunks,
-  #timelineMarkers, #timelineAnnotations {
+  #timelineMarkers, #timelineAnnotations, #hitPanel {
     top: 0px;
-    height: 200px;
     position: absolute;
     margin-right: 100px;
   }
-  #timelineMarkers, #timelineAnnotations {
+  #timelineMarkers, #timelineAnnotations,
+  .noPointerEvents, .noPointerEvents * {
     pointer-events: none;
   }
 
-  #timelineCanvas {
-    height: 200px;
-    position: relative;
-    overflow: visible;
-    pointer-events: none;
-  }
-
-  .chunk {
-    width: 6px;
+  #toolTipTarget {
     position: absolute;
-    background-size: 100% 100%;
-    image-rendering: pixelated;
-    bottom: 0px;
-    background-color: var(--on-surface-color);
-    cursor: pointer;
-    content-visibility: auto;
-  }
-  .chunk:hover {
-    border-radius: 2px 2px 0 0;
-    margin: 0 0 -2px -2px;
-    border: 2px var(--primary-color) solid;
-  }
-
-  .timestamp {
-    height: 200px;
-    width: 100px;
-    border-left: 1px var(--on-surface-color) dashed;
-    padding-left: 4px;
-    position: absolute;
-    pointer-events: none;
-    font-size: 10px;
   }
 
   .title {
@@ -96,7 +66,7 @@ found in the LICENSE file. -->
   .timelineLegend {
     position: relative;
     float: right;
-    height: calc(200px + 12px);
+    height: calc(var(--view-height) + 12px);
     overflow-y: scroll;
     margin-right: -10px;
     padding-right: 2px;
@@ -136,6 +106,9 @@ found in the LICENSE file. -->
 
   #selection {
     display: none;
+    top: 0px;
+    left: 0px;
+    position: absolute;
   }
 
   #rightHandle,
@@ -152,6 +125,7 @@ found in the LICENSE file. -->
   }
   #rightHandle {
     border-right: 1px solid var(--on-surface-color);
+    margin-left: -5px;
   }
 
   #selectionBackground {
@@ -178,26 +152,12 @@ found in the LICENSE file. -->
   .legend {
     flex: initial;
   }
-
-  .flame {
-    background-color: gray;
-    overflow: hidden;
-    height: 10px;
-    position: absolute;
-    font-size: 8px;
-    content-visibility: auto;
-  }
-  .flame.Opt{
-    background-color: red;
-  }
-  .flame.Baseline{
-    background-color: blue;
-  }
-  .flame.default {
-    background-color: black;
-  }
+</style>
+<style>
+  /* SVG styles */
   .txt {
     font: 8px monospace;
+    transform: var(--txt-scale);
   }
   .annotationLabel {
     fill: var(--on-surface-color);
@@ -221,7 +181,19 @@ found in the LICENSE file. -->
     dominant-baseline: hanging;
     font-size: 9px;
   }
-  #scalableContent {
+  .flame {
+    stroke-width: 0;
+  }
+  .flameSelected {
+    fill: var(--on-background-color);
+    fill-opacity: 0.1;
+    stroke: var(--on-background-color);
+    stroke-opacity: 0.8;
+    stroke-width: 1;
+    vector-effect: non-scaling-stroke;
+  }
+  svg {
+    shape-rendering: optimizeSpeed;
   }
 </style>
 
@@ -231,18 +203,19 @@ found in the LICENSE file. -->
   <h3 class="title" id="title"></h3>
 
   <div id="timeline">
-    <div id="selection">
+    <div id="selection" class="dataSized">
       <div id="leftHandle"></div>
       <div id="selectionBackground"></div>
       <div id="rightHandle"></div>
     </div>
-    <div id="timelineLabel">Frequency</div>
-    <svg id="timelineChunks" xmlns="http://www.w3.org/2000/svg">
+    <svg id="timelineChunks" xmlns="http://www.w3.org/2000/svg" class="dataSized">
       <g id="scalableContent"></g>
     </svg>
-    <svg id="timelineAnnotations" xmlns="http://www.w3.org/2000/svg"></svg>
-    <svg id="timelineMarkers" xmlns="http://www.w3.org/2000/svg"></svg>
-    <canvas id="timelineCanvas"></canvas>
+    <svg id="timelineAnnotations" xmlns="http://www.w3.org/2000/svg" class="dataSized noPointerEvents"></svg>
+    <svg id="timelineMarkers" xmlns="http://www.w3.org/2000/svg" class="dataSized noPointerEvents"></svg>
+    <div id="toolTipTarget"></div>
+    <!-- Use a div element covering all complex items to prevent slow hit test-->
+    <div id="hitPanel" class="dataSized"></div>
   </div>
 
   <div class="timelineLegend">

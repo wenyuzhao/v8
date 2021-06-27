@@ -169,7 +169,7 @@ void CodeStubAssembler::FailAssert(
     const char* message, const std::vector<FileAndLine>& files_and_lines,
     std::initializer_list<ExtraNode> extra_nodes) {
   DCHECK_NOT_NULL(message);
-  EmbeddedVector<char, 1024> chars;
+  base::EmbeddedVector<char, 1024> chars;
   std::stringstream stream;
   for (auto it = files_and_lines.rbegin(); it != files_and_lines.rend(); ++it) {
     if (it->first != nullptr) {
@@ -1448,6 +1448,34 @@ TNode<BoolT> CodeStubAssembler::IsRegularHeapObjectSize(TNode<IntPtrT> size) {
   return UintPtrLessThanOrEqual(size,
                                 IntPtrConstant(kMaxRegularHeapObjectSize));
 }
+
+#if V8_ENABLE_WEBASSEMBLY
+TNode<HeapObject> CodeStubAssembler::AllocateWasmArray(
+    TNode<IntPtrT> size_in_bytes, int initialization) {
+  TNode<HeapObject> array =
+      Allocate(size_in_bytes, AllocationFlag::kAllowLargeObjectAllocation);
+  if (initialization == kUninitialized) return array;
+
+  TNode<IntPtrT> array_address = BitcastTaggedToWord(array);
+  TNode<IntPtrT> start = IntPtrAdd(
+      array_address, IntPtrConstant(WasmArray::kHeaderSize - kHeapObjectTag));
+  TNode<IntPtrT> limit = IntPtrAdd(
+      array_address, IntPtrSub(size_in_bytes, IntPtrConstant(kHeapObjectTag)));
+
+  TNode<Object> value;
+  if (initialization == kInitializeToZero) {
+    // A pointer-sized zero pattern is just what we need for numeric Wasm
+    // arrays (their object size is rounded up to a multiple of kPointerSize).
+    value = SmiConstant(0);
+  } else if (initialization == kInitializeToNull) {
+    value = NullConstant();
+  } else {
+    UNREACHABLE();
+  }
+  StoreFieldsNoWriteBarrier(start, limit, value);
+  return array;
+}
+#endif  // V8_ENABLE_WEBASSEMBLY
 
 void CodeStubAssembler::BranchIfToBooleanIsTrue(TNode<Object> value,
                                                 Label* if_true,
@@ -5396,6 +5424,28 @@ void CodeStubAssembler::InitializeAllocationMemento(
                                    incremented_count);
   }
   Comment("]");
+}
+
+TNode<IntPtrT> CodeStubAssembler::TryTaggedToInt32AsIntPtr(
+    TNode<Object> acc, Label* if_not_possible) {
+  TVARIABLE(IntPtrT, acc_intptr);
+  Label is_not_smi(this), have_int32(this);
+
+  GotoIfNot(TaggedIsSmi(acc), &is_not_smi);
+  acc_intptr = SmiUntag(CAST(acc));
+  Goto(&have_int32);
+
+  BIND(&is_not_smi);
+  GotoIfNot(IsHeapNumber(CAST(acc)), if_not_possible);
+  TNode<Float64T> value = LoadHeapNumberValue(CAST(acc));
+  TNode<Int32T> value32 = RoundFloat64ToInt32(value);
+  TNode<Float64T> value64 = ChangeInt32ToFloat64(value32);
+  GotoIfNot(Float64Equal(value, value64), if_not_possible);
+  acc_intptr = ChangeInt32ToIntPtr(value32);
+  Goto(&have_int32);
+
+  BIND(&have_int32);
+  return acc_intptr.value();
 }
 
 TNode<Float64T> CodeStubAssembler::TryTaggedToFloat64(
@@ -14243,11 +14293,11 @@ TNode<Code> CodeStubAssembler::GetSharedFunctionInfoCode(
 
   // IsBaselineData: Execute baseline code
   BIND(&check_is_baseline_data);
-  TNode<BaselineData> baseline_data = CAST(sfi_data);
-  TNode<Code> baseline_code =
-      CAST(LoadObjectField(baseline_data, BaselineData::kBaselineCodeOffset));
-  sfi_code = baseline_code;
-  Goto(&done);
+  {
+    TNode<CodeT> baseline_code = LoadBaselineDataBaselineCode(CAST(sfi_data));
+    sfi_code = FromCodeT(baseline_code);
+    Goto(&done);
+  }
 
   // IsUncompiledDataWithPreparseData | IsUncompiledDataWithoutPreparseData:
   // Compile lazy
@@ -14267,8 +14317,11 @@ TNode<Code> CodeStubAssembler::GetSharedFunctionInfoCode(
   // This is the default branch, so assert that we have the expected data type.
   CSA_ASSERT(this,
              Word32Equal(data_type, Int32Constant(INTERPRETER_DATA_TYPE)));
-  sfi_code = CAST(LoadObjectField(
-      CAST(sfi_data), InterpreterData::kInterpreterTrampolineOffset));
+  {
+    TNode<CodeT> trampoline =
+        LoadInterpreterDataInterpreterTrampoline(CAST(sfi_data));
+    sfi_code = FromCodeT(trampoline);
+  }
   Goto(&done);
 
 #if V8_ENABLE_WEBASSEMBLY
@@ -14291,6 +14344,7 @@ TNode<Code> CodeStubAssembler::GetSharedFunctionInfoCode(
 TNode<JSFunction> CodeStubAssembler::AllocateFunctionWithMapAndContext(
     TNode<Map> map, TNode<SharedFunctionInfo> shared_info,
     TNode<Context> context) {
+  // TODO(v8:11880): avoid roundtrips between cdc and code.
   const TNode<Code> code = GetSharedFunctionInfoCode(shared_info);
 
   // TODO(ishell): All the callers of this function pass map loaded from
@@ -14310,7 +14364,7 @@ TNode<JSFunction> CodeStubAssembler::AllocateFunctionWithMapAndContext(
   StoreObjectFieldNoWriteBarrier(fun, JSFunction::kSharedFunctionInfoOffset,
                                  shared_info);
   StoreObjectFieldNoWriteBarrier(fun, JSFunction::kContextOffset, context);
-  StoreObjectFieldNoWriteBarrier(fun, JSFunction::kCodeOffset, code);
+  StoreObjectFieldNoWriteBarrier(fun, JSFunction::kCodeOffset, ToCodeT(code));
   return CAST(fun);
 }
 
@@ -14631,7 +14685,7 @@ void CodeStubAssembler::RemoveFinalizationRegistryCellFromUnregisterTokenMap(
 PrototypeCheckAssembler::PrototypeCheckAssembler(
     compiler::CodeAssemblerState* state, Flags flags,
     TNode<NativeContext> native_context, TNode<Map> initial_prototype_map,
-    Vector<DescriptorIndexNameValue> properties)
+    base::Vector<DescriptorIndexNameValue> properties)
     : CodeStubAssembler(state),
       flags_(flags),
       native_context_(native_context),

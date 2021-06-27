@@ -34,7 +34,7 @@
 #include "src/objects/feedback-vector-inl.h"
 #include "src/objects/js-array-buffer-inl.h"
 #include "src/objects/js-array-inl.h"
-#include "src/objects/js-objects.h"
+#include "src/objects/js-function.h"
 #include "src/objects/objects-inl.h"
 #include "src/objects/ordered-hash-table.h"
 
@@ -840,10 +840,12 @@ class PromiseBuiltinReducerAssembler : public JSCallReducerAssembler {
     DCHECK(shared.HasBuiltinId());
     Handle<FeedbackCell> feedback_cell =
         isolate()->factory()->many_closures_cell();
-    Callable const callable = Builtins::CallableFor(
-        isolate(), static_cast<Builtin>(shared.builtin_id()));
+    Callable const callable =
+        Builtins::CallableFor(isolate(), shared.builtin_id());
+    Handle<CodeT> code =
+        broker_->CanonicalPersistentHandle(ToCodeT(*callable.code()));
     return AddNode<JSFunction>(graph()->NewNode(
-        javascript()->CreateClosure(shared.object(), callable.code()),
+        javascript()->CreateClosure(shared.object(), code),
         HeapConstant(feedback_cell), context, effect(), control()));
   }
 
@@ -2631,14 +2633,17 @@ Reduction JSCallReducer::ReduceFunctionPrototypeBind(Node* node) {
     // recomputed even if the actual value of the object changes.
     // This mirrors the checks done in builtins-function-gen.cc at
     // runtime otherwise.
-    int minimum_nof_descriptors = std::max({JSFunction::kLengthDescriptorIndex,
-                                            JSFunction::kNameDescriptorIndex}) +
-                                  1;
+    int minimum_nof_descriptors =
+        std::max({JSFunctionOrBoundFunction::kLengthDescriptorIndex,
+                  JSFunctionOrBoundFunction::kNameDescriptorIndex}) +
+        1;
     if (receiver_map.NumberOfOwnDescriptors() < minimum_nof_descriptors) {
       return inference.NoChange();
     }
-    const InternalIndex kLengthIndex(JSFunction::kLengthDescriptorIndex);
-    const InternalIndex kNameIndex(JSFunction::kNameDescriptorIndex);
+    const InternalIndex kLengthIndex(
+        JSFunctionOrBoundFunction::kLengthDescriptorIndex);
+    const InternalIndex kNameIndex(
+        JSFunctionOrBoundFunction::kNameDescriptorIndex);
     if (!receiver_map.serialized_own_descriptor(kLengthIndex) ||
         !receiver_map.serialized_own_descriptor(kNameIndex)) {
       TRACE_BROKER_MISSING(broker(),
@@ -4152,6 +4157,13 @@ Reduction JSCallReducer::ReduceCallOrConstructWithArrayLikeOrSpread(
     return NoChange();
   }
 
+  // For call/construct with spread, we need to also install a code
+  // dependency on the array iterator lookup protector cell to ensure
+  // that no one messed with the %ArrayIteratorPrototype%.next method.
+  if (IsCallOrConstructWithSpread(node)) {
+    if (!dependencies()->DependOnArrayIteratorProtector()) return NoChange();
+  }
+
   int new_argument_count;
   if (arguments_list->opcode() == IrOpcode::kJSCreateLiteralArray) {
     // Find array length and elements' kind from the feedback's allocation
@@ -4426,13 +4438,6 @@ Reduction JSCallReducer::ReduceJSCall(Node* node) {
   if (feedback_target.has_value() && feedback_target->map().is_callable()) {
     Node* target_function = jsgraph()->Constant(*feedback_target);
 
-    if (broker()->is_turboprop()) {
-      if (!feedback_target->IsJSFunction()) return NoChange();
-      if (!IsBuiltinOrApiFunction(feedback_target->AsJSFunction())) {
-        return NoChange();
-      }
-    }
-
     // Check that the {target} is still the {target_function}.
     Node* check = graph()->NewNode(simplified()->ReferenceEqual(), target,
                                    target_function);
@@ -4456,11 +4461,6 @@ Reduction JSCallReducer::ReduceJSCall(Node* node) {
       if (!feedback_vector.serialized()) {
         TRACE_BROKER_MISSING(
             broker(), "feedback vector, not serialized: " << feedback_vector);
-        return NoChange();
-      }
-
-      if (broker()->is_turboprop() &&
-          !feedback_vector.shared_function_info().HasBuiltinId()) {
         return NoChange();
       }
 
@@ -4501,9 +4501,9 @@ Reduction JSCallReducer::ReduceJSCall(Node* node,
 
   // Check for known builtin functions.
 
-  int builtin_id =
+  Builtin builtin =
       shared.HasBuiltinId() ? shared.builtin_id() : Builtin::kNoBuiltinId;
-  switch (builtin_id) {
+  switch (builtin) {
     case Builtin::kArrayConstructor:
       return ReduceArrayConstructor(node);
     case Builtin::kBooleanConstructor:
@@ -4964,10 +4964,10 @@ Reduction JSCallReducer::ReduceJSConstruct(Node* node) {
       }
 
       // Check for known builtin functions.
-      int builtin_id = function.shared().HasBuiltinId()
-                           ? function.shared().builtin_id()
-                           : Builtin::kNoBuiltinId;
-      switch (builtin_id) {
+      Builtin builtin = function.shared().HasBuiltinId()
+                            ? function.shared().builtin_id()
+                            : Builtin::kNoBuiltinId;
+      switch (builtin) {
         case Builtin::kArrayConstructor: {
           // TODO(bmeurer): Deal with Array subclasses here.
           // Turn the {node} into a {JSCreateArray} call.
@@ -5312,10 +5312,6 @@ Reduction JSCallReducer::ReduceForInsufficientFeedback(
   DCHECK(node->opcode() == IrOpcode::kJSCall ||
          node->opcode() == IrOpcode::kJSConstruct);
   if (!(flags() & kBailoutOnUninitialized)) return NoChange();
-  // TODO(mythria): May be add additional flags to specify if we need to deopt
-  // on calls / construct rather than checking for TurboProp here. We may need
-  // it for NativeContextIndependent code too.
-  if (broker()->is_turboprop()) return NoChange();
 
   Node* effect = NodeProperties::GetEffectInput(node);
   Node* control = NodeProperties::GetControlInput(node);
@@ -5829,14 +5825,14 @@ Reduction JSCallReducer::ReduceArrayPrototypeShift(Node* node) {
       Node* vfalse1;
       {
         // Call the generic C++ implementation.
-        const int builtin_index = Builtin::kArrayShift;
+        const Builtin builtin = Builtin::kArrayShift;
         auto call_descriptor = Linkage::GetCEntryStubCallDescriptor(
             graph()->zone(), 1, BuiltinArguments::kNumExtraArgsWithReceiver,
-            Builtins::name(builtin_index), node->op()->properties(),
+            Builtins::name(builtin), node->op()->properties(),
             CallDescriptor::kNeedsFrameState);
         Node* stub_code = jsgraph()->CEntryStubConstant(
             1, SaveFPRegsMode::kIgnore, ArgvMode::kStack, true);
-        Address builtin_entry = Builtins::CppEntryOf(builtin_index);
+        Address builtin_entry = Builtins::CppEntryOf(builtin);
         Node* entry = jsgraph()->ExternalConstant(
             ExternalReference::Create(builtin_entry));
         Node* argc =
@@ -6756,11 +6752,13 @@ Node* JSCallReducer::CreateClosureFromBuiltinSharedFunctionInfo(
   DCHECK(shared.HasBuiltinId());
   Handle<FeedbackCell> feedback_cell =
       isolate()->factory()->many_closures_cell();
-  Callable const callable = Builtins::CallableFor(
-      isolate(), static_cast<Builtin>(shared.builtin_id()));
-  return graph()->NewNode(
-      javascript()->CreateClosure(shared.object(), callable.code()),
-      jsgraph()->HeapConstant(feedback_cell), context, effect, control);
+  Callable const callable =
+      Builtins::CallableFor(isolate(), shared.builtin_id());
+  Handle<CodeT> code =
+      broker()->CanonicalPersistentHandle(ToCodeT(*callable.code()));
+  return graph()->NewNode(javascript()->CreateClosure(shared.object(), code),
+                          jsgraph()->HeapConstant(feedback_cell), context,
+                          effect, control);
 }
 
 // ES section #sec-promise.prototype.finally
@@ -7940,7 +7938,7 @@ Reduction JSCallReducer::ReduceRegExpPrototypeTest(Node* node) {
 
     // Bail out if the exec method is not the original one.
     base::Optional<ObjectRef> constant = holder_ref.GetOwnFastDataProperty(
-        ai_exec.field_representation(), ai_exec.field_index());
+        ai_exec.field_representation(), ai_exec.field_index(), dependencies());
     if (!constant.has_value() ||
         !constant->equals(native_context().regexp_exec_function())) {
       return inference.NoChange();

@@ -421,7 +421,13 @@ class TSANRelaxedStoreCodeStubAssembler : public CodeStubAssembler {
       : CodeStubAssembler(state) {}
 
   TNode<ExternalReference> GetExternalReference(int size) {
-    if (size == kInt32Size) {
+    if (size == kInt8Size) {
+      return ExternalConstant(
+          ExternalReference::tsan_relaxed_store_function_8_bits());
+    } else if (size == kInt16Size) {
+      return ExternalConstant(
+          ExternalReference::tsan_relaxed_store_function_16_bits());
+    } else if (size == kInt32Size) {
       return ExternalConstant(
           ExternalReference::tsan_relaxed_store_function_32_bits());
     } else {
@@ -445,6 +451,22 @@ class TSANRelaxedStoreCodeStubAssembler : public CodeStubAssembler {
   }
 };
 
+TF_BUILTIN(TSANRelaxedStore8IgnoreFP, TSANRelaxedStoreCodeStubAssembler) {
+  GenerateTSANRelaxedStore(SaveFPRegsMode::kIgnore, kInt8Size);
+}
+
+TF_BUILTIN(TSANRelaxedStore8SaveFP, TSANRelaxedStoreCodeStubAssembler) {
+  GenerateTSANRelaxedStore(SaveFPRegsMode::kSave, kInt8Size);
+}
+
+TF_BUILTIN(TSANRelaxedStore16IgnoreFP, TSANRelaxedStoreCodeStubAssembler) {
+  GenerateTSANRelaxedStore(SaveFPRegsMode::kIgnore, kInt16Size);
+}
+
+TF_BUILTIN(TSANRelaxedStore16SaveFP, TSANRelaxedStoreCodeStubAssembler) {
+  GenerateTSANRelaxedStore(SaveFPRegsMode::kSave, kInt16Size);
+}
+
 TF_BUILTIN(TSANRelaxedStore32IgnoreFP, TSANRelaxedStoreCodeStubAssembler) {
   GenerateTSANRelaxedStore(SaveFPRegsMode::kIgnore, kInt32Size);
 }
@@ -459,6 +481,49 @@ TF_BUILTIN(TSANRelaxedStore64IgnoreFP, TSANRelaxedStoreCodeStubAssembler) {
 
 TF_BUILTIN(TSANRelaxedStore64SaveFP, TSANRelaxedStoreCodeStubAssembler) {
   GenerateTSANRelaxedStore(SaveFPRegsMode::kSave, kInt64Size);
+}
+
+class TSANRelaxedLoadCodeStubAssembler : public CodeStubAssembler {
+ public:
+  explicit TSANRelaxedLoadCodeStubAssembler(compiler::CodeAssemblerState* state)
+      : CodeStubAssembler(state) {}
+
+  TNode<ExternalReference> GetExternalReference(int size) {
+    if (size == kInt32Size) {
+      return ExternalConstant(
+          ExternalReference::tsan_relaxed_load_function_32_bits());
+    } else {
+      CHECK_EQ(size, kInt64Size);
+      return ExternalConstant(
+          ExternalReference::tsan_relaxed_load_function_64_bits());
+    }
+  }
+
+  void GenerateTSANRelaxedLoad(SaveFPRegsMode fp_mode, int size) {
+    TNode<ExternalReference> function = GetExternalReference(size);
+    auto address =
+        UncheckedParameter<IntPtrT>(TSANRelaxedLoadDescriptor::kAddress);
+    CallCFunctionWithCallerSavedRegisters(
+        function, MachineType::Int32(), fp_mode,
+        std::make_pair(MachineType::IntPtr(), address));
+    Return(UndefinedConstant());
+  }
+};
+
+TF_BUILTIN(TSANRelaxedLoad32IgnoreFP, TSANRelaxedLoadCodeStubAssembler) {
+  GenerateTSANRelaxedLoad(SaveFPRegsMode::kIgnore, kInt32Size);
+}
+
+TF_BUILTIN(TSANRelaxedLoad32SaveFP, TSANRelaxedLoadCodeStubAssembler) {
+  GenerateTSANRelaxedLoad(SaveFPRegsMode::kSave, kInt32Size);
+}
+
+TF_BUILTIN(TSANRelaxedLoad64IgnoreFP, TSANRelaxedLoadCodeStubAssembler) {
+  GenerateTSANRelaxedLoad(SaveFPRegsMode::kIgnore, kInt64Size);
+}
+
+TF_BUILTIN(TSANRelaxedLoad64SaveFP, TSANRelaxedLoadCodeStubAssembler) {
+  GenerateTSANRelaxedLoad(SaveFPRegsMode::kSave, kInt64Size);
 }
 #endif  // V8_IS_TSAN
 
@@ -988,8 +1053,9 @@ void Builtins::Generate_MemMove(MacroAssembler* masm) {
 
 // TODO(v8:11421): Remove #if once baseline compiler is ported to other
 // architectures.
-#if V8_TARGET_ARCH_IA32 || V8_TARGET_ARCH_X64 || V8_TARGET_ARCH_ARM64 || \
-    V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_RISCV64
+#if V8_TARGET_ARCH_IA32 || V8_TARGET_ARCH_X64 || V8_TARGET_ARCH_ARM64 ||     \
+    V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_RISCV64 || V8_TARGET_ARCH_MIPS64 || \
+    V8_TARGET_ARCH_MIPS
 void Builtins::Generate_BaselineLeaveFrame(MacroAssembler* masm) {
   EmitReturnBaseline(masm);
 }
@@ -1002,9 +1068,6 @@ void Builtins::Generate_BaselineLeaveFrame(MacroAssembler* masm) {
   masm->Trap();
 }
 void Builtins::Generate_BaselineOnStackReplacement(MacroAssembler* masm) {
-  masm->Trap();
-}
-void Builtins::Generate_TailCallOptimizedCodeSlot(MacroAssembler* masm) {
   masm->Trap();
 }
 #endif
@@ -1195,7 +1258,9 @@ TF_BUILTIN(InstantiateAsmJs, CodeStubAssembler) {
   BIND(&tailcall_to_function);
   // On failure, tail call back to regular JavaScript by re-calling the given
   // function which has been reset to the compile lazy builtin.
-  TNode<Code> code = CAST(LoadObjectField(function, JSFunction::kCodeOffset));
+
+  // TODO(v8:11880): call CodeT instead.
+  TNode<Code> code = FromCodeT(LoadJSFunctionCode(function));
   TailCallJSCode(code, context, function, new_target, arg_count);
 }
 

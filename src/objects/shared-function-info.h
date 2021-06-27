@@ -8,6 +8,7 @@
 #include <memory>
 
 #include "src/base/bit-field.h"
+#include "src/builtins/builtins.h"
 #include "src/codegen/bailout-reason.h"
 #include "src/objects/compressed-slots.h"
 #include "src/objects/function-kind.h"
@@ -152,6 +153,9 @@ class InterpreterData : public Struct {
   DECL_PRINTER(InterpreterData)
   DECL_VERIFIER(InterpreterData)
 
+ private:
+  DECL_ACCESSORS(raw_interpreter_trampoline, CodeT)
+
   OBJECT_CONSTRUCTORS(InterpreterData, Struct);
 };
 
@@ -159,6 +163,8 @@ class BaselineData : public TorqueGeneratedBaselineData<BaselineData, Struct> {
  public:
   inline BytecodeArray GetActiveBytecodeArray() const;
   inline void SetActiveBytecodeArray(BytecodeArray bytecode);
+
+  DECL_ACCESSORS(baseline_code, Code)
 
   TQ_OBJECT_CONSTRUCTORS(BaselineData)
 };
@@ -332,10 +338,10 @@ class SharedFunctionInfo
   inline const wasm::FunctionSig* wasm_function_signature() const;
 #endif  // V8_ENABLE_WEBASSEMBLY
 
-  // builtin_id corresponds to the auto-generated Builtin id.
+  // builtin corresponds to the auto-generated Builtin enum.
   inline bool HasBuiltinId() const;
-  inline int builtin_id() const;
-  inline void set_builtin_id(int builtin_id);
+  inline Builtin builtin_id() const;
+  inline void set_builtin_id(Builtin builtin);
   inline bool HasUncompiledData() const;
   inline UncompiledData uncompiled_data() const;
   inline void set_uncompiled_data(UncompiledData data);
@@ -543,7 +549,7 @@ class SharedFunctionInfo
     kMayContainBreakPoints,
   };
   template <typename IsolateT>
-  Inlineability GetInlineability(IsolateT* isolate) const;
+  Inlineability GetInlineability(IsolateT* isolate, bool is_turboprop) const;
 
   // Source size of this function.
   int SourceSize();

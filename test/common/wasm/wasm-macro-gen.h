@@ -180,6 +180,8 @@
 #define WASM_IF_ELSE_X(index, cond, tstmt, fstmt)                            \
   cond, kExprIf, static_cast<byte>(index), tstmt, kExprElse, fstmt, kExprEnd
 
+#define WASM_TRY_T(t, trystmt) \
+  kExprTry, static_cast<byte>((t).value_type_code()), trystmt, kExprEnd
 #define WASM_TRY_CATCH_T(t, trystmt, catchstmt, except)                    \
   kExprTry, static_cast<byte>((t).value_type_code()), trystmt, kExprCatch, \
       except, catchstmt, kExprEnd
@@ -197,9 +199,6 @@
 #define WASM_TRY_DELEGATE_T(t, trystmt, depth)                                \
   kExprTry, static_cast<byte>((t).value_type_code()), trystmt, kExprDelegate, \
       depth
-#define WASM_TRY_UNWIND_T(t, trystmt, unwindstmt)                           \
-  kExprTry, static_cast<byte>((t).value_type_code()), trystmt, kExprUnwind, \
-      unwindstmt, kExprEnd
 
 #define WASM_SELECT(tval, fval, cond) tval, fval, cond, kExprSelect
 #define WASM_SELECT_I(tval, fval, cond) \
@@ -560,6 +559,9 @@ inline WasmOpcode LoadStoreOpcodeOf(MachineType type, bool store) {
   dst_array, dst_index, src_array, src_index, length,                      \
       WASM_GC_OP(kExprArrayCopy), static_cast<byte>(dst_idx),              \
       static_cast<byte>(src_idx)
+#define WASM_ARRAY_INIT(index, length, ...)                          \
+  __VA_ARGS__, WASM_GC_OP(kExprArrayInit), static_cast<byte>(index), \
+      static_cast<byte>(length)
 
 #define WASM_RTT_WITH_DEPTH(depth, typeidx) \
   kRttWithDepthCode, U32V_1(depth), U32V_1(typeidx)
@@ -974,6 +976,15 @@ inline WasmOpcode LoadStoreOpcodeOf(MachineType type, bool store) {
   index, WASM_SIMD_OP(opcode), ZERO_ALIGNMENT, offset
 #define WASM_SIMD_LOAD_OP_ALIGNMENT(opcode, index, alignment) \
   index, WASM_SIMD_OP(opcode), alignment, ZERO_OFFSET
+
+// Load a Simd lane from a numeric pointer. We need this because lanes are
+// reversed in big endian. Note: a Simd value has {kSimd128Size / sizeof(*ptr)}
+// lanes.
+#ifdef V8_TARGET_BIG_ENDIAN
+#define LANE(ptr, index) ptr[kSimd128Size / sizeof(*ptr) - (index)-1]
+#else
+#define LANE(ptr, index) ptr[index]
+#endif
 
 //------------------------------------------------------------------------------
 // Compilation Hints.

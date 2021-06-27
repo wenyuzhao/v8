@@ -20,6 +20,7 @@
 #include "src/compiler-dispatcher/compiler-dispatcher.h"
 #include "src/logging/counters.h"
 #include "src/logging/log.h"
+#include "src/logging/runtime-call-stats-scope.h"
 #include "src/numbers/conversions-inl.h"
 #include "src/objects/scope-info.h"
 #include "src/parsing/parse-info.h"
@@ -3131,7 +3132,6 @@ FunctionLiteral* Parser::CreateInitializerFunction(
 //   - proxy
 //   - extends
 //   - properties
-//   - has_name_static_property
 //   - has_static_computed_names
 Expression* Parser::RewriteClassLiteral(ClassScope* block_scope,
                                         const AstRawString* name,
@@ -3182,7 +3182,6 @@ Expression* Parser::RewriteClassLiteral(ClassScope* block_scope,
       block_scope, class_info->extends, class_info->constructor,
       class_info->public_members, class_info->private_members,
       static_initializer, instance_members_initializer_function, pos, end_pos,
-      class_info->has_name_static_property,
       class_info->has_static_computed_names, class_info->is_anonymous,
       class_info->has_private_methods, class_info->home_object_variable,
       class_info->static_home_object_variable);
@@ -3465,6 +3464,8 @@ void Parser::SetFunctionNameFromPropertyName(ObjectLiteralProperty* property,
 void Parser::SetFunctionNameFromIdentifierRef(Expression* value,
                                               Expression* identifier) {
   if (!identifier->IsVariableProxy()) return;
+  // IsIdentifierRef of parenthesized expressions is false.
+  if (identifier->is_parenthesized()) return;
   SetFunctionName(value, identifier->AsVariableProxy()->raw_name());
 }
 

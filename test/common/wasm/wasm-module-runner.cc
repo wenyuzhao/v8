@@ -27,8 +27,8 @@ MaybeHandle<WasmModuleObject> CompileForTesting(Isolate* isolate,
                                                 ErrorThrower* thrower,
                                                 const ModuleWireBytes& bytes) {
   auto enabled_features = WasmFeatures::FromIsolate(isolate);
-  MaybeHandle<WasmModuleObject> module = isolate->wasm_engine()->SyncCompile(
-      isolate, enabled_features, thrower, bytes);
+  MaybeHandle<WasmModuleObject> module =
+      GetWasmEngine()->SyncCompile(isolate, enabled_features, thrower, bytes);
   DCHECK_EQ(thrower->error(), module.is_null());
   return module;
 }
@@ -38,14 +38,14 @@ MaybeHandle<WasmInstanceObject> CompileAndInstantiateForTesting(
   MaybeHandle<WasmModuleObject> module =
       CompileForTesting(isolate, thrower, bytes);
   if (module.is_null()) return {};
-  return isolate->wasm_engine()->SyncInstantiate(
-      isolate, thrower, module.ToHandleChecked(), {}, {});
+  return GetWasmEngine()->SyncInstantiate(isolate, thrower,
+                                          module.ToHandleChecked(), {}, {});
 }
 
-OwnedVector<WasmValue> MakeDefaultInterpreterArguments(Isolate* isolate,
-                                                       const FunctionSig* sig) {
+base::OwnedVector<WasmValue> MakeDefaultInterpreterArguments(
+    Isolate* isolate, const FunctionSig* sig) {
   size_t param_count = sig->parameter_count();
-  auto arguments = OwnedVector<WasmValue>::New(param_count);
+  auto arguments = base::OwnedVector<WasmValue>::New(param_count);
 
   for (size_t i = 0; i < param_count; ++i) {
     switch (sig->GetParam(i).kind()) {
@@ -83,10 +83,10 @@ OwnedVector<WasmValue> MakeDefaultInterpreterArguments(Isolate* isolate,
   return arguments;
 }
 
-OwnedVector<Handle<Object>> MakeDefaultArguments(Isolate* isolate,
-                                                 const FunctionSig* sig) {
+base::OwnedVector<Handle<Object>> MakeDefaultArguments(Isolate* isolate,
+                                                       const FunctionSig* sig) {
   size_t param_count = sig->parameter_count();
-  auto arguments = OwnedVector<Handle<Object>>::New(param_count);
+  auto arguments = base::OwnedVector<Handle<Object>>::New(param_count);
 
   for (size_t i = 0; i < param_count; ++i) {
     switch (sig->GetParam(i).kind()) {

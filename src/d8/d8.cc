@@ -34,6 +34,7 @@
 #include "src/base/platform/wrappers.h"
 #include "src/base/sanitizer/msan.h"
 #include "src/base/sys-info.h"
+#include "src/base/utils/random-number-generator.h"
 #include "src/d8/d8-console.h"
 #include "src/d8/d8-platforms.h"
 #include "src/d8/d8.h"
@@ -78,9 +79,9 @@
 #endif
 
 #if !defined(_WIN32) && !defined(_WIN64)
-#include <unistd.h>  // NOLINT
+#include <unistd.h>
 #else
-#include <windows.h>  // NOLINT
+#include <windows.h>
 #endif                // !defined(_WIN32) && !defined(_WIN64)
 
 #ifndef DCHECK
@@ -485,7 +486,7 @@ ScriptCompiler::CachedData* Shell::LookupCodeCache(Isolate* isolate,
   if (entry != cached_code_map_.end() && entry->second) {
     int length = entry->second->length;
     uint8_t* cache = new uint8_t[length];
-    base::Memcpy(cache, entry->second->data, length);
+    memcpy(cache, entry->second->data, length);
     ScriptCompiler::CachedData* cached_data = new ScriptCompiler::CachedData(
         cache, length, ScriptCompiler::CachedData::BufferOwned);
     return cached_data;
@@ -502,7 +503,7 @@ void Shell::StoreInCodeCache(Isolate* isolate, Local<Value> source,
   DCHECK(*key);
   int length = cache_data->length;
   uint8_t* cache = new uint8_t[length];
-  base::Memcpy(cache, cache_data->data, length);
+  memcpy(cache, cache_data->data, length);
   cached_code_map_[*key] = std::unique_ptr<ScriptCompiler::CachedData>(
       new ScriptCompiler::CachedData(cache, length,
                                      ScriptCompiler::CachedData::BufferOwned));
@@ -4359,6 +4360,8 @@ bool Shell::SetOptions(int argc, char* argv[]) {
     } else if (strcmp(argv[i], "--enable-system-instrumentation") == 0) {
       options.enable_system_instrumentation = true;
       options.trace_enabled = true;
+      // This needs to be manually triggered for JIT ETW events to work.
+      i::FLAG_enable_system_instrumentation = true;
 #if defined(V8_OS_WIN)
       // Guard this bc the flag has a lot of overhead and is not currently used
       // by macos
@@ -5264,9 +5267,7 @@ int Shell::Main(int argc, char* argv[]) {
 
 }  // namespace v8
 
-#ifndef GOOGLE3
 int main(int argc, char* argv[]) { return v8::Shell::Main(argc, argv); }
-#endif
 
 #undef CHECK
 #undef DCHECK

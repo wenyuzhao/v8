@@ -181,8 +181,9 @@ struct MaybeBoolFlag {
 #define ENABLE_CONTROL_FLOW_INTEGRITY_BOOL false
 #endif
 
-#if V8_TARGET_ARCH_IA32 || V8_TARGET_ARCH_X64 || V8_TARGET_ARCH_ARM64 || \
-    V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_RISCV64
+#if V8_TARGET_ARCH_IA32 || V8_TARGET_ARCH_X64 || V8_TARGET_ARCH_ARM64 ||     \
+    V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_RISCV64 || V8_TARGET_ARCH_MIPS64 || \
+    V8_TARGET_ARCH_MIPS
 #define ENABLE_SPARKPLUG true
 #else
 // TODO(v8:11421): Enable Sparkplug for other architectures
@@ -278,9 +279,7 @@ DEFINE_BOOL(harmony_shipping, true, "enable all shipped harmony features")
     "harmony ResizableArrayBuffer / GrowableSharedArrayBuffer")
 
 #ifdef V8_INTL_SUPPORT
-#define HARMONY_INPROGRESS(V) \
-  HARMONY_INPROGRESS_BASE(V)  \
-  V(harmony_intl_displaynames_v2, "Intl.DisplayNames v2")
+#define HARMONY_INPROGRESS(V) HARMONY_INPROGRESS_BASE(V)
 #else
 #define HARMONY_INPROGRESS(V) HARMONY_INPROGRESS_BASE(V)
 #endif
@@ -294,6 +293,7 @@ DEFINE_BOOL(harmony_shipping, true, "enable all shipped harmony features")
 #define HARMONY_STAGED(V)                                 \
   HARMONY_STAGED_BASE(V)                                  \
   V(harmony_intl_best_fit_matcher, "Intl BestFitMatcher") \
+  V(harmony_intl_displaynames_v2, "Intl.DisplayNames v2") \
   V(harmony_intl_locale_info, "Intl locale info")         \
   V(harmony_intl_more_timezone,                           \
     "Extend Intl.DateTimeFormat timeZoneName Option")
@@ -485,7 +485,6 @@ DEFINE_WEAK_IMPLICATION(future, super_ic)
 DEFINE_WEAK_IMPLICATION(future, turbo_inline_js_wasm_calls)
 #if ENABLE_SPARKPLUG
 DEFINE_WEAK_IMPLICATION(future, sparkplug)
-DEFINE_WEAK_IMPLICATION(future, baseline_batch_compilation)
 #endif
 #if V8_SHORT_BUILTIN_CALLS
 DEFINE_WEAK_IMPLICATION(future, short_builtin_calls)
@@ -642,14 +641,14 @@ DEFINE_BOOL(
     turboprop_as_toptier, false,
     "enable experimental turboprop compiler without further tierup to turbofan")
 DEFINE_IMPLICATION(turboprop_as_toptier, turboprop)
-DEFINE_VALUE_IMPLICATION(turboprop, interrupt_budget, 20 * KB)
-DEFINE_VALUE_IMPLICATION(turboprop, reuse_opt_code_count, 2)
 DEFINE_UINT_READONLY(max_minimorphic_map_checks, 4,
                      "max number of map checks to perform in minimorphic state")
+DEFINE_INT(turboprop_inline_scaling_factor, 4,
+           "scale factor for reduction in bytecode that can be inline for "
+           "TurboProp compared to TurboFan")
 // The scale factor determines the interrupt budget when tiering up from
-// Turboprop to TurboFan. The default of 10 is approximately the ratio of
-// Turboprop to the TurboFan interrupt budget.
-DEFINE_INT(interrupt_budget_scale_factor_for_top_tier, 10,
+// Turboprop to TurboFan.
+DEFINE_INT(interrupt_budget_scale_factor_for_top_tier, 5,
            "scale factor for profiler ticks when tiering up from midtier")
 
 // Flags for Sparkplug
@@ -661,11 +660,17 @@ DEFINE_INT(interrupt_budget_scale_factor_for_top_tier, 10,
 #endif
 DEFINE_BOOL(sparkplug, false, "enable experimental Sparkplug baseline compiler")
 DEFINE_BOOL(always_sparkplug, false, "directly tier up to Sparkplug code")
+DEFINE_BOOL(sparkplug_on_heap, false, "compile Sparkplug code directly on heap")
 #if ENABLE_SPARKPLUG
 DEFINE_IMPLICATION(always_sparkplug, sparkplug)
+DEFINE_BOOL(baseline_batch_compilation, true, "batch compile Sparkplug code")
+#else
+DEFINE_BOOL(baseline_batch_compilation, false, "batch compile Sparkplug code")
 #endif
 DEFINE_STRING(sparkplug_filter, "*", "filter for Sparkplug baseline compiler")
-DEFINE_BOOL(baseline_batch_compilation, false, "batch compile Sparkplug code")
+DEFINE_BOOL(sparkplug_needs_short_builtins, false,
+            "only enable Sparkplug baseline compiler when "
+            "--short-builtin-calls are also enabled")
 DEFINE_INT(baseline_batch_compilation_threshold, 4 * KB,
            "the estimated instruction size of a batch to trigger compilation")
 DEFINE_BOOL(trace_baseline, false, "trace baseline compilation")
@@ -836,12 +841,12 @@ DEFINE_BOOL(turbo_verify_allocation, DEBUG_BOOL,
             "verify register allocation in TurboFan")
 DEFINE_BOOL(turbo_move_optimization, true, "optimize gap moves in TurboFan")
 DEFINE_BOOL(turbo_jt, true, "enable jump threading in TurboFan")
-DEFINE_BOOL(turbo_loop_peeling, true, "Turbofan loop peeling")
-DEFINE_BOOL(turbo_loop_variable, true, "Turbofan loop variable optimization")
-DEFINE_BOOL(turbo_loop_rotation, true, "Turbofan loop rotation")
+DEFINE_BOOL(turbo_loop_peeling, true, "TurboFan loop peeling")
+DEFINE_BOOL(turbo_loop_variable, true, "TurboFan loop variable optimization")
+DEFINE_BOOL(turbo_loop_rotation, true, "TurboFan loop rotation")
 DEFINE_BOOL(turbo_cf_optimization, true, "optimize control flow in TurboFan")
 DEFINE_BOOL(turbo_escape, true, "enable escape analysis")
-DEFINE_BOOL(turbo_allocation_folding, true, "Turbofan allocation folding")
+DEFINE_BOOL(turbo_allocation_folding, true, "TurboFan allocation folding")
 DEFINE_BOOL(turbo_instruction_scheduling, false,
             "enable instruction scheduling in TurboFan")
 DEFINE_BOOL(turbo_stress_instruction_scheduling, false,
@@ -859,7 +864,7 @@ DEFINE_BOOL(
 DEFINE_BOOL(turbo_fast_api_calls, false, "enable fast API calls from TurboFan")
 DEFINE_INT(reuse_opt_code_count, 0,
            "don't discard optimized code for the specified number of deopts.")
-DEFINE_BOOL(turbo_dynamic_map_checks, true,
+DEFINE_BOOL(turbo_dynamic_map_checks, false,
             "use dynamic map checks when generating code for property accesses "
             "if all handlers in an IC are the same for turboprop")
 DEFINE_BOOL(turbo_compress_translation_arrays, false,
@@ -867,6 +872,7 @@ DEFINE_BOOL(turbo_compress_translation_arrays, false,
 DEFINE_BOOL(turbo_inline_js_wasm_calls, false, "inline JS->Wasm calls")
 
 DEFINE_BOOL(turbo_optimize_apply, false, "optimize Function.prototype.apply")
+DEFINE_WEAK_IMPLICATION(future, turbo_optimize_apply)
 
 DEFINE_BOOL(turbo_collect_feedback_in_generic_lowering, true,
             "enable experimental feedback collection in generic lowering.")
@@ -908,10 +914,12 @@ DEFINE_DEBUG_BOOL(trace_wasm_native_heap, false,
                   "trace wasm native heap events")
 DEFINE_BOOL(wasm_write_protect_code_memory, false,
             "write protect code memory on the wasm native heap with mprotect")
+DEFINE_WEAK_IMPLICATION(future, wasm_write_protect_code_memory)
 DEFINE_BOOL(wasm_memory_protection_keys, false,
             "protect wasm code memory with PKU if available, no protection "
             "without support; fallback to mprotect by adding "
             "--wasm-write-protect-code-memory")
+DEFINE_WEAK_IMPLICATION(future, wasm_memory_protection_keys)
 DEFINE_DEBUG_BOOL(trace_wasm_serialization, false,
                   "trace serialization/deserialization")
 DEFINE_BOOL(wasm_async_compilation, true,
@@ -942,7 +950,7 @@ DEFINE_INT(trace_wasm_ast_end, 0, "end function for wasm AST trace (exclusive)")
 DEFINE_BOOL(liftoff, true,
             "enable Liftoff, the baseline compiler for WebAssembly")
 DEFINE_BOOL(liftoff_only, false,
-            "disallow Turbofan compilation for WebAssembly (for testing)")
+            "disallow TurboFan compilation for WebAssembly (for testing)")
 DEFINE_IMPLICATION(liftoff_only, liftoff)
 DEFINE_NEG_IMPLICATION(liftoff_only, wasm_tier_up)
 DEFINE_NEG_IMPLICATION(fuzzing, liftoff_only)
@@ -960,7 +968,7 @@ DEFINE_BOOL(trace_wasm_memory, false,
             "print all memory updates performed in wasm code")
 // Fuzzers use {wasm_tier_mask_for_testing} and {wasm_debug_mask_for_testing}
 // together with {liftoff} and {no_wasm_tier_up} to force some functions to be
-// compiled with Turbofan or for debug.
+// compiled with TurboFan or for debug.
 DEFINE_INT(wasm_tier_mask_for_testing, 0,
            "bitmask of functions to compile with TurboFan instead of Liftoff")
 DEFINE_INT(wasm_debug_mask_for_testing, 0,
@@ -1016,8 +1024,8 @@ DEFINE_BOOL(wasm_stack_checks, true,
 DEFINE_BOOL(wasm_math_intrinsics, true,
             "intrinsify some Math imports into wasm")
 
-DEFINE_BOOL(wasm_loop_unrolling, false,
-            "enable loop unrolling for wasm functions (experimental)")
+DEFINE_BOOL(wasm_loop_unrolling, true,
+            "enable loop unrolling for wasm functions")
 DEFINE_BOOL(wasm_trap_handler, true,
             "use signal handlers to catch out of bounds memory access in wasm"
             " (currently Linux x86_64 only)")
@@ -1431,6 +1439,15 @@ DEFINE_BOOL(test_small_max_function_context_stub_size, false,
 DEFINE_BOOL(inline_new, true, "use fast inline allocation")
 DEFINE_NEG_NEG_IMPLICATION(inline_new, turbo_allocation_folding)
 
+// bytecode-generator.cc
+DEFINE_INT(switch_table_spread_threshold, 3,
+           "allow the jump table used for switch statements to span a range "
+           "of integers roughly equal to this number times the number of "
+           "clauses in the switch")
+DEFINE_INT(switch_table_min_cases, 6,
+           "the number of Smi integer cases present in the switch statement "
+           "before using the jump table optimization")
+
 // codegen-ia32.cc / codegen-arm.cc
 DEFINE_BOOL(trace, false, "trace javascript function calls")
 
@@ -1526,12 +1543,10 @@ DEFINE_BOOL(use_idle_notification, true,
 // ic.cc
 DEFINE_BOOL(log_ic, false,
             "Log inline cache state transitions for tools/ic-processor")
-DEFINE_BOOL(trace_ic, false, "See --log-ic")
-DEFINE_IMPLICATION(trace_ic, log_ic)
 DEFINE_IMPLICATION(log_ic, log_code)
 DEFINE_GENERIC_IMPLICATION(
-    trace_ic, TracingFlags::ic_stats.store(
-                  v8::tracing::TracingCategoryObserver::ENABLED_BY_NATIVE))
+    log_ic, TracingFlags::ic_stats.store(
+                v8::tracing::TracingCategoryObserver::ENABLED_BY_NATIVE))
 DEFINE_BOOL_READONLY(fast_map_update, false,
                      "enable fast map update by caching the migration target")
 DEFINE_INT(max_valid_polymorphic_map_count, 4,

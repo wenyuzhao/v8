@@ -6,7 +6,7 @@ import {LogReader, parseString, parseVarArgs} from '../logreader.mjs';
 import {Profile} from '../profile.mjs';
 
 import {ApiLogEntry} from './log/api.mjs';
-import {CodeLogEntry, DeoptLogEntry} from './log/code.mjs';
+import {CodeLogEntry, DeoptLogEntry, SharedLibLogEntry} from './log/code.mjs';
 import {IcLogEntry} from './log/ic.mjs';
 import {Edge, MapLogEntry} from './log/map.mjs';
 import {TickLogEntry} from './log/tick.mjs';
@@ -25,9 +25,10 @@ export class Processor extends LogReader {
   _formatPCRegexp = /(.*):[0-9]+:[0-9]+$/;
   _lastTimestamp = 0;
   _lastCodeLogEntry;
+  _chunkRemainder = '';
   MAJOR_VERSION = 7;
   MINOR_VERSION = 6;
-  constructor(logString) {
+  constructor() {
     super();
     const propertyICParser = [
       parseInt, parseInt, parseInt, parseInt, parseString, parseString,
@@ -41,6 +42,10 @@ export class Processor extends LogReader {
           parseInt,
         ],
         processor: this.processV8Version
+      },
+      'shared-library': {
+        parsers: [parseString, parseInt, parseInt, parseInt],
+        processor: this.processSharedLibrary
       },
       'code-creation': {
         parsers: [
@@ -136,7 +141,6 @@ export class Processor extends LogReader {
         processor: this.processApiEvent
       },
     };
-    if (logString) this.processString(logString);
   }
 
   printError(str) {
@@ -144,26 +148,29 @@ export class Processor extends LogReader {
     throw str
   }
 
-  processString(string) {
-    let end = string.length;
+  processChunk(chunk) {
+    let end = chunk.length;
     let current = 0;
     let next = 0;
     let line;
-    let i = 0;
-    let entry;
     try {
       while (current < end) {
-        next = string.indexOf('\n', current);
-        if (next === -1) break;
-        i++;
-        line = string.substring(current, next);
+        next = chunk.indexOf('\n', current);
+        if (next === -1) {
+          this._chunkRemainder = chunk.substring(current);
+          break;
+        }
+        line = chunk.substring(current, next);
+        if (this._chunkRemainder) {
+          line = this._chunkRemainder + line;
+          this._chunkRemainder = '';
+        }
         current = next + 1;
         this.processLogLine(line);
       }
     } catch (e) {
       console.error(`Error occurred during parsing, trying to continue: ${e}`);
     }
-    this.finalize();
   }
 
   processLogFile(fileName) {
@@ -212,6 +219,14 @@ export class Processor extends LogReader {
     }
   }
 
+  processSharedLibrary(name, start, end, aslr_slide) {
+    const entry = this._profile.addLibrary(name, start, end);
+    entry.logEntry = new SharedLibLogEntry(entry);
+    // Many events rely on having a script around, creating fake entries for
+    // shared libraries.
+    this._profile.addScriptSource(-1, name, '');
+  }
+
   processCodeCreation(type, kind, timestamp, start, size, name, maybe_func) {
     this._lastTimestamp = timestamp;
     let entry;
@@ -249,10 +264,10 @@ export class Processor extends LogReader {
     if (inlinedPos > 0) {
       deoptLocation = deoptLocation.substring(0, inlinedPos)
     }
+    const script = this.getProfileEntryScript(codeEntry);
+    if (!script) return;
     const colSeparator = deoptLocation.lastIndexOf(':');
     const rowSeparator = deoptLocation.lastIndexOf(':', colSeparator - 1);
-    const script = this.getScript(deoptLocation.substring(1, rowSeparator));
-    if (!script) return;
     const line =
         parseInt(deoptLocation.substring(rowSeparator + 1, colSeparator));
     const column = parseInt(
@@ -329,14 +344,14 @@ export class Processor extends LogReader {
       type, pc, time, line, column, old_state, new_state, mapId, key, modifier,
       slow_reason) {
     this._lastTimestamp = time;
-    const profileEntry = this._profile.findEntry(pc);
-    const fnName = this.formatProfileEntry(profileEntry);
-    const script = this.getProfileEntryScript(profileEntry);
+    const codeEntry = this._profile.findEntry(pc);
+    const fnName = this.formatProfileEntry(codeEntry);
+    const script = this.getProfileEntryScript(codeEntry);
     const map = this.getOrCreateMapEntry(mapId, time);
     // TODO: Use SourcePosition here directly
     let entry = new IcLogEntry(
         type, fnName, time, line, column, key, old_state, new_state, map,
-        slow_reason, modifier);
+        slow_reason, modifier, codeEntry);
     if (script) {
       entry.sourcePosition = script.addSourcePosition(line, column, entry);
     }
@@ -359,10 +374,15 @@ export class Processor extends LogReader {
     if (profileEntry.type === 'Builtin') return undefined;
     const script = profileEntry.source?.script;
     if (script !== undefined) return script;
-    // Slow path, try to get the script from the url:
-    const fnName = this.formatProfileEntry(profileEntry);
-    let parts = fnName.split(' ');
-    let fileName = parts[parts.length - 1];
+    let fileName;
+    if (profileEntry.type = 'SHARED_LIB') {
+      fileName = profileEntry.name;
+    } else {
+      // Slow path, try to get the script from the url:
+      const fnName = this.formatProfileEntry(profileEntry);
+      let parts = fnName.split(' ');
+      fileName = parts[parts.length - 1];
+    }
     return this.getScript(fileName);
   }
 
@@ -378,20 +398,20 @@ export class Processor extends LogReader {
     if (type === 'Normalize') {
       // Fix a bug where we log "Normalize" transitions for maps created from
       // the NormalizedMapCache.
-      if (to_.parent()?.id === from || to_.time < from_.time || to_.depth > 0) {
+      if (to_.parent?.id === from || to_.time < from_.time || to_.depth > 0) {
         console.log(`Skipping transition to cached normalized map`);
         return;
       }
     }
     // TODO: use SourcePosition directly.
     let edge = new Edge(type, name, reason, time, from_, to_);
-    const profileEntry = this._profile.findEntry(pc)
-    to_.entry = profileEntry;
-    let script = this.getProfileEntryScript(profileEntry);
+    const codeEntry = this._profile.findEntry(pc)
+    to_.entry = codeEntry;
+    let script = this.getProfileEntryScript(codeEntry);
     if (script) {
       to_.sourcePosition = script.addSourcePosition(line, column, to_)
     }
-    if (to_.parent() !== undefined && to_.parent() === from_) {
+    if (to_.parent !== undefined && to_.parent === from_) {
       // Fix bug where we double log transitions.
       console.warn('Fixing up double transition');
       to_.edge.updateFrom(edge);

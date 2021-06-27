@@ -208,8 +208,8 @@ class FunctionBodyDecoderTestBase : public WithZoneMixin<BaseTest> {
 
   enum AppendEnd : bool { kAppendEnd, kOmitEnd };
 
-  Vector<const byte> PrepareBytecode(Vector<const byte> code,
-                                     AppendEnd append_end) {
+  base::Vector<const byte> PrepareBytecode(base::Vector<const byte> code,
+                                           AppendEnd append_end) {
     size_t locals_size = local_decls.Size();
     size_t total_size =
         code.size() + locals_size + (append_end == kAppendEnd ? 1 : 0);
@@ -229,16 +229,18 @@ class FunctionBodyDecoderTestBase : public WithZoneMixin<BaseTest> {
   }
 
   template <size_t N>
-  Vector<const byte> CodeToVector(const byte (&code)[N]) {
-    return ArrayVector(code);
+  base::Vector<const byte> CodeToVector(const byte (&code)[N]) {
+    return base::ArrayVector(code);
   }
 
-  Vector<const byte> CodeToVector(
+  base::Vector<const byte> CodeToVector(
       const std::initializer_list<const byte>& code) {
-    return VectorOf(&*code.begin(), code.size());
+    return base::VectorOf(&*code.begin(), code.size());
   }
 
-  Vector<const byte> CodeToVector(Vector<const byte> vec) { return vec; }
+  base::Vector<const byte> CodeToVector(base::Vector<const byte> vec) {
+    return vec;
+  }
 
   // Prepends local variable declarations and renders nice error messages for
   // verification failures.
@@ -246,7 +248,7 @@ class FunctionBodyDecoderTestBase : public WithZoneMixin<BaseTest> {
   void Validate(bool expected_success, const FunctionSig* sig, Code&& raw_code,
                 AppendEnd append_end = kAppendEnd,
                 const char* message = nullptr) {
-    Vector<const byte> code =
+    base::Vector<const byte> code =
         PrepareBytecode(CodeToVector(std::forward<Code>(raw_code)), append_end);
 
     // Validate the code.
@@ -407,9 +409,9 @@ TEST_F(FunctionBodyDecoderTest, Int32Const_off_end) {
   byte code[] = {kExprI32Const, 0xAA, 0xBB, 0xCC, 0x44};
 
   for (size_t size = 1; size <= 4; ++size) {
-    ExpectFailure(sigs.i_i(), VectorOf(code, size), kAppendEnd);
+    ExpectFailure(sigs.i_i(), base::VectorOf(code, size), kAppendEnd);
     // Should also fail without the trailing 'end' opcode.
-    ExpectFailure(sigs.i_i(), VectorOf(code, size), kOmitEnd);
+    ExpectFailure(sigs.i_i(), base::VectorOf(code, size), kOmitEnd);
   }
 }
 
@@ -587,7 +589,7 @@ TEST_F(FunctionBodyDecoderTest, BlockN) {
     buffer[0] = kExprBlock;
     buffer[1] = kVoidCode;
     buffer[i + 2] = kExprEnd;
-    ExpectValidates(sigs.v_i(), VectorOf(buffer, i + 3), kAppendEnd);
+    ExpectValidates(sigs.v_i(), base::VectorOf(buffer, i + 3), kAppendEnd);
   }
 }
 
@@ -732,8 +734,8 @@ TEST_F(FunctionBodyDecoderTest, BlockN_off_end) {
   byte code[] = {WASM_BLOCK(kExprNop, kExprNop, kExprNop, kExprNop)};
   ExpectValidates(sigs.v_v(), code);
   for (size_t i = 1; i < arraysize(code); i++) {
-    ExpectFailure(sigs.v_v(), VectorOf(code, i), kAppendEnd);
-    ExpectFailure(sigs.v_v(), VectorOf(code, i), kOmitEnd);
+    ExpectFailure(sigs.v_v(), base::VectorOf(code, i), kAppendEnd);
+    ExpectFailure(sigs.v_v(), base::VectorOf(code, i), kOmitEnd);
   }
 }
 
@@ -1210,8 +1212,8 @@ TEST_F(FunctionBodyDecoderTest, If_off_end) {
   static const byte kCode[] = {
       WASM_IF_ELSE(WASM_LOCAL_GET(0), WASM_LOCAL_GET(0), WASM_LOCAL_GET(0))};
   for (size_t len = 3; len < arraysize(kCode); len++) {
-    ExpectFailure(sigs.i_i(), VectorOf(kCode, len), kAppendEnd);
-    ExpectFailure(sigs.i_i(), VectorOf(kCode, len), kOmitEnd);
+    ExpectFailure(sigs.i_i(), base::VectorOf(kCode, len), kAppendEnd);
+    ExpectFailure(sigs.i_i(), base::VectorOf(kCode, len), kOmitEnd);
   }
 }
 
@@ -1815,7 +1817,7 @@ TEST_F(FunctionBodyDecoderTest, IncompleteIndirectReturnCall) {
   builder.InitializeTable(wasm::kWasmVoid);
 
   static byte code[] = {kExprReturnCallIndirect};
-  ExpectFailure(sig, ArrayVector(code), kOmitEnd);
+  ExpectFailure(sig, base::ArrayVector(code), kOmitEnd);
 }
 
 TEST_F(FunctionBodyDecoderTest, MultiReturn) {
@@ -1999,7 +2001,7 @@ TEST_F(FunctionBodyDecoderTest, IncompleteIndirectCall) {
   builder.InitializeTable(wasm::kWasmVoid);
 
   static byte code[] = {kExprCallIndirect};
-  ExpectFailure(sig, ArrayVector(code), kOmitEnd);
+  ExpectFailure(sig, base::ArrayVector(code), kOmitEnd);
 }
 
 TEST_F(FunctionBodyDecoderTest, IncompleteStore) {
@@ -2008,7 +2010,7 @@ TEST_F(FunctionBodyDecoderTest, IncompleteStore) {
   builder.InitializeTable(wasm::kWasmVoid);
 
   static byte code[] = {kExprI32StoreMem};
-  ExpectFailure(sig, ArrayVector(code), kOmitEnd);
+  ExpectFailure(sig, base::ArrayVector(code), kOmitEnd);
 }
 
 TEST_F(FunctionBodyDecoderTest, IncompleteI8x16Shuffle) {
@@ -2019,7 +2021,7 @@ TEST_F(FunctionBodyDecoderTest, IncompleteI8x16Shuffle) {
 
   static byte code[] = {kSimdPrefix,
                         static_cast<byte>(kExprI8x16Shuffle & 0xff)};
-  ExpectFailure(sig, ArrayVector(code), kOmitEnd);
+  ExpectFailure(sig, base::ArrayVector(code), kOmitEnd);
 }
 
 TEST_F(FunctionBodyDecoderTest, SimpleImportCalls) {
@@ -2693,8 +2695,8 @@ TEST_F(FunctionBodyDecoderTest, BrTableSubtyping) {
 TEST_F(FunctionBodyDecoderTest, BrTable_off_end) {
   static byte code[] = {B1(WASM_BR_TABLE(WASM_LOCAL_GET(0), 0, BR_TARGET(0)))};
   for (size_t len = 1; len < sizeof(code); len++) {
-    ExpectFailure(sigs.i_i(), VectorOf(code, len), kAppendEnd);
-    ExpectFailure(sigs.i_i(), VectorOf(code, len), kOmitEnd);
+    ExpectFailure(sigs.i_i(), base::VectorOf(code, len), kAppendEnd);
+    ExpectFailure(sigs.i_i(), base::VectorOf(code, len), kOmitEnd);
   }
 }
 
@@ -2956,31 +2958,15 @@ TEST_F(FunctionBodyDecoderTest, TryCatch) {
   ExpectValidates(sigs.v_v(), {WASM_TRY_OP, kExprCatch, ex, kExprEnd});
   ExpectValidates(sigs.v_v(),
                   {WASM_TRY_OP, kExprCatch, ex, kExprCatchAll, kExprEnd});
+  ExpectValidates(sigs.v_v(), {WASM_TRY_OP, kExprEnd}, kAppendEnd);
   ExpectFailure(sigs.v_v(),
                 {WASM_TRY_OP, kExprCatchAll, kExprCatch, ex, kExprEnd},
                 kAppendEnd, "catch after catch-all for try");
   ExpectFailure(sigs.v_v(),
                 {WASM_TRY_OP, kExprCatchAll, kExprCatchAll, kExprEnd},
                 kAppendEnd, "catch-all already present for try");
-  ExpectFailure(sigs.v_v(), {WASM_TRY_OP, kExprEnd}, kAppendEnd,
-                "missing catch or catch-all in try");
   ExpectFailure(sigs.v_v(), {kExprCatch, ex, kExprEnd}, kAppendEnd,
                 "catch does not match a try");
-}
-
-TEST_F(FunctionBodyDecoderTest, TryUnwind) {
-  WASM_FEATURE_SCOPE(eh);
-  byte ex = builder.AddException(sigs.v_v());
-  ExpectValidates(sigs.v_v(), {WASM_TRY_OP, kExprUnwind, kExprEnd});
-  ExpectFailure(sigs.v_v(),
-                {WASM_TRY_OP, kExprUnwind, kExprCatch, ex, kExprEnd},
-                kAppendEnd, "catch after unwind for try");
-  ExpectFailure(sigs.v_v(), {WASM_TRY_OP, kExprCatchAll, kExprUnwind, kExprEnd},
-                kAppendEnd,
-                "catch, catch-all or unwind already present for try");
-  ExpectFailure(
-      sigs.v_v(), {WASM_TRY_OP, kExprCatch, ex, kExprUnwind, kExprEnd},
-      kAppendEnd, "catch, catch-all or unwind already present for try");
 }
 
 TEST_F(FunctionBodyDecoderTest, Rethrow) {
@@ -2994,9 +2980,6 @@ TEST_F(FunctionBodyDecoderTest, Rethrow) {
                 "rethrow not targeting catch or catch-all");
   ExpectFailure(sigs.v_v(), {kExprRethrow, 0}, kAppendEnd,
                 "rethrow not targeting catch or catch-all");
-  ExpectFailure(sigs.v_v(),
-                {WASM_TRY_OP, kExprUnwind, kExprRethrow, 0, kExprEnd},
-                kAppendEnd, "rethrow not targeting catch or catch-all");
 }
 
 TEST_F(FunctionBodyDecoderTest, TryDelegate) {
@@ -3019,11 +3002,6 @@ TEST_F(FunctionBodyDecoderTest, TryDelegate) {
                 "delegate target must be a try block or the function block");
   ExpectFailure(sigs.v_v(),
                 {WASM_TRY_OP, kExprCatch, ex,
-                 WASM_TRY_DELEGATE(WASM_STMTS(kExprThrow, ex), 0), kExprEnd},
-                kAppendEnd,
-                "cannot delegate inside the catch handler of the target");
-  ExpectFailure(sigs.v_v(),
-                {WASM_TRY_OP, kExprUnwind,
                  WASM_TRY_DELEGATE(WASM_STMTS(kExprThrow, ex), 0), kExprEnd},
                 kAppendEnd,
                 "cannot delegate inside the catch handler of the target");
@@ -3297,7 +3275,8 @@ TEST_F(FunctionBodyDecoderTest, MemoryInitInvalid) {
   byte code[] = {WASM_MEMORY_INIT(0, WASM_ZERO, WASM_ZERO, WASM_ZERO),
                  WASM_END};
   for (size_t i = 0; i <= arraysize(code); ++i) {
-    Validate(i == arraysize(code), sigs.v_v(), VectorOf(code, i), kOmitEnd);
+    Validate(i == arraysize(code), sigs.v_v(), base::VectorOf(code, i),
+             kOmitEnd);
   }
 }
 
@@ -3370,7 +3349,8 @@ TEST_F(FunctionBodyDecoderTest, TableInitInvalid) {
   byte code[] = {WASM_TABLE_INIT(0, 0, WASM_ZERO, WASM_ZERO, WASM_ZERO),
                  WASM_END};
   for (size_t i = 0; i <= arraysize(code); ++i) {
-    Validate(i == arraysize(code), sigs.v_v(), VectorOf(code, i), kOmitEnd);
+    Validate(i == arraysize(code), sigs.v_v(), base::VectorOf(code, i),
+             kOmitEnd);
   }
 }
 
@@ -3390,7 +3370,8 @@ TEST_F(FunctionBodyDecoderTest, TableInitDeclarativeElem) {
   byte code[] = {WASM_TABLE_INIT(0, 0, WASM_ZERO, WASM_ZERO, WASM_ZERO),
                  WASM_END};
   for (size_t i = 0; i <= arraysize(code); ++i) {
-    Validate(i == arraysize(code), sigs.v_v(), VectorOf(code, i), kOmitEnd);
+    Validate(i == arraysize(code), sigs.v_v(), base::VectorOf(code, i),
+             kOmitEnd);
   }
 }
 
@@ -3948,8 +3929,8 @@ TEST_F(FunctionBodyDecoderTest, GCStruct) {
                                           WASM_RTT_CANON(array_type_index)),
                  kExprDrop},
                 kAppendEnd,
-                "struct.new_with_rtt[1] expected rtt for type 0, found "
-                "rtt.canon of type (rtt 0 1)");
+                "struct.new_with_rtt[1] expected rtt with depth for type 0, "
+                "found rtt.canon of type (rtt 0 1)");
   // Out-of-bounds index.
   ExpectFailure(sigs.v_v(),
                 {WASM_STRUCT_NEW_WITH_RTT(42, WASM_I32V(0),
@@ -4081,8 +4062,8 @@ TEST_F(FunctionBodyDecoderTest, GCArray) {
                     array_type_index, WASM_REF_NULL(kFuncRefCode), WASM_I32V(5),
                     WASM_RTT_CANON(struct_type_index))},
                 kAppendEnd,
-                "array.new_with_rtt[2] expected rtt for type 0, found "
-                "rtt.canon of type (rtt 0 1)");
+                "array.new_with_rtt[2] expected rtt with depth for type 0, "
+                "found rtt.canon of type (rtt 0 1)");
   // Wrong type index.
   ExpectFailure(
       sigs.v_v(),
@@ -4730,7 +4711,7 @@ class WasmOpcodeLengthTest : public TestWithZone {
 
   template <typename... Bytes>
   void ExpectLength(unsigned expected, Bytes... bytes) {
-    const byte code[] = {bytes..., 0, 0, 0, 0, 0, 0, 0, 0};
+    const byte code[] = {static_cast<byte>(bytes)..., 0, 0, 0, 0, 0, 0, 0, 0};
     EXPECT_EQ(expected, OpcodeLength(code, code + sizeof(code)))
         << PrintOpcodes{code, code + sizeof...(bytes)};
   }
@@ -4751,7 +4732,7 @@ class WasmOpcodeLengthTest : public TestWithZone {
 
   template <typename... Bytes>
   void ExpectFailure(Bytes... bytes) {
-    const byte code[] = {bytes..., 0, 0, 0, 0, 0, 0, 0, 0};
+    const byte code[] = {static_cast<byte>(bytes)..., 0, 0, 0, 0, 0, 0, 0, 0};
     WasmFeatures no_features = WasmFeatures::None();
     WasmDecoder<Decoder::kFullValidation> decoder(
         this->zone(), nullptr, no_features, &no_features, nullptr, code,

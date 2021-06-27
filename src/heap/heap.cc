@@ -35,6 +35,7 @@
 #include "src/heap/array-buffer-sweeper.h"
 #include "src/heap/barrier.h"
 #include "src/heap/base/stack.h"
+#include "src/heap/basic-memory-chunk.h"
 #include "src/heap/code-object-registry.h"
 #include "src/heap/code-range.h"
 #include "src/heap/code-stats.h"
@@ -58,6 +59,7 @@
 #include "src/heap/marking-barrier-inl.h"
 #include "src/heap/marking-barrier.h"
 #include "src/heap/memory-chunk-inl.h"
+#include "src/heap/memory-chunk-layout.h"
 #include "src/heap/memory-measurement.h"
 #include "src/heap/memory-reducer.h"
 #include "src/heap/object-stats.h"
@@ -76,6 +78,7 @@
 #include "src/init/v8.h"
 #include "src/interpreter/interpreter.h"
 #include "src/logging/log.h"
+#include "src/logging/runtime-call-stats-scope.h"
 #include "src/numbers/conversions.h"
 #include "src/objects/data-handler.h"
 #include "src/objects/feedback-vector.h"
@@ -126,6 +129,14 @@ Isolate* Heap::GetIsolateFromWritableObject(HeapObject object) {
 // in heap-write-barrier-inl.h.
 bool Heap_PageFlagsAreConsistent(HeapObject object) {
   return Heap::PageFlagsAreConsistent(object);
+}
+
+bool Heap_ValueMightRequireGenerationalWriteBarrier(HeapObject value) {
+  if (!value.IsCode()) return true;
+  // Code objects are never in new space and thus don't require generational
+  // write barrier.
+  DCHECK(!ObjectInYoungGeneration(value));
+  return false;
 }
 
 void Heap_GenerationalBarrierSlow(HeapObject object, Address slot,
@@ -207,6 +218,8 @@ Heap::Heap()
       collection_barrier_(new CollectionBarrier(this)) {
   // Ensure old_generation_size_ is a multiple of kPageSize.
   DCHECK_EQ(0, max_old_generation_size() & (Page::kPageSize - 1));
+
+  max_regular_code_object_size_ = MemoryChunkLayout::MaxRegularCodeObjectSize();
 
   set_native_contexts_list(Smi::zero());
   set_allocation_sites_list(Smi::zero());
@@ -2267,9 +2280,19 @@ void Heap::CompleteSweepingYoung(GarbageCollector collector) {
 }
 
 void Heap::EnsureSweepingCompleted(Handle<HeapObject> object) {
-  // TODO(dinfuehr): Only sweep that object's page instead of whole heap.
-  mark_compact_collector()->EnsureSweepingCompleted();
-  USE(object);
+  if (!mark_compact_collector()->sweeping_in_progress()) return;
+
+  BasicMemoryChunk* basic_chunk = BasicMemoryChunk::FromHeapObject(*object);
+  if (basic_chunk->InReadOnlySpace()) return;
+
+  MemoryChunk* chunk = MemoryChunk::cast(basic_chunk);
+  if (chunk->SweepingDone()) return;
+
+  // SweepingDone() is always true for large pages.
+  DCHECK(!chunk->IsLargePage());
+
+  Page* page = Page::cast(chunk);
+  mark_compact_collector()->EnsurePageIsSwept(page);
 }
 
 void Heap::UpdateCurrentEpoch(GarbageCollector collector) {
@@ -2593,7 +2616,6 @@ void Heap::ComputeFastPromotionMode() {
 
 void Heap::UnprotectAndRegisterMemoryChunk(MemoryChunk* chunk) {
   if (unprotected_memory_chunks_registry_enabled_) {
-    base::MutexGuard guard(&unprotected_memory_chunks_mutex_);
     if (unprotected_memory_chunks_.insert(chunk).second) {
       chunk->SetReadAndWritable();
     }
@@ -2950,7 +2972,6 @@ STATIC_ASSERT(IsAligned(ByteArray::kHeaderSize, kDoubleAlignment));
 #endif
 
 #ifdef V8_HOST_ARCH_32_BIT
-// NOLINTNEXTLINE(runtime/references) (false positive)
 STATIC_ASSERT((HeapNumber::kValueOffset & kDoubleAlignmentMask) == kTaggedSize);
 #endif
 
@@ -3142,6 +3163,10 @@ void Heap::CreateFillerObjectAtBackground(
 
 HeapObject Heap::CreateFillerObjectAt(Address addr, int size,
                                       ClearRecordedSlots clear_slots_mode) {
+  // TODO(mlippautz): It would be nice to DCHECK that we never call this
+  // with {addr} pointing into large object space; however we currently
+  // initialize LO allocations with a filler, see
+  // LargeObjectSpace::AllocateLargePage.
   if (size == 0) return HeapObject();
   HeapObject filler = CreateFillerObjectAtImpl(
       ReadOnlyRoots(this), addr, size,
@@ -4505,22 +4530,24 @@ void Heap::ZapCodeObject(Address start_address, int size_in_bytes) {
 }
 
 // TODO(ishell): move builtin accessors out from Heap.
-Code Heap::builtin(int index) {
-  DCHECK(Builtins::IsBuiltinId(index));
-  return Code::cast(Object(isolate()->builtins_table()[index]));
+Code Heap::builtin(Builtin builtin) {
+  DCHECK(Builtins::IsBuiltinId(builtin));
+  return Code::cast(
+      Object(isolate()->builtins_table()[static_cast<int>(builtin)]));
 }
 
-Address Heap::builtin_address(int index) {
-  DCHECK(Builtins::IsBuiltinId(index) || index == Builtins::kBuiltinCount);
+Address Heap::builtin_address(Builtin builtin) {
+  const int index = static_cast<int>(builtin);
+  DCHECK(Builtins::IsBuiltinId(builtin) || index == Builtins::kBuiltinCount);
   return reinterpret_cast<Address>(&isolate()->builtins_table()[index]);
 }
 
-void Heap::set_builtin(int index, Code builtin) {
-  DCHECK(Builtins::IsBuiltinId(index));
-  DCHECK(Internals::HasHeapObjectTag(builtin.ptr()));
+void Heap::set_builtin(Builtin builtin, Code code) {
+  DCHECK(Builtins::IsBuiltinId(builtin));
+  DCHECK(Internals::HasHeapObjectTag(code.ptr()));
   // The given builtin may be completely uninitialized thus we cannot check its
   // type here.
-  isolate()->builtins_table()[index] = builtin.ptr();
+  isolate()->builtins_table()[static_cast<int>(builtin)] = code.ptr();
 }
 
 void Heap::IterateWeakRoots(RootVisitor* v, base::EnumSet<SkipRoot> options) {
@@ -4736,9 +4763,10 @@ void Heap::IterateWeakGlobalHandles(RootVisitor* v) {
 }
 
 void Heap::IterateBuiltins(RootVisitor* v) {
-  for (int i = 0; i < Builtins::kBuiltinCount; i++) {
-    v->VisitRootPointer(Root::kBuiltins, Builtins::name(i),
-                        FullObjectSlot(builtin_address(i)));
+  for (Builtin builtin = Builtins::kFirst; builtin <= Builtins::kLast;
+       ++builtin) {
+    v->VisitRootPointer(Root::kBuiltins, Builtins::name(builtin),
+                        FullObjectSlot(builtin_address(builtin)));
   }
 
   // The entry table doesn't need to be updated since all builtins are embedded.
@@ -4922,12 +4950,12 @@ void Heap::ConfigureHeap(const v8::ResourceConstraints& constraints) {
 void Heap::AddToRingBuffer(const char* string) {
   size_t first_part =
       std::min(strlen(string), kTraceRingBufferSize - ring_buffer_end_);
-  base::Memcpy(trace_ring_buffer_ + ring_buffer_end_, string, first_part);
+  memcpy(trace_ring_buffer_ + ring_buffer_end_, string, first_part);
   ring_buffer_end_ += first_part;
   if (first_part < strlen(string)) {
     ring_buffer_full_ = true;
     size_t second_part = strlen(string) - first_part;
-    base::Memcpy(trace_ring_buffer_, string + first_part, second_part);
+    memcpy(trace_ring_buffer_, string + first_part, second_part);
     ring_buffer_end_ = second_part;
   }
 }
@@ -4936,9 +4964,9 @@ void Heap::GetFromRingBuffer(char* buffer) {
   size_t copied = 0;
   if (ring_buffer_full_) {
     copied = kTraceRingBufferSize - ring_buffer_end_;
-    base::Memcpy(buffer, trace_ring_buffer_ + ring_buffer_end_, copied);
+    memcpy(buffer, trace_ring_buffer_ + ring_buffer_end_, copied);
   }
-  base::Memcpy(buffer + copied, trace_ring_buffer_, ring_buffer_end_);
+  memcpy(buffer + copied, trace_ring_buffer_, ring_buffer_end_);
 }
 
 void Heap::ConfigureHeapDefault() {
@@ -5037,15 +5065,6 @@ bool Heap::AllocationLimitOvershotByLargeMargin() {
                (max_global_memory_size_ - global_allocation_limit_) / 2);
 
   return v8_overshoot >= v8_margin || global_overshoot >= global_margin;
-}
-
-// static
-int Heap::MaxRegularHeapObjectSize(AllocationType allocation) {
-  if (!V8_ENABLE_THIRD_PARTY_HEAP_BOOL &&
-      (allocation == AllocationType::kCode)) {
-    return MemoryChunkLayout::MaxRegularCodeObjectSize();
-  }
-  return kMaxRegularHeapObjectSize;
 }
 
 bool Heap::ShouldOptimizeForLoadTime() {
@@ -6473,7 +6492,7 @@ void Heap::SetDetachedContexts(WeakArrayList detached_contexts) {
 }
 
 void Heap::SetInterpreterEntryTrampolineForProfiling(Code code) {
-  DCHECK_EQ(Builtin::kInterpreterEntryTrampoline, code.builtin_index());
+  DCHECK_EQ(Builtin::kInterpreterEntryTrampoline, code.builtin_id());
   set_interpreter_entry_trampoline_for_profiling(code);
 }
 
@@ -6801,7 +6820,7 @@ bool Heap::GcSafeCodeContains(Code code, Address addr) {
   DCHECK(map == ReadOnlyRoots(this).code_map());
   Builtin maybe_builtin = InstructionStream::TryLookupCode(isolate(), addr);
   if (Builtins::IsBuiltinId(maybe_builtin) &&
-      code.builtin_index() == maybe_builtin) {
+      code.builtin_id() == maybe_builtin) {
     return true;
   }
   Address start = code.address();

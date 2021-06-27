@@ -171,7 +171,7 @@ class WasmModuleObject : public JSObject {
   // given index.
   // Meant to be used for debugging or frame printing.
   // Does not allocate, hence gc-safe.
-  Vector<const uint8_t> GetRawFunctionName(int func_index);
+  base::Vector<const uint8_t> GetRawFunctionName(int func_index);
 
   // Extract a portion of the wire bytes as UTF-8 string, optionally
   // internalized. (Prefer to internalize early if the string will be used for a
@@ -180,7 +180,7 @@ class WasmModuleObject : public JSObject {
       Isolate*, Handle<WasmModuleObject>, wasm::WireBytesRef,
       InternalizeString);
   static Handle<String> ExtractUtf8StringFromModuleBytes(
-      Isolate*, Vector<const uint8_t> wire_byte, wasm::WireBytesRef,
+      Isolate*, base::Vector<const uint8_t> wire_byte, wasm::WireBytesRef,
       InternalizeString);
 
   OBJECT_CONSTRUCTORS(WasmModuleObject, JSObject);
@@ -765,7 +765,7 @@ class WasmExportedFunctionData : public WasmFunctionData {
   DECL_INT_ACCESSORS(function_index)
   DECL_ACCESSORS(signature, Foreign)
   DECL_INT_ACCESSORS(wrapper_budget)
-  DECL_ACCESSORS(c_wrapper_code, Object)
+  DECL_ACCESSORS(c_wrapper_code, CodeT)
   DECL_INT_ACCESSORS(packed_args_size)
 
   inline wasm::FunctionSig* sig() const;
@@ -807,6 +807,9 @@ class WasmJSFunctionData : public WasmFunctionData {
                                 TORQUE_GENERATED_WASM_JS_FUNCTION_DATA_FIELDS)
 
   class BodyDescriptor;
+
+ private:
+  DECL_ACCESSORS(raw_wasm_to_js_wrapper_code, CodeT)
 
   OBJECT_CONSTRUCTORS(WasmJSFunctionData, WasmFunctionData);
 };
@@ -941,6 +944,10 @@ class WasmObject : public JSReceiver {
   DECL_CAST(WasmObject)
   DECL_VERIFIER(WasmObject)
 
+  // Prepares given value for being stored into a field of given Wasm type.
+  V8_WARN_UNUSED_RESULT static inline MaybeHandle<Object> ToWasmValue(
+      Isolate* isolate, wasm::ValueType type, Handle<Object> value);
+
  protected:
   // Returns boxed value of the object's field/element with given type and
   // offset.
@@ -948,6 +955,14 @@ class WasmObject : public JSReceiver {
                                            Handle<HeapObject> obj,
                                            wasm::ValueType type,
                                            uint32_t offset);
+
+  static inline void WriteValueAt(Isolate* isolate, Handle<HeapObject> obj,
+                                  wasm::ValueType type, uint32_t offset,
+                                  Handle<Object> value);
+
+ private:
+  template <typename ElementType>
+  static ElementType FromNumber(Object value);
 
   OBJECT_CONSTRUCTORS(WasmObject, JSReceiver);
 };
@@ -972,6 +987,9 @@ class WasmStruct : public TorqueGeneratedWasmStruct<WasmStruct, WasmObject> {
   static inline Handle<Object> GetField(Isolate* isolate,
                                         Handle<WasmStruct> obj,
                                         uint32_t field_index);
+
+  static inline void SetField(Isolate* isolate, Handle<WasmStruct> obj,
+                              uint32_t field_index, Handle<Object> value);
 
   DECL_CAST(WasmStruct)
   DECL_PRINTER(WasmStruct)
@@ -999,6 +1017,9 @@ class WasmArray : public TorqueGeneratedWasmArray<WasmArray, WasmObject> {
   static inline Handle<Object> GetElement(Isolate* isolate,
                                           Handle<WasmArray> array,
                                           uint32_t index);
+
+  // Returns the Address of the element at {index}.
+  Address ElementAddress(uint32_t index);
 
   DECL_CAST(WasmArray)
   DECL_PRINTER(WasmArray)

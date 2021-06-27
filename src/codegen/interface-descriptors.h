@@ -77,7 +77,6 @@ namespace internal {
   V(InterpreterCEntry1)                  \
   V(InterpreterCEntry2)                  \
   V(InterpreterDispatch)                 \
-  V(TailCallOptimizedCodeSlot)           \
   V(InterpreterPushArgsThenCall)         \
   V(InterpreterPushArgsThenConstruct)    \
   V(JSTrampoline)                        \
@@ -112,6 +111,7 @@ namespace internal {
   V(StringAtAsString)                    \
   V(StringSubstring)                     \
   IF_TSAN(V, TSANRelaxedStore)           \
+  IF_TSAN(V, TSANRelaxedLoad)            \
   V(TypeConversion)                      \
   V(TypeConversionNoContext)             \
   V(TypeConversion_Baseline)             \
@@ -469,10 +469,8 @@ class StaticCallInterfaceDescriptor : public CallInterfaceDescriptor {
   static constexpr inline int GetRegisterParameterCount();
   static constexpr inline int GetStackParameterCount();
   static constexpr inline Register* GetRegisterData();
+  static constexpr inline Register GetRegisterParameter(int i);
 
-  static constexpr inline Register GetRegisterParameter(int i) {
-    return DerivedDescriptor::registers()[i];
-  }
   explicit StaticCallInterfaceDescriptor(CallDescriptors::Key key)
       : CallInterfaceDescriptor(key) {}
 
@@ -1023,10 +1021,7 @@ class WriteBarrierDescriptor final
   DECLARE_DESCRIPTOR(WriteBarrierDescriptor)
   static constexpr auto registers();
   static constexpr bool kRestrictAllocatableRegisters = true;
-#if V8_TARGET_ARCH_X64
-  // TODO(cbruni): Extend to all platforms.
   static constexpr bool kCalleeSaveRegisters = true;
-#endif
   static constexpr inline Register ObjectRegister();
   static constexpr inline Register SlotAddressRegister();
   // A temporary register used in helpers.
@@ -1051,6 +1046,19 @@ class TSANRelaxedStoreDescriptor final
   static constexpr auto registers();
   static constexpr bool kRestrictAllocatableRegisters = true;
 };
+
+class TSANRelaxedLoadDescriptor final
+    : public StaticCallInterfaceDescriptor<TSANRelaxedLoadDescriptor> {
+ public:
+  DEFINE_PARAMETERS_NO_CONTEXT(kAddress)
+  DEFINE_PARAMETER_TYPES(MachineType::Pointer())  // kAddress
+
+  DECLARE_DESCRIPTOR(TSANRelaxedLoadDescriptor)
+
+  static constexpr auto registers();
+  static constexpr bool kRestrictAllocatableRegisters = true;
+};
+
 #endif  // V8_IS_TSAN
 
 class TypeConversionDescriptor final
@@ -1550,17 +1558,6 @@ class GrowArrayElementsDescriptor
 
   static constexpr inline Register ObjectRegister();
   static constexpr inline Register KeyRegister();
-
-  static constexpr auto registers();
-};
-
-class V8_EXPORT_PRIVATE TailCallOptimizedCodeSlotDescriptor
-    : public StaticCallInterfaceDescriptor<
-          TailCallOptimizedCodeSlotDescriptor> {
- public:
-  DEFINE_PARAMETERS(kOptimizedCodeEntry)
-  DEFINE_PARAMETER_TYPES(MachineType::AnyTagged())  // kAccumulator
-  DECLARE_DESCRIPTOR(TailCallOptimizedCodeSlotDescriptor)
 
   static constexpr auto registers();
 };

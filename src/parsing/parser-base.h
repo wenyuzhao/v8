@@ -6,6 +6,7 @@
 #define V8_PARSING_PARSER_BASE_H_
 
 #include <stdint.h>
+
 #include <utility>
 #include <vector>
 
@@ -18,8 +19,8 @@
 #include "src/codegen/bailout-reason.h"
 #include "src/common/globals.h"
 #include "src/common/message-template.h"
-#include "src/logging/counters.h"
 #include "src/logging/log.h"
+#include "src/logging/runtime-call-stats-scope.h"
 #include "src/objects/function-kind.h"
 #include "src/parsing/expression-scope.h"
 #include "src/parsing/func-name-inferrer.h"
@@ -594,7 +595,6 @@ class ParserBase {
           instance_fields(parser->impl()->NewClassPropertyList(4)),
           constructor(parser->impl()->NullExpression()),
           has_seen_constructor(false),
-          has_name_static_property(false),
           has_static_computed_names(false),
           has_static_elements(false),
           has_static_private_methods(false),
@@ -614,7 +614,6 @@ class ParserBase {
     FunctionLiteralT constructor;
 
     bool has_seen_constructor;
-    bool has_name_static_property;
     bool has_static_computed_names;
     bool has_static_elements;
     bool has_static_private_methods;
@@ -2313,11 +2312,6 @@ ParserBase<Impl>::ParseClassPropertyDefinition(ClassInfo* class_info,
     }
   } else {
     name_expression = ParseProperty(prop_info);
-  }
-
-  if (!class_info->has_name_static_property && prop_info->is_static &&
-      impl()->IsName(prop_info->name)) {
-    class_info->has_name_static_property = true;
   }
 
   switch (prop_info->kind) {

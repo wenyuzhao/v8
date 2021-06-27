@@ -202,7 +202,7 @@ void AccessorAssembler::HandleLoadICHandlerCase(
 
   BIND(&try_proto_handler);
   {
-    GotoIf(IsCodeMap(LoadMap(CAST(handler))), &call_handler);
+    GotoIf(IsCodeT(CAST(handler)), &call_handler);
     HandleLoadICProtoHandler(p, CAST(handler), &var_holder, &var_smi_handler,
                              &if_smi_handler, miss, exit_point, ic_mode,
                              access_mode);
@@ -219,7 +219,9 @@ void AccessorAssembler::HandleLoadICHandlerCase(
 
   BIND(&call_handler);
   {
-    exit_point->ReturnCallStub(LoadWithVectorDescriptor{}, CAST(handler),
+    // TODO(v8:11880): avoid roundtrips between cdc and code.
+    TNode<Code> code_handler = FromCodeT(CAST(handler));
+    exit_point->ReturnCallStub(LoadWithVectorDescriptor{}, code_handler,
                                p->context(), p->lookup_start_object(),
                                p->name(), p->slot(), p->vector());
   }
@@ -340,12 +342,11 @@ void AccessorAssembler::HandleLoadWasmField(
     Label* rebox_double, ExitPoint* exit_point) {
   Label type_I8(this), type_I16(this), type_I32(this), type_U32(this),
       type_I64(this), type_U64(this), type_F32(this), type_F64(this),
-      unsupported_type(this, Label::kDeferred),
+      type_Ref(this), unsupported_type(this, Label::kDeferred),
       unexpected_type(this, Label::kDeferred);
   Label* wasm_value_type_labels[] = {
-      &type_I8,          &type_I16,        &type_I32, &type_U32,
-      &type_I64,         &type_F32,        &type_F64, &unsupported_type,
-      &unsupported_type, &unsupported_type};
+      &type_I8,  &type_I16, &type_I32, &type_U32, &type_I64,
+      &type_F32, &type_F64, &type_Ref, &type_Ref, &unsupported_type};
   int32_t wasm_value_types[] = {
       static_cast<int32_t>(WasmValueType::kI8),
       static_cast<int32_t>(WasmValueType::kI16),
@@ -354,10 +355,10 @@ void AccessorAssembler::HandleLoadWasmField(
       static_cast<int32_t>(WasmValueType::kI64),
       static_cast<int32_t>(WasmValueType::kF32),
       static_cast<int32_t>(WasmValueType::kF64),
-      // TODO(ishell): support the following value types.
-      static_cast<int32_t>(WasmValueType::kS128),
       static_cast<int32_t>(WasmValueType::kRef),
-      static_cast<int32_t>(WasmValueType::kOptRef)};
+      static_cast<int32_t>(WasmValueType::kOptRef),
+      // TODO(v8:11804): support the following value types.
+      static_cast<int32_t>(WasmValueType::kS128)};
   const size_t kWasmValueTypeCount =
       static_cast<size_t>(WasmValueType::kNumTypes);
   DCHECK_EQ(kWasmValueTypeCount, arraysize(wasm_value_types));
@@ -392,7 +393,12 @@ void AccessorAssembler::HandleLoadWasmField(
   BIND(&type_I64);
   {
     Comment("type_I64");
-    Unreachable();
+    TNode<RawPtrT> data_pointer =
+        ReinterpretCast<RawPtrT>(BitcastTaggedToWord(holder));
+    TNode<BigInt> value = LoadFixedBigInt64ArrayElementAsTagged(
+        data_pointer,
+        Signed(IntPtrSub(field_offset, IntPtrConstant(kHeapObjectTag))));
+    exit_point->Return(value);
   }
   BIND(&type_F32);
   {
@@ -407,6 +413,12 @@ void AccessorAssembler::HandleLoadWasmField(
     TNode<Float64T> value = LoadObjectField<Float64T>(holder, field_offset);
     *var_double_value = value;
     Goto(rebox_double);
+  }
+  BIND(&type_Ref);
+  {
+    Comment("type_Ref");
+    TNode<Object> value = LoadObjectField(holder, field_offset);
+    exit_point->Return(value);
   }
   BIND(&unsupported_type);
   {
@@ -998,8 +1010,9 @@ TNode<Object> AccessorAssembler::HandleProtoHandler(
     if (on_code_handler) {
       Label if_smi_handler(this);
       GotoIf(TaggedIsSmi(smi_or_code_handler), &if_smi_handler);
-
-      on_code_handler(CAST(smi_or_code_handler));
+      // TODO(v8:11880): avoid roundtrips between cdc and code.
+      TNode<Code> code = FromCodeT(CAST(smi_or_code_handler));
+      on_code_handler(code);
 
       BIND(&if_smi_handler);
     }
@@ -1321,7 +1334,7 @@ void AccessorAssembler::HandleStoreICHandlerCase(
     GotoIf(IsWeakOrCleared(handler), &store_transition_or_global);
     TNode<HeapObject> strong_handler = CAST(handler);
     TNode<Map> handler_map = LoadMap(strong_handler);
-    Branch(IsCodeMap(handler_map), &call_handler, &if_proto_handler);
+    Branch(IsCodeTMap(handler_map), &call_handler, &if_proto_handler);
 
     BIND(&if_proto_handler);
     {
@@ -1332,9 +1345,11 @@ void AccessorAssembler::HandleStoreICHandlerCase(
     // |handler| is a heap object. Must be code, call it.
     BIND(&call_handler);
     {
-      TailCallStub(StoreWithVectorDescriptor{}, CAST(strong_handler),
-                   p->context(), p->receiver(), p->name(), p->value(),
-                   p->slot(), p->vector());
+      // TODO(v8:11880): avoid roundtrips between cdc and code.
+      TNode<Code> code_handler = FromCodeT(CAST(strong_handler));
+      TailCallStub(StoreWithVectorDescriptor{}, code_handler, p->context(),
+                   p->receiver(), p->name(), p->value(), p->slot(),
+                   p->vector());
     }
   }
 
@@ -3884,10 +3899,16 @@ void AccessorAssembler::StoreInArrayLiteralIC(const StoreICParameters* p) {
       GotoIf(TaggedIsSmi(var_handler.value()), &if_smi_handler);
 
       TNode<HeapObject> handler = CAST(var_handler.value());
-      GotoIfNot(IsCode(handler), &if_transitioning_element_store);
-      TailCallStub(StoreWithVectorDescriptor{}, CAST(handler), p->context(),
-                   p->receiver(), p->name(), p->value(), p->slot(),
-                   p->vector());
+      GotoIfNot(IsCodeT(handler), &if_transitioning_element_store);
+
+      {
+        // Call the handler.
+        // TODO(v8:11880): avoid roundtrips between cdc and code.
+        TNode<Code> code_handler = FromCodeT(CAST(handler));
+        TailCallStub(StoreWithVectorDescriptor{}, code_handler, p->context(),
+                     p->receiver(), p->name(), p->value(), p->slot(),
+                     p->vector());
+      }
 
       BIND(&if_transitioning_element_store);
       {
@@ -3896,8 +3917,9 @@ void AccessorAssembler::StoreInArrayLiteralIC(const StoreICParameters* p) {
         TNode<Map> transition_map =
             CAST(GetHeapObjectAssumeWeak(maybe_transition_map, &miss));
         GotoIf(IsDeprecatedMap(transition_map), &miss);
-        TNode<Code> code =
-            CAST(LoadObjectField(handler, StoreHandler::kSmiHandlerOffset));
+        // TODO(v8:11880): avoid roundtrips between cdc and code.
+        TNode<Code> code = FromCodeT(
+            CAST(LoadObjectField(handler, StoreHandler::kSmiHandlerOffset)));
         TailCallStub(StoreTransitionDescriptor{}, code, p->context(),
                      p->receiver(), p->name(), transition_map, p->value(),
                      p->slot(), p->vector());

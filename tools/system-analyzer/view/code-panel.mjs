@@ -31,6 +31,21 @@ DOM.defineCustomElement('view/code-panel',
 
   set entry(entry) {
     this._entry = entry;
+    if (entry !== undefined) {
+      this.$('#properties').propertyDict = {
+        '__this__': entry,
+        functionName: entry.functionName,
+        size: formatBytes(entry.size),
+        creationTime: formatMicroSeconds(entry.time / 1000),
+        sourcePosition: entry.sourcePosition,
+        script: entry.script,
+        type: entry.type,
+        kind: entry.kindName,
+        variants: entry.variants,
+      };
+    } else {
+      this.$('#properties').propertyDict = {};
+    }
     this.requestUpdate();
   }
 
@@ -62,7 +77,7 @@ DOM.defineCustomElement('view/code-panel',
     for (const code of this._selectedEntries) {
       const option = DOM.element('option');
       option.text =
-          `${code.name}(...) t=${formatMicroSeconds(code.time)} size=${
+          `${code.functionName}(...) t=${formatMicroSeconds(code.time)} size=${
               formatBytes(code.size)} script=${code.script?.toString()}`;
       option.data = code;
       select.add(option);

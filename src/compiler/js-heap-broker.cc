@@ -11,10 +11,14 @@
 #include "src/codegen/code-factory.h"
 #include "src/codegen/optimized-compilation-info.h"
 #include "src/handles/handles-inl.h"
-#include "src/ic/handler-configuration.h"
+#include "src/heap/heap-inl.h"
+#include "src/ic/handler-configuration-inl.h"
 #include "src/init/bootstrapper.h"
+#include "src/objects/allocation-site-inl.h"
+#include "src/objects/data-handler-inl.h"
 #include "src/objects/feedback-cell.h"
 #include "src/objects/js-array-inl.h"
+#include "src/objects/literal-objects-inl.h"
 #include "src/objects/objects-inl.h"
 #include "src/objects/oddball.h"
 #include "src/objects/property-cell.h"
@@ -249,8 +253,12 @@ bool JSHeapBroker::StackHasOverflowed() const {
 }
 
 bool JSHeapBroker::ObjectMayBeUninitialized(Handle<Object> object) const {
-  if (!object->IsHeapObject()) return false;
-  return ObjectMayBeUninitialized(HeapObject::cast(*object));
+  return ObjectMayBeUninitialized(*object);
+}
+
+bool JSHeapBroker::ObjectMayBeUninitialized(Object object) const {
+  if (!object.IsHeapObject()) return false;
+  return ObjectMayBeUninitialized(HeapObject::cast(object));
 }
 
 bool JSHeapBroker::ObjectMayBeUninitialized(HeapObject object) const {
@@ -526,7 +534,7 @@ bool JSHeapBroker::FeedbackIsInsufficient(FeedbackSource const& source) const {
 
 namespace {
 
-// Remove unupdatable and abandoned prototype maps in-place.
+// Update deprecated maps, drop unupdatable ones and abandoned prototype maps.
 void FilterRelevantReceiverMaps(Isolate* isolate, MapHandles* maps) {
   auto in = maps->begin();
   auto out = in;
@@ -537,7 +545,7 @@ void FilterRelevantReceiverMaps(Isolate* isolate, MapHandles* maps) {
     if (Map::TryUpdate(isolate, map).ToHandle(&map) &&
         !map->is_abandoned_prototype_map()) {
       DCHECK(!map->is_deprecated());
-      *out = *in;
+      *out = map;
       ++out;
     }
   }

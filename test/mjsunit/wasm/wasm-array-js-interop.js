@@ -15,7 +15,7 @@ let instances = [];
 function createArray_i() {
   let builder = new WasmModuleBuilder();
 
-  const type_index = builder.addArray(kWasmI32);
+  const type_index = builder.addArray(kWasmI32, true);
 
   let sig_a_i = makeSig_r_x(kWasmDataRef, kWasmI32);
   let sig_i_ai = makeSig([kWasmDataRef, kWasmI32], [kWasmI32]);
@@ -72,14 +72,12 @@ function createArray_i() {
 
 (function TestSimpleArrayInterop() {
   function f(o) {
-    for (let i = 0; i < kIterationsCountForICProgression; i++) {
+    assertEquals(10, o.length);
+    for (let i = 0; i < o.length; i++) {
       let len = o.length;
       assertEquals(10, len);
-      // Keyed loads are not supported yet
-      // let v0 = o[0];
-      // %DebugPrint(v0);
-      // let v1 = o[1];
-      // %DebugPrint(v1);
+      let v = o[i];
+      assertEquals(i, v);
     }
   }
 

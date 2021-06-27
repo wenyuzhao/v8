@@ -616,6 +616,10 @@ void MarkCompactCollector::EnsureSweepingCompleted() {
 #endif
 }
 
+void MarkCompactCollector::EnsurePageIsSwept(Page* page) {
+  sweeper()->EnsurePageIsSwept(page);
+}
+
 void MarkCompactCollector::DrainSweepingWorklists() {
   if (!sweeper()->sweeping_in_progress()) return;
   sweeper()->DrainSweepingWorklists();
@@ -1336,10 +1340,19 @@ class EvacuateVisitorBase : public HeapObjectVisitor {
     } else if (dest == CODE_SPACE) {
       DCHECK_CODEOBJECT_SIZE(size, base->heap_->code_space());
       base->heap_->CopyBlock(dst_addr, src_addr, size);
-      Code::cast(dst).Relocate(dst_addr - src_addr);
+      Code code = Code::cast(dst);
+      code.Relocate(dst_addr - src_addr);
       if (mode != MigrationMode::kFast)
         base->ExecuteMigrationObservers(dest, src, dst, size);
       dst.IterateBodyFast(dst.map(), size, base->record_visitor_);
+      if (V8_EXTERNAL_CODE_SPACE_BOOL) {
+        CodeDataContainer code_data_container =
+            code.GCSafeCodeDataContainer(kAcquireLoad);
+        Isolate* isolate_for_sandbox = base->heap_->isolate();
+        // Update the |code_entry_point| which is a raw interiour or off-heap
+        // pointer and thus not handled by the regular updating mechanism.
+        code_data_container.SetCodeAndEntryPoint(isolate_for_sandbox, code);
+      }
     } else {
       DCHECK_OBJECT_SIZE(size);
       DCHECK(dest == NEW_SPACE);
@@ -3210,7 +3223,7 @@ class PageEvacuationJob : public v8::JobTask {
   }
 
   size_t GetMaxConcurrency(size_t worker_count) const override {
-    const size_t kItemsPerWorker = MB / Page::kPageSize;
+    const size_t kItemsPerWorker = std::max(1, MB / Page::kPageSize);
     // Ceiling division to ensure enough workers for all
     // |remaining_evacuation_items_|
     const size_t wanted_num_workers =

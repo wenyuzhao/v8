@@ -394,7 +394,7 @@ void FeedbackVector::SetOptimizedCode(Handle<FeedbackVector> vector,
   // re-mark the function for non-concurrent optimization after an OSR. We
   // should avoid these cases and also check that marker isn't
   // kCompileOptimized or kCompileOptimizedConcurrent.
-  vector->set_maybe_optimized_code(HeapObjectReference::Weak(*code),
+  vector->set_maybe_optimized_code(HeapObjectReference::Weak(ToCodeT(*code)),
                                    kReleaseStore);
   int32_t state = vector->flags();
   state = OptimizationTierBits::update(state, GetTierForCodeKind(code->kind()));
@@ -474,7 +474,7 @@ void FeedbackVector::EvictOptimizedCodeMarkedForDeoptimization(
     return;
   }
 
-  Code code = Code::cast(slot->GetHeapObject());
+  Code code = FromCodeT(CodeT::cast(slot->GetHeapObject()));
   if (code.marked_for_deoptimization()) {
     Deoptimizer::TraceEvictFromOptimizedCodeCache(shared, reason);
     if (!code.deopt_already_counted()) {
@@ -1171,9 +1171,9 @@ KeyedAccessLoadMode FeedbackNexus::GetKeyedAccessLoadMode() const {
 
 namespace {
 
-bool BuiltinHasKeyedAccessStoreMode(int builtin_index) {
-  DCHECK(Builtins::IsBuiltinId(builtin_index));
-  switch (builtin_index) {
+bool BuiltinHasKeyedAccessStoreMode(Builtin builtin) {
+  DCHECK(Builtins::IsBuiltinId(builtin));
+  switch (builtin) {
     case Builtin::kKeyedStoreIC_SloppyArguments_Standard:
     case Builtin::kKeyedStoreIC_SloppyArguments_GrowNoTransitionHandleCOW:
     case Builtin::kKeyedStoreIC_SloppyArguments_NoTransitionIgnoreOOB:
@@ -1193,9 +1193,9 @@ bool BuiltinHasKeyedAccessStoreMode(int builtin_index) {
   UNREACHABLE();
 }
 
-KeyedAccessStoreMode KeyedAccessStoreModeForBuiltin(int builtin_index) {
-  DCHECK(BuiltinHasKeyedAccessStoreMode(builtin_index));
-  switch (builtin_index) {
+KeyedAccessStoreMode KeyedAccessStoreModeForBuiltin(Builtin builtin) {
+  DCHECK(BuiltinHasKeyedAccessStoreMode(builtin));
+  switch (builtin) {
     case Builtin::kKeyedStoreIC_SloppyArguments_Standard:
     case Builtin::kStoreFastElementIC_Standard:
     case Builtin::kElementsTransitionAndStore_Standard:
@@ -1243,8 +1243,8 @@ KeyedAccessStoreMode FeedbackNexus::GetKeyedAccessStoreMode() const {
         if (mode != STANDARD_STORE) return mode;
         continue;
       } else {
-        handler = handle(Code::cast(data_handler->smi_handler()),
-                         vector().GetIsolate());
+        Code code = FromCodeT(CodeT::cast(data_handler->smi_handler()));
+        handler = handle(code, vector().GetIsolate());
       }
 
     } else if (maybe_code_handler.object()->IsSmi()) {
@@ -1258,14 +1258,19 @@ KeyedAccessStoreMode FeedbackNexus::GetKeyedAccessStoreMode() const {
       continue;
     } else {
       // Element store without prototype chain check.
-      handler = Handle<Code>::cast(maybe_code_handler.object());
+      if (V8_EXTERNAL_CODE_SPACE_BOOL) {
+        Code code = FromCodeT(CodeT::cast(*maybe_code_handler.object()));
+        handler = handle(code, vector().GetIsolate());
+      } else {
+        handler = Handle<Code>::cast(maybe_code_handler.object());
+      }
     }
 
     if (handler->is_builtin()) {
-      const int builtin_index = handler->builtin_index();
-      if (!BuiltinHasKeyedAccessStoreMode(builtin_index)) continue;
+      Builtin builtin = handler->builtin_id();
+      if (!BuiltinHasKeyedAccessStoreMode(builtin)) continue;
 
-      mode = KeyedAccessStoreModeForBuiltin(builtin_index);
+      mode = KeyedAccessStoreModeForBuiltin(builtin);
       break;
     }
   }

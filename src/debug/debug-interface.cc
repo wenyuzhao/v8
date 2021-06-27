@@ -5,6 +5,7 @@
 #include "src/debug/debug-interface.h"
 
 #include "src/api/api-inl.h"
+#include "src/base/utils/random-number-generator.h"
 #include "src/debug/debug-coverage.h"
 #include "src/debug/debug-evaluate.h"
 #include "src/debug/debug-property-iterator.h"
@@ -13,6 +14,7 @@
 #include "src/execution/vm-state-inl.h"
 #include "src/objects/js-generator-inl.h"
 #include "src/objects/stack-frame-info-inl.h"
+#include "src/profiler/heap-profiler.h"
 #include "src/regexp/regexp-stack.h"
 #include "src/strings/string-builder-inl.h"
 
@@ -640,7 +642,7 @@ int WasmScript::NumImportedFunctions() const {
 
 MemorySpan<const uint8_t> WasmScript::Bytecode() const {
   i::Handle<i::Script> script = Utils::OpenHandle(this);
-  i::Vector<const uint8_t> wire_bytes =
+  base::Vector<const uint8_t> wire_bytes =
       script->wasm_native_module()->wire_bytes();
   return {wire_bytes.begin(), wire_bytes.size()};
 }
@@ -681,7 +683,8 @@ uint32_t WasmScript::GetFunctionHash(int function_index) {
   DCHECK_GT(module->functions.size(), function_index);
   const i::wasm::WasmFunction& func = module->functions[function_index];
   i::wasm::ModuleWireBytes wire_bytes(native_module->wire_bytes());
-  i::Vector<const i::byte> function_bytes = wire_bytes.GetFunctionBytes(&func);
+  base::Vector<const i::byte> function_bytes =
+      wire_bytes.GetFunctionBytes(&func);
   // TODO(herhut): Maybe also take module, name and signature into account.
   return i::StringHasher::HashSequentialString(function_bytes.begin(),
                                                function_bytes.length(), 0);
@@ -773,12 +776,12 @@ MaybeLocal<UnboundScript> CompileInspectorScript(Isolate* v8_isolate,
 #if V8_ENABLE_WEBASSEMBLY
 void TierDownAllModulesPerIsolate(Isolate* v8_isolate) {
   i::Isolate* isolate = reinterpret_cast<i::Isolate*>(v8_isolate);
-  isolate->wasm_engine()->TierDownAllModulesPerIsolate(isolate);
+  i::wasm::GetWasmEngine()->TierDownAllModulesPerIsolate(isolate);
 }
 
 void TierUpAllModulesPerIsolate(Isolate* v8_isolate) {
   i::Isolate* isolate = reinterpret_cast<i::Isolate*>(v8_isolate);
-  isolate->wasm_engine()->TierUpAllModulesPerIsolate(isolate);
+  i::wasm::GetWasmEngine()->TierUpAllModulesPerIsolate(isolate);
 }
 #endif  // V8_ENABLE_WEBASSEMBLY
 
@@ -841,19 +844,19 @@ Local<String> WasmValueObject::type() const {
 }
 #endif  // V8_ENABLE_WEBASSEMBLY
 
-Local<Function> GetBuiltin(Isolate* v8_isolate, Builtin builtin) {
+Local<Function> GetBuiltin(Isolate* v8_isolate, Builtin requested_builtin) {
   i::Isolate* isolate = reinterpret_cast<i::Isolate*>(v8_isolate);
   ENTER_V8_NO_SCRIPT_NO_EXCEPTION(isolate);
   i::HandleScope handle_scope(isolate);
 
-  CHECK_EQ(builtin, kStringToLowerCase);
-  i::Builtin builtin_id = i::Builtin::kStringPrototypeToLocaleLowerCase;
+  CHECK_EQ(requested_builtin, kStringToLowerCase);
+  i::Builtin builtin = i::Builtin::kStringPrototypeToLocaleLowerCase;
 
   i::Factory* factory = isolate->factory();
   i::Handle<i::String> name = isolate->factory()->empty_string();
   i::Handle<i::NativeContext> context(isolate->native_context());
   i::Handle<i::SharedFunctionInfo> info =
-      factory->NewSharedFunctionInfoForBuiltin(name, builtin_id);
+      factory->NewSharedFunctionInfoForBuiltin(name, builtin);
   info->set_language_mode(i::LanguageMode::kStrict);
   i::Handle<i::JSFunction> fun =
       i::Factory::JSFunctionBuilder{isolate, info, context}
@@ -1171,6 +1174,21 @@ v8::MaybeLocal<v8::Value> WeakMap::Get(v8::Local<v8::Context> context,
                       &result);
   RETURN_ON_FAILED_EXECUTION(Value);
   RETURN_ESCAPED(result);
+}
+
+v8::Maybe<bool> WeakMap::Delete(v8::Local<v8::Context> context,
+                                v8::Local<v8::Value> key) {
+  PREPARE_FOR_EXECUTION_WITH_CONTEXT(context, WeakMap, Delete, Nothing<bool>(),
+                                     InternalEscapableScope, false);
+  auto self = Utils::OpenHandle(this);
+  Local<Value> result;
+  i::Handle<i::Object> argv[] = {Utils::OpenHandle(*key)};
+  has_pending_exception = !ToLocal<Value>(
+      i::Execution::CallBuiltin(isolate, isolate->weakmap_delete(), self,
+                                arraysize(argv), argv),
+      &result);
+  RETURN_ON_FAILED_EXECUTION_PRIMITIVE(bool);
+  return Just(result->IsTrue());
 }
 
 v8::MaybeLocal<WeakMap> WeakMap::Set(v8::Local<v8::Context> context,

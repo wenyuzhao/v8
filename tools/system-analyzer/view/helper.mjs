@@ -83,7 +83,7 @@ export class CSSColor {
     return this.list[index % this.list.length];
   }
 
-  static darken(hexColorString, amount = -40) {
+  static darken(hexColorString, amount = -50) {
     if (hexColorString[0] !== '#') {
       throw new Error(`Unsupported color: ${hexColorString}`);
     }
@@ -123,13 +123,32 @@ export class CSSColor {
 }
 
 export class DOM {
-  static element(type, classes) {
+  static element(type, options) {
     const node = document.createElement(type);
-    if (classes !== undefined) {
-      if (typeof classes === 'string') {
-        node.className = classes;
+    if (options !== undefined) {
+      if (typeof options === 'string') {
+        // Old behaviour: options = class string
+        node.className = options;
+      } else if (Array.isArray(options)) {
+        // Old behaviour: options = class array
+        DOM.addClasses(node, options);
       } else {
-        DOM.addClasses(node, classes);
+        // New behaviour: options = attribute dict
+        for (const [key, value] of Object.entries(options)) {
+          if (key == 'className') {
+            node.className = value;
+          } else if (key == 'classList') {
+            node.classList = value;
+          } else if (key == 'textContent') {
+            node.textContent = value;
+          } else if (key == 'children') {
+            for (const child of value) {
+              node.appendChild(child);
+            }
+          } else {
+            node.setAttribute(key, value);
+          }
+        }
       }
     }
     return node;
@@ -158,20 +177,20 @@ export class DOM {
     return button;
   }
 
-  static div(classes) {
-    return this.element('div', classes);
+  static div(options) {
+    return this.element('div', options);
   }
 
-  static span(classes) {
-    return this.element('span', classes);
+  static span(options) {
+    return this.element('span', options);
   }
 
-  static table(classes) {
-    return this.element('table', classes);
+  static table(options) {
+    return this.element('table', options);
   }
 
-  static tbody(classes) {
-    return this.element('tbody', classes);
+  static tbody(options) {
+    return this.element('tbody', options);
   }
 
   static td(textOrNode, className) {
@@ -284,15 +303,7 @@ export class CollapsableElement extends V8CustomElement {
   constructor(templateText) {
     super(templateText);
     this._hasPendingUpdate = false;
-    this._closer.onclick = _ => this.tryUpdateOnVisibilityChange();
-  }
-
-  hide() {
-    if (this._contentIsVisible) this._closer.click();
-  }
-
-  show() {
-    if (!this._contentIsVisible) this._closer.click();
+    this._closer.onclick = _ => this._requestUpdateIfVisible();
   }
 
   get _closer() {
@@ -303,19 +314,30 @@ export class CollapsableElement extends V8CustomElement {
     return !this._closer.checked;
   }
 
+  hide() {
+    if (this._contentIsVisible) {
+      this._closer.checked = true;
+      this._requestUpdateIfVisible();
+    }
+    this.scrollIntoView();
+  }
+
+  show() {
+    if (!this._contentIsVisible) {
+      this._closer.checked = false;
+      this._requestUpdateIfVisible();
+    }
+    this.scrollIntoView();
+  }
+
   requestUpdate(useAnimation = false) {
     // A pending update will be resolved later, no need to try again.
     if (this._hasPendingUpdate) return;
     this._hasPendingUpdate = true;
-    this.requestUpdateIfVisible(useAnimation);
+    this._requestUpdateIfVisible(useAnimation);
   }
 
-  tryUpdateOnVisibilityChange() {
-    if (!this._hasPendingUpdate) return;
-    this.requestUpdateIfVisible(true);
-  }
-
-  requestUpdateIfVisible(useAnimation) {
+  _requestUpdateIfVisible(useAnimation = true) {
     if (!this._contentIsVisible) return;
     return super.requestUpdate(useAnimation);
   }

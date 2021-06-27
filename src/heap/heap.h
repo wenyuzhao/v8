@@ -386,8 +386,15 @@ class Heap {
   static constexpr size_t kOldGenerationLowMemory =
       128 * MB * kHeapLimitMultiplier;
   static constexpr size_t kNewLargeObjectSpaceToSemiSpaceRatio = 1;
+#if ENABLE_HUGEPAGE
+  static constexpr size_t kMinSemiSpaceSize =
+      kHugePageSize * kPointerMultiplier;
+  static constexpr size_t kMaxSemiSpaceSize =
+      kHugePageSize * 16 * kPointerMultiplier;
+#else
   static constexpr size_t kMinSemiSpaceSize = 512 * KB * kPointerMultiplier;
   static constexpr size_t kMaxSemiSpaceSize = 8192 * KB * kPointerMultiplier;
+#endif
 
   STATIC_ASSERT(kMinSemiSpaceSize % (1 << kPageSizeBits) == 0);
   STATIC_ASSERT(kMaxSemiSpaceSize % (1 << kPageSizeBits) == 0);
@@ -913,6 +920,7 @@ class Heap {
   CodeRange* code_range() { return code_range_.get(); }
 
   LocalHeap* main_thread_local_heap() { return main_thread_local_heap_; }
+  Heap* AsHeap() { return this; }
 
   // ===========================================================================
   // Root set access. ==========================================================
@@ -1034,9 +1042,9 @@ class Heap {
   // Builtins. =================================================================
   // ===========================================================================
 
-  V8_EXPORT_PRIVATE Code builtin(int index);
-  Address builtin_address(int index);
-  void set_builtin(int index, Code builtin);
+  V8_EXPORT_PRIVATE Code builtin(Builtin builtin);
+  Address builtin_address(Builtin builtin);
+  void set_builtin(Builtin builtin, Code code);
 
   // ===========================================================================
   // Iterators. ================================================================
@@ -1241,6 +1249,9 @@ class Heap {
 
   // Returns whether the object resides in old space.
   inline bool InOldSpace(Object object);
+
+  // Returns whether the object resides in any of the code spaces.
+  inline bool InCodeSpace(HeapObject object);
 
   // Checks whether an address/object is in the non-read-only heap (including
   // auxiliary area and unused area). Use IsValidHeapObject if checking both
@@ -1457,7 +1468,7 @@ class Heap {
   // which the size of the allocatable space per V8 page may depend on the OS
   // page size at runtime. You may use kMaxRegularHeapObjectSize as a constant
   // instead if you know the allocation isn't in the code spaces.
-  V8_EXPORT_PRIVATE static int MaxRegularHeapObjectSize(
+  inline V8_EXPORT_PRIVATE int MaxRegularHeapObjectSize(
       AllocationType allocation);
 
   // ===========================================================================
@@ -2417,6 +2428,8 @@ class Heap {
 
   bool deserialization_complete_ = false;
 
+  int max_regular_code_object_size_ = 0;
+
   bool fast_promotion_mode_ = false;
 
   // Used for testing purposes.
@@ -2426,10 +2439,6 @@ class Heap {
 
   HeapObject pending_layout_change_object_;
 
-  // This mutex protects original_top/limit and pending_object for all spaces.
-  base::SharedMutex pending_allocation_mutex_;
-
-  base::Mutex unprotected_memory_chunks_mutex_;
   std::unordered_set<MemoryChunk*> unprotected_memory_chunks_;
   bool unprotected_memory_chunks_registry_enabled_ = false;
 
@@ -2737,17 +2746,7 @@ class HeapObjectAllocationTracker {
 };
 
 template <typename T>
-T ForwardingAddress(T heap_obj) {
-  MapWord map_word = heap_obj.map_word(kRelaxedLoad);
-
-  if (map_word.IsForwardingAddress()) {
-    return T::cast(map_word.ToForwardingAddress());
-  } else if (Heap::InFromPage(heap_obj)) {
-    return T();
-  } else {
-    return heap_obj;
-  }
-}
+inline T ForwardingAddress(T heap_obj);
 
 // Address block allocator compatible with standard containers which registers
 // its allocated range as strong roots.

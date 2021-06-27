@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "src/base/numbers/double.h"
 #include "src/codegen/assembler-inl.h"
 #include "src/codegen/callable.h"
 #include "src/codegen/macro-assembler.h"
@@ -12,7 +13,6 @@
 #include "src/compiler/node-matchers.h"
 #include "src/compiler/osr.h"
 #include "src/heap/memory-chunk.h"
-#include "src/numbers/double.h"
 
 #if V8_ENABLE_WEBASSEMBLY
 #include "src/wasm/wasm-code-manager.h"
@@ -578,6 +578,18 @@ void EmitWordLoadPoisoningIfNeeded(CodeGenerator* codegen, Instruction* instr,
     DCHECK_EQ(LeaveRC, i.OutputRCBit());             \
   } while (0)
 
+#define ASSEMBLE_LOAD_INTEGER_RR(asm_instr)      \
+  do {                                           \
+    Register result = i.OutputRegister();        \
+    AddressingMode mode = kMode_None;            \
+    MemOperand operand = i.MemoryOperand(&mode); \
+    DCHECK_EQ(mode, kMode_MRR);                  \
+    bool is_atomic = i.InputInt32(2);            \
+    __ asm_instr(result, operand);               \
+    if (is_atomic) __ lwsync();                  \
+    DCHECK_EQ(LeaveRC, i.OutputRCBit());         \
+  } while (0)
+
 #define ASSEMBLE_STORE_FLOAT(asm_instr, asm_instrx)      \
   do {                                                   \
     size_t index = 0;                                    \
@@ -610,6 +622,20 @@ void EmitWordLoadPoisoningIfNeeded(CodeGenerator* codegen, Instruction* instr,
     } else {                                             \
       __ asm_instrx(value, operand);                     \
     }                                                    \
+    if (is_atomic) __ sync();                            \
+    DCHECK_EQ(LeaveRC, i.OutputRCBit());                 \
+  } while (0)
+
+#define ASSEMBLE_STORE_INTEGER_RR(asm_instr)             \
+  do {                                                   \
+    size_t index = 0;                                    \
+    AddressingMode mode = kMode_None;                    \
+    MemOperand operand = i.MemoryOperand(&mode, &index); \
+    DCHECK_EQ(mode, kMode_MRR);                          \
+    Register value = i.InputRegister(index);             \
+    bool is_atomic = i.InputInt32(3);                    \
+    if (is_atomic) __ lwsync();                          \
+    __ asm_instr(value, operand);                        \
     if (is_atomic) __ sync();                            \
     DCHECK_EQ(LeaveRC, i.OutputRCBit());                 \
   } while (0)
@@ -1121,7 +1147,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
         // We don't actually want to generate a pile of code for this, so just
         // claim there is a stack frame, without generating one.
         FrameScope scope(tasm(), StackFrame::NONE);
-        __ Call(isolate()->builtins()->builtin_handle(Builtin::kAbortCSAAssert),
+        __ Call(isolate()->builtins()->code_handle(Builtin::kAbortCSAAssert),
                 RelocInfo::CODE_TARGET);
       }
       __ stop();
@@ -1210,7 +1236,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
         ool = zone()->New<OutOfLineRecordWrite>(
             this, object, offset, value, scratch0, scratch1, mode,
             DetermineStubCallMode(), &unwinding_info_writer_);
-        __ StoreTaggedFieldX(value, MemOperand(object, offset), r0);
+        __ StoreTaggedField(value, MemOperand(object, offset), r0);
       }
       if (mode > RecordWriteMode::kValueIsPointer) {
         __ JumpIfSmi(value, ool->exit());
@@ -1526,14 +1552,16 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       }
       break;
     case kPPC_MulHigh32:
-      __ mulhw(r0, i.InputRegister(0), i.InputRegister(1), i.OutputRCBit());
+      __ mulhw(i.OutputRegister(), i.InputRegister(0), i.InputRegister(1),
+               i.OutputRCBit());
       // High 32 bits are undefined and need to be cleared.
-      __ clrldi(i.OutputRegister(), r0, Operand(32));
+      CleanUInt32(i.OutputRegister());
       break;
     case kPPC_MulHighU32:
-      __ mulhwu(r0, i.InputRegister(0), i.InputRegister(1), i.OutputRCBit());
+      __ mulhwu(i.OutputRegister(), i.InputRegister(0), i.InputRegister(1),
+                i.OutputRCBit());
       // High 32 bits are undefined and need to be cleared.
-      __ clrldi(i.OutputRegister(), r0, Operand(32));
+      CleanUInt32(i.OutputRegister());
       break;
     case kPPC_MulDouble:
       ASSEMBLE_FLOAT_BINOP_RC(fmul, MiscField::decode(instr->opcode()));
@@ -1761,12 +1789,12 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ AllocateStackSpace((slots - pushed_slots) * kSystemPointerSize);
       switch (rep) {
         case MachineRepresentation::kFloat32:
-          __ StoreSingleU(i.InputDoubleRegister(1),
-                          MemOperand(sp, -kSystemPointerSize), r0);
+          __ StoreF32WithUpdate(i.InputDoubleRegister(1),
+                                MemOperand(sp, -kSystemPointerSize), r0);
           break;
         case MachineRepresentation::kFloat64:
-          __ StoreDoubleU(i.InputDoubleRegister(1),
-                          MemOperand(sp, -kDoubleSize), r0);
+          __ StoreF64WithUpdate(i.InputDoubleRegister(1),
+                                MemOperand(sp, -kDoubleSize), r0);
           break;
         case MachineRepresentation::kSimd128:
           __ addi(sp, sp, Operand(-kSimd128Size));
@@ -1786,12 +1814,14 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       if (instr->InputAt(0)->IsFPRegister()) {
         LocationOperand* op = LocationOperand::cast(instr->InputAt(0));
         if (op->representation() == MachineRepresentation::kFloat64) {
-          __ StoreDoubleU(i.InputDoubleRegister(0),
-                          MemOperand(sp, -num_slots * kSystemPointerSize), r0);
+          __ StoreF64WithUpdate(i.InputDoubleRegister(0),
+                                MemOperand(sp, -num_slots * kSystemPointerSize),
+                                r0);
         } else {
           DCHECK_EQ(MachineRepresentation::kFloat32, op->representation());
-          __ StoreSingleU(i.InputDoubleRegister(0),
-                          MemOperand(sp, -num_slots * kSystemPointerSize), r0);
+          __ StoreF32WithUpdate(i.InputDoubleRegister(0),
+                                MemOperand(sp, -num_slots * kSystemPointerSize),
+                                r0);
         }
       } else {
         __ StoreU64WithUpdate(i.InputRegister(0),
@@ -1805,11 +1835,11 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       if (instr->InputAt(0)->IsFPRegister()) {
         LocationOperand* op = LocationOperand::cast(instr->InputAt(0));
         if (op->representation() == MachineRepresentation::kFloat64) {
-          __ StoreDouble(i.InputDoubleRegister(0),
-                         MemOperand(sp, slot * kSystemPointerSize), r0);
+          __ StoreF64(i.InputDoubleRegister(0),
+                      MemOperand(sp, slot * kSystemPointerSize), r0);
         } else if (op->representation() == MachineRepresentation::kFloat32) {
-          __ StoreSingle(i.InputDoubleRegister(0),
-                         MemOperand(sp, slot * kSystemPointerSize), r0);
+          __ StoreF32(i.InputDoubleRegister(0),
+                      MemOperand(sp, slot * kSystemPointerSize), r0);
         } else {
           DCHECK_EQ(MachineRepresentation::kSimd128, op->representation());
           __ mov(ip, Operand(slot * kSystemPointerSize));
@@ -2211,7 +2241,15 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ extsw(output, temp1);
       break;
     }
-#ifdef V8_TARGET_ARCH_PPC64
+    case kPPC_LoadByteRev32: {
+      ASSEMBLE_LOAD_INTEGER_RR(lwbrx);
+      EmitWordLoadPoisoningIfNeeded(this, instr, i);
+      break;
+    }
+    case kPPC_StoreByteRev32: {
+      ASSEMBLE_STORE_INTEGER_RR(stwbrx);
+      break;
+    }
     case kPPC_ByteRev64: {
       Register input = i.InputRegister(0);
       Register output = i.OutputRegister();
@@ -2229,7 +2267,15 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ orx(output, temp2, temp3);
       break;
     }
-#endif  // V8_TARGET_ARCH_PPC64
+    case kPPC_LoadByteRev64: {
+      ASSEMBLE_LOAD_INTEGER_RR(ldbrx);
+      EmitWordLoadPoisoningIfNeeded(this, instr, i);
+      break;
+    }
+    case kPPC_StoreByteRev64: {
+      ASSEMBLE_STORE_INTEGER_RR(stdbrx);
+      break;
+    }
     case kPPC_F64x2Splat: {
       constexpr int lane_width_in_bytes = 8;
       Simd128Register dst = i.OutputSimd128Register();
@@ -3780,7 +3826,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kPPC_StoreCompressTagged: {
-      ASSEMBLE_STORE_INTEGER(StoreTaggedField, StoreTaggedFieldX);
+      ASSEMBLE_STORE_INTEGER(StoreTaggedField, StoreTaggedField);
       break;
     }
     case kPPC_LoadDecompressTaggedSigned: {
@@ -4035,7 +4081,6 @@ void CodeGenerator::FinishFrame(Frame* frame) {
     // register save area does not include the fp or constant pool pointer.
     const int num_saves =
         kNumCalleeSaved - 1 - (FLAG_enable_embedded_constant_pool ? 1 : 0);
-    DCHECK(num_saves == base::bits::CountPopulation(saves));
     frame->AllocateSavedCalleeRegisterSlots(num_saves);
   }
 }
@@ -4229,9 +4274,9 @@ void CodeGenerator::AssembleReturn(InstructionOperand* additional_pop_count) {
   // If {parameter_slots} == 0, it means it is a builtin with
   // kDontAdaptArgumentsSentinel, which takes care of JS arguments popping
   // itself.
-  const bool drop_jsargs = frame_access_state()->has_frame() &&
-                           call_descriptor->IsJSFunctionCall() &&
-                           parameter_slots != 0;
+  const bool drop_jsargs = parameter_slots != 0 &&
+                           frame_access_state()->has_frame() &&
+                           call_descriptor->IsJSFunctionCall();
 
   if (call_descriptor->IsCFunctionCall()) {
     AssembleDeconstructFrame();
@@ -4249,6 +4294,7 @@ void CodeGenerator::AssembleReturn(InstructionOperand* additional_pop_count) {
     }
     if (drop_jsargs) {
       // Get the actual argument count.
+      DCHECK_EQ(0u, call_descriptor->CalleeSavedRegisters() & argc_reg.bit());
       __ LoadU64(argc_reg, MemOperand(fp, StandardFrameConstants::kArgCOffset));
     }
     AssembleDeconstructFrame();
@@ -4389,7 +4435,7 @@ void CodeGenerator::AssembleMove(InstructionOperand* source,
       DoubleRegister dst = destination->IsFPRegister()
                                ? g.ToDoubleRegister(destination)
                                : kScratchDoubleReg;
-      Double value;
+      base::Double value;
 #if V8_HOST_ARCH_IA32 || V8_HOST_ARCH_X64
       // casting double precision snan to single precision
       // converts it to qnan on ia32/x64
@@ -4399,23 +4445,23 @@ void CodeGenerator::AssembleMove(InstructionOperand* source,
           uint64_t dval = static_cast<uint64_t>(val);
           dval = ((dval & 0xC0000000) << 32) | ((dval & 0x40000000) << 31) |
                  ((dval & 0x40000000) << 30) | ((dval & 0x7FFFFFFF) << 29);
-          value = Double(dval);
+          value = base::Double(dval);
         } else {
-          value = Double(static_cast<double>(src.ToFloat32()));
+          value = base::Double(static_cast<double>(src.ToFloat32()));
         }
       } else {
-        value = Double(src.ToFloat64());
+        value = base::Double(src.ToFloat64());
       }
 #else
       value = src.type() == Constant::kFloat32
-                  ? Double(static_cast<double>(src.ToFloat32()))
-                  : Double(src.ToFloat64());
+                  ? base::Double(static_cast<double>(src.ToFloat32()))
+                  : base::Double(src.ToFloat64());
 #endif
       __ LoadDoubleLiteral(dst, value, kScratchReg);
       if (destination->IsDoubleStackSlot()) {
-        __ StoreDouble(dst, g.ToMemOperand(destination), r0);
+        __ StoreF64(dst, g.ToMemOperand(destination), r0);
       } else if (destination->IsFloatStackSlot()) {
-        __ StoreSingle(dst, g.ToMemOperand(destination), r0);
+        __ StoreF32(dst, g.ToMemOperand(destination), r0);
       }
     }
   } else if (source->IsFPRegister()) {
@@ -4439,9 +4485,9 @@ void CodeGenerator::AssembleMove(InstructionOperand* source,
         DCHECK(destination->IsFPStackSlot());
         LocationOperand* op = LocationOperand::cast(source);
         if (op->representation() == MachineRepresentation::kFloat64) {
-          __ StoreDouble(src, g.ToMemOperand(destination), r0);
+          __ StoreF64(src, g.ToMemOperand(destination), r0);
         } else {
-          __ StoreSingle(src, g.ToMemOperand(destination), r0);
+          __ StoreF32(src, g.ToMemOperand(destination), r0);
         }
       }
     }
@@ -4466,10 +4512,10 @@ void CodeGenerator::AssembleMove(InstructionOperand* source,
       DoubleRegister temp = kScratchDoubleReg;
       if (op->representation() == MachineRepresentation::kFloat64) {
         __ LoadF64(temp, src, r0);
-        __ StoreDouble(temp, g.ToMemOperand(destination), r0);
+        __ StoreF64(temp, g.ToMemOperand(destination), r0);
       } else if (op->representation() == MachineRepresentation::kFloat32) {
         __ LoadF32(temp, src, r0);
-        __ StoreSingle(temp, g.ToMemOperand(destination), r0);
+        __ StoreF32(temp, g.ToMemOperand(destination), r0);
       } else {
         DCHECK_EQ(MachineRepresentation::kSimd128, op->representation());
         // push v0, to be used as scratch

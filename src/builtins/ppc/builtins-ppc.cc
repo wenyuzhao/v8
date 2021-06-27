@@ -342,13 +342,13 @@ void Builtins::Generate_ResumeGeneratorTrampoline(MacroAssembler* masm) {
   //  -- r4 : the JSGeneratorObject to resume
   //  -- lr : return address
   // -----------------------------------
-  __ AssertGeneratorObject(r4);
-
   // Store input value into generator object.
   __ StoreTaggedField(
       r3, FieldMemOperand(r4, JSGeneratorObject::kInputOrDebugPosOffset), r0);
   __ RecordWriteField(r4, JSGeneratorObject::kInputOrDebugPosOffset, r3, r6,
                       kLRHasNotBeenSaved, SaveFPRegsMode::kIgnore);
+  // Check that r4 is still valid, RecordWrite might have clobbered it.
+  __ AssertGeneratorObject(r4);
 
   // Load suspended function and context.
   __ LoadTaggedPointerField(
@@ -527,7 +527,7 @@ void Generate_JSEntryVariant(MacroAssembler* masm, StackFrame::Type type,
     // Save callee-saved double registers.
     __ MultiPushDoubles(kCalleeSavedDoubles);
     // Set up the reserved register for 0.0.
-    __ LoadDoubleLiteral(kDoubleRegZero, Double(0.0), r0);
+    __ LoadDoubleLiteral(kDoubleRegZero, base::Double(0.0), r0);
 
     // Initialize the root register.
     // C calling convention. The first argument is passed in r3.
@@ -628,7 +628,7 @@ void Generate_JSEntryVariant(MacroAssembler* masm, StackFrame::Type type,
   // Invoke the function by calling through JS entry trampoline builtin and
   // pop the faked function when we return.
   Handle<Code> trampoline_code =
-      masm->isolate()->builtins()->builtin_handle(entry_trampoline);
+      masm->isolate()->builtins()->code_handle(entry_trampoline);
   __ Call(trampoline_code, RelocInfo::CODE_TARGET);
 
   // Unlink this frame from the handler chain.
@@ -792,12 +792,18 @@ static void ReplaceClosureCodeWithOptimizedCode(MacroAssembler* masm,
                                                 Register optimized_code,
                                                 Register closure,
                                                 Register scratch1,
-                                                Register scratch2) {
+                                                Register slot_address) {
+  DCHECK(!AreAliased(optimized_code, closure, scratch1, slot_address));
+  DCHECK_EQ(closure, kJSFunctionRegister);
+  DCHECK(!AreAliased(optimized_code, closure));
   // Store code entry in the closure.
   __ StoreTaggedField(optimized_code,
                       FieldMemOperand(closure, JSFunction::kCodeOffset), r0);
-  __ mr(scratch1, optimized_code);  // Write barrier clobbers scratch1 below.
-  __ RecordWriteField(closure, JSFunction::kCodeOffset, scratch1, scratch2,
+  // Write barrier clobbers scratch1 below.
+  Register value = scratch1;
+  __ mr(value, optimized_code);
+
+  __ RecordWriteField(closure, JSFunction::kCodeOffset, value, slot_address,
                       kLRHasNotBeenSaved, SaveFPRegsMode::kIgnore,
                       RememberedSetAction::kOmit, SmiCheck::kOmit);
 }
@@ -1006,6 +1012,7 @@ static void AdvanceBytecodeOffsetOrReturn(MacroAssembler* masm,
 static void MaybeOptimizeCodeOrTailCallOptimizedCodeSlot(
     MacroAssembler* masm, Register optimization_state,
     Register feedback_vector) {
+  DCHECK(!AreAliased(optimization_state, feedback_vector));
   Label maybe_has_optimized_code;
   // Check if optimized code is available
   __ TestBitMask(optimization_state,
@@ -1042,7 +1049,7 @@ static void MaybeOptimizeCodeOrTailCallOptimizedCodeSlot(
 //   o lr: return address
 //
 // The function builds an interpreter frame.  See InterpreterFrameConstants in
-// frames.h for its layout.
+// frame-constants.h for its layout.
 void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
   Register closure = r4;
   Register feedback_vector = r5;
@@ -1265,10 +1272,10 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
   __ bkpt(0);  // Should not return.
 }
 
-static void Generate_InterpreterPushArgs(MacroAssembler* masm,
-                                         Register num_args,
-                                         Register start_address,
-                                         Register scratch) {
+static void GenerateInterpreterPushArgs(MacroAssembler* masm, Register num_args,
+                                        Register start_address,
+                                        Register scratch) {
+  ASM_CODE_COMMENT(masm);
   __ subi(scratch, num_args, Operand(1));
   __ ShiftLeftImm(scratch, scratch, Operand(kSystemPointerSizeLog2));
   __ sub(start_address, start_address, scratch);
@@ -1306,7 +1313,7 @@ void Builtins::Generate_InterpreterPushArgsThenCallImpl(
   }
 
   // Push the arguments.
-  Generate_InterpreterPushArgs(masm, r6, r5, r7);
+  GenerateInterpreterPushArgs(masm, r6, r5, r7);
 
   if (receiver_mode == ConvertReceiverMode::kNullOrUndefined) {
     __ PushRoot(RootIndex::kUndefinedValue);
@@ -1356,7 +1363,7 @@ void Builtins::Generate_InterpreterPushArgsThenConstructImpl(
   }
 
   // Push the arguments.
-  Generate_InterpreterPushArgs(masm, r3, r7, r8);
+  GenerateInterpreterPushArgs(masm, r3, r7, r8);
 
   // Push a slot for the receiver to be constructed.
   __ li(r0, Operand::Zero());
@@ -2438,27 +2445,7 @@ void Builtins::Generate_WasmCompileLazy(MacroAssembler* masm) {
              NumRegs(simd_regs));
 
     __ MultiPush(gp_regs);
-    __ MultiPushDoubles(fp_regs);
-    // V8 uses the same set of fp param registers as Simd param registers.
-    // As these registers are two different sets on ppc we must make
-    // sure to also save them when Simd is enabled.
-    // Check the comments under crrev.com/c/2645694 for more details.
-    Label push_empty_simd, simd_pushed;
-    __ Move(ip, ExternalReference::supports_wasm_simd_128_address());
-    __ LoadU8(ip, MemOperand(ip), r0);
-    __ cmpi(ip, Operand::Zero());  // If > 0 then simd is available.
-    __ ble(&push_empty_simd);
-    __ MultiPushV128(simd_regs);
-    __ b(&simd_pushed);
-    __ bind(&push_empty_simd);
-    // kFixedFrameSizeFromFp is hard coded to include space for Simd
-    // registers, so we still need to allocate space on the stack even if we
-    // are not pushing them.
-    __ addi(
-        sp, sp,
-        Operand(-static_cast<int8_t>(base::bits::CountPopulation(simd_regs)) *
-                kSimd128Size));
-    __ bind(&simd_pushed);
+    __ MultiPushF64AndV128(fp_regs, simd_regs);
 
     // Pass instance and function index as explicit arguments to the runtime
     // function.
@@ -2471,20 +2458,7 @@ void Builtins::Generate_WasmCompileLazy(MacroAssembler* masm) {
     __ mr(r11, kReturnRegister0);
 
     // Restore registers.
-    Label pop_empty_simd, simd_popped;
-    __ Move(ip, ExternalReference::supports_wasm_simd_128_address());
-    __ LoadU8(ip, MemOperand(ip), r0);
-    __ cmpi(ip, Operand::Zero());  // If > 0 then simd is available.
-    __ ble(&pop_empty_simd);
-    __ MultiPopV128(simd_regs);
-    __ b(&simd_popped);
-    __ bind(&pop_empty_simd);
-    __ addi(
-        sp, sp,
-        Operand(static_cast<int8_t>(base::bits::CountPopulation(simd_regs)) *
-                kSimd128Size));
-    __ bind(&simd_popped);
-    __ MultiPopDoubles(fp_regs);
+    __ MultiPopF64AndV128(fp_regs, simd_regs);
     __ MultiPop(gp_regs);
   }
   // Finally, jump to the entrypoint.
@@ -3507,14 +3481,14 @@ void Builtins::Generate_DynamicCheckMapsTrampoline(MacroAssembler* masm) {
   }
   __ MaybeRestoreRegisters(registers);
   __ LeaveFrame(StackFrame::INTERNAL);
-  Handle<Code> deopt_eager = masm->isolate()->builtins()->builtin_handle(
+  Handle<Code> deopt_eager = masm->isolate()->builtins()->code_handle(
       Deoptimizer::GetDeoptimizationEntry(DeoptimizeKind::kEager));
   __ Jump(deopt_eager, RelocInfo::CODE_TARGET);
 
   __ bind(&bailout);
   __ MaybeRestoreRegisters(registers);
   __ LeaveFrame(StackFrame::INTERNAL);
-  Handle<Code> deopt_bailout = masm->isolate()->builtins()->builtin_handle(
+  Handle<Code> deopt_bailout = masm->isolate()->builtins()->code_handle(
       Deoptimizer::GetDeoptimizationEntry(DeoptimizeKind::kBailout));
   __ Jump(deopt_bailout, RelocInfo::CODE_TARGET);
 }

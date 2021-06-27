@@ -27,15 +27,22 @@
 
 import { CodeMap, CodeEntry } from "./codemap.mjs";
 import { ConsArray } from "./consarray.mjs";
+import { WebInspector } from "./sourcemap.mjs";
 
 // Used to associate log entries with source positions in scripts.
 // TODO: move to separate modules
 export class SourcePosition {
+  script = null;
+  line = -1;
+  column = -1;
+  entries = [];
+  isFunction = false;
+  originalPosition = undefined;
+
   constructor(script, line, column) {
     this.script = script;
     this.line = line;
     this.column = column;
-    this.entries = [];
   }
 
   addEntry(entry) {
@@ -45,15 +52,31 @@ export class SourcePosition {
   toString() {
     return `${this.script.name}:${this.line}:${this.column}`;
   }
+
+  get functionPosition() {
+    // TODO(cbruni)
+    return undefined;
+  }
+
+  get toolTipDict() {
+    return {
+      title: this.toString(),
+      __this__: this,
+      script: this.script,
+      entries: this.entries,
+    }
+  }
 }
 
 export class Script {
   url;
   source;
   name;
+  sourcePosition = undefined;
   // Map<line, Map<column, SourcePosition>>
   lineToColumn = new Map();
   _entries = [];
+  _sourceMapState = "unknown";
 
   constructor(id) {
     this.id = id;
@@ -74,11 +97,28 @@ export class Script {
     return this._entries;
   }
 
+  get startLine() {
+    return this.sourcePosition?.line ?? 1;
+  }
+
+  get sourceMapState() {
+    return this._sourceMapState;
+  }
+
+  findFunctionSourcePosition(sourcePosition) {
+    // TODO(cbruni) implmenent
+    return undefined;
+  }
+
   addSourcePosition(line, column, entry) {
     let sourcePosition = this.lineToColumn.get(line)?.get(column);
     if (sourcePosition === undefined) {
       sourcePosition = new SourcePosition(this, line, column,)
       this._addSourcePosition(line, column, sourcePosition);
+    }
+    if (entry.entry?.type == "Script") {
+      // Mark the source position of scripts, for inline scripts which
+      this.sourcePosition = sourcePosition;
     }
     sourcePosition.addEntry(entry);
     this._entries.push(entry);
@@ -108,7 +148,7 @@ export class Script {
       id: this.id,
       url: this.url,
       source: this.source,
-      sourcePositions: this.sourcePositions.length
+      sourcePositions: this.sourcePositions
     }
   }
 
@@ -128,6 +168,67 @@ export class Script {
     }
     matchingScripts.push(script);
     return url;
+  }
+
+  ensureSourceMapCalculated(sourceMapFetchPrefix=undefined) {
+    if (this._sourceMapState !== "unknown") return;
+
+    const sourceMapURLMatch =
+        this.source.match(/\/\/# sourceMappingURL=(.*)\n/);
+    if (!sourceMapURLMatch) {
+      this._sourceMapState = "none";
+      return;
+    }
+
+    this._sourceMapState = "loading";
+    let sourceMapURL = sourceMapURLMatch[1];
+    (async () => {
+      try {
+        let sourceMapPayload;
+        try {
+          sourceMapPayload = await fetch(sourceMapURL);
+        } catch (e) {
+          if (e instanceof TypeError && sourceMapFetchPrefix) {
+            // Try again with fetch prefix.
+            // TODO(leszeks): Remove the retry once the prefix is
+            // configurable.
+            sourceMapPayload =
+                await fetch(sourceMapFetchPrefix + sourceMapURL);
+          } else {
+            throw e;
+          }
+        }
+        sourceMapPayload = await sourceMapPayload.text();
+
+        if (sourceMapPayload.startsWith(')]}')) {
+          sourceMapPayload =
+              sourceMapPayload.substring(sourceMapPayload.indexOf('\n'));
+        }
+        sourceMapPayload = JSON.parse(sourceMapPayload);
+        const sourceMap =
+            new WebInspector.SourceMap(sourceMapURL, sourceMapPayload);
+
+        const startLine = this.startLine;
+        for (const sourcePosition of this.sourcePositions) {
+          const line = sourcePosition.line - startLine;
+          const column = sourcePosition.column - 1;
+          const mapping = sourceMap.findEntry(line, column);
+          if (mapping) {
+            sourcePosition.originalPosition = {
+              source: new URL(mapping[2], sourceMapURL).href,
+              line: mapping[3] + 1,
+              column: mapping[4] + 1
+            };
+          } else {
+            sourcePosition.originalPosition = {source: null, line:0, column:0};
+          }
+        }
+        this._sourceMapState = "loaded";
+      } catch (e) {
+        console.error(e);
+        this._sourceMapState = "failed";
+      }
+    })();
   }
 }
 
@@ -183,7 +284,7 @@ export class Profile {
 
   /**
    * Returns whether a function with the specified name must be skipped.
-   * Should be overriden by subclasses.
+   * Should be overridden by subclasses.
    *
    * @param {string} name Function name.
    */
@@ -265,6 +366,28 @@ export class Profile {
       return "Opt";
     }
     throw new Error(`unknown code state: ${state}`);
+  }
+
+  static vmStateString(state) {
+    switch (state) {
+      case this.VMState.JS:
+        return 'JS';
+      case this.VMState.GC:
+        return 'GC';
+      case this.VMState.PARSER:
+        return 'Parse';
+      case this.VMState.BYTECODE_COMPILER:
+        return 'Compile Bytecode';
+      case this.VMState.COMPILER:
+        return 'Compile';
+      case this.VMState.OTHER:
+        return 'Other';
+      case this.VMState.EXTERNAL:
+        return 'External';
+      case this.VMState.IDLE:
+        return 'Idle';
+    }
+    return 'unknown';
   }
 
   /**
@@ -796,6 +919,10 @@ class FunctionEntry extends CodeEntry {
   getSourceCode() {
     // All code entries should map to the same source positions.
     return this._codeEntries.values().next().value.getSourceCode();
+  }
+
+  get codeEntries() {
+    return this._codeEntries;
   }
 
   /**

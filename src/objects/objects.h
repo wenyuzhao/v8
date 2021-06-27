@@ -284,6 +284,7 @@ class Object : public TaggedImpl<HeapObjectReferenceType::STRONG, Address> {
   HEAP_OBJECT_TYPE_LIST(IS_TYPE_FUNCTION_DECL)
   IS_TYPE_FUNCTION_DECL(HashTableBase)
   IS_TYPE_FUNCTION_DECL(SmallOrderedHashTable)
+  IS_TYPE_FUNCTION_DECL(CodeT)
 #undef IS_TYPE_FUNCTION_DECL
   V8_INLINE bool IsNumber(ReadOnlyRoots roots) const;
 
@@ -336,7 +337,9 @@ class Object : public TaggedImpl<HeapObjectReferenceType::STRONG, Address> {
   V8_EXPORT_PRIVATE static Handle<Object> NewStorageFor(
       Isolate* isolate, Handle<Object> object, Representation representation);
 
-  static Handle<Object> WrapForRead(Isolate* isolate, Handle<Object> object,
+  template <AllocationType allocation_type = AllocationType::kYoung,
+            typename IsolateT>
+  static Handle<Object> WrapForRead(IsolateT* isolate, Handle<Object> object,
                                     Representation representation);
 
   // Returns true if the object is of the correct type to be used as a
@@ -590,8 +593,12 @@ class Object : public TaggedImpl<HeapObjectReferenceType::STRONG, Address> {
   EXPORT_DECL_VERIFIER(Object)
 
 #ifdef VERIFY_HEAP
-  // Verify a pointer is a valid object pointer.
+  // Verify a pointer is a valid (non-Code) object pointer.
+  // When V8_EXTERNAL_CODE_SPACE is enabled Code objects are not allowed.
   static void VerifyPointer(Isolate* isolate, Object p);
+  // Verify a pointer is a valid object pointer.
+  // Code objects are allowed regardless of the V8_EXTERNAL_CODE_SPACE mode.
+  static void VerifyAnyTagged(Isolate* isolate, Object p);
 #endif
 
   inline void VerifyApiCallResultType();

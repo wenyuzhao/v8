@@ -1501,13 +1501,15 @@ Node* JSCreateLowering::TryAllocateAliasedArguments(
 
   MapRef sloppy_arguments_elements_map =
       MakeRef(broker(), factory()->sloppy_arguments_elements_map());
-  if (!AllocationBuilder::CanAllocateSloppyArgumentElements(
-          mapped_count, sloppy_arguments_elements_map)) {
+  AllocationBuilder ab(jsgraph(), effect, control);
+
+  if (!ab.CanAllocateSloppyArgumentElements(mapped_count,
+                                            sloppy_arguments_elements_map)) {
     return nullptr;
   }
 
   MapRef fixed_array_map = MakeRef(broker(), factory()->fixed_array_map());
-  if (!AllocationBuilder::CanAllocateArray(argument_count, fixed_array_map)) {
+  if (!ab.CanAllocateArray(argument_count, fixed_array_map)) {
     return nullptr;
   }
 
@@ -1520,7 +1522,6 @@ Node* JSCreateLowering::TryAllocateAliasedArguments(
   // The unmapped argument values recorded in the frame state are stored yet
   // another indirection away and then linked into the parameter map below,
   // whereas mapped argument values are replaced with a hole instead.
-  AllocationBuilder ab(jsgraph(), effect, control);
   ab.AllocateArray(argument_count, fixed_array_map);
   for (int i = 0; i < mapped_count; ++i) {
     ab.Store(AccessBuilder::ForFixedArrayElement(), jsgraph()->Constant(i),
@@ -1566,9 +1567,13 @@ Node* JSCreateLowering::TryAllocateAliasedArguments(
   int mapped_count = parameter_count;
   MapRef sloppy_arguments_elements_map =
       MakeRef(broker(), factory()->sloppy_arguments_elements_map());
-  if (!AllocationBuilder::CanAllocateSloppyArgumentElements(
-          mapped_count, sloppy_arguments_elements_map)) {
-    return nullptr;
+
+  {
+    AllocationBuilder ab(jsgraph(), effect, control);
+    if (!ab.CanAllocateSloppyArgumentElements(mapped_count,
+                                              sloppy_arguments_elements_map)) {
+      return nullptr;
+    }
   }
 
   // From here on we are going to allocate a mapped (aka. aliased) elements
@@ -1692,44 +1697,33 @@ base::Optional<Node*> JSCreateLowering::TryAllocateFastLiteral(
                           LoadSensitivity::kUnsafe,
                           const_field_info};
 
-    // Note: the use of RawFastPropertyAt (vs. the higher-level
+    // Note: the use of RawInobjectPropertyAt (vs. the higher-level
     // GetOwnFastDataProperty) here is necessary, since the underlying value
     // may be `uninitialized`, which the latter explicitly does not support.
     base::Optional<ObjectRef> maybe_boilerplate_value =
-        boilerplate.RawFastPropertyAt(index);
+        boilerplate.RawInobjectPropertyAt(index);
     if (!maybe_boilerplate_value.has_value()) return {};
 
     // Note: We don't need to take a compilation dependency verifying the value
     // of `boilerplate_value`, since boilerplate properties are constant after
     // initialization modulo map migration. We protect against concurrent map
-    // migrations via the boilerplate_migration_access lock.
+    // migrations (other than elements kind transition, which don't affect us)
+    // via the boilerplate_migration_access lock.
     ObjectRef boilerplate_value = maybe_boilerplate_value.value();
 
-    // Uninitialized fields are marked through the `uninitialized_value`, or in
-    // the case of double representation through a HeapNumber containing a
-    // special sentinel value. The boilerplate value is not updated to keep up
-    // with the map, thus conversions may be necessary. Specifically:
-    //
-    // - Smi representation: uninitialized is converted to Smi 0.
-    // - Not double representation: the special heap number sentinel is
-    //   converted to `uninitialized_value`.
-    //
+    // Uninitialized fields are marked through the `uninitialized_value` Oddball
+    // (even for Smi representation!), or in the case of Double representation
+    // through a HeapNumber containing the hole-NaN. Since Double-to-Tagged
+    // representation changes are done in-place, we may even encounter these
+    // HeapNumbers in Tagged representation.
     // Note that although we create nodes to write `uninitialized_value` into
     // the object, the field should be overwritten immediately with a real
     // value, and `uninitialized_value` should never be exposed to JS.
-    bool is_uninitialized = false;
-    if (boilerplate_value.IsHeapObject() &&
-        boilerplate_value.AsHeapObject().map().oddball_type() ==
-            OddballType::kUninitialized) {
-      is_uninitialized = true;
-      access.const_field_info = ConstFieldInfo::None();
-    } else if (!property_details.representation().IsDouble() &&
-               boilerplate_value.IsHeapNumber() &&
-               boilerplate_value.AsHeapNumber().value_as_bits() ==
-                   kHoleNanInt64) {
-      is_uninitialized = true;
-      boilerplate_value =
-          MakeRef<HeapObject>(broker(), factory()->uninitialized_value());
+    ObjectRef uninitialized_oddball =
+        MakeRef<HeapObject>(broker(), factory()->uninitialized_value());
+    if (boilerplate_value.equals(uninitialized_oddball) ||
+        (boilerplate_value.IsHeapNumber() &&
+         boilerplate_value.AsHeapNumber().value_as_bits() == kHoleNanInt64)) {
       access.const_field_info = ConstFieldInfo::None();
     }
 
@@ -1750,11 +1744,13 @@ base::Optional<Node*> JSCreateLowering::TryAllocateFastLiteral(
       builder.Store(AccessBuilder::ForHeapNumberValue(),
                     jsgraph()->Constant(number));
       value = effect = builder.Finish();
-    } else if (property_details.representation().IsSmi()) {
-      // Ensure that value is stored as smi.
-      value = is_uninitialized ? jsgraph()->ZeroConstant()
-                               : jsgraph()->Constant(boilerplate_value.AsSmi());
     } else {
+      // It's fine to store the 'uninitialized' Oddball into a Smi field since
+      // it will get overwritten anyways and the store's MachineType (AnyTagged)
+      // is compatible with it.
+      DCHECK_IMPLIES(property_details.representation().IsSmi() &&
+                         !boilerplate_value.IsSmi(),
+                     boilerplate_value.equals(uninitialized_oddball));
       value = jsgraph()->Constant(boilerplate_value);
     }
     inobject_fields.push_back(std::make_pair(access, value));

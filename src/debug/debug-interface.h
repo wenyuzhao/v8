@@ -10,9 +10,9 @@
 #include "include/v8-util.h"
 #include "include/v8.h"
 #include "src/base/platform/time.h"
+#include "src/base/vector.h"
 #include "src/common/globals.h"
 #include "src/debug/interface-types.h"
-#include "src/utils/vector.h"
 
 namespace v8_inspector {
 class V8Inspector;
@@ -567,6 +567,8 @@ class WeakMap : public v8::Object {
  public:
   WeakMap() = delete;
   V8_EXPORT_PRIVATE V8_WARN_UNUSED_RESULT v8::MaybeLocal<v8::Value> Get(
+      v8::Local<v8::Context> context, v8::Local<v8::Value> key);
+  V8_EXPORT_PRIVATE V8_WARN_UNUSED_RESULT v8::Maybe<bool> Delete(
       v8::Local<v8::Context> context, v8::Local<v8::Value> key);
   V8_EXPORT_PRIVATE V8_WARN_UNUSED_RESULT v8::MaybeLocal<WeakMap> Set(
       v8::Local<v8::Context> context, v8::Local<v8::Value> key,

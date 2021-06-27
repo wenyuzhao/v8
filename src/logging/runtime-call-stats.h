@@ -29,9 +29,6 @@ namespace internal {
 
 #ifdef V8_RUNTIME_CALL_STATS
 
-#define RCS_SCOPE(...) \
-  v8::internal::RuntimeCallTimerScope rcs_timer_scope(__VA_ARGS__)
-
 class RuntimeCallCounter final {
  public:
   RuntimeCallCounter() : RuntimeCallCounter(nullptr) {}
@@ -301,6 +298,7 @@ class RuntimeCallTimer final {
   V(WasmCompileError_New)                                  \
   V(WasmLinkError_New)                                     \
   V(WasmRuntimeError_New)                                  \
+  V(WeakMap_Delete)                                        \
   V(WeakMap_Get)                                           \
   V(WeakMap_New)                                           \
   V(WeakMap_Set)
@@ -473,6 +471,7 @@ class RuntimeCallTimer final {
   V(TestCounter2)                              \
   V(TestCounter3)                              \
   V(WebSnapshotDeserialize)                    \
+  V(WebSnapshotDeserialize_Arrays)             \
   V(WebSnapshotDeserialize_Contexts)           \
   V(WebSnapshotDeserialize_Exports)            \
   V(WebSnapshotDeserialize_Functions)          \
@@ -743,7 +742,6 @@ class V8_NODISCARD RuntimeCallTimerScope {
 
 #else  // RUNTIME_CALL_STATS
 
-#define RCS_SCOPE(...)
 #define TRACE_HANDLER_STATS(...)
 #define CHANGE_CURRENT_RUNTIME_COUNTER(...)
 

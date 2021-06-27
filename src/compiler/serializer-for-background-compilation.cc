@@ -500,7 +500,7 @@ class SerializerForBackgroundCompilation {
   void ProcessUnaryOrBinaryOperation(FeedbackSlot slot,
                                      bool honor_bailout_on_uninitialized);
 
-  PropertyAccessInfo ProcessMapForNamedPropertyAccess(
+  void ProcessMapForNamedPropertyAccess(
       Hints* receiver, base::Optional<MapRef> receiver_map,
       MapRef lookup_start_object_map, NameRef const& name,
       AccessMode access_mode, base::Optional<JSObjectRef> concrete_receiver,
@@ -1122,10 +1122,6 @@ bool SerializerForBackgroundCompilation::BailoutOnUninitialized(
     // OSR entry point. TODO(neis): Support OSR?
     return false;
   }
-  if (broker()->is_turboprop() &&
-      feedback.slot_kind() == FeedbackSlotKind::kCall) {
-    return false;
-  }
   if (feedback.IsInsufficient()) {
     environment()->Kill();
     return true;
@@ -1430,7 +1426,7 @@ void SerializerForBackgroundCompilation::VisitInvokeIntrinsic(
   // JSNativeContextSpecialization::ReduceJSResolvePromise.
   switch (functionId) {
     case Runtime::kInlineAsyncFunctionResolve: {
-      MakeRef(broker(), broker()->isolate()->builtins()->builtin_handle(
+      MakeRef(broker(), broker()->isolate()->builtins()->code_handle(
                             Builtin::kAsyncFunctionResolve));
       interpreter::Register first_reg = iterator->GetRegisterOperand(1);
       size_t reg_count = iterator->GetRegisterCountOperand(2);
@@ -1442,60 +1438,60 @@ void SerializerForBackgroundCompilation::VisitInvokeIntrinsic(
     }
     case Runtime::kInlineAsyncGeneratorReject:
     case Runtime::kAsyncGeneratorReject: {
-      MakeRef(broker(), broker()->isolate()->builtins()->builtin_handle(
+      MakeRef(broker(), broker()->isolate()->builtins()->code_handle(
                             Builtin::kAsyncGeneratorReject));
       break;
     }
     case Runtime::kInlineAsyncGeneratorResolve:
     case Runtime::kAsyncGeneratorResolve: {
-      MakeRef(broker(), broker()->isolate()->builtins()->builtin_handle(
+      MakeRef(broker(), broker()->isolate()->builtins()->code_handle(
                             Builtin::kAsyncGeneratorResolve));
       break;
     }
     case Runtime::kInlineAsyncGeneratorYield:
     case Runtime::kAsyncGeneratorYield: {
-      MakeRef(broker(), broker()->isolate()->builtins()->builtin_handle(
+      MakeRef(broker(), broker()->isolate()->builtins()->code_handle(
                             Builtin::kAsyncGeneratorYield));
       break;
     }
     case Runtime::kInlineAsyncGeneratorAwaitUncaught:
     case Runtime::kAsyncGeneratorAwaitUncaught: {
-      MakeRef(broker(), broker()->isolate()->builtins()->builtin_handle(
+      MakeRef(broker(), broker()->isolate()->builtins()->code_handle(
                             Builtin::kAsyncGeneratorAwaitUncaught));
       break;
     }
     case Runtime::kInlineAsyncGeneratorAwaitCaught:
     case Runtime::kAsyncGeneratorAwaitCaught: {
-      MakeRef(broker(), broker()->isolate()->builtins()->builtin_handle(
+      MakeRef(broker(), broker()->isolate()->builtins()->code_handle(
                             Builtin::kAsyncGeneratorAwaitCaught));
       break;
     }
     case Runtime::kInlineAsyncFunctionAwaitUncaught:
     case Runtime::kAsyncFunctionAwaitUncaught: {
-      MakeRef(broker(), broker()->isolate()->builtins()->builtin_handle(
+      MakeRef(broker(), broker()->isolate()->builtins()->code_handle(
                             Builtin::kAsyncFunctionAwaitUncaught));
       break;
     }
     case Runtime::kInlineAsyncFunctionAwaitCaught:
     case Runtime::kAsyncFunctionAwaitCaught: {
-      MakeRef(broker(), broker()->isolate()->builtins()->builtin_handle(
+      MakeRef(broker(), broker()->isolate()->builtins()->code_handle(
                             Builtin::kAsyncFunctionAwaitCaught));
       break;
     }
     case Runtime::kInlineAsyncFunctionReject:
     case Runtime::kAsyncFunctionReject: {
-      MakeRef(broker(), broker()->isolate()->builtins()->builtin_handle(
+      MakeRef(broker(), broker()->isolate()->builtins()->code_handle(
                             Builtin::kAsyncFunctionReject));
       break;
     }
     case Runtime::kAsyncFunctionResolve: {
-      MakeRef(broker(), broker()->isolate()->builtins()->builtin_handle(
+      MakeRef(broker(), broker()->isolate()->builtins()->code_handle(
                             Builtin::kAsyncFunctionResolve));
       break;
     }
     case Runtime::kInlineCopyDataProperties:
     case Runtime::kCopyDataProperties: {
-      MakeRef(broker(), broker()->isolate()->builtins()->builtin_handle(
+      MakeRef(broker(), broker()->isolate()->builtins()->code_handle(
                             Builtin::kCopyDataProperties));
       break;
     }
@@ -2029,16 +2025,19 @@ void SerializerForBackgroundCompilation::ProcessCalleeForCallOrConstruct(
   Handle<SharedFunctionInfo> shared = callee.shared(broker()->isolate());
   if (shared->IsApiFunction()) {
     ProcessApiCall(shared, arguments);
-    DCHECK_NE(shared->GetInlineability(broker()->isolate()),
-              SharedFunctionInfo::kIsInlineable);
+    DCHECK_NE(
+        shared->GetInlineability(broker()->isolate(), broker()->is_turboprop()),
+        SharedFunctionInfo::kIsInlineable);
   } else if (shared->HasBuiltinId()) {
     ProcessBuiltinCall(shared, new_target, arguments, speculation_mode, padding,
                        result_hints);
-    DCHECK_NE(shared->GetInlineability(broker()->isolate()),
-              SharedFunctionInfo::kIsInlineable);
+    DCHECK_NE(
+        shared->GetInlineability(broker()->isolate(), broker()->is_turboprop()),
+        SharedFunctionInfo::kIsInlineable);
   } else if ((flags() &
               SerializerForBackgroundCompilationFlag::kEnableTurboInlining) &&
-             shared->GetInlineability(broker()->isolate()) ==
+             shared->GetInlineability(broker()->isolate(),
+                                      broker()->is_turboprop()) ==
                  SharedFunctionInfo::kIsInlineable &&
              callee.HasFeedbackVector()) {
     CompilationSubject subject =
@@ -2246,7 +2245,7 @@ void SerializerForBackgroundCompilation::ProcessApiCall(
        {Builtin::kCallFunctionTemplate_CheckAccess,
         Builtin::kCallFunctionTemplate_CheckCompatibleReceiver,
         Builtin::kCallFunctionTemplate_CheckAccessAndCompatibleReceiver}) {
-    MakeRef(broker(), broker()->isolate()->builtins()->builtin_handle(b));
+    MakeRef(broker(), broker()->isolate()->builtins()->code_handle(b));
   }
   FunctionTemplateInfoRef target_template_info =
       MakeRef(broker(),
@@ -2310,10 +2309,10 @@ void SerializerForBackgroundCompilation::ProcessBuiltinCall(
     const HintsVector& arguments, SpeculationMode speculation_mode,
     MissingArgumentsPolicy padding, Hints* result_hints) {
   DCHECK(target->HasBuiltinId());
-  const int builtin_id = target->builtin_id();
-  const char* name = Builtins::name(builtin_id);
+  const Builtin builtin = target->builtin_id();
+  const char* name = Builtins::name(builtin);
   TRACE_BROKER(broker(), "Serializing for call to builtin " << name);
-  switch (builtin_id) {
+  switch (builtin) {
     case Builtin::kObjectCreate: {
       if (arguments.size() >= 2) {
         ProcessHintsForObjectCreate(arguments[1]);
@@ -2584,13 +2583,13 @@ void SerializerForBackgroundCompilation::ProcessBuiltinCall(
       }
       break;
     case Builtin::kMapIteratorPrototypeNext:
-      MakeRef(broker(), broker()->isolate()->builtins()->builtin_handle(
+      MakeRef(broker(), broker()->isolate()->builtins()->code_handle(
                             Builtin::kOrderedHashTableHealIndex));
       MakeRef<FixedArray>(
           broker(), broker()->isolate()->factory()->empty_ordered_hash_map());
       break;
     case Builtin::kSetIteratorPrototypeNext:
-      MakeRef(broker(), broker()->isolate()->builtins()->builtin_handle(
+      MakeRef(broker(), broker()->isolate()->builtins()->code_handle(
                             Builtin::kOrderedHashTableHealIndex));
       MakeRef<FixedArray>(
           broker(), broker()->isolate()->factory()->empty_ordered_hash_set());
@@ -2682,7 +2681,7 @@ PropertyAccessInfo SerializerForBackgroundCompilation::ProcessMapForRegExpTest(
     // The property is on the prototype chain.
     JSObjectRef holder_ref = MakeRef(broker(), holder);
     holder_ref.GetOwnFastDataProperty(ai_exec.field_representation(),
-                                      ai_exec.field_index(),
+                                      ai_exec.field_index(), nullptr,
                                       SerializationPolicy::kSerializeIfNeeded);
   }
   return ai_exec;
@@ -2701,7 +2700,7 @@ void SerializerForBackgroundCompilation::ProcessHintsForRegExpTest(
       // The property is on the object itself.
       JSObjectRef holder_ref = MakeRef(broker(), regexp);
       holder_ref.GetOwnFastDataProperty(
-          ai_exec.field_representation(), ai_exec.field_index(),
+          ai_exec.field_representation(), ai_exec.field_index(), nullptr,
           SerializationPolicy::kSerializeIfNeeded);
     }
   }
@@ -2720,8 +2719,9 @@ void ProcessMapForFunctionBind(MapRef map) {
                             1;
   if (map.NumberOfOwnDescriptors() >= min_nof_descriptors) {
     map.SerializeOwnDescriptor(
-        InternalIndex(JSFunction::kLengthDescriptorIndex));
-    map.SerializeOwnDescriptor(InternalIndex(JSFunction::kNameDescriptorIndex));
+        InternalIndex(JSFunctionOrBoundFunction::kLengthDescriptorIndex));
+    map.SerializeOwnDescriptor(
+        InternalIndex(JSFunctionOrBoundFunction::kNameDescriptorIndex));
   }
 }
 }  // namespace
@@ -2729,17 +2729,22 @@ void ProcessMapForFunctionBind(MapRef map) {
 void SerializerForBackgroundCompilation::ProcessHintsForFunctionBind(
     Hints const& receiver_hints) {
   for (auto constant : receiver_hints.constants()) {
-    if (!constant->IsJSFunction()) continue;
-    JSFunctionRef function =
-        MakeRef(broker(), Handle<JSFunction>::cast(constant));
-    function.Serialize();
-    ProcessMapForFunctionBind(function.map());
+    if (constant->IsJSFunction()) {
+      JSFunctionRef function =
+          MakeRef(broker(), Handle<JSFunction>::cast(constant));
+      function.Serialize();
+      ProcessMapForFunctionBind(function.map());
+    } else if (constant->IsJSBoundFunction()) {
+      JSBoundFunctionRef function =
+          MakeRef(broker(), Handle<JSBoundFunction>::cast(constant));
+      function.Serialize();
+      ProcessMapForFunctionBind(function.map());
+    }
   }
 
   for (auto map : receiver_hints.maps()) {
-    if (!map->IsJSFunctionMap()) continue;
-    MapRef map_ref = MakeRef(broker(), map);
-    ProcessMapForFunctionBind(map_ref);
+    if (!map->IsJSFunctionMap() && !map->IsJSBoundFunctionMap()) continue;
+    ProcessMapForFunctionBind(MakeRef(broker(), map));
   }
 }
 
@@ -2796,7 +2801,7 @@ void SerializerForBackgroundCompilation::VisitSwitchOnSmiNoFeedback(
     interpreter::BytecodeArrayIterator* iterator) {
   interpreter::JumpTableTargetOffsets targets =
       iterator->GetJumpTableTargetOffsets();
-  for (const auto& target : targets) {
+  for (interpreter::JumpTableTargetOffset target : targets) {
     ContributeToJumpTargetEnvironment(target.target_offset);
   }
 }
@@ -2947,22 +2952,6 @@ void SerializerForBackgroundCompilation::VisitLdaLookupContextSlotInsideTypeof(
   ProcessLdaLookupContextSlot(iterator);
 }
 
-// TODO(neis): Avoid duplicating this.
-namespace {
-template <class MapContainer>
-MapHandles GetRelevantReceiverMaps(Isolate* isolate, MapContainer const& maps) {
-  MapHandles result;
-  for (Handle<Map> map : maps) {
-    if (Map::TryUpdate(isolate, map).ToHandle(&map) &&
-        !map->is_abandoned_prototype_map()) {
-      DCHECK(!map->is_deprecated());
-      result.push_back(map);
-    }
-  }
-  return result;
-}
-}  // namespace
-
 void SerializerForBackgroundCompilation::ProcessCompareOperation(
     FeedbackSlot slot) {
   if (slot.IsInvalid() || feedback_vector().is_null()) return;
@@ -2994,12 +2983,22 @@ void SerializerForBackgroundCompilation::ProcessUnaryOrBinaryOperation(
   environment()->accumulator_hints() = Hints();
 }
 
-PropertyAccessInfo
-SerializerForBackgroundCompilation::ProcessMapForNamedPropertyAccess(
+void SerializerForBackgroundCompilation::ProcessMapForNamedPropertyAccess(
     Hints* receiver, base::Optional<MapRef> receiver_map,
     MapRef lookup_start_object_map, NameRef const& name, AccessMode access_mode,
     base::Optional<JSObjectRef> concrete_receiver, Hints* result_hints) {
   DCHECK_IMPLIES(concrete_receiver.has_value(), receiver_map.has_value());
+
+  {
+    Handle<Map> map;
+    if (!Map::TryUpdate(broker()->isolate(), lookup_start_object_map.object())
+             .ToHandle(&map) ||
+        map->is_abandoned_prototype_map()) {
+      return;
+    }
+    lookup_start_object_map = MakeRef(broker(), map);
+  }
+  CHECK(!lookup_start_object_map.is_deprecated());
 
   // For JSNativeContextSpecialization::InferRootMap
   lookup_start_object_map.SerializeRootMap();
@@ -3093,9 +3092,9 @@ SerializerForBackgroundCompilation::ProcessMapForNamedPropertyAccess(
               access_info.IsFastDataConstant()
                   ? holder->GetOwnFastDataProperty(
                         access_info.field_representation(),
-                        access_info.field_index(), policy)
+                        access_info.field_index(), nullptr, policy)
                   : holder->GetOwnDictionaryProperty(
-                        access_info.dictionary_index(), policy);
+                        access_info.dictionary_index(), nullptr, policy);
           if (constant.has_value()) {
             result_hints->AddConstant(constant->object(), zone(), broker());
           }
@@ -3118,8 +3117,6 @@ SerializerForBackgroundCompilation::ProcessMapForNamedPropertyAccess(
     case AccessMode::kHas:
       break;
   }
-
-  return access_info;
 }
 
 void SerializerForBackgroundCompilation::ProcessMinimorphicPropertyAccess(
@@ -3244,8 +3241,7 @@ void SerializerForBackgroundCompilation::ProcessNamedAccess(
     receiver->AddMap(map, zone(), broker_, false);
   }
 
-  for (Handle<Map> map :
-       GetRelevantReceiverMaps(broker()->isolate(), receiver->maps())) {
+  for (Handle<Map> map : receiver->maps()) {
     MapRef map_ref = MakeRef(broker(), map);
     ProcessMapForNamedPropertyAccess(receiver, map_ref, map_ref,
                                      feedback.name(), access_mode,
@@ -3279,8 +3275,7 @@ void SerializerForBackgroundCompilation::ProcessNamedAccess(
 void SerializerForBackgroundCompilation::ProcessNamedSuperAccess(
     Hints* receiver, NamedAccessFeedback const& feedback,
     AccessMode access_mode, Hints* result_hints) {
-  MapHandles receiver_maps =
-      GetRelevantReceiverMaps(broker()->isolate(), receiver->maps());
+  MapsSet receiver_maps = receiver->maps();
   for (Handle<Map> receiver_map : receiver_maps) {
     MapRef receiver_map_ref = MakeRef(broker(), receiver_map);
     for (Handle<Map> feedback_map : feedback.maps()) {
@@ -3290,7 +3285,7 @@ void SerializerForBackgroundCompilation::ProcessNamedSuperAccess(
           access_mode, base::nullopt, result_hints);
     }
   }
-  if (receiver_maps.empty()) {
+  if (receiver_maps.IsEmpty()) {
     for (Handle<Map> feedback_map : feedback.maps()) {
       MapRef feedback_map_ref = MakeRef(broker(), feedback_map);
       ProcessMapForNamedPropertyAccess(
@@ -3309,7 +3304,7 @@ void SerializerForBackgroundCompilation::ProcessElementAccess(
       switch (access_mode) {
         case AccessMode::kHas:
         case AccessMode::kLoad:
-          map.SerializeForElementLoad();
+          map.SerializePrototype();
           break;
         case AccessMode::kStore:
           map.SerializeForElementStore();
@@ -3458,7 +3453,7 @@ void SerializerForBackgroundCompilation::ProcessConstantForInstanceOf(
     JSObjectRef holder_ref =
         found_on_proto ? MakeRef(broker(), holder) : constructor.AsJSObject();
     base::Optional<ObjectRef> constant = holder_ref.GetOwnFastDataProperty(
-        access_info.field_representation(), access_info.field_index(),
+        access_info.field_representation(), access_info.field_index(), nullptr,
         SerializationPolicy::kSerializeIfNeeded);
     CHECK(constant.has_value());
     if (constant->IsJSFunction()) {

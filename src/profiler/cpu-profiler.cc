@@ -76,7 +76,7 @@ ProfilingScope::ProfilingScope(Isolate* isolate, ProfilerListener* listener)
   isolate_->set_num_cpu_profilers(profiler_count);
   isolate_->set_is_profiling(true);
 #if V8_ENABLE_WEBASSEMBLY
-  isolate_->wasm_engine()->EnableCodeLogging(isolate_);
+  wasm::GetWasmEngine()->EnableCodeLogging(isolate_);
 #endif  // V8_ENABLE_WEBASSEMBLY
 
   Logger* logger = isolate_->logger();
@@ -336,9 +336,11 @@ void* SamplingEventsProcessor::operator new(size_t size) {
 
 void SamplingEventsProcessor::operator delete(void* ptr) { AlignedFree(ptr); }
 
-ProfilerCodeObserver::ProfilerCodeObserver(Isolate* isolate)
+ProfilerCodeObserver::ProfilerCodeObserver(Isolate* isolate,
+                                           CodeEntryStorage& storage)
     : isolate_(isolate),
-      code_map_(strings_),
+      code_entries_(storage),
+      code_map_(storage),
       weak_code_registry_(isolate),
       processor_(nullptr) {
   CreateEntriesForRuntimeCallStats();
@@ -350,7 +352,7 @@ void ProfilerCodeObserver::ClearCodeMap() {
   code_map_.Clear();
   // We don't currently expect any references to refcounted strings to be
   // maintained with zero profiles after the code map is cleared.
-  DCHECK(strings_.empty());
+  DCHECK(code_entries_.strings().empty());
 }
 
 void ProfilerCodeObserver::CodeEventHandler(
@@ -385,8 +387,8 @@ void ProfilerCodeObserver::CreateEntriesForRuntimeCallStats() {
   for (int i = 0; i < RuntimeCallStats::kNumberOfCounters; ++i) {
     RuntimeCallCounter* counter = rcs->GetCounter(i);
     DCHECK(counter->name());
-    auto entry = new CodeEntry(CodeEventListener::FUNCTION_TAG, counter->name(),
-                               "native V8Runtime");
+    auto entry = code_entries_.Create(CodeEventListener::FUNCTION_TAG,
+                                      counter->name(), "native V8Runtime");
     code_map_.AddCode(reinterpret_cast<Address>(counter), entry, 1);
   }
 #endif  // V8_RUNTIME_CALL_STATS
@@ -395,14 +397,14 @@ void ProfilerCodeObserver::CreateEntriesForRuntimeCallStats() {
 void ProfilerCodeObserver::LogBuiltins() {
   Builtins* builtins = isolate_->builtins();
   DCHECK(builtins->is_initialized());
-  for (int i = 0; i < Builtins::kBuiltinCount; i++) {
+  for (Builtin builtin = Builtins::kFirst; builtin <= Builtins::kLast;
+       ++builtin) {
     CodeEventsContainer evt_rec(CodeEventRecord::REPORT_BUILTIN);
     ReportBuiltinEventRecord* rec = &evt_rec.ReportBuiltinEventRecord_;
-    Builtin id = static_cast<Builtin>(i);
-    Code code = builtins->builtin(id);
+    Code code = builtins->code(builtin);
     rec->instruction_start = code.InstructionStart();
     rec->instruction_size = code.InstructionSize();
-    rec->builtin_id = id;
+    rec->builtin = builtin;
     CodeEventHandlerInternal(evt_rec);
   }
 }
@@ -473,7 +475,7 @@ CpuProfiler::CpuProfiler(Isolate* isolate, CpuProfilingNamingMode naming_mode,
                          CpuProfilingLoggingMode logging_mode)
     : CpuProfiler(isolate, naming_mode, logging_mode,
                   new CpuProfilesCollection(isolate), nullptr, nullptr,
-                  new ProfilerCodeObserver(isolate)) {}
+                  new ProfilerCodeObserver(isolate, code_entries_)) {}
 
 CpuProfiler::CpuProfiler(Isolate* isolate, CpuProfilingNamingMode naming_mode,
                          CpuProfilingLoggingMode logging_mode,
@@ -529,7 +531,7 @@ void CpuProfiler::EnableLogging() {
 
   if (!profiler_listener_) {
     profiler_listener_.reset(new ProfilerListener(
-        isolate_, code_observer_.get(), *code_observer_->strings(),
+        isolate_, code_observer_.get(), *code_observer_->code_entries(),
         *code_observer_->weak_code_registry(), naming_mode_));
   }
   profiling_scope_.reset(

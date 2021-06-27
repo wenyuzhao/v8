@@ -21,7 +21,6 @@ constexpr auto CallInterfaceDescriptor::DefaultRegisterArray() {
 
 // static
 constexpr auto WriteBarrierDescriptor::registers() {
-  STATIC_ASSERT(kReturnRegister0 == v0);
   return RegisterArray(a0, a1, a2, a3, kReturnRegister0);
 }
 
@@ -74,15 +73,11 @@ constexpr Register GrowArrayElementsDescriptor::KeyRegister() { return a3; }
 
 // static
 constexpr Register BaselineLeaveFrameDescriptor::ParamsSizeRegister() {
-  // TODO(v8:11421): Implement on this platform.
-  return a3;
+  return a2;
 }
 
 // static
-constexpr Register BaselineLeaveFrameDescriptor::WeightRegister() {
-  // TODO(v8:11421): Implement on this platform.
-  return a4;
-}
+constexpr Register BaselineLeaveFrameDescriptor::WeightRegister() { return a3; }
 
 // static
 constexpr Register TypeConversionDescriptor::ArgumentRegister() { return a0; }
@@ -189,7 +184,9 @@ constexpr auto CompareDescriptor::registers() { return RegisterArray(a1, a0); }
 
 // static
 constexpr auto Compare_BaselineDescriptor::registers() {
-  // TODO(v8:11421): Implement on this platform.
+  // a1: left operand
+  // a0: right operand
+  // a2: feedback slot
   return RegisterArray(a1, a0, a2);
 }
 
@@ -198,6 +195,9 @@ constexpr auto BinaryOpDescriptor::registers() { return RegisterArray(a1, a0); }
 
 // static
 constexpr auto BinaryOp_BaselineDescriptor::registers() {
+  // a1: left operand
+  // a0: right operand
+  // a2: feedback slot
   return RegisterArray(a1, a0, a2);
 }
 

@@ -3563,7 +3563,7 @@ void InstructionSelector::VisitS128Const(Node* node) {
   static const int kUint32Immediates = 4;
   uint32_t val[kUint32Immediates];
   STATIC_ASSERT(sizeof(val) == kSimd128Size);
-  base::Memcpy(val, S128ImmediateParameterOf(node->op()).data(), kSimd128Size);
+  memcpy(val, S128ImmediateParameterOf(node->op()).data(), kSimd128Size);
   // If all bytes are zeros, avoid emitting code for generic constants
   bool all_zeros = !(val[0] || val[1] || val[2] || val[3]);
   InstructionOperand dst = g.DefineAsRegister(node);
@@ -3753,6 +3753,24 @@ void InstructionSelector::VisitI64x2Mul(Node* node) {
             IrOpcode::k##Type##ExtAddPairwise##PairwiseType##S &&              \
         CanCover(node, left)) {                                                \
       Emit(kArm64Sadalp | LaneSizeField::encode(LaneSize),                     \
+           g.DefineSameAsFirst(node), g.UseRegister(right),                    \
+           g.UseRegister(left->InputAt(0)));                                   \
+      return;                                                                  \
+    }                                                                          \
+    /* Select Uadalp(x, y) for Add(x, ExtAddPairwiseU(y)). */                  \
+    if (right->opcode() ==                                                     \
+            IrOpcode::k##Type##ExtAddPairwise##PairwiseType##U &&              \
+        CanCover(node, right)) {                                               \
+      Emit(kArm64Uadalp | LaneSizeField::encode(LaneSize),                     \
+           g.DefineSameAsFirst(node), g.UseRegister(left),                     \
+           g.UseRegister(right->InputAt(0)));                                  \
+      return;                                                                  \
+    }                                                                          \
+    /* Select Uadalp(y, x) for Add(ExtAddPairwiseU(x), y). */                  \
+    if (left->opcode() ==                                                      \
+            IrOpcode::k##Type##ExtAddPairwise##PairwiseType##U &&              \
+        CanCover(node, left)) {                                                \
+      Emit(kArm64Uadalp | LaneSizeField::encode(LaneSize),                     \
            g.DefineSameAsFirst(node), g.UseRegister(right),                    \
            g.UseRegister(left->InputAt(0)));                                   \
       return;                                                                  \

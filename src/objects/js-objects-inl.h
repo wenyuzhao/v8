@@ -145,6 +145,8 @@ bool JSObject::PrototypeHasNoElements(Isolate* isolate, JSObject object) {
 }
 
 ACCESSORS(JSReceiver, raw_properties_or_hash, Object, kPropertiesOrHashOffset)
+RELAXED_ACCESSORS(JSReceiver, raw_properties_or_hash, Object,
+                  kPropertiesOrHashOffset)
 
 void JSObject::EnsureCanContainHeapObjectElements(Handle<JSObject> object) {
   JSObject::ValidateElements(*object);
@@ -342,17 +344,47 @@ Object JSObject::RawFastPropertyAt(PtrComprCageBase cage_base,
   }
 }
 
-Object JSObject::RawFastPropertyAt(FieldIndex index, RelaxedLoadTag tag) const {
+base::Optional<Object> JSObject::RawInobjectPropertyAt(Map original_map,
+                                                       FieldIndex index) const {
   PtrComprCageBase cage_base = GetPtrComprCageBase(*this);
   CHECK(index.is_inobject());
-  return TaggedField<Object>::Relaxed_Load(cage_base, *this, index.offset());
+
+  // This method implements a "snapshot" protocol to protect against reading out
+  // of bounds of an object. It's used to access a fast in-object property from
+  // a background thread with no locking. That caller does have the guarantee
+  // that a garbage collection cannot happen during its query. However, it must
+  // contend with the main thread altering the object in heavy ways through
+  // object migration. Specifically, the object can get smaller. Initially, this
+  // may seem benign, because object migration fills the freed-up space with
+  // FillerMap words which, even though they offer wrong values, are at
+  // least tagged values.
+
+  // However, there is an additional danger. Sweeper threads may discover the
+  // filler words and offer that space to the main thread for allocation. Should
+  // a HeapNumber be allocated into that space while we're reading a property at
+  // that location (from our out-of-date information), we risk interpreting a
+  // double value as a pointer. This must be prevented.
+  //
+  // We do this by:
+  //
+  // a) Reading the map first
+  // b) Reading the property with acquire semantics (but do not inspect it!)
+  // c) Re-read the map with acquire semantics.
+  //
+  // Only if the maps match can the property be inspected. It may have a "wrong"
+  // value, but it will be within the bounds of the objects instance size as
+  // given by the map and it will be a valid Smi or object pointer.
+  Object maybe_tagged_object =
+      TaggedField<Object>::Acquire_Load(cage_base, *this, index.offset());
+  if (original_map != map(kAcquireLoad)) return {};
+  return maybe_tagged_object;
 }
 
 void JSObject::RawFastInobjectPropertyAtPut(FieldIndex index, Object value,
                                             WriteBarrierMode mode) {
   DCHECK(index.is_inobject());
   int offset = index.offset();
-  WRITE_FIELD(*this, offset, value);
+  RELAXED_WRITE_FIELD(*this, offset, value);
   CONDITIONAL_WRITE_BARRIER(*this, offset, value, mode);
 }
 
@@ -682,7 +714,7 @@ DEF_GETTER(JSReceiver, property_array, PropertyArray) {
 Maybe<bool> JSReceiver::HasProperty(Handle<JSReceiver> object,
                                     Handle<Name> name) {
   Isolate* isolate = object->GetIsolate();
-  LookupIterator::Key key(isolate, name);
+  PropertyKey key(isolate, name);
   LookupIterator it(isolate, object, key, object);
   return HasProperty(&it);
 }
@@ -706,7 +738,7 @@ Maybe<bool> JSReceiver::HasOwnProperty(Handle<JSReceiver> object,
 Maybe<PropertyAttributes> JSReceiver::GetPropertyAttributes(
     Handle<JSReceiver> object, Handle<Name> name) {
   Isolate* isolate = object->GetIsolate();
-  LookupIterator::Key key(isolate, name);
+  PropertyKey key(isolate, name);
   LookupIterator it(isolate, object, key, object);
   return GetPropertyAttributes(&it);
 }
@@ -714,7 +746,7 @@ Maybe<PropertyAttributes> JSReceiver::GetPropertyAttributes(
 Maybe<PropertyAttributes> JSReceiver::GetOwnPropertyAttributes(
     Handle<JSReceiver> object, Handle<Name> name) {
   Isolate* isolate = object->GetIsolate();
-  LookupIterator::Key key(isolate, name);
+  PropertyKey key(isolate, name);
   LookupIterator it(isolate, object, key, object, LookupIterator::OWN);
   return GetPropertyAttributes(&it);
 }

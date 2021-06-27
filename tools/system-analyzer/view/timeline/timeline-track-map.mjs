@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {MapLogEntry} from '../../log/map.mjs';
-import {CSSColor, DOM, SVG, V8CustomElement} from '../helper.mjs';
+import {kChunkVisualWidth, MapLogEntry} from '../../log/map.mjs';
+import {CSSColor, DOM} from '../helper.mjs';
 
 import {TimelineTrackBase} from './timeline-track-base.mjs'
 
@@ -33,7 +33,7 @@ DOM.defineCustomElement('view/timeline/timeline-track', 'timeline-track-map',
         strokeColor} class=annotationPoint />`
   }
 
-  _drawAnnotations(logEntry) {
+  _drawAnnotations(logEntry, time) {
     if (!(logEntry instanceof MapLogEntry)) return;
     if (!logEntry.edge) {
       this.timelineAnnotationsNode.innerHTML = '';
@@ -46,7 +46,7 @@ DOM.defineCustomElement('view/timeline/timeline-track', 'timeline-track-map',
     let current = logEntry;
     while (current !== undefined) {
       stack.push(current);
-      current = current.parent();
+      current = current.parent;
     }
 
     // Draw outgoing refs as fuzzy background. Skip the last map entry.
@@ -54,7 +54,7 @@ DOM.defineCustomElement('view/timeline/timeline-track', 'timeline-track-map',
     let nofEdges = 0;
     const kMaxOutgoingEdges = 100;
     for (let i = stack.length - 2; i >= 0; i--) {
-      const map = stack[i].parent();
+      const map = stack[i].parent;
       nofEdges += map.children.length;
       if (nofEdges > kMaxOutgoingEdges) break;
       buffer += this.drawOutgoingEdges(map, 0.4, 1);

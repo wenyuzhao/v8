@@ -43,7 +43,9 @@
 #include "src/heap/parked-scope.h"
 #include "src/init/bootstrapper.h"
 #include "src/interpreter/interpreter.h"
+#include "src/logging/counters.h"
 #include "src/logging/log-inl.h"
+#include "src/logging/runtime-call-stats-scope.h"
 #include "src/objects/feedback-cell-inl.h"
 #include "src/objects/js-function-inl.h"
 #include "src/objects/map.h"
@@ -1309,7 +1311,7 @@ void CompileAllWithBaseline(Isolate* isolate,
     Handle<SharedFunctionInfo> shared_info = finalize_data.function_handle();
     IsCompiledScope is_compiled_scope(*shared_info, isolate);
     if (!is_compiled_scope.is_compiled()) continue;
-    if (!CanCompileWithBaseline(isolate, shared_info)) continue;
+    if (!CanCompileWithBaseline(isolate, *shared_info)) continue;
     Compiler::CompileSharedWithBaseline(
         isolate, shared_info, Compiler::CLEAR_EXCEPTION, &is_compiled_scope);
   }
@@ -1939,7 +1941,7 @@ bool Compiler::CompileSharedWithBaseline(Isolate* isolate,
   if (shared->HasBaselineData()) return true;
 
   // Check if we actually can compile with baseline.
-  if (!CanCompileWithBaseline(isolate, shared)) return false;
+  if (!CanCompileWithBaseline(isolate, *shared)) return false;
 
   StackLimitCheck check(isolate);
   if (check.JsHasOverflowed(kStackSpaceRequiredForCompilation * KB)) {
@@ -1965,6 +1967,20 @@ bool Compiler::CompileSharedWithBaseline(Isolate* isolate,
     Handle<BaselineData> baseline_data =
         isolate->factory()->NewBaselineData(code, function_data);
     shared->set_baseline_data(*baseline_data);
+    if (V8_LIKELY(FLAG_use_osr)) {
+      // Arm back edges for OSR
+      shared->GetBytecodeArray(isolate).set_osr_loop_nesting_level(
+          AbstractCode::kMaxLoopNestingMarker);
+      if (FLAG_trace_osr) {
+        JavaScriptFrameIterator it(isolate);
+        DCHECK(it.frame()->is_unoptimized());
+        UnoptimizedFrame* frame = UnoptimizedFrame::cast(it.frame());
+        CodeTracer::Scope scope(isolate->GetCodeTracer());
+        PrintF(scope.file(),
+               "[OSR - Entry at OSR bytecode offset %d into baseline code]\n",
+               frame->GetBytecodeOffset());
+      }
+    }
   }
   double time_taken_ms = time_taken.InMillisecondsF();
 

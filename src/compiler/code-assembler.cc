@@ -47,7 +47,7 @@ static_assert(
 CodeAssemblerState::CodeAssemblerState(
     Isolate* isolate, Zone* zone, const CallInterfaceDescriptor& descriptor,
     CodeKind kind, const char* name, PoisoningMitigationLevel poisoning_level,
-    int32_t builtin_index)
+    Builtin builtin)
     // TODO(rmcilroy): Should we use Linkage::GetBytecodeDispatchDescriptor for
     // bytecode handlers?
     : CodeAssemblerState(
@@ -55,24 +55,24 @@ CodeAssemblerState::CodeAssemblerState(
           Linkage::GetStubCallDescriptor(
               zone, descriptor, descriptor.GetStackParameterCount(),
               CallDescriptor::kNoFlags, Operator::kNoProperties),
-          kind, name, poisoning_level, builtin_index) {}
+          kind, name, poisoning_level, builtin) {}
 
 CodeAssemblerState::CodeAssemblerState(Isolate* isolate, Zone* zone,
                                        int parameter_count, CodeKind kind,
                                        const char* name,
                                        PoisoningMitigationLevel poisoning_level,
-                                       int32_t builtin_index)
+                                       Builtin builtin)
     : CodeAssemblerState(
           isolate, zone,
           Linkage::GetJSCallDescriptor(zone, false, parameter_count,
                                        CallDescriptor::kCanUseRoots),
-          kind, name, poisoning_level, builtin_index) {}
+          kind, name, poisoning_level, builtin) {}
 
 CodeAssemblerState::CodeAssemblerState(Isolate* isolate, Zone* zone,
                                        CallDescriptor* call_descriptor,
                                        CodeKind kind, const char* name,
                                        PoisoningMitigationLevel poisoning_level,
-                                       int32_t builtin_index)
+                                       Builtin builtin)
     : raw_assembler_(new RawMachineAssembler(
           isolate, zone->New<Graph>(zone), call_descriptor,
           MachineType::PointerRepresentation(),
@@ -80,7 +80,7 @@ CodeAssemblerState::CodeAssemblerState(Isolate* isolate, Zone* zone,
           InstructionSelector::AlignmentRequirements(), poisoning_level)),
       kind_(kind),
       name_(name),
-      builtin_index_(builtin_index),
+      builtin_(builtin),
       code_generated_(false),
       variables_(zone),
       jsgraph_(zone->New<JSGraph>(
@@ -182,12 +182,11 @@ Handle<Code> CodeAssembler::GenerateCode(
   Handle<Code> code;
   Graph* graph = rasm->ExportForOptimization();
 
-  code =
-      Pipeline::GenerateCodeForCodeStub(
-          rasm->isolate(), rasm->call_descriptor(), graph, state->jsgraph_,
-          rasm->source_positions(), state->kind_, state->name_,
-          state->builtin_index_, rasm->poisoning_level(), options, profile_data)
-          .ToHandleChecked();
+  code = Pipeline::GenerateCodeForCodeStub(
+             rasm->isolate(), rasm->call_descriptor(), graph, state->jsgraph_,
+             rasm->source_positions(), state->kind_, state->name_,
+             state->builtin_, rasm->poisoning_level(), options, profile_data)
+             .ToHandleChecked();
 
   state->code_generated_ = true;
   return code;
@@ -249,7 +248,7 @@ void CodeAssembler::GenerateCheckMaybeObjectIsObject(TNode<MaybeObject> node,
                               IntPtrConstant(kHeapObjectTagMask)),
                       IntPtrConstant(kWeakHeapObjectTag)),
          &ok);
-  EmbeddedVector<char, 1024> message;
+  base::EmbeddedVector<char, 1024> message;
   SNPrintF(message, "no Object: %s", location);
   TNode<String> message_node = StringConstant(message.begin());
   // This somewhat misuses the AbortCSAAssert runtime function. This will print
@@ -307,7 +306,7 @@ TNode<HeapObject> CodeAssembler::UntypedHeapConstant(
 
 TNode<String> CodeAssembler::StringConstant(const char* str) {
   Handle<String> internalized_string =
-      factory()->InternalizeString(OneByteVector(str));
+      factory()->InternalizeString(base::OneByteVector(str));
   return UncheckedCast<String>(HeapConstant(internalized_string));
 }
 

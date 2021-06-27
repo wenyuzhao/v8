@@ -14,8 +14,10 @@
 #include "src/objects/property-descriptor.h"
 #include "src/tracing/trace-event.h"
 #include "src/utils/utils.h"
+#include "src/wasm/code-space-access.h"
 #include "src/wasm/module-compiler.h"
 #include "src/wasm/wasm-constants.h"
+#include "src/wasm/wasm-engine.h"
 #include "src/wasm/wasm-external-refs.h"
 #include "src/wasm/wasm-import-wrapper-cache.h"
 #include "src/wasm/wasm-module.h"
@@ -32,9 +34,6 @@ namespace v8 {
 namespace internal {
 namespace wasm {
 
-using base::ReadLittleEndianValue;
-using base::WriteLittleEndianValue;
-
 namespace {
 
 byte* raw_buffer_ptr(MaybeHandle<JSArrayBuffer> buffer, int offset) {
@@ -47,11 +46,10 @@ using ImportWrapperQueue = WrapperQueue<WasmImportWrapperCache::CacheKey,
 class CompileImportWrapperJob final : public JobTask {
  public:
   CompileImportWrapperJob(
-      WasmEngine* engine, Counters* counters, NativeModule* native_module,
+      Counters* counters, NativeModule* native_module,
       ImportWrapperQueue* queue,
       WasmImportWrapperCache::ModificationScope* cache_scope)
-      : engine_(engine),
-        counters_(counters),
+      : counters_(counters),
         native_module_(native_module),
         queue_(queue),
         cache_scope_(cache_scope) {}
@@ -67,14 +65,13 @@ class CompileImportWrapperJob final : public JobTask {
   void Run(JobDelegate* delegate) override {
     while (base::Optional<WasmImportWrapperCache::CacheKey> key =
                queue_->pop()) {
-      CompileImportWrapper(engine_, native_module_, counters_, key->kind,
-                           key->signature, key->expected_arity, cache_scope_);
+      CompileImportWrapper(native_module_, counters_, key->kind, key->signature,
+                           key->expected_arity, cache_scope_);
       if (delegate->ShouldYield()) return;
     }
   }
 
  private:
-  WasmEngine* const engine_;
   Counters* const counters_;
   NativeModule* const native_module_;
   ImportWrapperQueue* const queue_;
@@ -96,7 +93,7 @@ Handle<DescriptorArray> CreateStructDescriptorArray(
   MaybeObject any_type = MaybeObject::FromObject(FieldType::Any());
   DCHECK(any_type->IsSmi());
 
-  i::EmbeddedVector<char, 128> name_buffer;
+  base::EmbeddedVector<char, 128> name_buffer;
   for (uint32_t i = 0; i < field_count; i++) {
     // TODO(ishell): consider introducing a cache of first N internalized field
     // names similar to LookupSingleCharacterStringFromCode().
@@ -328,12 +325,7 @@ class InstanceBuilder {
   // Load data segments into the memory.
   void LoadDataSegments(Handle<WasmInstanceObject> instance);
 
-  void WriteGlobalValue(const WasmGlobal& global, double value);
-  void WriteGlobalValue(const WasmGlobal& global, int64_t num);
-  void WriteGlobalValue(const WasmGlobal& global,
-                        Handle<WasmGlobalObject> value);
-
-  void WriteGlobalExternRef(const WasmGlobal& global, Handle<Object> value);
+  void WriteGlobalValue(const WasmGlobal& global, const WasmValue& value);
 
   void SanitizeImports();
 
@@ -638,7 +630,7 @@ MaybeHandle<WasmInstanceObject> InstanceBuilder::Build() {
     instance->set_indirect_function_tables(*tables);
   }
 
-  NativeModuleModificationScope native_modification_scope(native_module);
+  CodeSpaceWriteScope native_modification_scope(native_module);
 
   //--------------------------------------------------------------------------
   // Process the imports for the module.
@@ -837,7 +829,7 @@ MaybeHandle<Object> InstanceBuilder::LookupImportAsm(
   // side-effect. We only accept accesses that resolve to data properties,
   // which is indicated by the asm.js spec in section 7 ("Linking") as well.
   Handle<Object> result;
-  LookupIterator::Key key(isolate_, Handle<Name>::cast(import_name));
+  PropertyKey key(isolate_, Handle<Name>::cast(import_name));
   LookupIterator it(isolate_, ffi_.ToHandleChecked(), key);
   switch (it.state()) {
     case LookupIterator::ACCESS_CHECK:
@@ -862,7 +854,7 @@ MaybeHandle<Object> InstanceBuilder::LookupImportAsm(
 
 // Load data segments into the memory.
 void InstanceBuilder::LoadDataSegments(Handle<WasmInstanceObject> instance) {
-  Vector<const uint8_t> wire_bytes =
+  base::Vector<const uint8_t> wire_bytes =
       module_object_->native_module()->wire_bytes();
   for (const WasmDataSegment& segment : module_->data_segments) {
     uint32_t size = segment.source.length();
@@ -894,99 +886,23 @@ void InstanceBuilder::LoadDataSegments(Handle<WasmInstanceObject> instance) {
   }
 }
 
-void InstanceBuilder::WriteGlobalValue(const WasmGlobal& global, double num) {
-  TRACE("init [globals_start=%p + %u] = %lf, type = %s\n",
-        raw_buffer_ptr(untagged_globals_, 0), global.offset, num,
-        global.type.name().c_str());
-  switch (global.type.kind()) {
-    case kI32:
-      WriteLittleEndianValue<int32_t>(GetRawUntaggedGlobalPtr<int32_t>(global),
-                                      DoubleToInt32(num));
-      break;
-    case kI64:
-      // The Wasm-BigInt proposal currently says that i64 globals may
-      // only be initialized with BigInts. See:
-      // https://github.com/WebAssembly/JS-BigInt-integration/issues/12
-      UNREACHABLE();
-    case kF32:
-      WriteLittleEndianValue<float>(GetRawUntaggedGlobalPtr<float>(global),
-                                    DoubleToFloat32(num));
-      break;
-    case kF64:
-      WriteLittleEndianValue<double>(GetRawUntaggedGlobalPtr<double>(global),
-                                     num);
-      break;
-    default:
-      UNREACHABLE();
-  }
-}
-
-void InstanceBuilder::WriteGlobalValue(const WasmGlobal& global, int64_t num) {
-  TRACE("init [globals_start=%p + %u] = %" PRId64 ", type = %s\n",
-        raw_buffer_ptr(untagged_globals_, 0), global.offset, num,
-        global.type.name().c_str());
-  DCHECK_EQ(kWasmI64, global.type);
-  WriteLittleEndianValue<int64_t>(GetRawUntaggedGlobalPtr<int64_t>(global),
-                                  num);
-}
-
 void InstanceBuilder::WriteGlobalValue(const WasmGlobal& global,
-                                       Handle<WasmGlobalObject> value) {
-  TRACE("init [globals_start=%p + %u] = ", raw_buffer_ptr(untagged_globals_, 0),
-        global.offset);
-  switch (global.type.kind()) {
-    case kI32: {
-      int32_t num = value->GetI32();
-      WriteLittleEndianValue<int32_t>(GetRawUntaggedGlobalPtr<int32_t>(global),
-                                      num);
-      TRACE("%d", num);
-      break;
-    }
-    case kI64: {
-      int64_t num = value->GetI64();
-      WriteLittleEndianValue<int64_t>(GetRawUntaggedGlobalPtr<int64_t>(global),
-                                      num);
-      TRACE("%" PRId64, num);
-      break;
-    }
-    case kF32: {
-      float num = value->GetF32();
-      WriteLittleEndianValue<float>(GetRawUntaggedGlobalPtr<float>(global),
-                                    num);
-      TRACE("%f", num);
-      break;
-    }
-    case kF64: {
-      double num = value->GetF64();
-      WriteLittleEndianValue<double>(GetRawUntaggedGlobalPtr<double>(global),
-                                     num);
-      TRACE("%lf", num);
-      break;
-    }
-    case kRtt:
-    case kRttWithDepth:
-    case kRef:
-    case kOptRef: {
-      tagged_globals_->set(global.offset, *value->GetRef());
-      break;
-    }
-    case kVoid:
-    case kS128:
-    case kBottom:
-    case kI8:
-    case kI16:
-      UNREACHABLE();
+                                       const WasmValue& value) {
+  TRACE("init [globals_start=%p + %u] = %s, type = %s\n",
+        global.type.is_reference()
+            ? reinterpret_cast<byte*>(tagged_globals_->address())
+            : raw_buffer_ptr(untagged_globals_, 0),
+        global.offset, value.to_string().c_str(), global.type.name().c_str());
+  DCHECK(IsSubtypeOf(value.type(), global.type, module_));
+  if (global.type.is_numeric()) {
+    value.CopyTo(GetRawUntaggedGlobalPtr<byte>(global));
+  } else {
+    tagged_globals_->set(global.offset, *value.to_ref());
   }
-  TRACE(", type = %s (from WebAssembly.Global)\n", global.type.name().c_str());
-}
-
-void InstanceBuilder::WriteGlobalExternRef(const WasmGlobal& global,
-                                           Handle<Object> value) {
-  tagged_globals_->set(global.offset, *value, UPDATE_WRITE_BARRIER);
 }
 
 void InstanceBuilder::SanitizeImports() {
-  Vector<const uint8_t> wire_bytes =
+  base::Vector<const uint8_t> wire_bytes =
       module_object_->native_module()->wire_bytes();
   for (size_t index = 0; index < module_->import_table.size(); ++index) {
     const WasmImport& import = module_->import_table[index];
@@ -1080,8 +996,8 @@ bool InstanceBuilder::ProcessImportedFunction(
       if (wasm_code == nullptr) {
         WasmCodeRefScope code_ref_scope;
         WasmImportWrapperCache::ModificationScope cache_scope(cache);
-        wasm_code = compiler::CompileWasmCapiCallWrapper(
-            isolate_->wasm_engine(), native_module, expected_sig);
+        wasm_code =
+            compiler::CompileWasmCapiCallWrapper(native_module, expected_sig);
         WasmImportWrapperCache::CacheKey key(kind, expected_sig,
                                              expected_arity);
         cache_scope[key] = wasm_code;
@@ -1346,7 +1262,35 @@ bool InstanceBuilder::ProcessImportedWasmGlobalObject(
     return true;
   }
 
-  WriteGlobalValue(global, global_object);
+  WasmValue value;
+  switch (global_object->type().kind()) {
+    case kI32:
+      value = WasmValue(global_object->GetI32());
+      break;
+    case kI64:
+      value = WasmValue(global_object->GetI64());
+      break;
+    case kF32:
+      value = WasmValue(global_object->GetF32());
+      break;
+    case kF64:
+      value = WasmValue(global_object->GetF64());
+      break;
+    case kRtt:
+    case kRttWithDepth:
+    case kRef:
+    case kOptRef:
+      value = WasmValue(global_object->GetRef(), global_object->type());
+      break;
+    case kVoid:
+    case kS128:
+    case kBottom:
+    case kI8:
+    case kI16:
+      UNREACHABLE();
+  }
+
+  WriteGlobalValue(global, value);
   return true;
 }
 
@@ -1415,17 +1359,26 @@ bool InstanceBuilder::ProcessImportedGlobal(Handle<WasmInstanceObject> instance,
       ReportLinkError(error_message, global_index, module_name, import_name);
       return false;
     }
-    WriteGlobalExternRef(global, value);
+    WriteGlobalValue(global, WasmValue(value, global.type));
     return true;
   }
 
   if (value->IsNumber() && global.type != kWasmI64) {
-    WriteGlobalValue(global, value->Number());
+    double number_value = value->Number();
+    // The Wasm-BigInt proposal currently says that i64 globals may
+    // only be initialized with BigInts. See:
+    // https://github.com/WebAssembly/JS-BigInt-integration/issues/12
+    WasmValue wasm_value = global.type == kWasmI32
+                               ? WasmValue(DoubleToInt32(number_value))
+                               : global.type == kWasmF32
+                                     ? WasmValue(DoubleToFloat32(number_value))
+                                     : WasmValue(number_value);
+    WriteGlobalValue(global, wasm_value);
     return true;
   }
 
   if (global.type == kWasmI64 && value->IsBigInt()) {
-    WriteGlobalValue(global, BigInt::cast(*value).AsInt64());
+    WriteGlobalValue(global, WasmValue(BigInt::cast(*value).AsInt64()));
     return true;
   }
 
@@ -1484,8 +1437,7 @@ void InstanceBuilder::CompileImportWrappers(
   }
 
   auto compile_job_task = std::make_unique<CompileImportWrapperJob>(
-      isolate_->wasm_engine(), isolate_->counters(), native_module,
-      &import_wrapper_queue, &cache_scope);
+      isolate_->counters(), native_module, &import_wrapper_queue, &cache_scope);
   auto compile_job = V8::GetCurrentPlatform()->PostJob(
       TaskPriority::kUserVisible, std::move(compile_job_task));
 
@@ -1604,35 +1556,11 @@ WasmValue InstanceBuilder::EvaluateInitExpression(
     }
     case WasmInitExpr::kGlobalGet: {
       const WasmGlobal& global = module_->globals[init.immediate().index];
-      switch (global.type.kind()) {
-        case kI32:
-          return WasmValue(ReadLittleEndianValue<int32_t>(
-              GetRawUntaggedGlobalPtr<int32_t>(global)));
-        case kI64:
-          return WasmValue(ReadLittleEndianValue<int64_t>(
-              GetRawUntaggedGlobalPtr<int64_t>(global)));
-        case kF32:
-          return WasmValue(ReadLittleEndianValue<float>(
-              GetRawUntaggedGlobalPtr<float>(global)));
-        case kF64:
-          return WasmValue(ReadLittleEndianValue<double>(
-              GetRawUntaggedGlobalPtr<double>(global)));
-        case kS128:
-          return WasmValue(Simd128(GetRawUntaggedGlobalPtr<byte>(global)));
-        case kRef:
-        case kOptRef:
-        case kRtt:
-        case kRttWithDepth: {
-          DCHECK(static_cast<int>(global.offset) < tagged_globals_->length());
-          return WasmValue(
-              handle(tagged_globals_->get(global.offset), isolate_),
-              init.type(module_, enabled_));
-        }
-        case kI8:
-        case kI16:
-        case kBottom:
-        case kVoid:
-          UNREACHABLE();
+      if (global.type.is_numeric()) {
+        return WasmValue(GetRawUntaggedGlobalPtr<byte>(global), global.type);
+      } else {
+        return WasmValue(handle(tagged_globals_->get(global.offset), isolate_),
+                         init.type(module_, enabled_));
       }
     }
     case WasmInitExpr::kStructNewWithRtt: {
@@ -1646,6 +1574,17 @@ WasmValue InstanceBuilder::EvaluateInitExpression(
       return WasmValue(
           isolate_->factory()->NewWasmStruct(type, fields.data(), rtt),
           init.type(module_, enabled_));
+    }
+    case WasmInitExpr::kArrayInit: {
+      const ArrayType* type = module_->array_type(init.immediate().index);
+      std::vector<WasmValue> elements(init.operands().size() - 1);
+      for (uint32_t i = 0; i < elements.size(); i++) {
+        elements[i] = EvaluateInitExpression(init.operands()[i], instance);
+      }
+      auto rtt = Handle<Map>::cast(
+          EvaluateInitExpression(init.operands().back(), instance).to_ref());
+      return WasmValue(isolate_->factory()->NewWasmArray(type, elements, rtt),
+                       init.type(module_, enabled_));
     }
     case WasmInitExpr::kRttCanon: {
       int map_index = init.immediate().index;

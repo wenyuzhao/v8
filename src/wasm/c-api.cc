@@ -28,6 +28,7 @@
 #include "include/libplatform/libplatform.h"
 #include "src/api/api-inl.h"
 #include "src/base/platform/wrappers.h"
+#include "src/builtins/builtins.h"
 #include "src/compiler/wasm-compiler.h"
 #include "src/objects/js-collection-inl.h"
 #include "src/objects/managed.h"
@@ -117,7 +118,7 @@ i::wasm::ValueType WasmValKindToV8(ValKind kind) {
 }
 
 Name GetNameFromWireBytes(const i::wasm::WireBytesRef& ref,
-                          const i::Vector<const uint8_t>& wire_bytes) {
+                          const v8::base::Vector<const uint8_t>& wire_bytes) {
   DCHECK_LE(ref.offset(), wire_bytes.length());
   DCHECK_LE(ref.end_offset(), wire_bytes.length());
   if (ref.length() == 0) return Name::make();
@@ -1006,8 +1007,11 @@ auto Trap::make(Store* store_abs, const Message& message) -> own<Trap> {
   i::Isolate* isolate = store->i_isolate();
   i::HandleScope handle_scope(isolate);
   i::Handle<i::String> string = VecToString(isolate, message);
-  i::Handle<i::JSReceiver> exception = i::Handle<i::JSReceiver>::cast(
-      isolate->factory()->NewError(isolate->error_function(), string));
+  i::Handle<i::JSObject> exception =
+      isolate->factory()->NewError(isolate->error_function(), string);
+  i::JSObject::AddProperty(isolate, exception,
+                           isolate->factory()->wasm_uncatchable_symbol(),
+                           isolate->factory()->true_value(), i::NONE);
   return implement<Trap>::type::make(store, exception);
 }
 
@@ -1114,7 +1118,7 @@ auto Module::validate(Store* store_abs, const vec<byte_t>& binary) -> bool {
       {reinterpret_cast<const uint8_t*>(binary.get()), binary.size()});
   i::Isolate* isolate = impl(store_abs)->i_isolate();
   i::wasm::WasmFeatures features = i::wasm::WasmFeatures::FromIsolate(isolate);
-  return isolate->wasm_engine()->SyncValidate(isolate, features, bytes);
+  return i::wasm::GetWasmEngine()->SyncValidate(isolate, features, bytes);
 }
 
 auto Module::make(Store* store_abs, const vec<byte_t>& binary) -> own<Module> {
@@ -1127,7 +1131,7 @@ auto Module::make(Store* store_abs, const vec<byte_t>& binary) -> own<Module> {
   i::wasm::WasmFeatures features = i::wasm::WasmFeatures::FromIsolate(isolate);
   i::wasm::ErrorThrower thrower(isolate, "ignored");
   i::Handle<i::WasmModuleObject> module;
-  if (!isolate->wasm_engine()
+  if (!i::wasm::GetWasmEngine()
            ->SyncCompile(isolate, features, &thrower, bytes)
            .ToHandle(&module)) {
     thrower.Reset();  // The API provides no way to expose the error.
@@ -1140,7 +1144,8 @@ auto Module::imports() const -> ownvec<ImportType> {
   const i::wasm::NativeModule* native_module =
       impl(this)->v8_object()->native_module();
   const i::wasm::WasmModule* module = native_module->module();
-  const i::Vector<const uint8_t> wire_bytes = native_module->wire_bytes();
+  const v8::base::Vector<const uint8_t> wire_bytes =
+      native_module->wire_bytes();
   const std::vector<i::wasm::WasmImport>& import_table = module->import_table;
   size_t size = import_table.size();
   ownvec<ImportType> imports = ownvec<ImportType>::make_uninitialized(size);
@@ -1158,7 +1163,8 @@ auto Module::imports() const -> ownvec<ImportType> {
 ownvec<ExportType> ExportsImpl(i::Handle<i::WasmModuleObject> module_obj) {
   const i::wasm::NativeModule* native_module = module_obj->native_module();
   const i::wasm::WasmModule* module = native_module->module();
-  const i::Vector<const uint8_t> wire_bytes = native_module->wire_bytes();
+  const v8::base::Vector<const uint8_t> wire_bytes =
+      native_module->wire_bytes();
   const std::vector<i::wasm::WasmExport>& export_table = module->export_table;
   size_t size = export_table.size();
   ownvec<ExportType> exports = ownvec<ExportType>::make_uninitialized(size);
@@ -1178,7 +1184,7 @@ auto Module::exports() const -> ownvec<ExportType> {
 auto Module::serialize() const -> vec<byte_t> {
   i::wasm::NativeModule* native_module =
       impl(this)->v8_object()->native_module();
-  i::Vector<const uint8_t> wire_bytes = native_module->wire_bytes();
+  v8::base::Vector<const uint8_t> wire_bytes = native_module->wire_bytes();
   size_t binary_size = wire_bytes.size();
   // We can only serialize after top-tier compilation (TurboFan) finished.
   native_module->compilation_state()->WaitForTopTierFinished();
@@ -1511,9 +1517,13 @@ void PrepareFunctionData(i::Isolate* isolate,
                          const i::wasm::FunctionSig* sig,
                          const i::wasm::WasmModule* module) {
   // If the data is already populated, return immediately.
-  if (!function_data->c_wrapper_code().IsSmi()) return;
+  // TODO(v8:11880): avoid roundtrips between cdc and code.
+  if (function_data->c_wrapper_code() !=
+      ToCodeT(*BUILTIN_CODE(isolate, Illegal))) {
+    return;
+  }
   // Compile wrapper code.
-  i::Handle<i::Code> wrapper_code =
+  i::Handle<i::CodeT> wrapper_code =
       i::compiler::CompileCWasmEntry(isolate, sig, module);
   function_data->set_c_wrapper_code(*wrapper_code);
   // Compute packed args size.
@@ -1653,8 +1663,9 @@ auto Func::call(const Val args[], Val results[]) const -> own<Trap> {
   const i::wasm::FunctionSig* sig =
       instance->module()->functions[function_index].sig;
   PrepareFunctionData(isolate, function_data, sig, instance->module());
-  i::Handle<i::Code> wrapper_code = i::Handle<i::Code>(
-      i::Code::cast(function_data->c_wrapper_code()), isolate);
+  // TODO(v8:11880): avoid roundtrips between cdc and code.
+  i::Handle<i::CodeT> wrapper_code = i::Handle<i::CodeT>(
+      i::CodeT::cast(function_data->c_wrapper_code()), isolate);
   i::Address call_target = function_data->foreign_address();
 
   i::wasm::CWasmArgumentsPacker packer(function_data->packed_args_size());
@@ -2126,7 +2137,7 @@ own<Instance> Instance::make(Store* store_abs, const Module* module_abs,
   }
   i::wasm::ErrorThrower thrower(isolate, "instantiation");
   i::MaybeHandle<i::WasmInstanceObject> instance_obj =
-      isolate->wasm_engine()->SyncInstantiate(
+      i::wasm::GetWasmEngine()->SyncInstantiate(
           isolate, &thrower, module->v8_object(), imports_obj,
           i::MaybeHandle<i::JSArrayBuffer>());
   if (trap) {
@@ -2342,22 +2353,22 @@ struct borrowed_vec {
   }
 
 // Vectors with no ownership management of elements
-#define WASM_DEFINE_VEC_PLAIN(name, Name)                               \
-  WASM_DEFINE_VEC_BASE(name, Name,                                      \
-                       wasm::vec, ) /* NOLINT(whitespace/parens) */     \
-                                                                        \
-  void wasm_##name##_vec_new(wasm_##name##_vec_t* out, size_t size,     \
-                             const wasm_##name##_t data[]) {            \
-    auto v2 = wasm::vec<Name>::make_uninitialized(size);                \
-    if (v2.size() != 0) {                                               \
-      v8::base::Memcpy(v2.get(), data, size * sizeof(wasm_##name##_t)); \
-    }                                                                   \
-    *out = release_##name##_vec(std::move(v2));                         \
-  }                                                                     \
-                                                                        \
-  void wasm_##name##_vec_copy(wasm_##name##_vec_t* out,                 \
-                              wasm_##name##_vec_t* v) {                 \
-    wasm_##name##_vec_new(out, v->size, v->data);                       \
+#define WASM_DEFINE_VEC_PLAIN(name, Name)                           \
+  WASM_DEFINE_VEC_BASE(name, Name,                                  \
+                       wasm::vec, ) /* NOLINT(whitespace/parens) */ \
+                                                                    \
+  void wasm_##name##_vec_new(wasm_##name##_vec_t* out, size_t size, \
+                             const wasm_##name##_t data[]) {        \
+    auto v2 = wasm::vec<Name>::make_uninitialized(size);            \
+    if (v2.size() != 0) {                                           \
+      memcpy(v2.get(), data, size * sizeof(wasm_##name##_t));       \
+    }                                                               \
+    *out = release_##name##_vec(std::move(v2));                     \
+  }                                                                 \
+                                                                    \
+  void wasm_##name##_vec_copy(wasm_##name##_vec_t* out,             \
+                              wasm_##name##_vec_t* v) {             \
+    wasm_##name##_vec_new(out, v->size, v->data);                   \
   }
 
 // Vectors that own their elements

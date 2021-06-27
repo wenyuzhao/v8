@@ -63,6 +63,8 @@ using base::WriteLittleEndianValue;
 
 constexpr uint32_t kMaxFunctions = 10;
 constexpr uint32_t kMaxGlobalsSize = 128;
+// Don't execute more than 16k steps.
+constexpr int kMaxNumSteps = 16 * 1024;
 
 using compiler::CallDescriptor;
 using compiler::MachineTypeForC;
@@ -207,11 +209,11 @@ class TestingModuleBuilder {
                                 uint32_t table_size,
                                 ValueType table_type = kWasmFuncRef);
 
-  uint32_t AddBytes(Vector<const byte> bytes);
+  uint32_t AddBytes(base::Vector<const byte> bytes);
 
   uint32_t AddException(const FunctionSig* sig);
 
-  uint32_t AddPassiveDataSegment(Vector<const byte> bytes);
+  uint32_t AddPassiveDataSegment(base::Vector<const byte> bytes);
   uint32_t AddPassiveElementSegment(const std::vector<uint32_t>& entries);
 
   WasmFunction* GetFunctionAt(int index) {
@@ -262,6 +264,8 @@ class TestingModuleBuilder {
 
   void set_max_steps(int n) { max_steps_ = n; }
   int* max_steps_ptr() { return &max_steps_; }
+  bool nondeterminism() { return nondeterminism_; }
+  bool* non_determinism_ptr() { return &nondeterminism_; }
 
   void EnableFeature(WasmFeature feature) { enabled_features_.Add(feature); }
 
@@ -278,7 +282,8 @@ class TestingModuleBuilder {
   Handle<WasmInstanceObject> instance_object_;
   NativeModule* native_module_ = nullptr;
   RuntimeExceptionSupport runtime_exception_support_;
-  int max_steps_ = 0;
+  int max_steps_ = kMaxNumSteps;
+  bool nondeterminism_ = false;
 
   // Data segment arrays that are normally allocated on the instance.
   std::vector<byte> data_segment_data_;
@@ -301,14 +306,14 @@ class WasmFunctionWrapper : private compiler::GraphAndBuilders {
   WasmFunctionWrapper(Zone* zone, int num_params);
 
   void Init(CallDescriptor* call_descriptor, MachineType return_type,
-            Vector<MachineType> param_types);
+            base::Vector<MachineType> param_types);
 
   template <typename ReturnType, typename... ParamTypes>
   void Init(CallDescriptor* call_descriptor) {
     std::array<MachineType, sizeof...(ParamTypes)> param_machine_types{
         {MachineTypeForC<ParamTypes>()...}};
-    Vector<MachineType> param_vec(param_machine_types.data(),
-                                  param_machine_types.size());
+    base::Vector<MachineType> param_vec(param_machine_types.data(),
+                                        param_machine_types.size());
     Init(call_descriptor, MachineTypeForC<ReturnType>(), param_vec);
   }
 
@@ -462,8 +467,8 @@ class WasmRunnerBase : public InitializedHandleScope {
   static FunctionSig* CreateSig(Zone* zone) {
     std::array<MachineType, sizeof...(ParamTypes)> param_machine_types{
         {MachineTypeForC<ParamTypes>()...}};
-    Vector<MachineType> param_vec(param_machine_types.data(),
-                                  param_machine_types.size());
+    base::Vector<MachineType> param_vec(param_machine_types.data(),
+                                        param_machine_types.size());
     return CreateSig(zone, MachineTypeForC<ReturnType>(), param_vec);
   }
 
@@ -506,7 +511,7 @@ class WasmRunnerBase : public InitializedHandleScope {
 
  private:
   static FunctionSig* CreateSig(Zone* zone, MachineType return_type,
-                                Vector<MachineType> param_types);
+                                base::Vector<MachineType> param_types);
 
  protected:
   wasm::WasmCodeRefScope code_ref_scope_;
@@ -635,6 +640,7 @@ class WasmRunner : public WasmRunnerBase {
   }
 
   void SetMaxSteps(int n) { builder_.set_max_steps(n); }
+  bool HasNondeterminism() { return builder_.nondeterminism(); }
 };
 
 // A macro to define tests that run in different engine configurations.

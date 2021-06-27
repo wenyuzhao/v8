@@ -9,16 +9,16 @@
 #include "src/base/platform/mutex.h"
 #include "src/handles/handles-inl.h"
 #include "src/heap/heap-write-barrier-inl.h"
-#include "src/heap/local-heap-inl.h"
 #include "src/objects/debug-objects-inl.h"
 #include "src/objects/feedback-vector-inl.h"
-#include "src/objects/scope-info.h"
+#include "src/objects/scope-info-inl.h"
+#include "src/objects/script-inl.h"
 #include "src/objects/shared-function-info.h"
-#include "src/objects/templates.h"
+#include "src/objects/templates-inl.h"
 
 #if V8_ENABLE_WEBASSEMBLY
 #include "src/wasm/wasm-module.h"
-#include "src/wasm/wasm-objects-inl.h"
+#include "src/wasm/wasm-objects.h"
 #endif  // V8_ENABLE_WEBASSEMBLY
 
 // Has to be the last include (doesn't have include guards):
@@ -65,7 +65,7 @@ void PreparseData::copy_in(int index, const byte* buffer, int length) {
   DCHECK(index >= 0 && length >= 0 && length <= kMaxInt - index &&
          index + length <= this->data_length());
   Address dst_addr = field_address(kDataStartOffset + index * kByteSize);
-  base::Memcpy(reinterpret_cast<void*>(dst_addr), buffer, length);
+  memcpy(reinterpret_cast<void*>(dst_addr), buffer, length);
 }
 
 PreparseData PreparseData::get_child(int index) const {
@@ -98,8 +98,17 @@ OBJECT_CONSTRUCTORS_IMPL(InterpreterData, Struct)
 
 CAST_ACCESSOR(InterpreterData)
 ACCESSORS(InterpreterData, bytecode_array, BytecodeArray, kBytecodeArrayOffset)
-ACCESSORS(InterpreterData, interpreter_trampoline, Code,
+ACCESSORS(InterpreterData, raw_interpreter_trampoline, CodeT,
           kInterpreterTrampolineOffset)
+
+DEF_GETTER(InterpreterData, interpreter_trampoline, Code) {
+  return FromCodeT(raw_interpreter_trampoline(cage_base));
+}
+
+void InterpreterData::set_interpreter_trampoline(Code code,
+                                                 WriteBarrierMode mode) {
+  set_raw_interpreter_trampoline(ToCodeT(code), mode);
+}
 
 TQ_OBJECT_CONSTRUCTORS_IMPL(SharedFunctionInfo)
 NEVER_READ_ONLY_SPACE_IMPL(SharedFunctionInfo)
@@ -197,7 +206,7 @@ bool SharedFunctionInfo::AreSourcePositionsAvailable(IsolateT* isolate) const {
 
 template <typename IsolateT>
 SharedFunctionInfo::Inlineability SharedFunctionInfo::GetInlineability(
-    IsolateT* isolate) const {
+    IsolateT* isolate, bool is_turboprop) const {
   if (!script().IsScript()) return kHasNoScript;
 
   if (GetIsolate()->is_precise_binary_code_coverage() &&
@@ -218,7 +227,11 @@ SharedFunctionInfo::Inlineability SharedFunctionInfo::GetInlineability(
   // inline.
   if (!HasBytecodeArray()) return kHasNoBytecode;
 
-  if (GetBytecodeArray(isolate).length() > FLAG_max_inlined_bytecode_size) {
+  int max_inlined_size = FLAG_max_inlined_bytecode_size;
+  if (is_turboprop) {
+    max_inlined_size = max_inlined_size / FLAG_turboprop_inline_scaling_factor;
+  }
+  if (GetBytecodeArray(isolate).length() > max_inlined_size) {
     return kExceedsBytecodeLimit;
   }
 
@@ -313,7 +326,7 @@ bool SharedFunctionInfo::construct_as_builtin() const {
 void SharedFunctionInfo::CalculateConstructAsBuiltin() {
   bool uses_builtins_construct_stub = false;
   if (HasBuiltinId()) {
-    int id = builtin_id();
+    Builtin id = builtin_id();
     if (id != Builtin::kCompileLazy && id != Builtin::kEmptyFunction) {
       uses_builtins_construct_stub = true;
     }
@@ -504,6 +517,14 @@ BytecodeArray SharedFunctionInfo::GetBytecodeArray(IsolateT* isolate) const {
   return GetActiveBytecodeArray();
 }
 
+DEF_GETTER(BaselineData, baseline_code, Code) {
+  return FromCodeT(TorqueGeneratedClass::baseline_code(cage_base));
+}
+
+void BaselineData::set_baseline_code(Code code, WriteBarrierMode mode) {
+  return TorqueGeneratedClass::set_baseline_code(ToCodeT(code), mode);
+}
+
 BytecodeArray BaselineData::GetActiveBytecodeArray() const {
   Object data = this->data();
   if (data.IsBytecodeArray()) {
@@ -667,16 +688,16 @@ bool SharedFunctionInfo::HasBuiltinId() const {
   return function_data(kAcquireLoad).IsSmi();
 }
 
-int SharedFunctionInfo::builtin_id() const {
+Builtin SharedFunctionInfo::builtin_id() const {
   DCHECK(HasBuiltinId());
   int id = Smi::ToInt(function_data(kAcquireLoad));
   DCHECK(Builtins::IsBuiltinId(id));
-  return id;
+  return Builtins::FromInt(id);
 }
 
-void SharedFunctionInfo::set_builtin_id(int builtin_id) {
-  DCHECK(Builtins::IsBuiltinId(builtin_id));
-  set_function_data(Smi::FromInt(builtin_id), kReleaseStore,
+void SharedFunctionInfo::set_builtin_id(Builtin builtin) {
+  DCHECK(Builtins::IsBuiltinId(builtin));
+  set_function_data(Smi::FromInt(static_cast<int>(builtin)), kReleaseStore,
                     SKIP_WRITE_BARRIER);
 }
 

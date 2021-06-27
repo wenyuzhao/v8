@@ -21,6 +21,7 @@
 #include "src/extensions/ignition-statistics-extension.h"
 #include "src/extensions/statistics-extension.h"
 #include "src/extensions/trigger-failure-extension.h"
+#include "src/logging/runtime-call-stats-scope.h"
 #include "src/objects/objects.h"
 #ifdef ENABLE_VTUNE_TRACEMARK
 #include "src/extensions/vtunedomain-support-extension.h"
@@ -81,7 +82,7 @@ void SourceCodeCache::Iterate(RootVisitor* v) {
   v->VisitRootPointer(Root::kExtensions, nullptr, FullObjectSlot(&cache_));
 }
 
-bool SourceCodeCache::Lookup(Isolate* isolate, Vector<const char> name,
+bool SourceCodeCache::Lookup(Isolate* isolate, base::Vector<const char> name,
                              Handle<SharedFunctionInfo>* handle) {
   for (int i = 0; i < cache_.length(); i += 2) {
     SeqOneByteString str = SeqOneByteString::cast(cache_.get(i));
@@ -94,7 +95,7 @@ bool SourceCodeCache::Lookup(Isolate* isolate, Vector<const char> name,
   return false;
 }
 
-void SourceCodeCache::Add(Isolate* isolate, Vector<const char> name,
+void SourceCodeCache::Add(Isolate* isolate, base::Vector<const char> name,
                           Handle<SharedFunctionInfo> shared) {
   Factory* factory = isolate->factory();
   HandleScope scope(isolate);
@@ -105,7 +106,7 @@ void SourceCodeCache::Add(Isolate* isolate, Vector<const char> name,
   cache_ = *new_array;
   Handle<String> str =
       factory
-          ->NewStringFromOneByte(Vector<const uint8_t>::cast(name),
+          ->NewStringFromOneByte(base::Vector<const uint8_t>::cast(name),
                                  AllocationType::kOld)
           .ToHandleChecked();
   DCHECK(!str.is_null());
@@ -381,7 +382,7 @@ void Bootstrapper::DetachGlobal(Handle<Context> env) {
 namespace {
 
 #ifdef DEBUG
-bool IsFunctionMapOrSpecialBuiltin(Handle<Map> map, Builtin builtin_id,
+bool IsFunctionMapOrSpecialBuiltin(Handle<Map> map, Builtin builtin,
                                    Handle<Context> context) {
   // During bootstrapping some of these maps could be not created yet.
   return ((*map == context->get(Context::STRICT_FUNCTION_MAP_INDEX)) ||
@@ -392,21 +393,21 @@ bool IsFunctionMapOrSpecialBuiltin(Handle<Map> map, Builtin builtin_id,
                Context::STRICT_FUNCTION_WITH_READONLY_PROTOTYPE_MAP_INDEX)) ||
           // Check if it's a creation of an empty or Proxy function during
           // bootstrapping.
-          (builtin_id == Builtin::kEmptyFunction ||
-           builtin_id == Builtin::kProxyConstructor));
+          (builtin == Builtin::kEmptyFunction ||
+           builtin == Builtin::kProxyConstructor));
 }
 #endif  // DEBUG
 
 V8_NOINLINE Handle<JSFunction> CreateFunctionForBuiltin(Isolate* isolate,
                                                         Handle<String> name,
                                                         Handle<Map> map,
-                                                        Builtin builtin_id) {
+                                                        Builtin builtin) {
   Factory* factory = isolate->factory();
   Handle<NativeContext> context(isolate->native_context());
-  DCHECK(IsFunctionMapOrSpecialBuiltin(map, builtin_id, context));
+  DCHECK(IsFunctionMapOrSpecialBuiltin(map, builtin, context));
 
   Handle<SharedFunctionInfo> info =
-      factory->NewSharedFunctionInfoForBuiltin(name, builtin_id);
+      factory->NewSharedFunctionInfoForBuiltin(name, builtin);
   info->set_language_mode(LanguageMode::kStrict);
 
   return Factory::JSFunctionBuilder{isolate, info, context}
@@ -415,7 +416,7 @@ V8_NOINLINE Handle<JSFunction> CreateFunctionForBuiltin(Isolate* isolate,
 }
 
 V8_NOINLINE Handle<JSFunction> CreateFunctionForBuiltinWithPrototype(
-    Isolate* isolate, Handle<String> name, Builtin builtin_id,
+    Isolate* isolate, Handle<String> name, Builtin builtin,
     Handle<HeapObject> prototype, InstanceType type, int instance_size,
     int inobject_properties, MutableMode prototype_mutability) {
   Factory* factory = isolate->factory();
@@ -424,10 +425,10 @@ V8_NOINLINE Handle<JSFunction> CreateFunctionForBuiltinWithPrototype(
       prototype_mutability == MUTABLE
           ? isolate->strict_function_map()
           : isolate->strict_function_with_readonly_prototype_map();
-  DCHECK(IsFunctionMapOrSpecialBuiltin(map, builtin_id, context));
+  DCHECK(IsFunctionMapOrSpecialBuiltin(map, builtin, context));
 
   Handle<SharedFunctionInfo> info =
-      factory->NewSharedFunctionInfoForBuiltin(name, builtin_id);
+      factory->NewSharedFunctionInfoForBuiltin(name, builtin);
   info->set_language_mode(LanguageMode::kStrict);
   info->set_expected_nof_properties(inobject_properties);
 
@@ -460,14 +461,14 @@ V8_NOINLINE Handle<JSFunction> CreateFunctionForBuiltinWithPrototype(
 }
 
 V8_NOINLINE Handle<JSFunction> CreateFunctionForBuiltinWithoutPrototype(
-    Isolate* isolate, Handle<String> name, Builtin builtin_id) {
+    Isolate* isolate, Handle<String> name, Builtin builtin) {
   Factory* factory = isolate->factory();
   Handle<NativeContext> context(isolate->native_context());
   Handle<Map> map = isolate->strict_function_without_prototype_map();
-  DCHECK(IsFunctionMapOrSpecialBuiltin(map, builtin_id, context));
+  DCHECK(IsFunctionMapOrSpecialBuiltin(map, builtin, context));
 
   Handle<SharedFunctionInfo> info =
-      factory->NewSharedFunctionInfoForBuiltin(name, builtin_id);
+      factory->NewSharedFunctionInfoForBuiltin(name, builtin);
   info->set_language_mode(LanguageMode::kStrict);
 
   return Factory::JSFunctionBuilder{isolate, info, context}
@@ -477,11 +478,11 @@ V8_NOINLINE Handle<JSFunction> CreateFunctionForBuiltinWithoutPrototype(
 
 V8_NOINLINE Handle<JSFunction> CreateFunction(
     Isolate* isolate, Handle<String> name, InstanceType type, int instance_size,
-    int inobject_properties, Handle<HeapObject> prototype, Builtin builtin_id) {
-  DCHECK(Builtins::HasJSLinkage(builtin_id));
+    int inobject_properties, Handle<HeapObject> prototype, Builtin builtin) {
+  DCHECK(Builtins::HasJSLinkage(builtin));
 
   Handle<JSFunction> result = CreateFunctionForBuiltinWithPrototype(
-      isolate, name, builtin_id, prototype, type, instance_size,
+      isolate, name, builtin, prototype, type, instance_size,
       inobject_properties, IMMUTABLE);
 
   // Make the JSFunction's prototype object fast.
@@ -496,10 +497,10 @@ V8_NOINLINE Handle<JSFunction> CreateFunction(
 
 V8_NOINLINE Handle<JSFunction> CreateFunction(
     Isolate* isolate, const char* name, InstanceType type, int instance_size,
-    int inobject_properties, Handle<HeapObject> prototype, Builtin builtin_id) {
-  return CreateFunction(
-      isolate, isolate->factory()->InternalizeUtf8String(name), type,
-      instance_size, inobject_properties, prototype, builtin_id);
+    int inobject_properties, Handle<HeapObject> prototype, Builtin builtin) {
+  return CreateFunction(isolate,
+                        isolate->factory()->InternalizeUtf8String(name), type,
+                        instance_size, inobject_properties, prototype, builtin);
 }
 
 V8_NOINLINE Handle<JSFunction> InstallFunction(
@@ -1204,7 +1205,7 @@ static void AddToWeakNativeContextList(Isolate* isolate, Context context) {
   DCHECK(context.IsNativeContext());
   Heap* heap = isolate->heap();
 #ifdef DEBUG
-  {  // NOLINT
+  {
     DCHECK(context.next_context_link().IsUndefined(isolate));
     // Check that context is not in the list yet.
     for (Object current = heap->native_contexts_list();
@@ -1418,6 +1419,7 @@ static void InstallError(Isolate* isolate, Handle<JSObject> global,
   Handle<JSFunction> error_fun = InstallFunction(
       isolate, global, name, JS_ERROR_TYPE, kErrorObjectSize,
       in_object_properties, factory->the_hole_value(), error_constructor);
+  error_fun->shared().DontAdaptArguments();
   error_fun->shared().set_length(error_function_length);
 
   if (context_index == Context::ERROR_FUNCTION_INDEX) {
@@ -3731,8 +3733,11 @@ void Genesis::InitializeGlobal(Handle<JSGlobalObject> global_object,
     Handle<JSObject> prototype(JSObject::cast(cons->instance_prototype()),
                                isolate());
 
-    SimpleInstallFunction(isolate_, prototype, "delete",
-                          Builtin::kWeakMapPrototypeDelete, 1, true);
+    Handle<JSFunction> weakmap_delete =
+        SimpleInstallFunction(isolate_, prototype, "delete",
+                              Builtin::kWeakMapPrototypeDelete, 1, true);
+    native_context()->set_weakmap_delete(*weakmap_delete);
+
     Handle<JSFunction> weakmap_get = SimpleInstallFunction(
         isolate_, prototype, "get", Builtin::kWeakMapGet, 1, true);
     native_context()->set_weakmap_get(*weakmap_get);
@@ -3866,6 +3871,7 @@ void Genesis::InitializeGlobal(Handle<JSGlobalObject> global_object,
     Map::EnsureDescriptorSlack(isolate_, map, 2);
 
     {  // length
+      STATIC_ASSERT(JSFunctionOrBoundFunction::kLengthDescriptorIndex == 0);
       Descriptor d = Descriptor::AccessorConstant(
           factory->length_string(), factory->bound_function_length_accessor(),
           roc_attribs);
@@ -3873,6 +3879,7 @@ void Genesis::InitializeGlobal(Handle<JSGlobalObject> global_object,
     }
 
     {  // name
+      STATIC_ASSERT(JSFunctionOrBoundFunction::kNameDescriptorIndex == 1);
       Descriptor d = Descriptor::AccessorConstant(
           factory->name_string(), factory->bound_function_name_accessor(),
           roc_attribs);
@@ -4057,7 +4064,7 @@ void Genesis::InitializeGlobal(Handle<JSGlobalObject> global_object,
                              Builtin::kHandleApiCallAsConstructor, 0, false);
     native_context()->set_call_as_constructor_delegate(*delegate);
   }
-}  // NOLINT(readability/fn_size)
+}
 
 Handle<JSFunction> Genesis::InstallTypedArray(const char* name,
                                               ElementsKind elements_kind,
@@ -4138,7 +4145,7 @@ bool Genesis::CompileExtension(Isolate* isolate, v8::Extension* extension) {
 
   // If we can't find the function in the cache, we compile a new
   // function and insert it into the cache.
-  Vector<const char> name = CStrVector(extension->name());
+  base::Vector<const char> name = base::CStrVector(extension->name());
   SourceCodeCache* cache = isolate->bootstrapper()->extensions_cache();
   Handle<Context> context(isolate->context(), isolate);
   DCHECK(context->IsNativeContext());

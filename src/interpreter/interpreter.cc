@@ -18,6 +18,7 @@
 #include "src/init/setup-isolate.h"
 #include "src/interpreter/bytecode-generator.h"
 #include "src/interpreter/bytecodes.h"
+#include "src/logging/runtime-call-stats-scope.h"
 #include "src/objects/objects-inl.h"
 #include "src/objects/shared-function-info.h"
 #include "src/objects/slots.h"
@@ -83,7 +84,8 @@ void Interpreter::InitDispatchCounters() {
 
 namespace {
 
-int BuiltinIndexFromBytecode(Bytecode bytecode, OperandScale operand_scale) {
+Builtin BuiltinIndexFromBytecode(Bytecode bytecode,
+                                 OperandScale operand_scale) {
   int index = static_cast<int>(bytecode);
   if (operand_scale == OperandScale::kSingle) {
     if (Bytecodes::IsShortStar(bytecode)) {
@@ -105,16 +107,16 @@ int BuiltinIndexFromBytecode(Bytecode bytecode, OperandScale operand_scale) {
       }
     }
   }
-  return Builtin::kFirstBytecodeHandler + index;
+  return Builtins::FromInt(static_cast<int>(Builtin::kFirstBytecodeHandler) +
+                           index);
 }
 
 }  // namespace
 
 Code Interpreter::GetBytecodeHandler(Bytecode bytecode,
                                      OperandScale operand_scale) {
-  int builtin_index = BuiltinIndexFromBytecode(bytecode, operand_scale);
-  Builtins* builtins = isolate_->builtins();
-  return builtins->builtin(builtin_index);
+  Builtin builtin = BuiltinIndexFromBytecode(bytecode, operand_scale);
+  return isolate_->builtins()->code(builtin);
 }
 
 void Interpreter::SetBytecodeHandler(Bytecode bytecode,
@@ -156,7 +158,8 @@ bool ShouldPrintBytecode(Handle<SharedFunctionInfo> shared) {
 
   // Checks whether function passed the filter.
   if (shared->is_toplevel()) {
-    Vector<const char> filter = CStrVector(FLAG_print_bytecode_filter);
+    base::Vector<const char> filter =
+        base::CStrVector(FLAG_print_bytecode_filter);
     return (filter.length() == 0) || (filter.length() == 1 && filter[0] == '*');
   } else {
     return shared->PassesFilter(FLAG_print_bytecode_filter);
@@ -346,11 +349,11 @@ void Interpreter::Initialize() {
 
   // Initialize the dispatch table.
   ForEachBytecode([=](Bytecode bytecode, OperandScale operand_scale) {
-    int builtin_id = BuiltinIndexFromBytecode(bytecode, operand_scale);
-    Code handler = builtins->builtin(builtin_id);
+    Builtin builtin = BuiltinIndexFromBytecode(bytecode, operand_scale);
+    Code handler = builtins->code(builtin);
     if (Bytecodes::BytecodeHasHandler(bytecode, operand_scale)) {
 #ifdef DEBUG
-      std::string builtin_name(Builtins::name(builtin_id));
+      std::string builtin_name(Builtins::name(builtin));
       std::string expected_name =
           (Bytecodes::IsShortStar(bytecode)
                ? "ShortStar"
@@ -371,7 +374,7 @@ bool Interpreter::IsDispatchTableInitialized() const {
 
 const char* Interpreter::LookupNameOfBytecodeHandler(const Code code) {
   if (code.kind() == CodeKind::BYTECODE_HANDLER) {
-    return Builtins::name(code.builtin_index());
+    return Builtins::name(code.builtin_id());
   }
   return nullptr;
 }

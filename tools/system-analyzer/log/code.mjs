@@ -32,6 +32,10 @@ export class DeoptLogEntry extends LogEntry {
     return this._entry;
   }
 
+  get code() {
+    return this._entry?.logEntry;
+  }
+
   get functionName() {
     return this._entry.functionName;
   }
@@ -39,7 +43,7 @@ export class DeoptLogEntry extends LogEntry {
   static get propertyNames() {
     return [
       'type', 'reason', 'functionName', 'sourcePosition',
-      'functionSourcePosition', 'script'
+      'functionSourcePosition', 'script', 'code'
     ];
   }
 }
@@ -81,6 +85,11 @@ export class CodeLogEntry extends LogEntry {
     return this._entry?.source?.disassemble;
   }
 
+  get variants() {
+    const entries = Array.from(this.entry?.func?.codeEntries ?? []);
+    return entries.map(each => each.logEntry);
+  }
+
   toString() {
     return `Code(${this.type})`;
   }
@@ -94,7 +103,30 @@ export class CodeLogEntry extends LogEntry {
   static get propertyNames() {
     return [
       'functionName', 'sourcePosition', 'kindName', 'size', 'type', 'kind',
-      'script', 'source', 'code'
+      'script', 'source', 'code', 'variants'
     ];
+  }
+}
+
+export class SharedLibLogEntry extends LogEntry {
+  constructor(entry) {
+    super('SHARED_LIB', 0);
+    this._entry = entry;
+  }
+
+  get name() {
+    return this._entry.name;
+  }
+
+  get entry() {
+    return this._entry;
+  }
+
+  toString() {
+    return `SharedLib`;
+  }
+
+  static get propertyNames() {
+    return ['name'];
   }
 }

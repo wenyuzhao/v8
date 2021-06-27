@@ -63,6 +63,7 @@
 #include "src/logging/counters.h"
 #include "src/logging/log.h"
 #include "src/logging/metrics.h"
+#include "src/logging/runtime-call-stats-scope.h"
 #include "src/numbers/hash-seed-inl.h"
 #include "src/objects/backing-store.h"
 #include "src/objects/elements.h"
@@ -91,7 +92,6 @@
 #include "src/strings/string-stream.h"
 #include "src/tasks/cancelable-task.h"
 #include "src/tracing/tracing-category-observer.h"
-#include "src/trap-handler/trap-handler.h"
 #include "src/utils/address-map.h"
 #include "src/utils/ostreams.h"
 #include "src/utils/version.h"
@@ -102,6 +102,7 @@
 #endif  // V8_INTL_SUPPORT
 
 #if V8_ENABLE_WEBASSEMBLY
+#include "src/trap-handler/trap-handler.h"
 #include "src/wasm/wasm-code-manager.h"
 #include "src/wasm/wasm-engine.h"
 #include "src/wasm/wasm-module.h"
@@ -391,8 +392,9 @@ size_t Isolate::HashIsolateForEmbeddedBlob() {
   size_t hash = kSeed;
 
   // Hash data sections of builtin code objects.
-  for (int i = 0; i < Builtins::kBuiltinCount; i++) {
-    Code code = heap_.builtin(i);
+  for (Builtin builtin = Builtins::kFirst; builtin <= Builtins::kLast;
+       ++builtin) {
+    Code code = heap_.builtin(builtin);
 
     DCHECK(Internals::HasHeapObjectTag(code.ptr()));
     uint8_t* const code_ptr =
@@ -871,11 +873,10 @@ bool NoExtension(const v8::FunctionCallbackInfo<v8::Value>&) { return false; }
 
 namespace {
 
-bool IsBuiltinFunction(Isolate* isolate, HeapObject object,
-                       Builtin builtin_index) {
+bool IsBuiltinFunction(Isolate* isolate, HeapObject object, Builtin builtin) {
   if (!object.IsJSFunction()) return false;
   JSFunction const function = JSFunction::cast(object);
-  return function.code() == isolate->builtins()->builtin(builtin_index);
+  return function.code() == isolate->builtins()->code(builtin);
 }
 
 void CaptureAsyncStackTrace(Isolate* isolate, Handle<JSPromise> promise,
@@ -1581,23 +1582,23 @@ Handle<JSMessageObject> Isolate::CreateMessageOrAbort(
 
 Object Isolate::ThrowInternal(Object raw_exception, MessageLocation* location) {
   DCHECK(!has_pending_exception());
-  DCHECK_IMPLIES(trap_handler::IsTrapHandlerEnabled(),
-                 !trap_handler::IsThreadInWasm());
+  IF_WASM(DCHECK_IMPLIES, trap_handler::IsTrapHandlerEnabled(),
+          !trap_handler::IsThreadInWasm());
 
   HandleScope scope(this);
   Handle<Object> exception(raw_exception, this);
 
   if (FLAG_print_all_exceptions) {
-    printf("=========================================================\n");
-    printf("Exception thrown:\n");
+    PrintF("=========================================================\n");
+    PrintF("Exception thrown:\n");
     if (location) {
       Handle<Script> script = location->script();
       Handle<Object> name(script->GetNameOrSourceURL(), this);
-      printf("at ");
+      PrintF("at ");
       if (name->IsString() && String::cast(*name).length() > 0)
         String::cast(*name).PrintOn(stdout);
       else
-        printf("<anonymous>");
+        PrintF("<anonymous>");
 // Script::GetLineNumber and Script::GetColumnNumber can allocate on the heap to
 // initialize the line_ends array, so be careful when calling them.
 #ifdef DEBUG
@@ -1605,7 +1606,7 @@ Object Isolate::ThrowInternal(Object raw_exception, MessageLocation* location) {
 #else
       if ((false)) {
 #endif
-        printf(", %d:%d - %d:%d\n",
+        PrintF(", %d:%d - %d:%d\n",
                Script::GetLineNumber(script, location->start_pos()) + 1,
                Script::GetColumnNumber(script, location->start_pos()),
                Script::GetLineNumber(script, location->end_pos()) + 1,
@@ -1613,13 +1614,13 @@ Object Isolate::ThrowInternal(Object raw_exception, MessageLocation* location) {
         // Make sure to update the raw exception pointer in case it moved.
         raw_exception = *exception;
       } else {
-        printf(", line %d\n", script->GetLineNumber(location->start_pos()) + 1);
+        PrintF(", line %d\n", script->GetLineNumber(location->start_pos()) + 1);
       }
     }
     raw_exception.Print();
-    printf("Stack Trace:\n");
+    PrintF("Stack Trace:\n");
     PrintStack(stdout);
-    printf("=========================================================\n");
+    PrintF("=========================================================\n");
   }
 
   // Determine whether a message needs to be created for the given exception
@@ -1677,6 +1678,7 @@ Object Isolate::ReThrow(Object exception) {
 }
 
 namespace {
+#if V8_ENABLE_WEBASSEMBLY
 // This scope will set the thread-in-wasm flag after the execution of all
 // destructors. The thread-in-wasm flag is only set when the scope gets enabled.
 class SetThreadInWasmFlagScope {
@@ -1695,9 +1697,11 @@ class SetThreadInWasmFlagScope {
  private:
   bool enabled_ = false;
 };
+#endif  // V8_ENABLE_WEBASSEMBLY
 }  // namespace
 
 Object Isolate::UnwindAndFindHandler() {
+#if V8_ENABLE_WEBASSEMBLY
   // Create the {SetThreadInWasmFlagScope} first in this function so that its
   // destructor gets called after all the other destructors. It is important
   // that the destructor sets the thread-in-wasm flag after all other
@@ -1705,6 +1709,7 @@ Object Isolate::UnwindAndFindHandler() {
   // Windows, which would invalidate the thread-in-wasm flag when the wasm trap
   // handler handles such non-wasm exceptions.
   SetThreadInWasmFlagScope set_thread_in_wasm_flag_scope;
+#endif  // V8_ENABLE_WEBASSEMBLY
   Object exception = pending_exception();
 
   auto FoundHandler = [&](Context context, Address instruction_start,
@@ -1788,10 +1793,10 @@ Object Isolate::UnwindAndFindHandler() {
         wasm::WasmCodeRefScope code_ref_scope;
         WasmFrame* wasm_frame = static_cast<WasmFrame*>(frame);
         wasm::WasmCode* wasm_code =
-            wasm_engine()->code_manager()->LookupCode(frame->pc());
+            wasm::GetWasmCodeManager()->LookupCode(frame->pc());
         int offset = wasm_frame->LookupExceptionHandlerInTable();
         if (offset < 0) break;
-        wasm_engine()->SampleCatchEvent(this);
+        wasm::GetWasmEngine()->SampleCatchEvent(this);
         // Compute the stack pointer from the frame pointer. This ensures that
         // argument slots on the stack are dropped as returning would.
         Address return_sp = frame->fp() +
@@ -1849,7 +1854,7 @@ Object Isolate::UnwindAndFindHandler() {
         StubFrame* stub_frame = static_cast<StubFrame*>(frame);
 #if defined(DEBUG) && V8_ENABLE_WEBASSEMBLY
         wasm::WasmCodeRefScope code_ref_scope;
-        DCHECK_NULL(wasm_engine()->code_manager()->LookupCode(frame->pc()));
+        DCHECK_NULL(wasm::GetWasmCodeManager()->LookupCode(frame->pc()));
 #endif  // defined(DEBUG) && V8_ENABLE_WEBASSEMBLY
         Code code = stub_frame->LookupCode();
         if (!code.IsCode() || code.kind() != CodeKind::BUILTIN ||
@@ -1913,7 +1918,7 @@ Object Isolate::UnwindAndFindHandler() {
           InterpretedFrame::cast(js_frame)->PatchBytecodeOffset(
               static_cast<int>(offset));
 
-          Code code = builtins()->builtin(Builtin::kInterpreterEnterAtBytecode);
+          Code code = builtins()->code(Builtin::kInterpreterEnterAtBytecode);
           return FoundHandler(context, code.InstructionStart(), 0,
                               code.constant_pool(), return_sp, frame->fp());
         }
@@ -2717,13 +2722,6 @@ void Isolate::UnregisterManagedPtrDestructor(ManagedPtrDestructor* destructor) {
 }
 
 #if V8_ENABLE_WEBASSEMBLY
-void Isolate::SetWasmEngine(wasm::WasmEngine* engine) {
-  DCHECK_NULL(wasm_engine_);  // Only call once before {Init}.
-  DCHECK_NOT_NULL(engine);
-  wasm_engine_ = engine;
-  wasm_engine_->AddIsolate(this);
-}
-
 void Isolate::AddSharedWasmMemory(Handle<WasmMemoryObject> memory_object) {
   HandleScope scope(this);
   Handle<WeakArrayList> shared_wasm_memories =
@@ -3114,7 +3112,7 @@ void Isolate::Deinit() {
   debug()->Unload();
 
 #if V8_ENABLE_WEBASSEMBLY
-  wasm_engine()->DeleteCompileJobsOnIsolate(this);
+  wasm::GetWasmEngine()->DeleteCompileJobsOnIsolate(this);
 
   BackingStore::RemoveSharedWasmMemoryObjects(this);
 #endif  // V8_ENABLE_WEBASSEMBLY
@@ -3189,7 +3187,7 @@ void Isolate::Deinit() {
   if (logfile != nullptr) base::Fclose(logfile);
 
 #if V8_ENABLE_WEBASSEMBLY
-  wasm_engine_->RemoveIsolate(this);
+  wasm::GetWasmEngine()->RemoveIsolate(this);
 #endif  // V8_ENABLE_WEBASSEMBLY
 
   TearDownEmbeddedBlob();
@@ -3383,14 +3381,15 @@ void CreateOffHeapTrampolines(Isolate* isolate) {
   EmbeddedData d = EmbeddedData::FromBlob(isolate);
 
   STATIC_ASSERT(Builtins::kAllBuiltinsAreIsolateIndependent);
-  for (int i = 0; i < Builtins::kBuiltinCount; i++) {
-    Address instruction_start = d.InstructionStartOfBuiltin(i);
+  for (Builtin builtin = Builtins::kFirst; builtin <= Builtins::kLast;
+       ++builtin) {
+    Address instruction_start = d.InstructionStartOfBuiltin(builtin);
     Handle<Code> trampoline = isolate->factory()->NewOffHeapTrampolineFor(
-        builtins->builtin_handle(i), instruction_start);
+        builtins->code_handle(builtin), instruction_start);
 
     // From this point onwards, the old builtin code object is unreachable and
     // will be collected by the next GC.
-    builtins->set_builtin(i, *trampoline);
+    builtins->set_code(builtin, *trampoline);
   }
 }
 
@@ -3679,7 +3678,7 @@ bool Isolate::Init(SnapshotData* startup_snapshot_data,
   isolate_data_.external_reference_table()->Init(this);
 
 #if V8_ENABLE_WEBASSEMBLY
-  SetWasmEngine(wasm::WasmEngine::GetWasmEngine());
+  wasm::GetWasmEngine()->AddIsolate(this);
 #endif  // V8_ENABLE_WEBASSEMBLY
 
   if (setup_delegate_ == nullptr) {
@@ -3962,7 +3961,7 @@ void Isolate::DumpAndResetStats() {
   // TODO(7424): There is no public API for the {WasmEngine} yet. So for now we
   // just dump and reset the engines statistics together with the Isolate.
   if (FLAG_turbo_stats_wasm) {
-    wasm_engine()->DumpAndResetTurboStatistics();
+    wasm::GetWasmEngine()->DumpAndResetTurboStatistics();
   }
 #endif  // V8_ENABLE_WEBASSEMBLY
 #if V8_RUNTIME_CALL_STATS
@@ -4514,10 +4513,10 @@ void Isolate::PrepareBuiltinLabelInfoMap() {
 
 #if defined(V8_OS_WIN64)
 void Isolate::SetBuiltinUnwindData(
-    int builtin_index,
+    Builtin builtin,
     const win64_unwindinfo::BuiltinUnwindInfo& unwinding_info) {
   if (embedded_file_writer_ != nullptr) {
-    embedded_file_writer_->SetBuiltinUnwindData(builtin_index, unwinding_info);
+    embedded_file_writer_->SetBuiltinUnwindData(builtin, unwinding_info);
   }
 }
 #endif  // V8_OS_WIN64

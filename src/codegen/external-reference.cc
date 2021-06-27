@@ -37,6 +37,7 @@
 
 #ifdef V8_INTL_SUPPORT
 #include "src/base/platform/wrappers.h"
+#include "src/base/strings.h"
 #include "src/objects/intl-objects.h"
 #endif  // V8_INTL_SUPPORT
 
@@ -183,7 +184,8 @@ ExternalReference ExternalReference::isolate_address(Isolate* isolate) {
 }
 
 ExternalReference ExternalReference::builtins_address(Isolate* isolate) {
-  return ExternalReference(isolate->heap()->builtin_address(0));
+  return ExternalReference(
+      isolate->heap()->builtin_address(Builtins::FromInt(0)));
 }
 
 ExternalReference ExternalReference::handle_scope_implementer_address(
@@ -786,7 +788,7 @@ void* libc_memchr(void* string, int character, size_t search_length) {
 FUNCTION_REFERENCE(libc_memchr_function, libc_memchr)
 
 void* libc_memcpy(void* dest, const void* src, size_t n) {
-  return base::Memcpy(dest, src, n);
+  return memcpy(dest, src, n);
 }
 
 FUNCTION_REFERENCE(libc_memcpy_function, libc_memcpy)
@@ -834,15 +836,15 @@ ExternalReference ExternalReference::search_string_raw_one_one() {
 }
 
 ExternalReference ExternalReference::search_string_raw_one_two() {
-  return search_string_raw<const uint8_t, const uc16>();
+  return search_string_raw<const uint8_t, const base::uc16>();
 }
 
 ExternalReference ExternalReference::search_string_raw_two_one() {
-  return search_string_raw<const uc16, const uint8_t>();
+  return search_string_raw<const base::uc16, const uint8_t>();
 }
 
 ExternalReference ExternalReference::search_string_raw_two_two() {
-  return search_string_raw<const uc16, const uc16>();
+  return search_string_raw<const base::uc16, const base::uc16>();
 }
 
 namespace {
@@ -960,11 +962,11 @@ ExternalReference ExternalReference::intl_to_latin1_lower_table() {
 template ExternalReference
 ExternalReference::search_string_raw<const uint8_t, const uint8_t>();
 template ExternalReference
-ExternalReference::search_string_raw<const uint8_t, const uc16>();
+ExternalReference::search_string_raw<const uint8_t, const base::uc16>();
 template ExternalReference
-ExternalReference::search_string_raw<const uc16, const uint8_t>();
+ExternalReference::search_string_raw<const base::uc16, const uint8_t>();
 template ExternalReference
-ExternalReference::search_string_raw<const uc16, const uc16>();
+ExternalReference::search_string_raw<const base::uc16, const base::uc16>();
 
 ExternalReference ExternalReference::FromRawAddress(Address address) {
   return ExternalReference(address);
@@ -1161,13 +1163,32 @@ FUNCTION_REFERENCE(atomic_pair_compare_exchange_function,
                    atomic_pair_compare_exchange)
 
 #ifdef V8_IS_TSAN
+namespace {
 // Mimics the store in generated code by having a relaxed store to the same
 // address, with the same value. This is done in order for TSAN to see these
 // stores from generated code.
 // Note that {value} is an int64_t irrespective of the store size. This is on
 // purpose to keep the function signatures the same accross stores. The
 // static_cast inside the method will ignore the bits which will not be stored.
-static void tsan_relaxed_store_32_bits(Address addr, int64_t value) {
+void tsan_relaxed_store_8_bits(Address addr, int64_t value) {
+#if V8_TARGET_ARCH_X64
+  base::Relaxed_Store(reinterpret_cast<base::Atomic8*>(addr),
+                      static_cast<base::Atomic8>(value));
+#else
+  UNREACHABLE();
+#endif  // V8_TARGET_ARCH_X64
+}
+
+void tsan_relaxed_store_16_bits(Address addr, int64_t value) {
+#if V8_TARGET_ARCH_X64
+  base::Relaxed_Store(reinterpret_cast<base::Atomic16*>(addr),
+                      static_cast<base::Atomic16>(value));
+#else
+  UNREACHABLE();
+#endif  // V8_TARGET_ARCH_X64
+}
+
+void tsan_relaxed_store_32_bits(Address addr, int64_t value) {
 #if V8_TARGET_ARCH_X64
     base::Relaxed_Store(reinterpret_cast<base::Atomic32*>(addr),
                         static_cast<base::Atomic32>(value));
@@ -1176,7 +1197,7 @@ static void tsan_relaxed_store_32_bits(Address addr, int64_t value) {
 #endif  // V8_TARGET_ARCH_X64
 }
 
-static void tsan_relaxed_store_64_bits(Address addr, int64_t value) {
+void tsan_relaxed_store_64_bits(Address addr, int64_t value) {
 #if V8_TARGET_ARCH_X64
   base::Relaxed_Store(reinterpret_cast<base::Atomic64*>(addr),
                       static_cast<base::Atomic64>(value));
@@ -1185,12 +1206,37 @@ static void tsan_relaxed_store_64_bits(Address addr, int64_t value) {
 #endif  // V8_TARGET_ARCH_X64
 }
 
+base::Atomic32 tsan_relaxed_load_32_bits(Address addr, int64_t value) {
+#if V8_TARGET_ARCH_X64
+  return base::Relaxed_Load(reinterpret_cast<base::Atomic32*>(addr));
+#else
+  UNREACHABLE();
+#endif  // V8_TARGET_ARCH_X64
+}
+
+base::Atomic64 tsan_relaxed_load_64_bits(Address addr, int64_t value) {
+#if V8_TARGET_ARCH_X64
+  return base::Relaxed_Load(reinterpret_cast<base::Atomic64*>(addr));
+#else
+  UNREACHABLE();
+#endif  // V8_TARGET_ARCH_X64
+}
+
+}  // namespace
 #endif  // V8_IS_TSAN
 
+IF_TSAN(FUNCTION_REFERENCE, tsan_relaxed_store_function_8_bits,
+        tsan_relaxed_store_8_bits)
+IF_TSAN(FUNCTION_REFERENCE, tsan_relaxed_store_function_16_bits,
+        tsan_relaxed_store_16_bits)
 IF_TSAN(FUNCTION_REFERENCE, tsan_relaxed_store_function_32_bits,
         tsan_relaxed_store_32_bits)
 IF_TSAN(FUNCTION_REFERENCE, tsan_relaxed_store_function_64_bits,
         tsan_relaxed_store_64_bits)
+IF_TSAN(FUNCTION_REFERENCE, tsan_relaxed_load_function_32_bits,
+        tsan_relaxed_load_32_bits)
+IF_TSAN(FUNCTION_REFERENCE, tsan_relaxed_load_function_64_bits,
+        tsan_relaxed_load_64_bits)
 
 static int EnterMicrotaskContextWrapper(HandleScopeImplementer* hsi,
                                         Address raw_context) {

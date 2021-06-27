@@ -107,109 +107,6 @@ Callable CodeFactory::StoreOwnICInOptimizedCode(Isolate* isolate) {
   return Builtins::CallableFor(isolate, Builtin::kStoreIC);
 }
 
-Callable CodeFactory::KeyedStoreIC_SloppyArguments(Isolate* isolate,
-                                                   KeyedAccessStoreMode mode) {
-  Builtin builtin_index;
-  switch (mode) {
-    case STANDARD_STORE:
-      builtin_index = Builtin::kKeyedStoreIC_SloppyArguments_Standard;
-      break;
-    case STORE_AND_GROW_HANDLE_COW:
-      builtin_index =
-          Builtin::kKeyedStoreIC_SloppyArguments_GrowNoTransitionHandleCOW;
-      break;
-    case STORE_IGNORE_OUT_OF_BOUNDS:
-      builtin_index =
-          Builtin::kKeyedStoreIC_SloppyArguments_NoTransitionIgnoreOOB;
-      break;
-    case STORE_HANDLE_COW:
-      builtin_index =
-          Builtin::kKeyedStoreIC_SloppyArguments_NoTransitionHandleCOW;
-      break;
-    default:
-      UNREACHABLE();
-  }
-  return isolate->builtins()->CallableFor(isolate, builtin_index);
-}
-
-Callable CodeFactory::ElementsTransitionAndStore(Isolate* isolate,
-                                                 KeyedAccessStoreMode mode) {
-  Builtin builtin_index;
-  switch (mode) {
-    case STANDARD_STORE:
-      builtin_index = Builtin::kElementsTransitionAndStore_Standard;
-      break;
-    case STORE_AND_GROW_HANDLE_COW:
-      builtin_index =
-          Builtin::kElementsTransitionAndStore_GrowNoTransitionHandleCOW;
-      break;
-    case STORE_IGNORE_OUT_OF_BOUNDS:
-      builtin_index =
-          Builtin::kElementsTransitionAndStore_NoTransitionIgnoreOOB;
-      break;
-    case STORE_HANDLE_COW:
-      builtin_index =
-          Builtin::kElementsTransitionAndStore_NoTransitionHandleCOW;
-      break;
-    default:
-      UNREACHABLE();
-  }
-  return isolate->builtins()->CallableFor(isolate, builtin_index);
-}
-
-Callable CodeFactory::StoreFastElementIC(Isolate* isolate,
-                                         KeyedAccessStoreMode mode) {
-  Builtin builtin_index;
-  switch (mode) {
-    case STANDARD_STORE:
-      builtin_index = Builtin::kStoreFastElementIC_Standard;
-      break;
-    case STORE_AND_GROW_HANDLE_COW:
-      builtin_index = Builtin::kStoreFastElementIC_GrowNoTransitionHandleCOW;
-      break;
-    case STORE_IGNORE_OUT_OF_BOUNDS:
-      builtin_index = Builtin::kStoreFastElementIC_NoTransitionIgnoreOOB;
-      break;
-    case STORE_HANDLE_COW:
-      builtin_index = Builtin::kStoreFastElementIC_NoTransitionHandleCOW;
-      break;
-    default:
-      UNREACHABLE();
-  }
-  return isolate->builtins()->CallableFor(isolate, builtin_index);
-}
-
-// static
-Callable CodeFactory::BinaryOperation(Isolate* isolate, Operation op) {
-  switch (op) {
-    case Operation::kShiftRight:
-      return Builtins::CallableFor(isolate, Builtin::kShiftRight);
-    case Operation::kShiftLeft:
-      return Builtins::CallableFor(isolate, Builtin::kShiftLeft);
-    case Operation::kShiftRightLogical:
-      return Builtins::CallableFor(isolate, Builtin::kShiftRightLogical);
-    case Operation::kAdd:
-      return Builtins::CallableFor(isolate, Builtin::kAdd);
-    case Operation::kSubtract:
-      return Builtins::CallableFor(isolate, Builtin::kSubtract);
-    case Operation::kMultiply:
-      return Builtins::CallableFor(isolate, Builtin::kMultiply);
-    case Operation::kDivide:
-      return Builtins::CallableFor(isolate, Builtin::kDivide);
-    case Operation::kModulus:
-      return Builtins::CallableFor(isolate, Builtin::kModulus);
-    case Operation::kBitwiseOr:
-      return Builtins::CallableFor(isolate, Builtin::kBitwiseOr);
-    case Operation::kBitwiseAnd:
-      return Builtins::CallableFor(isolate, Builtin::kBitwiseAnd);
-    case Operation::kBitwiseXor:
-      return Builtins::CallableFor(isolate, Builtin::kBitwiseXor);
-    default:
-      break;
-  }
-  UNREACHABLE();
-}
-
 // static
 Callable CodeFactory::NonPrimitiveToPrimitive(Isolate* isolate,
                                               ToPrimitiveHint hint) {
@@ -478,6 +375,44 @@ Callable CodeFactory::ArraySingleArgumentConstructor(
   }
 #undef CASE
 }
+
+#ifdef V8_IS_TSAN
+// static
+Builtin CodeFactory::GetTSANRelaxedStoreStub(SaveFPRegsMode fp_mode, int size) {
+  if (size == kInt8Size) {
+    return fp_mode == SaveFPRegsMode::kIgnore
+               ? Builtin::kTSANRelaxedStore8IgnoreFP
+               : Builtin::kTSANRelaxedStore8SaveFP;
+  } else if (size == kInt16Size) {
+    return fp_mode == SaveFPRegsMode::kIgnore
+               ? Builtin::kTSANRelaxedStore16IgnoreFP
+               : Builtin::kTSANRelaxedStore16SaveFP;
+  } else if (size == kInt32Size) {
+    return fp_mode == SaveFPRegsMode::kIgnore
+               ? Builtin::kTSANRelaxedStore32IgnoreFP
+               : Builtin::kTSANRelaxedStore32SaveFP;
+  } else {
+    CHECK_EQ(size, kInt64Size);
+    return fp_mode == SaveFPRegsMode::kIgnore
+               ? Builtin::kTSANRelaxedStore64IgnoreFP
+               : Builtin::kTSANRelaxedStore64SaveFP;
+  }
+}
+
+// static
+Builtin CodeFactory::GetTSANRelaxedLoadStub(SaveFPRegsMode fp_mode, int size) {
+  if (size == kInt32Size) {
+    return fp_mode == SaveFPRegsMode::kIgnore
+               ? Builtin::kTSANRelaxedLoad32IgnoreFP
+               : Builtin::kTSANRelaxedLoad32SaveFP;
+  } else {
+    CHECK_EQ(size, kInt64Size);
+    return fp_mode == SaveFPRegsMode::kIgnore
+               ? Builtin::kTSANRelaxedLoad64IgnoreFP
+               : Builtin::kTSANRelaxedLoad64SaveFP;
+  }
+}
+#endif  // V8_IS_TSAN
 
 }  // namespace internal
 }  // namespace v8

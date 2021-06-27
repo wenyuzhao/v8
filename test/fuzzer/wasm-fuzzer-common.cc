@@ -38,7 +38,7 @@ void InterpretAndExecuteModule(i::Isolate* isolate,
   // Try to instantiate, return if it fails.
   {
     ErrorThrower thrower(isolate, "WebAssembly Instantiation");
-    if (!isolate->wasm_engine()
+    if (!GetWasmEngine()
              ->SyncInstantiate(isolate, &thrower, module_object, {},
                                {})  // no imports & memory
              .ToHandle(&instance)) {
@@ -55,7 +55,7 @@ void InterpretAndExecuteModule(i::Isolate* isolate,
     return;
   }
 
-  OwnedVector<WasmValue> arguments =
+  base::OwnedVector<WasmValue> arguments =
       testing::MakeDefaultInterpreterArguments(isolate, main_function->sig());
 
   // Now interpret.
@@ -77,13 +77,13 @@ void InterpretAndExecuteModule(i::Isolate* isolate,
   {
     ErrorThrower thrower(isolate, "Second Instantiation");
     // We instantiated before, so the second instantiation must also succeed:
-    CHECK(isolate->wasm_engine()
+    CHECK(GetWasmEngine()
               ->SyncInstantiate(isolate, &thrower, module_object, {},
                                 {})  // no imports & memory
               .ToHandle(&instance));
   }
 
-  OwnedVector<Handle<Object>> compiled_args =
+  base::OwnedVector<Handle<Object>> compiled_args =
       testing::MakeDefaultArguments(isolate, main_function->sig());
 
   bool exception = false;
@@ -170,6 +170,7 @@ std::ostream& operator<<(std::ostream& os, const WasmInitExpr& expr) {
     case WasmInitExpr::kRttFreshSub:
     case WasmInitExpr::kRefNullConst:
     case WasmInitExpr::kStructNewWithRtt:
+    case WasmInitExpr::kArrayInit:
       // TODO(manoskouk): Implement these.
       UNIMPLEMENTED();
     case WasmInitExpr::kGlobalGet:
@@ -203,7 +204,7 @@ void GenerateTestCase(Isolate* isolate, ModuleWireBytes wire_bytes,
       enabled_features, wire_bytes.start(), wire_bytes.end(), kVerifyFunctions,
       ModuleOrigin::kWasmOrigin, isolate->counters(),
       isolate->metrics_recorder(), v8::metrics::Recorder::ContextId::Empty(),
-      DecodingMethod::kSync, isolate->wasm_engine()->allocator());
+      DecodingMethod::kSync, GetWasmEngine()->allocator());
   CHECK(module_res.ok());
   WasmModule* module = module_res.value().get();
   CHECK_NOT_NULL(module);
@@ -297,7 +298,7 @@ void GenerateTestCase(Isolate* isolate, ModuleWireBytes wire_bytes,
   }
 
   for (const WasmFunction& func : module->functions) {
-    Vector<const uint8_t> func_code = wire_bytes.GetFunctionBytes(&func);
+    base::Vector<const uint8_t> func_code = wire_bytes.GetFunctionBytes(&func);
     os << "// Generate function " << (func.func_index + 1) << " (out of "
        << module->functions.size() << ").\n";
 
@@ -361,7 +362,7 @@ void OneTimeEnableStagedWasmFeatures(v8::Isolate* isolate) {
   static EnableStagedWasmFeatures one_time_enable_staged_features(isolate);
 }
 
-void WasmExecutionFuzzer::FuzzWasmModule(Vector<const uint8_t> data,
+void WasmExecutionFuzzer::FuzzWasmModule(base::Vector<const uint8_t> data,
                                          bool require_valid) {
   v8_fuzzer::FuzzerSupport* support = v8_fuzzer::FuzzerSupport::Get();
   v8::Isolate* isolate = support->GetIsolate();
@@ -421,7 +422,7 @@ void WasmExecutionFuzzer::FuzzWasmModule(Vector<const uint8_t> data,
     FlagScope<int> tier_mask_scope(&FLAG_wasm_tier_mask_for_testing, tier_mask);
     FlagScope<int> debug_mask_scope(&FLAG_wasm_debug_mask_for_testing,
                                     debug_mask);
-    compiled_module = i_isolate->wasm_engine()->SyncCompile(
+    compiled_module = GetWasmEngine()->SyncCompile(
         i_isolate, enabled_features, &interpreter_thrower, wire_bytes);
   }
   bool compiles = !compiled_module.is_null();
@@ -430,8 +431,8 @@ void WasmExecutionFuzzer::FuzzWasmModule(Vector<const uint8_t> data,
     GenerateTestCase(i_isolate, wire_bytes, compiles);
   }
 
-  bool validates = i_isolate->wasm_engine()->SyncValidate(
-      i_isolate, enabled_features, wire_bytes);
+  bool validates =
+      GetWasmEngine()->SyncValidate(i_isolate, enabled_features, wire_bytes);
 
   CHECK_EQ(compiles, validates);
   CHECK_IMPLIES(require_valid, validates);

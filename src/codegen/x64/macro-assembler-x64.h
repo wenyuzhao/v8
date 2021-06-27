@@ -251,9 +251,10 @@ class V8_EXPORT_PRIVATE TurboAssembler : public SharedTurboAssembler {
   void Move(Register dst, intptr_t x) {
     if (x == 0) {
       xorl(dst, dst);
-    } else if (is_uint8(x)) {
-      xorl(dst, dst);
-      movb(dst, Immediate(static_cast<uint32_t>(x)));
+      // The following shorter sequence for uint8 causes performance
+      // regressions:
+      // xorl(dst, dst); movb(dst,
+      // Immediate(static_cast<uint32_t>(x)));
     } else if (is_uint32(x)) {
       movl(dst, Immediate(static_cast<uint32_t>(x)));
     } else if (is_int32(x)) {
@@ -343,21 +344,32 @@ class V8_EXPORT_PRIVATE TurboAssembler : public SharedTurboAssembler {
   Operand EntryFromBuiltinAsOperand(Builtin builtin_index);
   Operand EntryFromBuiltinIndexAsOperand(Register builtin_index);
   void CallBuiltinByIndex(Register builtin_index);
-  void CallBuiltin(Builtin builtin) {
-    // TODO(11527): drop the int overload in favour of the Builtin one.
-    return CallBuiltin(static_cast<int>(builtin));
-  }
-  void CallBuiltin(int builtin_index);
-  void TailCallBuiltin(Builtin builtin) {
-    // TODO(11527): drop the int overload in favour of the Builtin one.
-    return TailCallBuiltin(static_cast<int>(builtin));
-  }
-  void TailCallBuiltin(int builtin_index);
+  void CallBuiltin(Builtin builtin);
+  void TailCallBuiltin(Builtin builtin);
 
   void LoadCodeObjectEntry(Register destination, Register code_object);
   void CallCodeObject(Register code_object);
   void JumpCodeObject(Register code_object,
                       JumpMode jump_mode = JumpMode::kJump);
+
+  // Load code entry point from the CodeDataContainer object.
+  void LoadCodeDataContainerEntry(Register destination,
+                                  Register code_data_container_object);
+  // Load code entry point from the CodeDataContainer object and compute
+  // Code object pointer out of it. Must not be used for CodeDataContainers
+  // corresponding to builtins, because their entry points values point to
+  // the embedded instruction stream in .text section.
+  void LoadCodeDataContainerCodeNonBuiltin(Register destination,
+                                           Register code_data_container_object);
+  void CallCodeDataContainerObject(Register code_data_container_object);
+  void JumpCodeDataContainerObject(Register code_data_container_object,
+                                   JumpMode jump_mode = JumpMode::kJump);
+
+  // Helper functions that dispatch either to Call/JumpCodeObject or to
+  // Call/JumpCodeDataContainerObject.
+  void LoadCodeTEntry(Register destination, Register code);
+  void CallCodeTObject(Register code);
+  void JumpCodeTObject(Register code, JumpMode jump_mode = JumpMode::kJump);
 
   void RetpolineCall(Register reg);
   void RetpolineCall(Address destination, RelocInfo::Mode rmode);
@@ -516,9 +528,11 @@ class V8_EXPORT_PRIVATE TurboAssembler : public SharedTurboAssembler {
       StubCallMode mode = StubCallMode::kCallBuiltinPointer);
 
 #ifdef V8_IS_TSAN
-  void CallTSANRelaxedStoreStub(
-      Register address, Register value, SaveFPRegsMode fp_mode, int size,
-      StubCallMode mode = StubCallMode::kCallBuiltinPointer);
+  void CallTSANRelaxedStoreStub(Register address, Register value,
+                                SaveFPRegsMode fp_mode, int size,
+                                StubCallMode mode);
+  void CallTSANRelaxedLoadStub(Register address, SaveFPRegsMode fp_mode,
+                               int size, StubCallMode mode);
 #endif  // V8_IS_TSAN
 
   void MoveNumber(Register dst, double value);
@@ -857,6 +871,9 @@ class V8_EXPORT_PRIVATE MacroAssembler : public TurboAssembler {
   // Abort execution if argument is not a smi, enabled via --debug-code.
   void AssertSmi(Register object);
   void AssertSmi(Operand object);
+
+  // Abort execution if argument is not a CodeT, enabled via --debug-code.
+  void AssertCodeT(Register object);
 
   // Abort execution if argument is not a Constructor, enabled via --debug-code.
   void AssertConstructor(Register object);

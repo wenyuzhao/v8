@@ -64,6 +64,8 @@ found in the LICENSE file. -->
     </timeline-panel>
 
     <div class="panels">
+      <script-panel id="script-panel"></script-panel>
+      <code-panel id="code-panel"></code-panel>
       <map-panel id="map-panel"></map-panel>
       <list-panel id="ic-list" title="IC List">
         <div class="legend">
@@ -90,8 +92,6 @@ found in the LICENSE file. -->
       <list-panel id="deopt-list" title="Deopt Events"></list-panel>
       <list-panel id="code-list" title="Code Events"></list-panel>
       <list-panel id="api-list" title="API Events"></list-panel>
-      <script-panel id="script-panel"></script-panel>
-      <code-panel id="code-panel"></code-panel>
     </div>
   </section>
 
@@ -134,7 +134,7 @@ found in the LICENSE file. -->
               Log <a href="https://v8.dev/blog/fast-properties">Maps</a>
           </dd>
           <dt>
-            <a href="https://source.chromium.org/search?q=FLAG_trace_ic">
+            <a href="https://source.chromium.org/search?q=FLAG_log_ic">
               <code>--log-ic</code>
             </a>
           </dt>
@@ -165,6 +165,12 @@ found in the LICENSE file. -->
             </a>
           </dt>
           <dd>Log various API uses.</dd>
+          <dt>
+            <a href="https://source.chromium.org/search?q=FLAG_prof">
+              <code>--prof</code>
+            </a>
+          </dt>
+          <dd>Log ticks from the sampling profiler.</dd>
         </dl>
 
         <h3>Keyboard Shortcuts for Navigation</h3>

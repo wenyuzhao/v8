@@ -341,6 +341,7 @@ enum ContextLookupFlags {
     wasm_runtime_error_function)                                               \
   V(WEAKMAP_SET_INDEX, JSFunction, weakmap_set)                                \
   V(WEAKMAP_GET_INDEX, JSFunction, weakmap_get)                                \
+  V(WEAKMAP_DELETE_INDEX, JSFunction, weakmap_delete)                          \
   V(WEAKSET_ADD_INDEX, JSFunction, weakset_add)                                \
   V(RETAINED_MAPS, WeakArrayList, retained_maps)                               \
   V(OSR_CODE_CACHE_INDEX, WeakFixedArray, osr_code_cache)
@@ -728,10 +729,10 @@ class NativeContext : public Context {
   // The native context stores a list of all optimized code and a list of all
   // deoptimized code, which are needed by the deoptimizer.
   V8_EXPORT_PRIVATE void AddOptimizedCode(Code code);
-  void SetOptimizedCodeListHead(Object head);
-  Object OptimizedCodeListHead();
-  void SetDeoptimizedCodeListHead(Object head);
-  Object DeoptimizedCodeListHead();
+  inline void SetOptimizedCodeListHead(Object head);
+  inline Object OptimizedCodeListHead();
+  inline void SetDeoptimizedCodeListHead(Object head);
+  inline Object DeoptimizedCodeListHead();
 
   inline OSROptimizedCodeCache GetOSROptimizedCodeCache();
 

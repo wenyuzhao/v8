@@ -37,6 +37,8 @@ namespace module_decoder_unittest {
 #define WASM_INIT_EXPR_GLOBAL(index) WASM_GLOBAL_GET(index), kExprEnd
 #define WASM_INIT_EXPR_STRUCT_NEW(index, ...) \
   WASM_STRUCT_NEW_WITH_RTT(index, __VA_ARGS__), kExprEnd
+#define WASM_INIT_EXPR_ARRAY_INIT(index, length, ...) \
+  WASM_ARRAY_INIT(index, length, __VA_ARGS__), kExprEnd
 #define WASM_INIT_EXPR_RTT_CANON(index) WASM_RTT_CANON(index), kExprEnd
 
 #define REF_NULL_ELEMENT kExprRefNull, kFuncRefCode, kExprEnd
@@ -205,7 +207,7 @@ class WasmModuleVerifyTest : public TestWithIsolateAndZone {
         enabled_features_, temp, temp + total, false, kWasmOrigin,
         isolate()->counters(), isolate()->metrics_recorder(),
         v8::metrics::Recorder::ContextId::Empty(), DecodingMethod::kSync,
-        isolate()->wasm_engine()->allocator());
+        GetWasmEngine()->allocator());
     delete[] temp;
     return result;
   }
@@ -215,7 +217,7 @@ class WasmModuleVerifyTest : public TestWithIsolateAndZone {
         enabled_features_, module_start, module_end, false, kWasmOrigin,
         isolate()->counters(), isolate()->metrics_recorder(),
         v8::metrics::Recorder::ContextId::Empty(), DecodingMethod::kSync,
-        isolate()->wasm_engine()->allocator());
+        GetWasmEngine()->allocator());
   }
 };
 
@@ -558,7 +560,7 @@ TEST_F(WasmModuleVerifyTest, GlobalInitializer) {
               WASM_GLOBAL_GET(42), kExprEnd)  // init value
   };
   EXPECT_FAILURE_WITH_MSG(referencing_out_of_bounds_global,
-                          "global index is out of bounds");
+                          "Invalid global index: 42");
 
   static const byte referencing_undefined_global[] = {
       SECTION(Global, ENTRY_COUNT(2),        // --
@@ -570,7 +572,7 @@ TEST_F(WasmModuleVerifyTest, GlobalInitializer) {
               WASM_I32V(0), kExprEnd)        // init value
   };
   EXPECT_FAILURE_WITH_MSG(referencing_undefined_global,
-                          "global #1 is not defined yet");
+                          "Invalid global index: 1");
 
   {
     WASM_FEATURE_SCOPE(reftypes);
@@ -589,7 +591,7 @@ TEST_F(WasmModuleVerifyTest, GlobalInitializer) {
                 WASM_RTT_CANON(0), kExprEnd)       // init value
     };
     EXPECT_FAILURE_WITH_MSG(referencing_undefined_global_nested,
-                            "global #1 is not defined yet");
+                            "Invalid global index: 1");
   }
 
   static const byte referencing_mutable_global[] = {
@@ -1129,6 +1131,52 @@ TEST_F(WasmModuleVerifyTest, StructNewInitExpr) {
   EXPECT_FAILURE_WITH_MSG(
       subexpr_type_error,
       "struct.new[1]: expected (rtt 0), found (rtt 0 1) instead");
+}
+
+TEST_F(WasmModuleVerifyTest, ArrayInitInitExpr) {
+  WASM_FEATURE_SCOPE(reftypes);
+  WASM_FEATURE_SCOPE(typed_funcref);
+  WASM_FEATURE_SCOPE(gc);
+  WASM_FEATURE_SCOPE(gc_experiments);
+
+  static const byte basic[] = {
+      SECTION(Type, ENTRY_COUNT(1), WASM_ARRAY_DEF(kI16Code, true)),
+      SECTION(Global, ENTRY_COUNT(1),  // --
+              kRefCode, 0, 0,          // type, mutability
+              WASM_INIT_EXPR_ARRAY_INIT(0, 3, WASM_I32V(10), WASM_I32V(20),
+                                        WASM_I32V(30), WASM_RTT_CANON(0)))};
+  EXPECT_VERIFIES(basic);
+
+  static const byte type_error[] = {
+      SECTION(Type, ENTRY_COUNT(2),  // --
+              WASM_ARRAY_DEF(kI32Code, true),
+              WASM_ARRAY_DEF(WASM_SEQ(kRefCode, 0), true)),
+      SECTION(
+          Global, ENTRY_COUNT(1),  // --
+          kRefCode, 1, 0,          // type, mutability
+          WASM_INIT_EXPR_ARRAY_INIT(0, 1, WASM_I32V(42), WASM_RTT_CANON(0)))};
+  EXPECT_FAILURE_WITH_MSG(
+      type_error,
+      "type error in init expression, expected (ref 1), got (ref 0)");
+
+  static const byte subexpr_type_error[] = {
+      SECTION(Type, ENTRY_COUNT(1), WASM_ARRAY_DEF(kI64Code, true)),
+      SECTION(Global, ENTRY_COUNT(1),  // --
+              kRefCode, 0, 0,          // type, mutability
+              WASM_INIT_EXPR_ARRAY_INIT(0, 2, WASM_I64V(42), WASM_I32V(142),
+                                        WASM_RTT_CANON(0)))};
+  EXPECT_FAILURE_WITH_MSG(subexpr_type_error,
+                          "array.init[1]: expected i64, found i32 instead");
+
+  static const byte length_error[] = {
+      SECTION(Type, ENTRY_COUNT(1), WASM_ARRAY_DEF(kI16Code, true)),
+      SECTION(Global, ENTRY_COUNT(1),  // --
+              kRefCode, 0, 0,          // type, mutability
+              WASM_INIT_EXPR_ARRAY_INIT(0, 10, WASM_I32V(10), WASM_I32V(20),
+                                        WASM_I32V(30), WASM_RTT_CANON(0)))};
+  EXPECT_FAILURE_WITH_MSG(
+      length_error,
+      "not enough arguments on the stack for array.init: expected 11, found 4");
 }
 
 TEST_F(WasmModuleVerifyTest, EmptyStruct) {
@@ -3151,24 +3199,27 @@ class WasmInitExprDecodeTest : public TestWithZone {
 
   WasmFeatures enabled_features_;
 
-  WasmInitExpr DecodeInitExpr(const byte* start, const byte* end) {
-    return DecodeWasmInitExprForTesting(enabled_features_, start, end);
+  WasmInitExpr DecodeInitExpr(const byte* start, const byte* end,
+                              ValueType expected) {
+    return DecodeWasmInitExprForTesting(enabled_features_, start, end,
+                                        expected);
   }
 };
 
-#define EXPECT_INIT_EXPR(Type, type, value, ...)                   \
-  {                                                                \
-    static const byte data[] = {__VA_ARGS__, kExprEnd};            \
-    WasmInitExpr expr = DecodeInitExpr(data, data + sizeof(data)); \
-    EXPECT_EQ(WasmInitExpr::k##Type##Const, expr.kind());          \
-    EXPECT_EQ(value, expr.immediate().type##_const);               \
+#define EXPECT_INIT_EXPR(Type, type, value, ...)                \
+  {                                                             \
+    static const byte data[] = {__VA_ARGS__, kExprEnd};         \
+    WasmInitExpr expr =                                         \
+        DecodeInitExpr(data, data + sizeof(data), kWasm##Type); \
+    EXPECT_EQ(WasmInitExpr::k##Type##Const, expr.kind());       \
+    EXPECT_EQ(value, expr.immediate().type##_const);            \
   }
 
-#define EXPECT_INIT_EXPR_FAIL(...)                                 \
-  {                                                                \
-    static const byte data[] = {__VA_ARGS__, kExprEnd};            \
-    WasmInitExpr expr = DecodeInitExpr(data, data + sizeof(data)); \
-    EXPECT_EQ(WasmInitExpr::kNone, expr.kind());                   \
+#define EXPECT_INIT_EXPR_FAIL(value_type, ...)                                 \
+  {                                                                            \
+    static const byte data[] = {__VA_ARGS__, kExprEnd};                        \
+    WasmInitExpr expr = DecodeInitExpr(data, data + sizeof(data), value_type); \
+    EXPECT_EQ(WasmInitExpr::kNone, expr.kind());                               \
   }
 
 TEST_F(WasmInitExprDecodeTest, InitExpr_i32) {
@@ -3202,16 +3253,17 @@ TEST_F(WasmInitExprDecodeTest, InitExpr_f64) {
 TEST_F(WasmInitExprDecodeTest, InitExpr_ExternRef) {
   WASM_FEATURE_SCOPE(reftypes);
   static const byte data[] = {kExprRefNull, kExternRefCode, kExprEnd};
-  WasmInitExpr expr = DecodeInitExpr(data, data + sizeof(data));
+  WasmInitExpr expr = DecodeInitExpr(data, data + sizeof(data), kWasmExternRef);
   EXPECT_EQ(WasmInitExpr::kRefNullConst, expr.kind());
 }
 
 TEST_F(WasmInitExprDecodeTest, InitExpr_illegal) {
-  EXPECT_INIT_EXPR_FAIL(WASM_I32V_1(0), WASM_I32V_1(0));
-  EXPECT_INIT_EXPR_FAIL(WASM_LOCAL_GET(0));
-  EXPECT_INIT_EXPR_FAIL(WASM_LOCAL_SET(0, WASM_I32V_1(0)));
-  EXPECT_INIT_EXPR_FAIL(WASM_I32_ADD(WASM_I32V_1(0), WASM_I32V_1(0)));
-  EXPECT_INIT_EXPR_FAIL(WASM_IF_ELSE(WASM_ZERO, WASM_ZERO, WASM_ZERO));
+  EXPECT_INIT_EXPR_FAIL(kWasmI32, WASM_I32V_1(0), WASM_I32V_1(0));
+  EXPECT_INIT_EXPR_FAIL(kWasmI32, WASM_LOCAL_GET(0));
+  EXPECT_INIT_EXPR_FAIL(kWasmVoid, WASM_LOCAL_SET(0, WASM_I32V_1(0)));
+  EXPECT_INIT_EXPR_FAIL(kWasmI32, WASM_I32_ADD(WASM_I32V_1(0), WASM_I32V_1(0)));
+  EXPECT_INIT_EXPR_FAIL(kWasmI32,
+                        WASM_IF_ELSE(WASM_ZERO, WASM_ZERO, WASM_ZERO));
 }
 
 TEST_F(WasmModuleVerifyTest, Multiple_Named_Sections) {

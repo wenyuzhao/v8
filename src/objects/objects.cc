@@ -43,6 +43,7 @@
 #include "src/init/bootstrapper.h"
 #include "src/logging/counters.h"
 #include "src/logging/log.h"
+#include "src/logging/runtime-call-stats-scope.h"
 #include "src/objects/allocation-site-inl.h"
 #include "src/objects/allocation-site-scopes.h"
 #include "src/objects/api-callbacks.h"
@@ -230,16 +231,23 @@ Handle<Object> Object::NewStorageFor(Isolate* isolate, Handle<Object> object,
   return result;
 }
 
-Handle<Object> Object::WrapForRead(Isolate* isolate, Handle<Object> object,
+template <AllocationType allocation_type, typename IsolateT>
+Handle<Object> Object::WrapForRead(IsolateT* isolate, Handle<Object> object,
                                    Representation representation) {
   DCHECK(!object->IsUninitialized(isolate));
   if (!representation.IsDouble()) {
     DCHECK(object->FitsRepresentation(representation));
     return object;
   }
-  return isolate->factory()->NewHeapNumberFromBits(
+  return isolate->factory()->template NewHeapNumberFromBits<allocation_type>(
       HeapNumber::cast(*object).value_as_bits());
 }
+
+template Handle<Object> Object::WrapForRead<AllocationType::kYoung>(
+    Isolate* isolate, Handle<Object> object, Representation representation);
+template Handle<Object> Object::WrapForRead<AllocationType::kOld>(
+    LocalIsolate* isolate, Handle<Object> object,
+    Representation representation);
 
 MaybeHandle<JSReceiver> Object::ToObjectImpl(Isolate* isolate,
                                              Handle<Object> object,
@@ -1183,7 +1191,7 @@ MaybeHandle<Object> JSProxy::GetProperty(Isolate* isolate,
   // 7. If trap is undefined, then
   if (trap->IsUndefined(isolate)) {
     // 7.a Return target.[[Get]](P, Receiver).
-    LookupIterator::Key key(isolate, name);
+    PropertyKey key(isolate, name);
     LookupIterator it(isolate, receiver, key, target);
     MaybeHandle<Object> result = Object::GetProperty(&it);
     *was_found = it.IsFound();
@@ -1284,100 +1292,6 @@ bool Object::ToInt32(int32_t* value) {
     }
   }
   return false;
-}
-
-Handle<SharedFunctionInfo> FunctionTemplateInfo::GetOrCreateSharedFunctionInfo(
-    Isolate* isolate, Handle<FunctionTemplateInfo> info,
-    MaybeHandle<Name> maybe_name) {
-  Object current_info = info->shared_function_info();
-  if (current_info.IsSharedFunctionInfo()) {
-    return handle(SharedFunctionInfo::cast(current_info), isolate);
-  }
-  Handle<Name> name;
-  Handle<String> name_string;
-  if (maybe_name.ToHandle(&name) && name->IsString()) {
-    name_string = Handle<String>::cast(name);
-  } else if (info->class_name().IsString()) {
-    name_string = handle(String::cast(info->class_name()), isolate);
-  } else {
-    name_string = isolate->factory()->empty_string();
-  }
-  FunctionKind function_kind;
-  if (info->remove_prototype()) {
-    function_kind = kConciseMethod;
-  } else {
-    function_kind = kNormalFunction;
-  }
-  Handle<SharedFunctionInfo> result =
-      isolate->factory()->NewSharedFunctionInfoForApiFunction(name_string, info,
-                                                              function_kind);
-
-  result->set_length(info->length());
-  result->DontAdaptArguments();
-  DCHECK(result->IsApiFunction());
-
-  info->set_shared_function_info(*result);
-  return result;
-}
-
-bool FunctionTemplateInfo::IsTemplateFor(Map map) const {
-  RCS_SCOPE(
-      LocalHeap::Current() == nullptr
-          ? GetIsolate()->counters()->runtime_call_stats()
-          : LocalIsolate::FromHeap(LocalHeap::Current())->runtime_call_stats(),
-      RuntimeCallCounterId::kIsTemplateFor);
-
-  // There is a constraint on the object; check.
-  if (!map.IsJSObjectMap()) return false;
-  // Fetch the constructor function of the object.
-  Object cons_obj = map.GetConstructor();
-  Object type;
-  if (cons_obj.IsJSFunction()) {
-    JSFunction fun = JSFunction::cast(cons_obj);
-    type = fun.shared().function_data(kAcquireLoad);
-  } else if (cons_obj.IsFunctionTemplateInfo()) {
-    type = FunctionTemplateInfo::cast(cons_obj);
-  } else {
-    return false;
-  }
-  // Iterate through the chain of inheriting function templates to
-  // see if the required one occurs.
-  while (type.IsFunctionTemplateInfo()) {
-    if (type == *this) return true;
-    type = FunctionTemplateInfo::cast(type).GetParentTemplate();
-  }
-  // Didn't find the required type in the inheritance chain.
-  return false;
-}
-
-bool FunctionTemplateInfo::IsLeafTemplateForApiObject(Object object) const {
-  i::DisallowGarbageCollection no_gc;
-
-  if (!object.IsJSApiObject()) {
-    return false;
-  }
-
-  bool result = false;
-  Map map = HeapObject::cast(object).map();
-  Object constructor_obj = map.GetConstructor();
-  if (constructor_obj.IsJSFunction()) {
-    JSFunction fun = JSFunction::cast(constructor_obj);
-    result = (*this == fun.shared().function_data(kAcquireLoad));
-  } else if (constructor_obj.IsFunctionTemplateInfo()) {
-    result = (*this == constructor_obj);
-  }
-  DCHECK_IMPLIES(result, IsTemplateFor(map));
-  return result;
-}
-
-// static
-FunctionTemplateRareData FunctionTemplateInfo::AllocateFunctionTemplateRareData(
-    Isolate* isolate, Handle<FunctionTemplateInfo> function_template_info) {
-  DCHECK(function_template_info->rare_data(kAcquireLoad).IsUndefined(isolate));
-  Handle<FunctionTemplateRareData> rare_data =
-      isolate->factory()->NewFunctionTemplateRareData();
-  function_template_info->set_rare_data(*rare_data, kReleaseStore);
-  return *rare_data;
 }
 
 // static
@@ -2122,7 +2036,7 @@ void HeapObject::HeapObjectShortPrint(std::ostream& os) {
       Code code = Code::cast(*this);
       os << "<Code " << CodeKindToString(code.kind());
       if (code.is_builtin()) {
-        os << " " << Builtins::name(code.builtin_index());
+        os << " " << Builtins::name(code.builtin_id());
       }
       os << ">";
       break;
@@ -2827,9 +2741,10 @@ Maybe<bool> Object::RedefineIncompatibleProperty(
 }
 
 Maybe<bool> Object::SetDataProperty(LookupIterator* it, Handle<Object> value) {
-  DCHECK_IMPLIES(it->GetReceiver()->IsJSProxy(),
-                 it->GetName()->IsPrivateName());
-  DCHECK_IMPLIES(!it->IsElement() && it->GetName()->IsPrivateName(),
+  Isolate* isolate = it->isolate();
+  DCHECK_IMPLIES(it->GetReceiver()->IsJSProxy(isolate),
+                 it->GetName()->IsPrivateName(isolate));
+  DCHECK_IMPLIES(!it->IsElement() && it->GetName()->IsPrivateName(isolate),
                  it->state() == LookupIterator::DATA);
   Handle<JSReceiver> receiver = Handle<JSReceiver>::cast(it->GetReceiver());
 
@@ -2839,13 +2754,13 @@ Maybe<bool> Object::SetDataProperty(LookupIterator* it, Handle<Object> value) {
   Handle<Object> to_assign = value;
   // Convert the incoming value to a number for storing into typed arrays.
   // TODO(v8:11111): Support RAB / GSAB.
-  if (it->IsElement() && receiver->IsJSObject() &&
-      JSObject::cast(*receiver).HasTypedArrayElements()) {
+  if (it->IsElement() && receiver->IsJSObject(isolate) &&
+      JSObject::cast(*receiver).HasTypedArrayElements(isolate)) {
     ElementsKind elements_kind = JSObject::cast(*receiver).GetElementsKind();
     if (elements_kind == BIGINT64_ELEMENTS ||
         elements_kind == BIGUINT64_ELEMENTS) {
-      ASSIGN_RETURN_ON_EXCEPTION_VALUE(it->isolate(), to_assign,
-                                       BigInt::FromObject(it->isolate(), value),
+      ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, to_assign,
+                                       BigInt::FromObject(isolate, value),
                                        Nothing<bool>());
       // We have to recheck the length. However, it can only change if the
       // underlying buffer was detached, so just check that.
@@ -2853,9 +2768,9 @@ Maybe<bool> Object::SetDataProperty(LookupIterator* it, Handle<Object> value) {
         return Just(true);
         // TODO(neis): According to the spec, this should throw a TypeError.
       }
-    } else if (!value->IsNumber() && !value->IsUndefined(it->isolate())) {
-      ASSIGN_RETURN_ON_EXCEPTION_VALUE(it->isolate(), to_assign,
-                                       Object::ToNumber(it->isolate(), value),
+    } else if (!value->IsNumber() && !value->IsUndefined(isolate)) {
+      ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, to_assign,
+                                       Object::ToNumber(isolate, value),
                                        Nothing<bool>());
       // We have to recheck the length. However, it can only change if the
       // underlying buffer was detached, so just check that.
@@ -2866,16 +2781,32 @@ Maybe<bool> Object::SetDataProperty(LookupIterator* it, Handle<Object> value) {
     }
   }
 
-  // Possibly migrate to the most up-to-date map that will be able to store
-  // |value| under it->name().
-  it->PrepareForDataProperty(to_assign);
+#if V8_ENABLE_WEBASSEMBLY
+  if (receiver->IsWasmObject(isolate)) {
+    // Prepares given value for being stored into a field of given Wasm type
+    // or throw if the value can't be stored into the field.
+    ASSIGN_RETURN_ON_EXCEPTION_VALUE(
+        isolate, to_assign,
+        WasmObject::ToWasmValue(isolate, it->wasm_value_type(), to_assign),
+        Nothing<bool>());
 
-  // Write the property value.
-  it->WriteDataValue(to_assign, false);
+    // Store prepared value.
+    it->WriteDataValueToWasmObject(to_assign);
+
+  } else  // NOLINT(readability/braces)
+#endif    // V8_ENABLE_WEBASSEMBLY
+  {
+    // Possibly migrate to the most up-to-date map that will be able to store
+    // |value| under it->name().
+    it->PrepareForDataProperty(to_assign);
+
+    // Write the property value.
+    it->WriteDataValue(to_assign, false);
+  }
 
 #if VERIFY_HEAP
   if (FLAG_verify_heap) {
-    receiver->HeapObjectVerify(it->isolate());
+    receiver->HeapObjectVerify(isolate);
   }
 #endif
   return Just(true);
@@ -3133,7 +3064,7 @@ Maybe<bool> JSProxy::SetProperty(Handle<JSProxy> proxy, Handle<Name> name,
   ASSIGN_RETURN_ON_EXCEPTION_VALUE(
       isolate, trap, Object::GetMethod(handler, trap_name), Nothing<bool>());
   if (trap->IsUndefined(isolate)) {
-    LookupIterator::Key key(isolate, name);
+    PropertyKey key(isolate, name);
     LookupIterator it(isolate, receiver, key, target);
 
     return Object::SetSuperProperty(&it, value, StoreOrigin::kMaybeKeyed,
@@ -4017,8 +3948,12 @@ Handle<ArrayList> ArrayList::Add(Isolate* isolate, Handle<ArrayList> array,
   array = EnsureSpace(isolate, array, length + 1);
   // Check that GC didn't remove elements from the array.
   DCHECK_EQ(array->Length(), length);
-  array->Set(length, *obj);
-  array->SetLength(length + 1);
+  {
+    DisallowGarbageCollection no_gc;
+    ArrayList raw_array = *array;
+    raw_array.Set(length, *obj);
+    raw_array.SetLength(length + 1);
+  }
   return array;
 }
 
@@ -4029,9 +3964,32 @@ Handle<ArrayList> ArrayList::Add(Isolate* isolate, Handle<ArrayList> array,
   array = EnsureSpace(isolate, array, length + 2);
   // Check that GC didn't remove elements from the array.
   DCHECK_EQ(array->Length(), length);
-  array->Set(length, *obj1);
-  array->Set(length + 1, *obj2);
-  array->SetLength(length + 2);
+  {
+    DisallowGarbageCollection no_gc;
+    ArrayList raw_array = *array;
+    raw_array.Set(length, *obj1);
+    raw_array.Set(length + 1, *obj2);
+    raw_array.SetLength(length + 2);
+  }
+  return array;
+}
+
+Handle<ArrayList> ArrayList::Add(Isolate* isolate, Handle<ArrayList> array,
+                                 Handle<Object> obj1, Smi obj2, Smi obj3,
+                                 Smi obj4) {
+  int length = array->Length();
+  array = EnsureSpace(isolate, array, length + 4);
+  // Check that GC didn't remove elements from the array.
+  DCHECK_EQ(array->Length(), length);
+  {
+    DisallowGarbageCollection no_gc;
+    ArrayList raw_array = *array;
+    raw_array.Set(length, *obj1);
+    raw_array.Set(length + 1, obj2);
+    raw_array.Set(length + 2, obj3);
+    raw_array.Set(length + 3, obj4);
+    raw_array.SetLength(length + 4);
+  }
   return array;
 }
 
@@ -4847,7 +4805,7 @@ bool Script::ContainsAsmModule() {
 namespace {
 
 template <typename Char>
-bool GetPositionInfoSlowImpl(const Vector<Char>& source, int position,
+bool GetPositionInfoSlowImpl(const base::Vector<Char>& source, int position,
                              Script::PositionInfo* info) {
   if (position < 0) {
     position = 0;
@@ -6663,35 +6621,6 @@ AccessCheckInfo AccessCheckInfo::Get(Isolate* isolate,
   if (data_obj.IsUndefined(isolate)) return AccessCheckInfo();
 
   return AccessCheckInfo::cast(data_obj);
-}
-
-base::Optional<Name> FunctionTemplateInfo::TryGetCachedPropertyName(
-    Isolate* isolate, Object getter) {
-  DisallowGarbageCollection no_gc;
-  if (!getter.IsFunctionTemplateInfo()) return {};
-  // Check if the accessor uses a cached property.
-  Object maybe_name = FunctionTemplateInfo::cast(getter).cached_property_name();
-  if (maybe_name.IsTheHole(isolate)) return {};
-  return Name::cast(maybe_name);
-}
-
-int FunctionTemplateInfo::GetCFunctionsCount() const {
-  i::DisallowHeapAllocation no_gc;
-  return FixedArray::cast(GetCFunctionOverloads()).length() /
-         kFunctionOverloadEntrySize;
-}
-
-Address FunctionTemplateInfo::GetCFunction(int index) const {
-  i::DisallowHeapAllocation no_gc;
-  return v8::ToCData<Address>(FixedArray::cast(GetCFunctionOverloads())
-                                  .get(index * kFunctionOverloadEntrySize));
-}
-
-const CFunctionInfo* FunctionTemplateInfo::GetCSignature(int index) const {
-  i::DisallowHeapAllocation no_gc;
-  return v8::ToCData<CFunctionInfo*>(
-      FixedArray::cast(GetCFunctionOverloads())
-          .get(index * kFunctionOverloadEntrySize + 1));
 }
 
 Address Smi::LexicographicCompare(Isolate* isolate, Smi x, Smi y) {

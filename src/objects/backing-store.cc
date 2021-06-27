@@ -10,9 +10,9 @@
 #include "src/execution/isolate.h"
 #include "src/handles/global-handles.h"
 #include "src/logging/counters.h"
-#include "src/trap-handler/trap-handler.h"
 
 #if V8_ENABLE_WEBASSEMBLY
+#include "src/trap-handler/trap-handler.h"
 #include "src/wasm/wasm-constants.h"
 #include "src/wasm/wasm-engine.h"
 #include "src/wasm/wasm-limits.h"
@@ -349,7 +349,12 @@ std::unique_ptr<BackingStore> BackingStore::TryAllocateAndPartiallyCommitMemory(
 
   TRACE_BS("BSw:try   %zu pages, %zu max\n", initial_pages, maximum_pages);
 
+#if V8_ENABLE_WEBASSEMBLY
   bool guards = is_wasm_memory && trap_handler::IsTrapHandlerEnabled();
+#else
+  CHECK(!is_wasm_memory);
+  bool guards = false;
+#endif  // V8_ENABLE_WEBASSEMBLY
 
   // For accounting purposes, whether a GC was necessary.
   bool did_retry = false;
@@ -510,8 +515,7 @@ std::unique_ptr<BackingStore> BackingStore::CopyWasmMemory(Isolate* isolate,
     // If the allocation was successful, then the new buffer must be at least
     // as big as the old one.
     DCHECK_GE(new_pages * wasm::kWasmPageSize, byte_length_);
-    base::Memcpy(new_backing_store->buffer_start(), buffer_start_,
-                 byte_length_);
+    memcpy(new_backing_store->buffer_start(), buffer_start_, byte_length_);
   }
 
   return new_backing_store;

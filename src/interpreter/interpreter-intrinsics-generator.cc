@@ -166,32 +166,6 @@ TNode<Object> IntrinsicsGenerator::IntrinsicAsBuiltinCall(
   }
 }
 
-TNode<Object> IntrinsicsGenerator::IsJSReceiver(
-    const InterpreterAssembler::RegListNodePair& args, TNode<Context> context,
-    int arg_count) {
-  TNode<Object> input = __ LoadRegisterFromRegisterList(args, 0);
-  TNode<Oddball> result = __ Select<Oddball>(
-      __ TaggedIsSmi(input), [=] { return __ FalseConstant(); },
-      [=] {
-        return __ SelectBooleanConstant(__ IsJSReceiver(__ CAST(input)));
-      });
-  return result;
-}
-
-TNode<Object> IntrinsicsGenerator::IsArray(
-    const InterpreterAssembler::RegListNodePair& args, TNode<Context> context,
-    int arg_count) {
-  TNode<Object> input = __ LoadRegisterFromRegisterList(args, 0);
-  return IsInstanceType(input, JS_ARRAY_TYPE);
-}
-
-TNode<Object> IntrinsicsGenerator::IsSmi(
-    const InterpreterAssembler::RegListNodePair& args, TNode<Context> context,
-    int arg_count) {
-  TNode<Object> input = __ LoadRegisterFromRegisterList(args, 0);
-  return __ SelectBooleanConstant(__ TaggedIsSmi(input));
-}
-
 TNode<Object> IntrinsicsGenerator::CopyDataProperties(
     const InterpreterAssembler::RegListNodePair& args, TNode<Context> context,
     int arg_count) {
@@ -204,52 +178,6 @@ TNode<Object> IntrinsicsGenerator::CreateIterResultObject(
     int arg_count) {
   return IntrinsicAsBuiltinCall(args, context, Builtin::kCreateIterResultObject,
                                 arg_count);
-}
-
-TNode<Object> IntrinsicsGenerator::HasProperty(
-    const InterpreterAssembler::RegListNodePair& args, TNode<Context> context,
-    int arg_count) {
-  return IntrinsicAsBuiltinCall(args, context, Builtin::kHasProperty,
-                                arg_count);
-}
-
-TNode<Object> IntrinsicsGenerator::ToLength(
-    const InterpreterAssembler::RegListNodePair& args, TNode<Context> context,
-    int arg_count) {
-  return IntrinsicAsBuiltinCall(args, context, Builtin::kToLength, arg_count);
-}
-
-TNode<Object> IntrinsicsGenerator::ToObject(
-    const InterpreterAssembler::RegListNodePair& args, TNode<Context> context,
-    int arg_count) {
-  return IntrinsicAsBuiltinCall(args, context, Builtin::kToObject, arg_count);
-}
-
-TNode<Object> IntrinsicsGenerator::Call(
-    const InterpreterAssembler::RegListNodePair& args, TNode<Context> context,
-    int arg_count) {
-  // First argument register contains the function target.
-  TNode<Object> function = __ LoadRegisterFromRegisterList(args, 0);
-
-  // The arguments for the target function are from the second runtime call
-  // argument.
-  InterpreterAssembler::RegListNodePair target_args(
-      __ RegisterLocationInRegisterList(args, 1),
-      __ Int32Sub(args.reg_count(), __ Int32Constant(1)));
-
-  if (FLAG_debug_code) {
-    InterpreterAssembler::Label arg_count_positive(assembler_);
-    TNode<BoolT> comparison =
-        __ Int32LessThan(target_args.reg_count(), __ Int32Constant(0));
-    __ GotoIfNot(comparison, &arg_count_positive);
-    __ Abort(AbortReason::kWrongArgumentCountForInvokeIntrinsic);
-    __ Goto(&arg_count_positive);
-    __ BIND(&arg_count_positive);
-  }
-
-  __ CallJSAndDispatch(function, context, target_args,
-                       ConvertReceiverMode::kAny);
-  return TNode<Object>();  // We never return from the CallJSAndDispatch above.
 }
 
 TNode<Object> IntrinsicsGenerator::CreateAsyncFromSyncIterator(

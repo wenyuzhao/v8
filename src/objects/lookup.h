@@ -13,8 +13,32 @@
 #include "src/objects/map.h"
 #include "src/objects/objects.h"
 
+#if V8_ENABLE_WEBASSEMBLY
+#include "src/wasm/value-type.h"
+#endif  // V8_ENABLE_WEBASSEMBLY
+
 namespace v8 {
 namespace internal {
+
+class PropertyKey {
+ public:
+  inline PropertyKey(Isolate* isolate, double index);
+  // {name} might be a string representation of an element index.
+  inline PropertyKey(Isolate* isolate, Handle<Name> name);
+  // {valid_key} is a Name or Number.
+  inline PropertyKey(Isolate* isolate, Handle<Object> valid_key);
+  // {key} could be anything.
+  PropertyKey(Isolate* isolate, Handle<Object> key, bool* success);
+
+  inline bool is_element() const;
+  Handle<Name> name() const { return name_; }
+  size_t index() const { return index_; }
+  inline Handle<Name> GetName(Isolate* isolate);
+
+ private:
+  Handle<Name> name_;
+  size_t index_;
+};
 
 class V8_EXPORT_PRIVATE LookupIterator final {
  public:
@@ -45,26 +69,6 @@ class V8_EXPORT_PRIVATE LookupIterator final {
     BEFORE_PROPERTY = INTERCEPTOR
   };
 
-  class Key {
-   public:
-    inline Key(Isolate* isolate, double index);
-    // {name} might be a string representation of an element index.
-    inline Key(Isolate* isolate, Handle<Name> name);
-    // {valid_key} is a Name or Number.
-    inline Key(Isolate* isolate, Handle<Object> valid_key);
-    // {key} could be anything.
-    Key(Isolate* isolate, Handle<Object> key, bool* success);
-
-    bool is_element() { return index_ != LookupIterator::kInvalidIndex; }
-    Handle<Name> name() const { return name_; }
-    size_t index() const { return index_; }
-    inline Handle<Name> GetName(Isolate* isolate);
-
-   private:
-    Handle<Name> name_;
-    size_t index_;
-  };
-
   // {name} is guaranteed to be a property name (and not e.g. "123").
   inline LookupIterator(Isolate* isolate, Handle<Object> receiver,
                         Handle<Name> name,
@@ -80,9 +84,11 @@ class V8_EXPORT_PRIVATE LookupIterator final {
                         Configuration configuration = DEFAULT);
 
   inline LookupIterator(Isolate* isolate, Handle<Object> receiver,
-                        const Key& key, Configuration configuration = DEFAULT);
+                        const PropertyKey& key,
+                        Configuration configuration = DEFAULT);
   inline LookupIterator(Isolate* isolate, Handle<Object> receiver,
-                        const Key& key, Handle<Object> lookup_start_object,
+                        const PropertyKey& key,
+                        Handle<Object> lookup_start_object,
                         Configuration configuration = DEFAULT);
 
   void Restart() {
@@ -186,12 +192,21 @@ class V8_EXPORT_PRIVATE LookupIterator final {
   static inline void UpdateProtector(Isolate* isolate, Handle<Object> receiver,
                                      Handle<Name> name);
 
+#if V8_ENABLE_WEBASSEMBLY
+  // Fetches type of WasmStruct's field or WasmArray's elements, it
+  // is used for preparing the value for storing into WasmObjects.
+  wasm::ValueType wasm_value_type() const;
+  void WriteDataValueToWasmObject(Handle<Object> value);
+#endif  // V8_ENABLE_WEBASSEMBLY
+
   // Lookup a 'cached' private property for an accessor.
   // If not found returns false and leaves the LookupIterator unmodified.
   bool TryLookupCachedProperty(Handle<AccessorPair> accessor);
   bool TryLookupCachedProperty();
 
  private:
+  friend PropertyKey;
+
   static const size_t kInvalidIndex = std::numeric_limits<size_t>::max();
 
   bool LookupCachedProperty(Handle<AccessorPair> accessor);
