@@ -21,7 +21,7 @@ namespace v8 {
 namespace internal {
 
 namespace third_party_heap {
-  class Impl;
+class Impl;
 }
 
 // HashTable is a subclass of FixedArray that implements a hash table

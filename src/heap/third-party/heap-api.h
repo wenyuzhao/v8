@@ -51,9 +51,7 @@ class Heap {
 
   void FinishInitialization() { initialization_finished_ = true; }
 
-  V8_INLINE Impl* impl() {
-    return impl_;
-  }
+  V8_INLINE Impl* impl() { return impl_; }
 
  private:
   Impl* impl_ = nullptr;
