@@ -17,10 +17,6 @@ class Impl;
 
 class Heap {
  public:
-  V8_INLINE Heap() {
-    USE(impl_);
-  }
-
   static std::unique_ptr<Heap> New(v8::internal::Isolate* isolate);
 
   static v8::internal::Isolate* GetIsolate(Address address);
@@ -54,6 +50,10 @@ class Heap {
   size_t Capacity();
 
   void FinishInitialization() { initialization_finished_ = true; }
+
+  V8_INLINE Impl* impl() {
+    return impl_;
+  }
 
  private:
   Impl* impl_ = nullptr;
