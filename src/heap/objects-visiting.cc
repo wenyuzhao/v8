@@ -130,11 +130,11 @@ struct WeakListVisitor<Context> {
   static void VisitLiveObject(Heap* heap, Context context,
                               WeakObjectRetainer* retainer) {
     if (heap->gc_state() == Heap::MARK_COMPACT) {
-      // Record the slots of the weak entries in the native context.
-      for (int idx = Context::FIRST_WEAK_SLOT;
-           idx < Context::NATIVE_CONTEXT_SLOTS; ++idx) {
-        ObjectSlot slot = context.RawField(Context::OffsetOfElementAt(idx));
-        if (!V8_ENABLE_THIRD_PARTY_HEAP_BOOL) {
+      if (!V8_ENABLE_THIRD_PARTY_HEAP_BOOL) {
+        // Record the slots of the weak entries in the native context.
+        for (int idx = Context::FIRST_WEAK_SLOT;
+             idx < Context::NATIVE_CONTEXT_SLOTS; ++idx) {
+          ObjectSlot slot = context.RawField(Context::OffsetOfElementAt(idx));
           MarkCompactCollector::RecordSlot(context, slot,
                                            HeapObject::cast(*slot));
         }
