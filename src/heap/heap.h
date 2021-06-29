@@ -53,6 +53,7 @@ class TestMemoryAllocatorScope;
 
 namespace third_party_heap {
 class Heap;
+class Impl;
 }  // namespace third_party_heap
 
 class IncrementalMarking;
@@ -1655,8 +1656,6 @@ class Heap {
 
   void UpdateEpochFull();
 
-  void ProcessAllWeakReferences(WeakObjectRetainer* retainer);
-
  private:
   using ExternalStringTableUpdaterCallback = String (*)(Heap* heap,
                                                         FullObjectSlot pointer);
@@ -1952,6 +1951,7 @@ class Heap {
   void UpdateReferencesInExternalStringTable(
       ExternalStringTableUpdaterCallback updater_func);
 
+  void ProcessAllWeakReferences(WeakObjectRetainer* retainer);
   void ProcessYoungWeakReferences(WeakObjectRetainer* retainer);
   void ProcessNativeContexts(WeakObjectRetainer* retainer);
   void ProcessAllocationSites(WeakObjectRetainer* retainer);
@@ -2503,6 +2503,7 @@ class Heap {
   friend class Sweeper;
   friend class heap::TestMemoryAllocatorScope;
   friend class third_party_heap::Heap;
+  friend class third_party_heap::Impl;
 
   // The allocator interface.
   friend class Factory;

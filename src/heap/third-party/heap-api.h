@@ -13,8 +13,14 @@ namespace v8 {
 namespace internal {
 namespace third_party_heap {
 
+class Impl;
+
 class Heap {
  public:
+  V8_INLINE Heap() {
+    USE(impl_);
+  }
+
   static std::unique_ptr<Heap> New(v8::internal::Isolate* isolate);
 
   static v8::internal::Isolate* GetIsolate(Address address);
@@ -50,6 +56,7 @@ class Heap {
   void FinishInitialization() { initialization_finished_ = true; }
 
  private:
+  Impl* impl_ = nullptr;
   bool initialization_finished_ = false;
 };
 
