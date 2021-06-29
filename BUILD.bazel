@@ -10,6 +10,7 @@ load(
     "v8_custom_config",
     "v8_flag",
     "v8_int",
+    "v8_string",
     "v8_library",
     "v8_torque",
     "v8_mksnapshot",
@@ -56,6 +57,11 @@ config_setting(
         "host_cpu": "k8",
         "cpu": "armeabi-v7a",
     },
+)
+
+selects.config_setting_group(
+    name = "is_32bits",
+    match_any = [":is_ia32", ":is_arm"],
 )
 
 config_setting(
@@ -105,6 +111,8 @@ config_setting(
 # Flags
 # =================================================
 
+v8_string(name = "v8_root", default = ".")
+
 v8_flag(name = "v8_annotate_torque_ir")
 v8_flag(name = "v8_enable_lazy_source_positions", default = True)
 v8_flag(name = "v8_enable_minor_mc", default = True)
@@ -125,6 +133,7 @@ v8_config(
         "v8_enable_webassembly": "V8_ENABLE_WEBASSEMBLY",
     },
     defines = [
+        "GOOGLE3",
         "CHROMIUM_ZLIB_NO_CHROMECONF",
         "V8_CONCURRENT_MARKING",
     ] + select({
@@ -249,6 +258,7 @@ filegroup(
     name = "v8_shared_internal_headers",
     srcs = [
         "src/common/globals.h",
+        "testing/gtest/include/gtest/gtest_prod.h",
     ] + select({
         "is_v8_enable_webassembly": [
             "src/wasm/wasm-constants.h",
@@ -2441,7 +2451,7 @@ filegroup(
 )
 
 filegroup(
-    name = "snapshot_common_files",
+    name = "mksnapshot_files",
     srcs = [
         "src/snapshot/embedded/embedded-empty.cc",
         "src/snapshot/embedded/embedded-file-writer.cc",
@@ -2610,6 +2620,13 @@ v8_torque(
         "objects-body-descriptors-inl.inc",
         "objects-printer.cc",
     ],
+    args = select({
+        ":is_v8_annotate_torque_ir": [ "-annotate-ir" ],
+        "//conditions:default": [],
+    }) + select({
+        ":is_32bits": [ "-m32" ],
+        "//conditions:default": [],
+    }),
 )
 
 genrule(
@@ -2655,54 +2672,46 @@ v8_mksnapshot(
 # Libraries rules
 # =================================================
 
-cc_library(
-  name = "gtest_prod",
-  hdrs = [ "testing/gtest/include/gtest/gtest_prod.h" ],
-  deps = [ "//third_party/googletest/src:gtest_prod" ],
+v8_library(
+    name = "v8_libbase",
+    srcs = [
+        ":v8_shared_internal_headers",
+        ":v8_libbase_files",
+    ],
+)
+
+v8_library(
+    name = "v8_libshared",
+    srcs = [
+        ":generated_torque_files",
+        ":torque_runtime_support_files",
+        ":v8_base_without_compiler_files",
+        ":v8_compiler_files",
+        ":v8_initializers_files",
+        ":v8_libplatform_files",
+        ":v8_libsampler_files",
+        ":v8_shared_internal_headers",
+    ],
+    deps = [
+        ":v8_libbase",
+        "@zlib",
+    ],
 )
 
 v8_library(
     name = "v8",
     srcs = [
-        ":v8_base_without_compiler_files",
-        ":v8_compiler_files",
-        ":v8_initializers_files",
-        ":v8_inspector_files",
-        ":v8_libbase_files",
-        ":v8_libsampler_files",
-        ":v8_libplatform_files",
         ":snapshot_files",
-        ":torque_runtime_support_files",
-        ":generated_torque_files",
-        ":v8_shared_internal_headers",
+        ":v8_inspector_files",
     ],
-    deps = [
-        ":gtest_prod",
-        ":third_party_zlib",
-    ],
+    deps = [ ":v8_libshared" ],
 )
 
 # TODO(victorgomes): Check if v8_enable_webassembly is true.
 v8_library(
     name = "wee8",
-    srcs = [
-        ":generated_torque_files",
-        ":snapshot_files",
-        ":torque_runtime_support_files",
-        ":v8_base_without_compiler_files",
-        ":v8_compiler_files",
-        ":v8_initializers_files",
-        ":v8_inspector_files",
-        ":v8_libbase_files",
-        ":v8_libplatform_files",
-        ":v8_libsampler_files",
-        ":v8_shared_internal_headers",
-        ":wee8_files",
-    ],
-    deps = [
-        ":gtest_prod",
-        ":third_party_zlib",
-    ],
+    srcs = [ ":wee8_files" ],
+    deps = [ ":v8" ],
 )
 
 # =================================================
@@ -2712,8 +2721,6 @@ v8_library(
 v8_binary(
     name = "bytecode_builtins_list_generator",
     srcs = [
-        ":v8_shared_internal_headers",
-        ":v8_libbase_files",
         "src/builtins/generate-bytecodes-builtins-list.cc",
         "src/interpreter/bytecode-operands.cc",
         "src/interpreter/bytecode-operands.h",
@@ -2721,42 +2728,24 @@ v8_binary(
         "src/interpreter/bytecodes.cc",
         "src/interpreter/bytecodes.h",
     ],
-    deps = [ ":gtest_prod" ],
+    deps = [ "v8_libbase" ],
 )
 
 v8_binary(
     name = "torque",
     srcs = [
-        ":v8_shared_internal_headers",
-        ":v8_libbase_files",
         ":torque_base_files",
         "src/torque/torque.cc",
     ],
-    deps = [ ":gtest_prod" ],
     copts = [ "-fexceptions" ],
-    features = ["-use_header_modules"],
+    features = [ "-use_header_modules" ],
+    deps = [ "v8_libbase" ],
 )
 
 v8_binary(
     name = "mksnapshot",
-    srcs = [
-        ":v8_shared_internal_headers",
-        ":v8_headers_files",
-        ":v8_libbase_files",
-        ":v8_libplatform_files",
-        ":v8_libsampler_files",
-        ":v8_base_without_compiler_files",
-        ":v8_compiler_files",
-        ":v8_initializers_files",
-        ":generated_bytecode_builtins_list",
-        ":snapshot_common_files",
-        ":torque_runtime_support_files",
-        ":generated_torque_files",
-    ],
-    deps = [
-        ":gtest_prod",
-        ":third_party_zlib"
-    ],
+    srcs = [ ":mksnapshot_files" ],
+    deps = [ ":v8_libshared" ],
     linkopts = select({
         "is_android": [ "-llog" ],
         "//conditions:default": [],
@@ -2778,59 +2767,5 @@ v8_binary(
         "src/d8/d8-posix.cc",
         "src/d8/d8-test.cc",
     ],
-    deps = [":v8"],
-)
-
-# =================================================
-# third_party rules
-# =================================================
-
-cc_library(
-    name = "third_party_zlib",
-    srcs = [
-        "third_party/zlib/adler32.c",
-        "third_party/zlib/chromeconf.h",
-        "third_party/zlib/compress.c",
-        "third_party/zlib/contrib/optimizations/insert_string.h",
-        "third_party/zlib/cpu_features.c",
-        "third_party/zlib/cpu_features.h",
-        "third_party/zlib/crc32.c",
-        "third_party/zlib/crc32.h",
-        "third_party/zlib/deflate.c",
-        "third_party/zlib/deflate.h",
-        "third_party/zlib/gzclose.c",
-        "third_party/zlib/gzguts.h",
-        "third_party/zlib/gzlib.c",
-        "third_party/zlib/gzread.c",
-        "third_party/zlib/gzwrite.c",
-        "third_party/zlib/infback.c",
-        "third_party/zlib/inffast.c",
-        "third_party/zlib/inffast.h",
-        "third_party/zlib/inffixed.h",
-        "third_party/zlib/inflate.c",
-        "third_party/zlib/inflate.h",
-        "third_party/zlib/inftrees.c",
-        "third_party/zlib/inftrees.h",
-        "third_party/zlib/trees.c",
-        "third_party/zlib/trees.h",
-        "third_party/zlib/uncompr.c",
-        "third_party/zlib/zconf.h",
-        "third_party/zlib/zlib.h",
-        "third_party/zlib/zutil.c",
-        "third_party/zlib/zutil.h",
-        "third_party/zlib/google/compression_utils_portable.h",
-        "third_party/zlib/google/compression_utils_portable.cc",
-        ],
-    hdrs = [
-        "third_party/zlib/google/compression_utils_portable.h",
-    ],
-    defines = [
-        "CHROMIUM_ZLIB_NO_CHROMECONF",
-        "HAVE_HIDDEN",
-        "CPU_NO_SIMD",
-    ],
-    copts = [
-        "-Ithird_party/zlib",
-    ],
-    alwayslink = 1,
+    deps = [ ":v8" ],
 )
