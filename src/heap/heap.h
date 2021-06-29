@@ -2502,6 +2502,7 @@ class Heap {
   friend class Space;
   friend class Sweeper;
   friend class heap::TestMemoryAllocatorScope;
+  friend class third_party_heap::Heap;
 
   // The allocator interface.
   friend class Factory;
