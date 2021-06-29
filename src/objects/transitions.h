@@ -12,6 +12,7 @@
 #include "src/objects/maybe-object.h"
 #include "src/objects/name.h"
 #include "src/objects/objects.h"
+#include "src/heap/third-party/heap-api.h"
 
 // Has to be the last include (doesn't have include guards):
 #include "src/objects/object-macros.h"
@@ -142,10 +143,6 @@ class V8_EXPORT_PRIVATE TransitionsAccessor {
   bool IsSortedNoDuplicates();
 #endif
 
-  static inline Map GetTargetFromRaw(MaybeObject raw);
-
-  bool HasSimpleTransitionTo(Map map);
-
  protected:
   // Allow tests to use inheritance to access internals.
   enum Encoding {
@@ -169,11 +166,14 @@ class V8_EXPORT_PRIVATE TransitionsAccessor {
 
  private:
   friend class MarkCompactCollector;  // For HasSimpleTransitionTo.
+  friend class third_party_heap::Impl;
   friend class TransitionArray;
 
   inline PropertyDetails GetSimpleTargetDetails(Map transition);
 
   static inline Name GetSimpleTransitionKey(Map transition);
+
+  static inline Map GetTargetFromRaw(MaybeObject raw);
 
   void MarkNeedsReload() {
 #if DEBUG
@@ -184,6 +184,7 @@ class V8_EXPORT_PRIVATE TransitionsAccessor {
   inline void Initialize();
 
   inline Map GetSimpleTransition();
+  bool HasSimpleTransitionTo(Map map);
 
   void ReplaceTransitions(MaybeObject new_transitions);
 
@@ -283,14 +284,15 @@ class TransitionArray : public WeakFixedArray {
   inline Map SearchAndGetTargetForTesting(PropertyKind kind, Name name,
                                           PropertyAttributes attributes);
 
-  inline void SetNumberOfTransitions(int number_of_transitions);
-
-  inline int Capacity();
-
  private:
   friend class Factory;
   friend class MarkCompactCollector;
+  friend class third_party_heap::Impl;
   friend class TransitionsAccessor;
+
+  inline void SetNumberOfTransitions(int number_of_transitions);
+
+  inline int Capacity();
 
   // ===== PROTOTYPE TRANSITIONS =====
   // Cache format:
