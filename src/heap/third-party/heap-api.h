@@ -49,13 +49,10 @@ class Heap {
 
   size_t Capacity();
 
-  void FinishInitialization() { initialization_finished_ = true; }
-
   V8_INLINE Impl* impl() { return impl_; }
 
  private:
   Impl* impl_ = nullptr;
-  bool initialization_finished_ = false;
 };
 
 }  // namespace third_party_heap
