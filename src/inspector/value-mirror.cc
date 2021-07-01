@@ -217,7 +217,6 @@ String16 descriptionForPrimitiveType(v8::Local<v8::Context> context,
     return toProtocolString(context->GetIsolate(), value.As<v8::String>());
   }
   UNREACHABLE();
-  return String16();
 }
 
 String16 descriptionForRegExp(v8::Isolate* isolate,
@@ -1322,13 +1321,10 @@ bool ValueMirror::getProperties(v8::Local<v8::Context> context,
             setterMirror = ValueMirror::create(context, descriptor.set);
           }
           isAccessorProperty = getterMirror || setterMirror;
-          bool isSymbolDescription =
-              object->IsSymbol() && name == "description";
-          if (isSymbolDescription ||
-              (name != "__proto__" && getterIsNativeFunction &&
-               formatAccessorsAsProperties &&
-               !doesAttributeHaveObservableSideEffectOnGet(context, object,
-                                                           v8Name))) {
+          if (name != "__proto__" && getterIsNativeFunction &&
+              formatAccessorsAsProperties &&
+              !doesAttributeHaveObservableSideEffectOnGet(context, object,
+                                                          v8Name)) {
             v8::TryCatch tryCatch(isolate);
             v8::Local<v8::Value> value;
             if (object->Get(context, v8Name).ToLocal(&value)) {

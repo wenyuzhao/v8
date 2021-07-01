@@ -308,8 +308,9 @@ size_t Heap::AllocatorLimitOnMaxOldGenerationSize() {
   return kPtrComprCageReservationSize -
          YoungGenerationSizeFromSemiSpaceSize(kMaxSemiSpaceSize) -
          RoundUp(sizeof(Isolate), size_t{1} << kPageSizeBits);
-#endif
+#else
   return std::numeric_limits<size_t>::max();
+#endif
 }
 
 size_t Heap::MaxOldGenerationSize(uint64_t physical_memory) {
@@ -2985,7 +2986,6 @@ int Heap::GetMaximumFillToAlign(AllocationAlignment alignment) {
     default:
       UNREACHABLE();
   }
-  return 0;
 }
 
 // static
@@ -3409,6 +3409,19 @@ void Heap::RightTrimWeakFixedArray(WeakFixedArray object,
   DCHECK_EQ(gc_state(), MARK_COMPACT);
   CreateFillerForArray<WeakFixedArray>(object, elements_to_trim,
                                        elements_to_trim * kTaggedSize);
+}
+
+void Heap::UndoLastAllocationAt(Address addr, int size) {
+  DCHECK_LE(0, size);
+  if (size == 0) return;
+  if (code_space_->Contains(addr)) {
+    Address* top = code_space_->allocation_top_address();
+    if (addr + size == *top && code_space_->original_top() <= addr) {
+      *top = addr;
+      return;
+    }
+  }
+  CreateFillerObjectAt(addr, size, ClearRecordedSlots::kNo);
 }
 
 template <typename T>
@@ -5337,7 +5350,6 @@ HeapObject Heap::AllocateRawWithRetryOrFailSlowPath(
   }
   // TODO(1181417): Fix this.
   FatalProcessOutOfMemory("CALL_AND_RETRY_LAST");
-  return HeapObject();
 }
 
 namespace {

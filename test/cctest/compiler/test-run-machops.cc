@@ -5564,7 +5564,6 @@ static void IntPtrCompare(intptr_t left, intptr_t right) {
         break;
       default:
         UNREACHABLE();
-        break;
     }
     m.Return(res);
     CHECK_EQ(expected, m.Call(reinterpret_cast<int32_t*>(left),
@@ -7207,34 +7206,6 @@ TEST(ParentFramePointer) {
   r.Return(phi);
   CHECK_EQ(1, r.Call(1));
 }
-
-#if V8_HOST_ARCH_MIPS || V8_HOST_ARCH_MIPS64
-
-TEST(StackSlotAlignment) {
-  RawMachineAssemblerTester<int32_t> r;
-  RawMachineLabel tlabel;
-  RawMachineLabel flabel;
-  RawMachineLabel merge;
-
-  int alignments[] = {4, 8, 16};
-  int alignment_count = arraysize(alignments);
-
-  Node* alignment_counter = r.Int32Constant(0);
-  for (int i = 0; i < alignment_count; i++) {
-    for (int j = 0; j < 5; j++) {
-      Node* stack_slot =
-          r.StackSlot(MachineRepresentation::kWord32, alignments[i]);
-      alignment_counter = r.Int32Add(
-          alignment_counter,
-          r.Word32And(stack_slot, r.Int32Constant(alignments[i] - 1)));
-    }
-  }
-
-  r.Return(alignment_counter);
-  CHECK_EQ(0, r.Call());
-}
-
-#endif  // V8_HOST_ARCH_MIPS || V8_HOST_ARCH_MIPS64
 
 #if V8_TARGET_ARCH_64_BIT
 

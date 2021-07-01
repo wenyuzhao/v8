@@ -577,6 +577,8 @@ class Heap {
                                              int elements_to_trim);
   void RightTrimWeakFixedArray(WeakFixedArray obj, int elements_to_trim);
 
+  void UndoLastAllocationAt(Address addr, int size);
+
   // Converts the given boolean condition to JavaScript boolean value.
   inline Oddball ToBoolean(bool condition);
 
@@ -1549,6 +1551,7 @@ class Heap {
   // as uninitialized to background threads.
   // This predicate may be invoked from a background thread.
   inline bool IsPendingAllocation(HeapObject object);
+  inline bool IsPendingAllocation(Object object);
 
   // Notifies that all previously allocated objects are properly initialized
   // and ensures that IsPendingAllocation returns false for them. This function

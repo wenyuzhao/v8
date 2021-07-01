@@ -80,13 +80,13 @@ enum class RefSerializationKind {
 // DO NOT VIOLATE THIS PROPERTY!
 #define HEAP_BROKER_OBJECT_LIST(V)                                        \
   /* Subtypes of JSObject */                                              \
-  V(JSArray, RefSerializationKind::kSerialized)                           \
-  V(JSBoundFunction, RefSerializationKind::kSerialized)                   \
-  V(JSDataView, RefSerializationKind::kSerialized)                        \
+  V(JSArray, RefSerializationKind::kBackgroundSerialized)                 \
+  V(JSBoundFunction, RefSerializationKind::kBackgroundSerialized)         \
+  V(JSDataView, RefSerializationKind::kBackgroundSerialized)              \
   V(JSFunction, RefSerializationKind::kSerialized)                        \
-  V(JSGlobalObject, RefSerializationKind::kSerialized)                    \
-  V(JSGlobalProxy, RefSerializationKind::kSerialized)                     \
-  V(JSTypedArray, RefSerializationKind::kSerialized)                      \
+  V(JSGlobalObject, RefSerializationKind::kBackgroundSerialized)          \
+  V(JSGlobalProxy, RefSerializationKind::kBackgroundSerialized)           \
+  V(JSTypedArray, RefSerializationKind::kBackgroundSerialized)            \
   /* Subtypes of Context */                                               \
   V(NativeContext, RefSerializationKind::kNeverSerialized)                \
   /* Subtypes of FixedArray */                                            \
@@ -102,7 +102,7 @@ enum class RefSerializationKind {
   V(String, RefSerializationKind::kNeverSerialized)                       \
   V(Symbol, RefSerializationKind::kNeverSerialized)                       \
   /* Subtypes of JSReceiver */                                            \
-  V(JSObject, RefSerializationKind::kSerialized)                          \
+  V(JSObject, RefSerializationKind::kBackgroundSerialized)                \
   /* Subtypes of HeapObject */                                            \
   V(AccessorInfo, RefSerializationKind::kNeverSerialized)                 \
   V(AllocationSite, RefSerializationKind::kSerialized)                    \
@@ -388,7 +388,6 @@ class JSBoundFunctionRef : public JSObjectRef {
   bool Serialize();
   bool serialized() const;
 
-  // The following are available only after calling Serialize().
   JSReceiverRef bound_target_function() const;
   ObjectRef bound_this() const;
   FixedArrayRef bound_arguments() const;
@@ -465,91 +464,69 @@ class ContextRef : public HeapObjectRef {
 
   // {previous} decrements {depth} by 1 for each previous link successfully
   // followed. If {depth} != 0 on function return, then it only got partway to
-  // the desired depth. If {serialize} is true, then {previous} will cache its
-  // findings (unless concurrent inlining is enabled).
-  ContextRef previous(size_t* depth,
-                      SerializationPolicy policy =
-                          SerializationPolicy::kAssumeSerialized) const;
+  // the desired depth.
+  ContextRef previous(size_t* depth) const;
 
   // Only returns a value if the index is valid for this ContextRef.
-  base::Optional<ObjectRef> get(
-      int index, SerializationPolicy policy =
-                     SerializationPolicy::kAssumeSerialized) const;
+  base::Optional<ObjectRef> get(int index) const;
 
-  SourceTextModuleRef GetModule(SerializationPolicy policy) const;
+  SourceTextModuleRef GetModule() const;
 };
 
 // TODO(jgruber): Don't serialize NativeContext fields once all refs can be
 // created concurrently.
 
-#define BROKER_COMPULSORY_NATIVE_CONTEXT_FIELDS(V) \
-  V(JSFunction, array_function)                    \
-  V(JSFunction, function_prototype_apply)          \
-  V(JSFunction, boolean_function)                  \
-  V(JSFunction, bigint_function)                   \
-  V(JSFunction, number_function)                   \
-  V(JSFunction, object_function)                   \
-  V(JSFunction, promise_function)                  \
-  V(JSFunction, promise_then)                      \
-  V(JSFunction, regexp_function)                   \
-  V(JSFunction, string_function)                   \
-  V(JSFunction, symbol_function)                   \
-  V(JSGlobalObject, global_object)                 \
-  V(JSGlobalProxy, global_proxy_object)            \
-  V(JSObject, promise_prototype)                   \
-  V(Map, bound_function_with_constructor_map)      \
-  V(Map, bound_function_without_constructor_map)   \
-  V(Map, js_array_holey_double_elements_map)       \
-  V(Map, js_array_holey_elements_map)              \
-  V(Map, js_array_holey_smi_elements_map)          \
-  V(Map, js_array_packed_double_elements_map)      \
-  V(Map, js_array_packed_elements_map)             \
-  V(Map, js_array_packed_smi_elements_map)         \
+#define BROKER_NATIVE_CONTEXT_FIELDS(V)          \
+  V(JSFunction, array_function)                  \
+  V(JSFunction, bigint_function)                 \
+  V(JSFunction, boolean_function)                \
+  V(JSFunction, function_prototype_apply)        \
+  V(JSFunction, number_function)                 \
+  V(JSFunction, object_function)                 \
+  V(JSFunction, promise_function)                \
+  V(JSFunction, promise_then)                    \
+  V(JSFunction, regexp_exec_function)            \
+  V(JSFunction, regexp_function)                 \
+  V(JSFunction, string_function)                 \
+  V(JSFunction, symbol_function)                 \
+  V(JSGlobalObject, global_object)               \
+  V(JSGlobalProxy, global_proxy_object)          \
+  V(JSObject, promise_prototype)                 \
+  V(Map, async_function_object_map)              \
+  V(Map, block_context_map)                      \
+  V(Map, bound_function_with_constructor_map)    \
+  V(Map, bound_function_without_constructor_map) \
+  V(Map, catch_context_map)                      \
+  V(Map, eval_context_map)                       \
+  V(Map, fast_aliased_arguments_map)             \
+  V(Map, function_context_map)                   \
+  V(Map, initial_array_iterator_map)             \
+  V(Map, initial_string_iterator_map)            \
+  V(Map, iterator_result_map)                    \
+  V(Map, js_array_holey_double_elements_map)     \
+  V(Map, js_array_holey_elements_map)            \
+  V(Map, js_array_holey_smi_elements_map)        \
+  V(Map, js_array_packed_double_elements_map)    \
+  V(Map, js_array_packed_elements_map)           \
+  V(Map, js_array_packed_smi_elements_map)       \
+  V(Map, map_key_iterator_map)                   \
+  V(Map, map_key_value_iterator_map)             \
+  V(Map, map_value_iterator_map)                 \
+  V(Map, set_key_value_iterator_map)             \
+  V(Map, set_value_iterator_map)                 \
+  V(Map, sloppy_arguments_map)                   \
+  V(Map, slow_object_with_null_prototype_map)    \
+  V(Map, strict_arguments_map)                   \
+  V(Map, with_context_map)                       \
   V(ScriptContextTable, script_context_table)
-
-#define BROKER_OPTIONAL_NATIVE_CONTEXT_FIELDS(V) \
-  V(JSFunction, regexp_exec_function)
-
-#define BROKER_COMPULSORY_BACKGROUND_NATIVE_CONTEXT_FIELDS(V) \
-  V(Map, block_context_map)                                   \
-  V(Map, catch_context_map)                                   \
-  V(Map, eval_context_map)                                    \
-  V(Map, fast_aliased_arguments_map)                          \
-  V(Map, function_context_map)                                \
-  V(Map, initial_array_iterator_map)                          \
-  V(Map, initial_string_iterator_map)                         \
-  V(Map, iterator_result_map)                                 \
-  V(Map, sloppy_arguments_map)                                \
-  V(Map, slow_object_with_null_prototype_map)                 \
-  V(Map, strict_arguments_map)                                \
-  V(Map, with_context_map)
-
-// Those are set by Bootstrapper::ExportFromRuntime, which may not yet have
-// happened when Turbofan is invoked via --always-opt.
-#define BROKER_OPTIONAL_BACKGROUND_NATIVE_CONTEXT_FIELDS(V) \
-  V(Map, async_function_object_map)                         \
-  V(Map, map_key_iterator_map)                              \
-  V(Map, map_key_value_iterator_map)                        \
-  V(Map, map_value_iterator_map)                            \
-  V(Map, set_key_value_iterator_map)                        \
-  V(Map, set_value_iterator_map)
-
-#define BROKER_NATIVE_CONTEXT_FIELDS(V)                 \
-  BROKER_COMPULSORY_NATIVE_CONTEXT_FIELDS(V)            \
-  BROKER_OPTIONAL_NATIVE_CONTEXT_FIELDS(V)              \
-  BROKER_COMPULSORY_BACKGROUND_NATIVE_CONTEXT_FIELDS(V) \
-  BROKER_OPTIONAL_BACKGROUND_NATIVE_CONTEXT_FIELDS(V)
 
 class NativeContextRef : public ContextRef {
  public:
   DEFINE_REF_CONSTRUCTOR(NativeContext, ContextRef)
 
-  bool is_unserialized_heap_object() const;
-
   Handle<NativeContext> object() const;
 
   void Serialize();
-  void SerializeOnBackground();
 
 #define DECL_ACCESSOR(type, name) type##Ref name() const;
   BROKER_NATIVE_CONTEXT_FIELDS(DECL_ACCESSOR)
@@ -559,6 +536,7 @@ class NativeContextRef : public ContextRef {
   MapRef GetFunctionMapFromIndex(int index) const;
   MapRef GetInitialJSArrayMap(ElementsKind kind) const;
   base::Optional<JSFunctionRef> GetConstructorFunction(const MapRef& map) const;
+  bool GlobalIsDetached() const;
 };
 
 class NameRef : public HeapObjectRef {
@@ -1020,15 +998,9 @@ class JSGlobalObjectRef : public JSObjectRef {
 
   Handle<JSGlobalObject> object() const;
 
-  bool IsDetached() const;
+  bool IsDetachedFrom(JSGlobalProxyRef const& proxy) const;
 
-  // If {serialize} is false:
-  //   If the property is known to exist as a property cell (on the global
-  //   object), return that property cell. Otherwise (not known to exist as a
-  //   property cell or known not to exist as a property cell) return nothing.
-  // If {serialize} is true:
-  //   Like above but potentially access the heap and serialize the necessary
-  //   information.
+  // Can be called even when there is no property cell for the given name.
   base::Optional<PropertyCellRef> GetPropertyCell(
       NameRef const& name, SerializationPolicy policy =
                                SerializationPolicy::kAssumeSerialized) const;
@@ -1050,6 +1022,8 @@ class CodeRef : public HeapObjectRef {
   unsigned GetInlinedBytecodeSize() const;
 };
 
+// CodeDataContainerRef doesn't appear to be used, but it is used via CodeT when
+// V8_EXTERNAL_CODE_SPACE is defined.
 class CodeDataContainerRef : public HeapObjectRef {
  public:
   DEFINE_REF_CONSTRUCTOR(CodeDataContainer, HeapObjectRef)
