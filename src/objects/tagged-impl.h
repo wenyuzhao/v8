@@ -76,8 +76,12 @@ class TaggedImpl {
 
   // Returns true if this tagged value is a cleared weak reference.
   constexpr inline bool IsCleared() const {
+#ifdef V8_COMPRESS_POINTERS
     return kCanBeWeak &&
            (static_cast<uint32_t>(ptr_) == kClearedWeakHeapObjectLower32);
+#else
+    return kCanBeWeak && ptr_ == Address(kClearedWeakHeapObjectLower32);
+#endif
   }
 
   // Returns true if this tagged value is a strong or weak pointer to a
