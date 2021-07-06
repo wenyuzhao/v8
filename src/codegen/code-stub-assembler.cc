@@ -4019,8 +4019,7 @@ CodeStubAssembler::AllocateUninitializedJSArrayWithElements(
     // folding trick. Instead, we first allocate the elements in large object
     // space, and then allocate the JSArray (and possibly the allocation
     // memento) in new space.
-    const bool inline_allocation =
-        !V8_DISABLE_WRITE_BARRIERS_BOOL || V8_ALLOCATION_FOLDING_BOOL;
+    const bool inline_allocation = false;
     if ((allocation_flags & kAllowLargeObjectAllocation) ||
         !inline_allocation) {
       Label next(this);
@@ -4829,14 +4828,15 @@ void CodeStubAssembler::JumpIfPointersFromHereAreInteresting(
     TNode<Object> object, Label* interesting) {
   Label finished(this);
   TNode<IntPtrT> object_word = BitcastTaggedToWord(object);
-  TNode<IntPtrT> object_page = PageFromAddress(object_word);
-  TNode<IntPtrT> page_flags = UncheckedCast<IntPtrT>(Load(
-      MachineType::IntPtr(), object_page, IntPtrConstant(Page::kFlagsOffset)));
+  // TNode<IntPtrT> object_page = PageFromAddress(object_word);
+  // TNode<IntPtrT> page_flags = UncheckedCast<IntPtrT>(Load(
+  //     MachineType::IntPtr(), object_page, IntPtrConstant(Page::kFlagsOffset)));
+  // Branch(FalseConstant(),
+  //     &finished, interesting);
+  // Goto(interesting);
   Branch(
-      WordEqual(WordAnd(page_flags,
-                        IntPtrConstant(
-                            MemoryChunk::kPointersFromHereAreInterestingMask)),
-                IntPtrConstant(0)),
+      WordNotEqual(object_word,
+                        IntPtrConstant(0)),
       &finished, interesting);
   BIND(&finished);
 }
@@ -4851,7 +4851,7 @@ void CodeStubAssembler::MoveElements(ElementsKind kind,
 #ifdef V8_DISABLE_WRITE_BARRIERS
   const bool needs_barrier_check = false;
 #else
-  const bool needs_barrier_check = !IsDoubleElementsKind(kind);
+  const bool needs_barrier_check = false;
 #endif  // V8_DISABLE_WRITE_BARRIERS
 
   DCHECK(IsFastElementsKind(kind));
@@ -4940,7 +4940,7 @@ void CodeStubAssembler::CopyElements(ElementsKind kind,
 #ifdef V8_DISABLE_WRITE_BARRIERS
   const bool needs_barrier_check = false;
 #else
-  const bool needs_barrier_check = !IsDoubleElementsKind(kind);
+  const bool needs_barrier_check = false;
 #endif  // V8_DISABLE_WRITE_BARRIERS
 
   DCHECK(IsFastElementsKind(kind));
@@ -5206,13 +5206,13 @@ TNode<FixedArray> CodeStubAssembler::HeapObjectToFixedArray(
 void CodeStubAssembler::CopyPropertyArrayValues(TNode<HeapObject> from_array,
                                                 TNode<PropertyArray> to_array,
                                                 TNode<IntPtrT> property_count,
-                                                WriteBarrierMode barrier_mode,
+                                                WriteBarrierMode,
                                                 DestroySource destroy_source) {
   CSA_SLOW_ASSERT(this, Word32Or(IsPropertyArray(from_array),
                                  IsEmptyFixedArray(from_array)));
   Comment("[ CopyPropertyArrayValues");
 
-  bool needs_write_barrier = barrier_mode == UPDATE_WRITE_BARRIER;
+  bool needs_write_barrier = false;
 
   if (destroy_source == DestroySource::kNo) {
     // PropertyArray may contain mutable HeapNumbers, which will be cloned on

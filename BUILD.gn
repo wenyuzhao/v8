@@ -409,7 +409,6 @@ if (v8_enable_atomic_marking_state == "") {
   v8_enable_atomic_marking_state = v8_enable_concurrent_marking
 }
 if (v8_enable_third_party_heap) {
-  v8_disable_write_barriers = true
   v8_enable_single_generation = true
   v8_enable_shared_ro_heap = false
   v8_enable_pointer_compression = false
@@ -503,9 +502,6 @@ assert(!cppgc_enable_young_generation || cppgc_enable_caged_heap,
        "Young generation in CppGC requires caged heap")
 
 if (v8_enable_single_generation == true) {
-  assert(
-      v8_enable_unconditional_write_barriers || v8_disable_write_barriers,
-      "Requires unconditional write barriers or none (which disables incremental marking)")
 }
 
 assert(!v8_enable_conservative_stack_scanning || v8_enable_single_generation,

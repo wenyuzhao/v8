@@ -246,8 +246,7 @@ class WriteBarrierCodeStubAssembler : public CodeStubAssembler {
   }
 
   void GenerationalWriteBarrier(SaveFPRegsMode fp_mode) {
-    Label incremental_wb(this), test_old_to_young_flags(this),
-        store_buffer_exit(this), store_buffer_incremental_wb(this), next(this);
+    // Label next(this);
 
     // When incremental marking is not on, we skip cross generation pointer
     // checking here, because there are checks for
@@ -255,52 +254,52 @@ class WriteBarrierCodeStubAssembler : public CodeStubAssembler {
     // `kPointersToHereAreInterestingMask` in
     // `src/compiler/<arch>/code-generator-<arch>.cc` before calling this
     // stub, which serves as the cross generation checking.
-    auto slot =
-        UncheckedParameter<IntPtrT>(WriteBarrierDescriptor::kSlotAddress);
-    Branch(IsMarking(), &test_old_to_young_flags, &store_buffer_exit);
+    // auto slot =
+    //     UncheckedParameter<IntPtrT>(WriteBarrierDescriptor::kSlotAddress);
+    // Branch(IsMarking(), &test_old_to_young_flags, &store_buffer_exit);
 
-    BIND(&test_old_to_young_flags);
-    {
-      // TODO(ishell): do a new-space range check instead.
-      TNode<IntPtrT> value = BitcastTaggedToWord(Load<HeapObject>(slot));
+    // BIND(&test_old_to_young_flags);
+    // {
+    //   // TODO(ishell): do a new-space range check instead.
+    //   TNode<IntPtrT> value = BitcastTaggedToWord(Load<HeapObject>(slot));
 
-      // TODO(albertnetymk): Try to cache the page flag for value and
-      // object, instead of calling IsPageFlagSet each time.
-      TNode<BoolT> value_is_young =
-          IsPageFlagSet(value, MemoryChunk::kIsInYoungGenerationMask);
-      GotoIfNot(value_is_young, &incremental_wb);
+    //   // TODO(albertnetymk): Try to cache the page flag for value and
+    //   // object, instead of calling IsPageFlagSet each time.
+    //   TNode<BoolT> value_is_young =
+    //       IsPageFlagSet(value, MemoryChunk::kIsInYoungGenerationMask);
+    //   GotoIfNot(value_is_young, &incremental_wb);
 
-      TNode<IntPtrT> object = BitcastTaggedToWord(
-          UncheckedParameter<Object>(WriteBarrierDescriptor::kObject));
-      TNode<BoolT> object_is_young =
-          IsPageFlagSet(object, MemoryChunk::kIsInYoungGenerationMask);
-      Branch(object_is_young, &incremental_wb, &store_buffer_incremental_wb);
-    }
+    //   TNode<IntPtrT> object = BitcastTaggedToWord(
+    //       UncheckedParameter<Object>(WriteBarrierDescriptor::kObject));
+    //   TNode<BoolT> object_is_young =
+    //       IsPageFlagSet(object, MemoryChunk::kIsInYoungGenerationMask);
+    //   Branch(object_is_young, &incremental_wb, &store_buffer_incremental_wb);
+    // }
 
-    BIND(&store_buffer_exit);
-    {
-      TNode<IntPtrT> object = BitcastTaggedToWord(
-          UncheckedParameter<Object>(WriteBarrierDescriptor::kObject));
-      InsertIntoRememberedSet(object, slot, fp_mode);
-      Goto(&next);
-    }
+    // BIND(&store_buffer_exit);
+    // {
+    //   TNode<IntPtrT> object = BitcastTaggedToWord(
+    //       UncheckedParameter<Object>(WriteBarrierDescriptor::kObject));
+    //   InsertIntoRememberedSet(object, slot, fp_mode);
+    //   Goto(&next);
+    // }
 
-    BIND(&store_buffer_incremental_wb);
-    {
-      TNode<IntPtrT> object = BitcastTaggedToWord(
-          UncheckedParameter<Object>(WriteBarrierDescriptor::kObject));
-      InsertIntoRememberedSet(object, slot, fp_mode);
-      Goto(&incremental_wb);
-    }
+    // BIND(&store_buffer_incremental_wb);
+    // {
+    //   TNode<IntPtrT> object = BitcastTaggedToWord(
+    //       UncheckedParameter<Object>(WriteBarrierDescriptor::kObject));
+    //   InsertIntoRememberedSet(object, slot, fp_mode);
+    //   Goto(&incremental_wb);
+    // }
 
-    BIND(&incremental_wb);
-    {
-      TNode<IntPtrT> value = BitcastTaggedToWord(Load<HeapObject>(slot));
-      IncrementalWriteBarrier(slot, value, fp_mode);
-      Goto(&next);
-    }
+    // BIND(&incremental_wb);
+    // {
+    //   TNode<IntPtrT> value = BitcastTaggedToWord(Load<HeapObject>(slot));
+    //   IncrementalWriteBarrier(slot, value, fp_mode);
+    //   Goto(&next);
+    // }
 
-    BIND(&next);
+    // BIND(&next);
   }
 
   void IncrementalWriteBarrier(SaveFPRegsMode fp_mode) {
@@ -355,8 +354,9 @@ class WriteBarrierCodeStubAssembler : public CodeStubAssembler {
         GenerationalWriteBarrier(fp_mode);
         break;
       case RememberedSetAction::kOmit:
-        IncrementalWriteBarrier(fp_mode);
-        break;
+        // IncrementalWriteBarrier(fp_mode);
+        Return(TrueConstant());
+        return;
     }
     IncrementCounter(isolate()->counters()->write_barriers(), 1);
     Return(TrueConstant());
