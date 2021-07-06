@@ -916,86 +916,46 @@ class NameData : public HeapObjectData {
  public:
   NameData(JSHeapBroker* broker, ObjectData** storage, Handle<Name> object)
       : HeapObjectData(broker, storage, object) {
-    DCHECK(!broker->is_concurrent_inlining());
+    // StringData is NeverEverSerialize.
+    // TODO(solanes, v8:7790): Remove this class once all kNeverSerialized types
+    // are NeverEverSerialize.
+    UNREACHABLE();
   }
 };
 
 class StringData : public NameData {
  public:
-  StringData(JSHeapBroker* broker, ObjectData** storage, Handle<String> object);
-
-  int length() const { return length_; }
-  uint16_t first_char() const { return first_char_; }
-  base::Optional<double> to_number() const { return to_number_; }
-  bool is_external_string() const { return is_external_string_; }
-  bool is_seq_string() const { return is_seq_string_; }
-
-  ObjectData* GetCharAsStringOrUndefined(
-      JSHeapBroker* broker, uint32_t index,
-      SerializationPolicy policy = SerializationPolicy::kAssumeSerialized);
-
- private:
-  int const length_;
-  uint16_t const first_char_;
-  base::Optional<double> to_number_;
-  bool const is_external_string_;
-  bool const is_seq_string_;
-
-  // Known individual characters as strings, corresponding to the semantics of
-  // element access (s[i]). The first pair component is always less than
-  // {length_}. The second component is never nullptr.
-  ZoneVector<std::pair<uint32_t, ObjectData*>> chars_as_strings_;
+  StringData(JSHeapBroker* broker, ObjectData** storage, Handle<String> object)
+      : NameData(broker, storage, object) {
+    // StringData is NeverEverSerialize.
+    // TODO(solanes, v8:7790): Remove this class once all kNeverSerialized types
+    // are NeverEverSerialize.
+    UNREACHABLE();
+  }
 };
 
 class SymbolData : public NameData {
  public:
   SymbolData(JSHeapBroker* broker, ObjectData** storage, Handle<Symbol> object)
       : NameData(broker, storage, object) {
-    DCHECK(!broker->is_concurrent_inlining());
+    // StringData is NeverEverSerialize.
+    // TODO(solanes, v8:7790): Remove this class once all kNeverSerialized types
+    // are NeverEverSerialize.
+    UNREACHABLE();
   }
 };
-
-StringData::StringData(JSHeapBroker* broker, ObjectData** storage,
-                       Handle<String> object)
-    : NameData(broker, storage, object),
-      length_(object->length()),
-      first_char_(length_ > 0 ? object->Get(0) : 0),
-      to_number_(TryStringToDouble(broker->local_isolate(), object)),
-      is_external_string_(object->IsExternalString()),
-      is_seq_string_(object->IsSeqString()),
-      chars_as_strings_(broker->zone()) {
-  DCHECK(!broker->is_concurrent_inlining());
-}
 
 class InternalizedStringData : public StringData {
  public:
   InternalizedStringData(JSHeapBroker* broker, ObjectData** storage,
                          Handle<InternalizedString> object)
       : StringData(broker, storage, object) {
-    DCHECK(!broker->is_concurrent_inlining());
+    // InternalizedStringData is NeverEverSerialize.
+    // TODO(solanes, v8:7790): Remove this class once all kNeverSerialized types
+    // are NeverEverSerialize.
+    UNREACHABLE();
   }
 };
-
-ObjectData* StringData::GetCharAsStringOrUndefined(JSHeapBroker* broker,
-                                                   uint32_t index,
-                                                   SerializationPolicy policy) {
-  if (index >= static_cast<uint32_t>(length())) return nullptr;
-
-  for (auto const& p : chars_as_strings_) {
-    if (p.first == index) return p.second;
-  }
-
-  if (policy == SerializationPolicy::kAssumeSerialized) {
-    TRACE_MISSING(broker, "knowledge about index " << index << " on " << this);
-    return nullptr;
-  }
-
-  base::Optional<ObjectRef> element =
-      GetOwnElementFromHeap(broker, object(), index, true);
-  ObjectData* result = element.has_value() ? element->data() : nullptr;
-  chars_as_strings_.push_back({index, result});
-  return result;
-}
 
 namespace {
 
@@ -1896,128 +1856,24 @@ ObjectData* JSArrayData::GetOwnElement(JSHeapBroker* broker, uint32_t index,
 class ScopeInfoData : public HeapObjectData {
  public:
   ScopeInfoData(JSHeapBroker* broker, ObjectData** storage,
-                Handle<ScopeInfo> object);
-
-  int ContextLength() const { return context_length_; }
-  bool HasContextExtensionSlot() const { return has_context_extension_slot_; }
-  bool HasOuterScopeInfo() const { return has_outer_scope_info_; }
-
-  ObjectData* OuterScopeInfo() const { return outer_scope_info_; }
-  void SerializeScopeInfoChain(JSHeapBroker* broker);
-
- private:
-  int const context_length_;
-  bool const has_context_extension_slot_;
-  bool const has_outer_scope_info_;
-
-  // Only serialized via SerializeScopeInfoChain.
-  ObjectData* outer_scope_info_;
-};
-
-ScopeInfoData::ScopeInfoData(JSHeapBroker* broker, ObjectData** storage,
-                             Handle<ScopeInfo> object)
-    : HeapObjectData(broker, storage, object),
-      context_length_(object->ContextLength()),
-      has_context_extension_slot_(object->HasContextExtensionSlot()),
-      has_outer_scope_info_(object->HasOuterScopeInfo()),
-      outer_scope_info_(nullptr) {
-  DCHECK(!broker->is_concurrent_inlining());
-}
-
-void ScopeInfoData::SerializeScopeInfoChain(JSHeapBroker* broker) {
-  if (outer_scope_info_) return;
-  if (!has_outer_scope_info_) return;
-  outer_scope_info_ = broker->GetOrCreateData(
-      Handle<ScopeInfo>::cast(object())->OuterScopeInfo());
-  if (!outer_scope_info_->should_access_heap()) {
-    outer_scope_info_->AsScopeInfo()->SerializeScopeInfoChain(broker);
+                Handle<ScopeInfo> object)
+      : HeapObjectData(broker, storage, object) {
+    // TODO(v8:7790): Remove this class once all kNeverSerialized types are
+    // NeverEverSerialize.
+    UNREACHABLE();
   }
-}
+};
 
 class SharedFunctionInfoData : public HeapObjectData {
  public:
   SharedFunctionInfoData(JSHeapBroker* broker, ObjectData** storage,
-                         Handle<SharedFunctionInfo> object);
-
-  Builtin builtin_id() const { return builtin_id_; }
-  int context_header_size() const { return context_header_size_; }
-  ObjectData* GetBytecodeArray() const { return GetBytecodeArray_; }
-  SharedFunctionInfo::Inlineability GetInlineability() const {
-    return inlineability_;
+                         Handle<SharedFunctionInfo> object)
+      : HeapObjectData(broker, storage, object) {
+    // TODO(v8:7790): Remove this class once all kNeverSerialized types are
+    // NeverEverSerialize.
+    UNREACHABLE();
   }
-  void SerializeFunctionTemplateInfo(JSHeapBroker* broker);
-  ObjectData* scope_info() const { return scope_info_; }
-  void SerializeScopeInfoChain(JSHeapBroker* broker);
-  ObjectData* function_template_info() const { return function_template_info_; }
-  ObjectData* GetTemplateObject(FeedbackSlot slot) const {
-    auto lookup_it = template_objects_.find(slot.ToInt());
-    if (lookup_it != template_objects_.cend()) {
-      return lookup_it->second;
-    }
-    return nullptr;
-  }
-  void SetTemplateObject(FeedbackSlot slot, ObjectData* object) {
-    CHECK(
-        template_objects_.insert(std::make_pair(slot.ToInt(), object)).second);
-  }
-
-#define DECL_ACCESSOR(type, name) \
-  type name() const { return name##_; }
-  BROKER_SFI_FIELDS(DECL_ACCESSOR)
-#undef DECL_ACCESSOR
-
- private:
-  Builtin const builtin_id_;
-  int const context_header_size_;
-  ObjectData* const GetBytecodeArray_;
-#define DECL_MEMBER(type, name) type const name##_;
-  BROKER_SFI_FIELDS(DECL_MEMBER)
-#undef DECL_MEMBER
-  SharedFunctionInfo::Inlineability const inlineability_;
-  ObjectData* function_template_info_;
-  ZoneMap<int, ObjectData*> template_objects_;
-  ObjectData* scope_info_;
 };
-
-SharedFunctionInfoData::SharedFunctionInfoData(
-    JSHeapBroker* broker, ObjectData** storage,
-    Handle<SharedFunctionInfo> object)
-    : HeapObjectData(broker, storage, object),
-      builtin_id_(object->HasBuiltinId() ? object->builtin_id()
-                                         : Builtin::kNoBuiltinId),
-      context_header_size_(object->scope_info().ContextHeaderLength()),
-      GetBytecodeArray_(object->HasBytecodeArray()
-                            ? broker->GetOrCreateData(
-                                  object->GetBytecodeArray(broker->isolate()))
-                            : nullptr)
-#define INIT_MEMBER(type, name) , name##_(object->name())
-          BROKER_SFI_FIELDS(INIT_MEMBER)
-#undef INIT_MEMBER
-      ,
-      inlineability_(
-          object->GetInlineability(broker->isolate(), broker->is_turboprop())),
-      function_template_info_(nullptr),
-      template_objects_(broker->zone()),
-      scope_info_(nullptr) {
-  DCHECK_EQ(HasBuiltinId_, builtin_id_ != Builtin::kNoBuiltinId);
-  DCHECK_EQ(HasBytecodeArray_, GetBytecodeArray_ != nullptr);
-}
-
-void SharedFunctionInfoData::SerializeFunctionTemplateInfo(
-    JSHeapBroker* broker) {
-  if (function_template_info_) return;
-  function_template_info_ = broker->GetOrCreateData(
-      Handle<SharedFunctionInfo>::cast(object())->function_data(kAcquireLoad));
-}
-
-void SharedFunctionInfoData::SerializeScopeInfoChain(JSHeapBroker* broker) {
-  if (scope_info_) return;
-  scope_info_ = broker->GetOrCreateData(
-      Handle<SharedFunctionInfo>::cast(object())->scope_info());
-  if (!scope_info_->should_access_heap()) {
-    scope_info_->AsScopeInfo()->SerializeScopeInfoChain(broker);
-  }
-}
 
 class SourceTextModuleData : public HeapObjectData {
  public:
@@ -2727,8 +2583,14 @@ NEVER_EVER_SERIALIZE(BytecodeArray)
 NEVER_EVER_SERIALIZE(Cell)
 NEVER_EVER_SERIALIZE(Context)
 NEVER_EVER_SERIALIZE(NativeContext)
+NEVER_EVER_SERIALIZE(InternalizedString)
+NEVER_EVER_SERIALIZE(Name)
 NEVER_EVER_SERIALIZE(ObjectBoilerplateDescription)
 NEVER_EVER_SERIALIZE(RegExpBoilerplateDescription)
+NEVER_EVER_SERIALIZE(SharedFunctionInfo)
+NEVER_EVER_SERIALIZE(ScopeInfo)
+NEVER_EVER_SERIALIZE(String)
+NEVER_EVER_SERIALIZE(Symbol)
 NEVER_EVER_SERIALIZE(TemplateObjectDescription)
 
 #undef NEVER_EVER_SERIALIZE
@@ -3098,70 +2960,55 @@ ObjectRef MapRef::GetFieldType(InternalIndex descriptor_index) const {
 
 base::Optional<ObjectRef> StringRef::GetCharAsStringOrUndefined(
     uint32_t index, SerializationPolicy policy) const {
-  if (data_->should_access_heap()) {
     // TODO(solanes, neis, v8:7790, v8:11012): Re-enable this optimization for
     // concurrent inlining when we have the infrastructure to safely do so.
     if (broker()->is_concurrent_inlining()) return base::nullopt;
     CHECK_EQ(data_->kind(), ObjectDataKind::kUnserializedHeapObject);
     return GetOwnElementFromHeap(broker(), object(), index, true);
-  }
-  ObjectData* element =
-      data()->AsString()->GetCharAsStringOrUndefined(broker(), index, policy);
-  if (element == nullptr) return base::nullopt;
-  return ObjectRef(broker(), element);
 }
 
 bool StringRef::SupportedStringKind() const {
-  DCHECK(broker()->is_concurrent_inlining());
+  if (!broker()->is_concurrent_inlining()) return true;
   return IsInternalizedString() || object()->IsThinString();
 }
 
 base::Optional<int> StringRef::length() const {
-  if (data_->should_access_heap()) {
-    if (data_->kind() == kNeverSerializedHeapObject && !SupportedStringKind()) {
-      TRACE_BROKER_MISSING(
-          broker(),
-          "length for kNeverSerialized unsupported string kind " << *this);
-      return base::nullopt;
-    } else {
-      return object()->length(kAcquireLoad);
-    }
+  if (data_->kind() == kNeverSerializedHeapObject && !SupportedStringKind()) {
+    TRACE_BROKER_MISSING(
+        broker(),
+        "length for kNeverSerialized unsupported string kind " << *this);
+    return base::nullopt;
+  } else {
+    return object()->length(kAcquireLoad);
   }
-  return data()->AsString()->length();
 }
 
 base::Optional<uint16_t> StringRef::GetFirstChar() {
-  if (data_->should_access_heap()) {
-    if (data_->kind() == kNeverSerializedHeapObject && !SupportedStringKind()) {
-      TRACE_BROKER_MISSING(
-          broker(),
-          "first char for kNeverSerialized unsupported string kind " << *this);
-      return base::nullopt;
-    }
-
-    if (!broker()->IsMainThread()) {
-      return object()->Get(0, broker()->local_isolate());
-    } else {
-      // TODO(solanes, v8:7790): Remove this case once the inlining phase is
-      // done concurrently all the time.
-      return object()->Get(0);
-    }
+  if (data_->kind() == kNeverSerializedHeapObject && !SupportedStringKind()) {
+    TRACE_BROKER_MISSING(
+        broker(),
+        "first char for kNeverSerialized unsupported string kind " << *this);
+    return base::nullopt;
   }
-  return data()->AsString()->first_char();
+
+  if (!broker()->IsMainThread()) {
+    return object()->Get(0, broker()->local_isolate());
+  } else {
+    // TODO(solanes, v8:7790): Remove this case once the inlining phase is
+    // done concurrently all the time.
+    return object()->Get(0);
+  }
 }
 
 base::Optional<double> StringRef::ToNumber() {
-  if (data_->should_access_heap()) {
-    if (data_->kind() == kNeverSerializedHeapObject && !SupportedStringKind()) {
-      TRACE_BROKER_MISSING(
-          broker(),
-          "number for kNeverSerialized unsupported string kind " << *this);
-      return base::nullopt;
-    }
-
-    return TryStringToDouble(broker()->local_isolate(), object());
+  if (data_->kind() == kNeverSerializedHeapObject && !SupportedStringKind()) {
+    TRACE_BROKER_MISSING(
+        broker(),
+        "number for kNeverSerialized unsupported string kind " << *this);
+    return base::nullopt;
   }
-  return data()->AsString()->to_number();
+
+  return TryStringToDouble(broker()->local_isolate(), object());
 }
 
 int ArrayBoilerplateDescriptionRef::constants_elements_length() const {
@@ -3255,6 +3102,14 @@ int BytecodeArrayRef::handler_table_size() const {
     IF_ACCESS_FROM_HEAP_WITH_FLAG_C(name);                             \
     return BitField::decode(ObjectRef::data()->As##holder()->field()); \
   }
+
+#define HEAP_ACCESSOR(holder, result, name)                   \
+  result##Ref holder##Ref::name() const {                     \
+    return MakeRef(broker(), result::cast(object()->name())); \
+  }
+
+#define HEAP_ACCESSOR_C(holder, result, name) \
+  result holder##Ref::name() const { return object()->name(); }
 
 BIMODAL_ACCESSOR(AllocationSite, Object, nested_site)
 BIMODAL_ACCESSOR_C(AllocationSite, bool, CanInlineCall)
@@ -3471,41 +3326,35 @@ HolderLookupResult FunctionTemplateInfoRef::LookupHolderOfExpectedType(
 
 BIMODAL_ACCESSOR(CallHandlerInfo, Object, data)
 
-BIMODAL_ACCESSOR_C(ScopeInfo, int, ContextLength)
-BIMODAL_ACCESSOR_C(ScopeInfo, bool, HasContextExtensionSlot)
-BIMODAL_ACCESSOR_C(ScopeInfo, bool, HasOuterScopeInfo)
-BIMODAL_ACCESSOR(ScopeInfo, ScopeInfo, OuterScopeInfo)
+HEAP_ACCESSOR_C(ScopeInfo, int, ContextLength)
+HEAP_ACCESSOR_C(ScopeInfo, bool, HasContextExtensionSlot)
+HEAP_ACCESSOR_C(ScopeInfo, bool, HasOuterScopeInfo)
+HEAP_ACCESSOR(ScopeInfo, ScopeInfo, OuterScopeInfo)
 
-BIMODAL_ACCESSOR_C(SharedFunctionInfo, Builtin, builtin_id)
+HEAP_ACCESSOR_C(SharedFunctionInfo, Builtin, builtin_id)
+
 BytecodeArrayRef SharedFunctionInfoRef::GetBytecodeArray() const {
-  if (data_->should_access_heap() || broker()->is_concurrent_inlining()) {
-    BytecodeArray bytecode_array;
-    if (!broker()->IsMainThread()) {
-      bytecode_array = object()->GetBytecodeArray(broker()->local_isolate());
-    } else {
-      bytecode_array = object()->GetBytecodeArray(broker()->isolate());
-    }
-    return MakeRef(broker(), bytecode_array);
+  BytecodeArray bytecode_array;
+  if (!broker()->IsMainThread()) {
+    bytecode_array = object()->GetBytecodeArray(broker()->local_isolate());
+  } else {
+    bytecode_array = object()->GetBytecodeArray(broker()->isolate());
   }
-  return BytecodeArrayRef(
-      broker(), ObjectRef::data()->AsSharedFunctionInfo()->GetBytecodeArray());
+  return MakeRefAssumeMemoryFence(broker(), bytecode_array);
 }
+
 #define DEF_SFI_ACCESSOR(type, name) \
-  BIMODAL_ACCESSOR_WITH_FLAG_C(SharedFunctionInfo, type, name)
+  HEAP_ACCESSOR_C(SharedFunctionInfo, type, name)
 BROKER_SFI_FIELDS(DEF_SFI_ACCESSOR)
 #undef DEF_SFI_ACCESSOR
+
 SharedFunctionInfo::Inlineability SharedFunctionInfoRef::GetInlineability()
     const {
-  if (data_->should_access_heap()) {
-    if (!broker()->IsMainThread()) {
-      return object()->GetInlineability(broker()->local_isolate(),
-                                        broker()->is_turboprop());
-    } else {
-      return object()->GetInlineability(broker()->isolate(),
-                                        broker()->is_turboprop());
-    }
-  }
-  return ObjectRef::data()->AsSharedFunctionInfo()->GetInlineability();
+  return broker()->IsMainThread()
+             ? object()->GetInlineability(broker()->isolate(),
+                                          broker()->is_turboprop())
+             : object()->GetInlineability(broker()->local_isolate(),
+                                          broker()->is_turboprop());
 }
 
 base::Optional<FeedbackVectorRef> FeedbackCellRef::value() const {
@@ -3657,15 +3506,8 @@ int MapRef::GetInObjectProperties() const {
   return data()->AsMap()->in_object_properties();
 }
 
-void ScopeInfoRef::SerializeScopeInfoChain() {
-  if (data_->should_access_heap()) return;
-  CHECK_EQ(broker()->mode(), JSHeapBroker::kSerializing);
-  data()->AsScopeInfo()->SerializeScopeInfoChain(broker());
-}
-
 bool StringRef::IsExternalString() const {
-  IF_ACCESS_FROM_HEAP_C(IsExternalString);
-  return data()->AsString()->is_external_string();
+  return object()->IsExternalString();
 }
 
 Address CallHandlerInfoRef::callback() const {
@@ -3691,10 +3533,7 @@ ZoneVector<const CFunctionInfo*> FunctionTemplateInfoRef::c_signatures() const {
   return HeapObjectRef::data()->AsFunctionTemplateInfo()->c_signatures();
 }
 
-bool StringRef::IsSeqString() const {
-  IF_ACCESS_FROM_HEAP_C(IsSeqString);
-  return data()->AsString()->is_seq_string();
-}
+bool StringRef::IsSeqString() const { return object()->IsSeqString(); }
 
 void NativeContextRef::Serialize() {
   // TODO(jgruber): Disable visitation if should_access_heap() once all
@@ -4189,7 +4028,6 @@ void RegExpBoilerplateDescriptionRef::Serialize() {
   // Until then, we have to call these functions once on the main thread to
   // trigger serialization.
   data();
-  source();
 }
 
 Handle<Object> ObjectRef::object() const {
@@ -4297,41 +4135,19 @@ CodeRef JSFunctionRef::code() const {
   return CodeRef(broker(), ObjectRef::data()->AsJSFunction()->code());
 }
 
-void SharedFunctionInfoRef::SerializeFunctionTemplateInfo() {
-  if (data_->should_access_heap()) return;
-  CHECK_EQ(broker()->mode(), JSHeapBroker::kSerializing);
-  data()->AsSharedFunctionInfo()->SerializeFunctionTemplateInfo(broker());
-}
-
-void SharedFunctionInfoRef::SerializeScopeInfoChain() {
-  if (data_->should_access_heap()) return;
-  CHECK_EQ(broker()->mode(), JSHeapBroker::kSerializing);
-  data()->AsSharedFunctionInfo()->SerializeScopeInfoChain(broker());
-}
-
 base::Optional<FunctionTemplateInfoRef>
 SharedFunctionInfoRef::function_template_info() const {
-  if (data_->should_access_heap()) {
-    if (!object()->IsApiFunction()) return {};
-    return TryMakeRef(broker(), FunctionTemplateInfo::cast(
-                                    object()->function_data(kAcquireLoad)));
-  }
-  ObjectData* function_template_info =
-      data()->AsSharedFunctionInfo()->function_template_info();
-  if (!function_template_info) return base::nullopt;
-  return FunctionTemplateInfoRef(broker(), function_template_info);
+  if (!object()->IsApiFunction()) return {};
+  return TryMakeRef(broker(), FunctionTemplateInfo::cast(
+                                  object()->function_data(kAcquireLoad)));
 }
 
 int SharedFunctionInfoRef::context_header_size() const {
-  IF_ACCESS_FROM_HEAP_C(scope_info().ContextHeaderLength);
-  return data()->AsSharedFunctionInfo()->context_header_size();
+  return object()->scope_info().ContextHeaderLength();
 }
 
 ScopeInfoRef SharedFunctionInfoRef::scope_info() const {
-  if (data_->should_access_heap()) {
-    return MakeRef(broker(), object()->scope_info());
-  }
-  return ScopeInfoRef(broker(), data()->AsSharedFunctionInfo()->scope_info());
+  return MakeRef(broker(), object()->scope_info());
 }
 
 void JSObjectRef::SerializeObjectCreateMap() {
@@ -4508,8 +4324,15 @@ unsigned CodeRef::GetInlinedBytecodeSize() const {
 #undef BIMODAL_ACCESSOR
 #undef BIMODAL_ACCESSOR_B
 #undef BIMODAL_ACCESSOR_C
+#undef BIMODAL_ACCESSOR_WITH_FLAG
+#undef BIMODAL_ACCESSOR_WITH_FLAG_B
+#undef BIMODAL_ACCESSOR_WITH_FLAG_C
+#undef HEAP_ACCESSOR
+#undef HEAP_ACCESSOR_C
 #undef IF_ACCESS_FROM_HEAP
 #undef IF_ACCESS_FROM_HEAP_C
+#undef IF_ACCESS_FROM_HEAP_WITH_FLAG
+#undef IF_ACCESS_FROM_HEAP_WITH_FLAG_C
 #undef TRACE
 #undef TRACE_MISSING
 

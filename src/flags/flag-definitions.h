@@ -1446,6 +1446,9 @@ DEFINE_BOOL(trace, false, "trace javascript function calls")
 
 // codegen.cc
 DEFINE_BOOL(lazy, true, "use lazy compilation")
+DEFINE_BOOL(lazy_eval, true, "use lazy compilation during eval")
+DEFINE_BOOL(lazy_streaming, true,
+            "use lazy compilation during streaming compilation")
 DEFINE_BOOL(max_lazy, false, "ignore eager compilation hints")
 DEFINE_IMPLICATION(max_lazy, lazy)
 DEFINE_BOOL(trace_opt, false, "trace optimized compilation")
@@ -1667,6 +1670,8 @@ DEFINE_BOOL(rcs_cpu_time, false,
 DEFINE_IMPLICATION(rcs_cpu_time, rcs)
 
 // snapshot-common.cc
+DEFINE_BOOL(skip_snapshot_checksum, false,
+            "Skip snapshot checksum calculation when deserializing an Isolate.")
 DEFINE_BOOL(profile_deserialization, false,
             "Print the time it takes to deserialize the snapshot.")
 DEFINE_BOOL(serialization_statistics, false,
