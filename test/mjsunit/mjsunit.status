@@ -1536,6 +1536,8 @@
   # Requires local heaps
   'const-field-tracking': [SKIP],
   # Requires --concurrent_inlining / --finalize_streaming_on_background:
+  'compiler/regress-1225607': [SKIP],
+  'compiler/regress-1224277': [SKIP],
   'regress/regress-1220974': [SKIP],
   'regress-1146106': [SKIP],
   'compiler/bound-functions-serialize': [SKIP],

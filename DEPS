@@ -52,7 +52,7 @@ vars = {
   'gn_version': 'git_revision:31f2bba8aafa8015ca5761100a21f17c2d741062',
 
   # luci-go CIPD package version.
-  'luci_go': 'git_revision:40f945205c8670537d14901c310374774f589254',
+  'luci_go': 'git_revision:a5505c14c78e1a27562164fb55f7d2d8190a0a9b',
 
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling android_sdk_build-tools_version
@@ -92,7 +92,7 @@ deps = {
   'base/trace_event/common':
     Var('chromium_url') + '/chromium/src/base/trace_event/common.git' + '@' + 'd5bb24e5d9802c8c917fcaa4375d5239a586c168',
   'build':
-    Var('chromium_url') + '/chromium/src/build.git' + '@' + '05e78ecc7e238d91baf4f8b73e706967cc352293',
+    Var('chromium_url') + '/chromium/src/build.git' + '@' + 'ced9667e177bb9fbc17a2f918460c7e9a89a0455',
   'buildtools':
     Var('chromium_url') + '/chromium/src/buildtools.git' + '@' + 'fd3f3c19981cd8fe4e4f11e0a7b8fb6cf329807e',
   'buildtools/clang_format/script':

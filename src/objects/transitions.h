@@ -6,7 +6,6 @@
 #define V8_OBJECTS_TRANSITIONS_H_
 
 #include "src/common/checks.h"
-#include "src/heap/third-party/heap-api.h"
 #include "src/objects/descriptor-array.h"
 #include "src/objects/elements-kind.h"
 #include "src/objects/map.h"
@@ -19,6 +18,10 @@
 
 namespace v8 {
 namespace internal {
+
+namespace third_party_heap {
+class Impl;
+}
 
 // Find all transitions with given name and calls the callback.
 using ForEachTransitionCallback = std::function<void(Map)>;
