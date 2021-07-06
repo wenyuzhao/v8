@@ -20,6 +20,10 @@
 namespace v8 {
 namespace internal {
 
+namespace third_party_heap {
+class Impl;
+}
+
 // Find all transitions with given name and calls the callback.
 using ForEachTransitionCallback = std::function<void(Map)>;
 
