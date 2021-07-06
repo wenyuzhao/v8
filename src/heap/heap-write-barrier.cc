@@ -35,7 +35,7 @@ void WriteBarrier::ClearForThread(MarkingBarrier* marking_barrier) {
 
 void WriteBarrier::MarkingSlow(Heap* heap, HeapObject host, HeapObjectSlot slot,
                                HeapObject value) {
-  if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) return;
+  DCHECK(!V8_ENABLE_THIRD_PARTY_HEAP_BOOL);
   MarkingBarrier* marking_barrier = current_marking_barrier
                                         ? current_marking_barrier
                                         : heap->marking_barrier();
@@ -44,7 +44,7 @@ void WriteBarrier::MarkingSlow(Heap* heap, HeapObject host, HeapObjectSlot slot,
 
 void WriteBarrier::MarkingSlow(Heap* heap, Code host, RelocInfo* reloc_info,
                                HeapObject value) {
-  if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) return;
+  DCHECK(!V8_ENABLE_THIRD_PARTY_HEAP_BOOL);
   MarkingBarrier* marking_barrier = current_marking_barrier
                                         ? current_marking_barrier
                                         : heap->marking_barrier();
@@ -53,7 +53,7 @@ void WriteBarrier::MarkingSlow(Heap* heap, Code host, RelocInfo* reloc_info,
 
 void WriteBarrier::MarkingSlow(Heap* heap, JSArrayBuffer host,
                                ArrayBufferExtension* extension) {
-  if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) return;
+  DCHECK(!V8_ENABLE_THIRD_PARTY_HEAP_BOOL);
   MarkingBarrier* marking_barrier = current_marking_barrier
                                         ? current_marking_barrier
                                         : heap->marking_barrier();
@@ -62,7 +62,7 @@ void WriteBarrier::MarkingSlow(Heap* heap, JSArrayBuffer host,
 
 void WriteBarrier::MarkingSlow(Heap* heap, DescriptorArray descriptor_array,
                                int number_of_own_descriptors) {
-  if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) return;
+  DCHECK(!V8_ENABLE_THIRD_PARTY_HEAP_BOOL);
   MarkingBarrier* marking_barrier = current_marking_barrier
                                         ? current_marking_barrier
                                         : heap->marking_barrier();
@@ -70,7 +70,7 @@ void WriteBarrier::MarkingSlow(Heap* heap, DescriptorArray descriptor_array,
 }
 
 int WriteBarrier::MarkingFromCode(Address raw_host, Address raw_slot) {
-  if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) return 0;
+  DCHECK(!V8_ENABLE_THIRD_PARTY_HEAP_BOOL);
   HeapObject host = HeapObject::cast(Object(raw_host));
   MaybeObjectSlot slot(raw_slot);
   Address value = (*slot).ptr();

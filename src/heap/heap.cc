@@ -6071,17 +6071,21 @@ void Heap::CheckHandleCount() {
 }
 
 void Heap::ClearRecordedSlot(HeapObject object, ObjectSlot slot) {
-// #ifndef V8_DISABLE_WRITE_BARRIERS
-//   DCHECK(!IsLargeObject(object));
-//   Page* page = Page::FromAddress(slot.address());
-//   if (!page->InYoungGeneration()) {
-//     DCHECK_EQ(page->owner_identity(), OLD_SPACE);
+#ifndef V8_DISABLE_WRITE_BARRIERS
+  if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) {
+    third_party_heap::Heap::ClearRecordedSlot(object, slot);
+    return;
+  }
+  DCHECK(!IsLargeObject(object));
+  Page* page = Page::FromAddress(slot.address());
+  if (!page->InYoungGeneration()) {
+    DCHECK_EQ(page->owner_identity(), OLD_SPACE);
 
-//     if (!page->SweepingDone()) {
-//       RememberedSet<OLD_TO_NEW>::Remove(page, slot.address());
-//     }
-//   }
-// #endif
+    if (!page->SweepingDone()) {
+      RememberedSet<OLD_TO_NEW>::Remove(page, slot.address());
+    }
+  }
+#endif
 }
 
 // static
@@ -6115,18 +6119,22 @@ void Heap::VerifySlotRangeHasNoRecordedSlots(Address start, Address end) {
 #endif
 
 void Heap::ClearRecordedSlotRange(Address start, Address end) {
-// #ifndef V8_DISABLE_WRITE_BARRIERS
-//   Page* page = Page::FromAddress(start);
-//   DCHECK(!page->IsLargePage());
-//   if (!page->InYoungGeneration()) {
-//     DCHECK_EQ(page->owner_identity(), OLD_SPACE);
+#ifndef V8_DISABLE_WRITE_BARRIERS
+  if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) {
+    third_party_heap::Heap::ClearRecordedSlotRange(start, end);
+    return;
+  }
+  Page* page = Page::FromAddress(start);
+  DCHECK(!page->IsLargePage());
+  if (!page->InYoungGeneration()) {
+    DCHECK_EQ(page->owner_identity(), OLD_SPACE);
 
-//     if (!page->SweepingDone()) {
-//       RememberedSet<OLD_TO_NEW>::RemoveRange(page, start, end,
-//                                              SlotSet::KEEP_EMPTY_BUCKETS);
-//     }
-//   }
-// #endif
+    if (!page->SweepingDone()) {
+      RememberedSet<OLD_TO_NEW>::RemoveRange(page, start, end,
+                                             SlotSet::KEEP_EMPTY_BUCKETS);
+    }
+  }
+#endif
 }
 
 PagedSpace* PagedSpaceIterator::Next() {
@@ -6829,7 +6837,7 @@ Code Heap::GcSafeCastToCode(HeapObject object, Address inner_pointer) {
 
 bool Heap::GcSafeCodeContains(Code code, Address addr) {
   Map map = GcSafeMapOfCodeSpaceObject(code);
-  // DCHECK(map == ReadOnlyRoots(this).code_map());
+  DCHECK(map == ReadOnlyRoots(this).code_map());
   Builtin maybe_builtin = InstructionStream::TryLookupCode(isolate(), addr);
   if (Builtins::IsBuiltinId(maybe_builtin) &&
       code.builtin_id() == maybe_builtin) {
@@ -6941,34 +6949,35 @@ enum RangeWriteBarrierMode {
 template <int kModeMask, typename TSlot>
 void Heap::WriteBarrierForRangeImpl(MemoryChunk* source_page, HeapObject object,
                                     TSlot start_slot, TSlot end_slot) {
-  // // At least one of generational or marking write barrier should be requested.
-  // STATIC_ASSERT(kModeMask & (kDoGenerational | kDoMarking));
-  // // kDoEvacuationSlotRecording implies kDoMarking.
-  // STATIC_ASSERT(!(kModeMask & kDoEvacuationSlotRecording) ||
-  //               (kModeMask & kDoMarking));
+  DCHECK(!V8_ENABLE_THIRD_PARTY_HEAP_BOOL);
+  // At least one of generational or marking write barrier should be requested.
+  STATIC_ASSERT(kModeMask & (kDoGenerational | kDoMarking));
+  // kDoEvacuationSlotRecording implies kDoMarking.
+  STATIC_ASSERT(!(kModeMask & kDoEvacuationSlotRecording) ||
+                (kModeMask & kDoMarking));
 
-  // MarkingBarrier* marking_barrier = WriteBarrier::CurrentMarkingBarrier(this);
-  // MarkCompactCollector* collector = this->mark_compact_collector();
+  MarkingBarrier* marking_barrier = WriteBarrier::CurrentMarkingBarrier(this);
+  MarkCompactCollector* collector = this->mark_compact_collector();
 
-  // for (TSlot slot = start_slot; slot < end_slot; ++slot) {
-  //   typename TSlot::TObject value = *slot;
-  //   HeapObject value_heap_object;
-  //   if (!value.GetHeapObject(&value_heap_object)) continue;
+  for (TSlot slot = start_slot; slot < end_slot; ++slot) {
+    typename TSlot::TObject value = *slot;
+    HeapObject value_heap_object;
+    if (!value.GetHeapObject(&value_heap_object)) continue;
 
-  //   if ((kModeMask & kDoGenerational) &&
-  //       Heap::InYoungGeneration(value_heap_object)) {
-  //     RememberedSet<OLD_TO_NEW>::Insert<AccessMode::NON_ATOMIC>(source_page,
-  //                                                               slot.address());
-  //   }
+    if ((kModeMask & kDoGenerational) &&
+        Heap::InYoungGeneration(value_heap_object)) {
+      RememberedSet<OLD_TO_NEW>::Insert<AccessMode::NON_ATOMIC>(source_page,
+                                                                slot.address());
+    }
 
-  //   if ((kModeMask & kDoMarking) &&
-  //       marking_barrier->MarkValue(object, value_heap_object)) {
-  //     if (kModeMask & kDoEvacuationSlotRecording) {
-  //       collector->RecordSlot(source_page, HeapObjectSlot(slot),
-  //                             value_heap_object);
-  //     }
-  //   }
-  // }
+    if ((kModeMask & kDoMarking) &&
+        marking_barrier->MarkValue(object, value_heap_object)) {
+      if (kModeMask & kDoEvacuationSlotRecording) {
+        collector->RecordSlot(source_page, HeapObjectSlot(slot),
+                              value_heap_object);
+      }
+    }
+  }
 }
 
 // Instantiate Heap::WriteBarrierForRange() for ObjectSlot and MaybeObjectSlot.
@@ -6982,52 +6991,56 @@ template <typename TSlot>
 void Heap::WriteBarrierForRange(HeapObject object, TSlot start_slot,
                                 TSlot end_slot) {
   if (FLAG_disable_write_barriers) return;
-  // MemoryChunk* source_page = MemoryChunk::FromHeapObject(object);
+  if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) {
+    third_party_heap::Heap::WriteBarrierForRange(object, start_slot, end_slot);
+    return;
+  }
+  MemoryChunk* source_page = MemoryChunk::FromHeapObject(object);
   base::Flags<RangeWriteBarrierMode> mode;
 
-  // if (!source_page->InYoungGeneration()) {
+  if (!source_page->InYoungGeneration()) {
     mode |= kDoGenerational;
-  // }
+  }
 
-  // if (incremental_marking()->IsMarking()) {
-  //   mode |= kDoMarking;
-  //   if (!source_page->ShouldSkipEvacuationSlotRecording<AccessMode::ATOMIC>()) {
-  //     mode |= kDoEvacuationSlotRecording;
-  //   }
-  // }
+  if (incremental_marking()->IsMarking()) {
+    mode |= kDoMarking;
+    if (!source_page->ShouldSkipEvacuationSlotRecording<AccessMode::ATOMIC>()) {
+      mode |= kDoEvacuationSlotRecording;
+    }
+  }
 
-  // switch (mode) {
-  //   // Nothing to be done.
-  //   case 0:
-  //     return;
+  switch (mode) {
+    // Nothing to be done.
+    case 0:
+      return;
 
-  //   // Generational only.
-  //   case kDoGenerational:
-  //     return WriteBarrierForRangeImpl<kDoGenerational>(source_page, object,
-  //                                                      start_slot, end_slot);
-  //   // Marking, no evacuation slot recording.
-  //   case kDoMarking:
-  //     return WriteBarrierForRangeImpl<kDoMarking>(source_page, object,
-  //                                                 start_slot, end_slot);
-  //   // Marking with evacuation slot recording.
-  //   case kDoMarking | kDoEvacuationSlotRecording:
-  //     return WriteBarrierForRangeImpl<kDoMarking | kDoEvacuationSlotRecording>(
-  //         source_page, object, start_slot, end_slot);
+    // Generational only.
+    case kDoGenerational:
+      return WriteBarrierForRangeImpl<kDoGenerational>(source_page, object,
+                                                       start_slot, end_slot);
+    // Marking, no evacuation slot recording.
+    case kDoMarking:
+      return WriteBarrierForRangeImpl<kDoMarking>(source_page, object,
+                                                  start_slot, end_slot);
+    // Marking with evacuation slot recording.
+    case kDoMarking | kDoEvacuationSlotRecording:
+      return WriteBarrierForRangeImpl<kDoMarking | kDoEvacuationSlotRecording>(
+          source_page, object, start_slot, end_slot);
 
-  //   // Generational and marking, no evacuation slot recording.
-  //   case kDoGenerational | kDoMarking:
-  //     return WriteBarrierForRangeImpl<kDoGenerational | kDoMarking>(
-  //         source_page, object, start_slot, end_slot);
+    // Generational and marking, no evacuation slot recording.
+    case kDoGenerational | kDoMarking:
+      return WriteBarrierForRangeImpl<kDoGenerational | kDoMarking>(
+          source_page, object, start_slot, end_slot);
 
-  //   // Generational and marking with evacuation slot recording.
-  //   case kDoGenerational | kDoMarking | kDoEvacuationSlotRecording:
-  //     return WriteBarrierForRangeImpl<kDoGenerational | kDoMarking |
-  //                                     kDoEvacuationSlotRecording>(
-  //         source_page, object, start_slot, end_slot);
+    // Generational and marking with evacuation slot recording.
+    case kDoGenerational | kDoMarking | kDoEvacuationSlotRecording:
+      return WriteBarrierForRangeImpl<kDoGenerational | kDoMarking |
+                                      kDoEvacuationSlotRecording>(
+          source_page, object, start_slot, end_slot);
 
-  //   default:
-  //     UNREACHABLE();
-  // }
+    default:
+      UNREACHABLE();
+  }
 }
 
 void Heap::GenerationalBarrierForCodeSlow(Code host, RelocInfo* rinfo,

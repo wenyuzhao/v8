@@ -144,7 +144,6 @@ inline void GenerationalBarrier(HeapObject object, ObjectSlot slot,
 
 inline void GenerationalBarrier(HeapObject object, ObjectSlot slot,
                                 HeapObject value) {
-  // printf("GenerationalBarrier %p.%p = %p\n", (void*) object.ptr(), slot.ToVoidPtr(), (void*) value.ptr());
   if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) return;
   DCHECK(!HasWeakHeapObjectTag(*slot));
   heap_internals::GenerationalBarrierInternal(object, slot.address(), value);

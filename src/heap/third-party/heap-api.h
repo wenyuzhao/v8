@@ -44,6 +44,13 @@ class Heap {
 
   static bool IsImmovable(HeapObject object);
 
+  template <typename TSlot>
+  static void WriteBarrierForRange(HeapObject object, TSlot start_slot, TSlot end_slot);
+
+  static void ClearRecordedSlot(HeapObject object, ObjectSlot slot);
+
+  static void ClearRecordedSlotRange(Address start, Address end);
+
   void ResetIterator();
   HeapObject NextObject();
 

@@ -328,28 +328,27 @@ void MacroAssembler::RecordWriteField(Register object, int offset,
   // catch stores of Smis.
   Label done;
 
-    jmp(&done);
   // Skip barrier if writing a smi.
-  // if (smi_check == SmiCheck::kInline) {
-  //   JumpIfSmi(value, &done);
-  // }
+  if (smi_check == SmiCheck::kInline) {
+    JumpIfSmi(value, &done);
+  }
 
   // Although the object register is tagged, the offset is relative to the start
   // of the object, so the offset must be a multiple of kTaggedSize.
-  // DCHECK(IsAligned(offset, kTaggedSize));
+  DCHECK(IsAligned(offset, kTaggedSize));
 
-  // leaq(slot_address, FieldOperand(object, offset));
-  // if (FLAG_debug_code) {
-  //   ASM_CODE_COMMENT_STRING(this, "Debug check slot_address");
-  //   Label ok;
-  //   testb(slot_address, Immediate(kTaggedSize - 1));
-  //   j(zero, &ok, Label::kNear);
-  //   int3();
-  //   bind(&ok);
-  // }
+  leaq(slot_address, FieldOperand(object, offset));
+  if (FLAG_debug_code) {
+    ASM_CODE_COMMENT_STRING(this, "Debug check slot_address");
+    Label ok;
+    testb(slot_address, Immediate(kTaggedSize - 1));
+    j(zero, &ok, Label::kNear);
+    int3();
+    bind(&ok);
+  }
 
-  // RecordWrite(object, slot_address, value, save_fp, remembered_set_action,
-  //             SmiCheck::kOmit);
+  RecordWrite(object, slot_address, value, save_fp, remembered_set_action,
+              SmiCheck::kOmit);
 
   bind(&done);
 
