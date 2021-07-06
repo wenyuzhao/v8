@@ -213,6 +213,7 @@
 ################################################################################
 ['third_party_heap', {
   # Requires a second isolate
+  'runtime/call-function-on-side-effect-free': [SKIP],
   'debugger/stepping-generator-parameters': [SKIP],
   'debugger/wasm-externref-global': [SKIP],
   'debugger/stepping-async-generator': [SKIP],
