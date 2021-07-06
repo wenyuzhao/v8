@@ -159,37 +159,17 @@ std::ostream& operator<<(std::ostream& os, const PrintName& name) {
   return os.write(name.name.begin(), name.name.size());
 }
 
-std::ostream& operator<<(std::ostream& os, const WasmInitExpr& expr) {
+std::ostream& operator<<(std::ostream& os, WasmElemSegment::Entry entry) {
   os << "WasmInitExpr.";
-  switch (expr.kind()) {
-    case WasmInitExpr::kNone:
-      UNREACHABLE();
-    case WasmInitExpr::kS128Const:
-    case WasmInitExpr::kRttCanon:
-    case WasmInitExpr::kRttSub:
-    case WasmInitExpr::kRttFreshSub:
-    case WasmInitExpr::kRefNullConst:
-    case WasmInitExpr::kStructNewWithRtt:
-    case WasmInitExpr::kArrayInit:
-      // TODO(manoskouk): Implement these.
-      UNIMPLEMENTED();
-    case WasmInitExpr::kGlobalGet:
-      os << "GlobalGet(" << expr.immediate().index;
+  switch (entry.kind) {
+    case WasmElemSegment::Entry::kGlobalGetEntry:
+      os << "GlobalGet(" << entry.index;
       break;
-    case WasmInitExpr::kI32Const:
-      os << "I32Const(" << expr.immediate().i32_const;
+    case WasmElemSegment::Entry::kRefFuncEntry:
+      os << "RefFunc(" << entry.index;
       break;
-    case WasmInitExpr::kI64Const:
-      os << "I64Const(" << expr.immediate().i64_const;
-      break;
-    case WasmInitExpr::kF32Const:
-      os << "F32Const(" << expr.immediate().f32_const;
-      break;
-    case WasmInitExpr::kF64Const:
-      os << "F64Const(" << expr.immediate().f64_const;
-      break;
-    case WasmInitExpr::kRefFuncConst:
-      os << "RefFunc(" << expr.immediate().index;
+    case WasmElemSegment::Entry::kRefNullEntry:
+      os << "RefNull(" << HeapType(entry.index).name().c_str();
       break;
   }
   return os << ")";
@@ -439,17 +419,13 @@ void WasmExecutionFuzzer::FuzzWasmModule(base::Vector<const uint8_t> data,
   Zone zone(&allocator, ZONE_NAME);
 
   ZoneBuffer buffer(&zone);
-  int32_t num_args = 0;
-  std::unique_ptr<WasmValue[]> interpreter_args;
-  std::unique_ptr<Handle<Object>[]> compiler_args;
   // The first byte builds the bitmask to control which function will be
   // compiled with Turbofan and which one with Liftoff.
   uint8_t tier_mask = data.empty() ? 0 : data[0];
   if (!data.empty()) data += 1;
   uint8_t debug_mask = data.empty() ? 0 : data[0];
   if (!data.empty()) data += 1;
-  if (!GenerateModule(i_isolate, &zone, data, &buffer, &num_args,
-                      &interpreter_args, &compiler_args)) {
+  if (!GenerateModule(i_isolate, &zone, data, &buffer)) {
     return;
   }
 
