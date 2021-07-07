@@ -420,6 +420,8 @@ DEFINE_NEG_IMPLICATION(enable_third_party_heap, incremental_marking)
 DEFINE_BOOL_READONLY(enable_third_party_heap, V8_ENABLE_THIRD_PARTY_HEAP_BOOL,
                      "Use third-party heap")
 
+DEFINE_BOOL_READONLY(empty_barriers, true, "Empty barriers")
+
 #ifdef V8_ALLOCATION_FOLDING
 #define V8_ALLOCATION_FOLDING_BOOL true
 #else

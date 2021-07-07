@@ -58,6 +58,16 @@ bool Heap::IsValidHeapObject(HeapObject) { return false; }
 
 bool Heap::CollectGarbage() { return false; }
 
+template <typename TSlot>
+void Heap::WriteBarrierForRange(HeapObject object, TSlot start_slot, TSlot end_slot) {}
+
+template void Heap::WriteBarrierForRange<ObjectSlot>(HeapObject object, ObjectSlot start_slot, ObjectSlot end_slot);
+template void Heap::WriteBarrierForRange<MaybeObjectSlot>(HeapObject object, MaybeObjectSlot start_slot, MaybeObjectSlot end_slot);
+
+void Heap::ClearRecordedSlot(HeapObject object, ObjectSlot slot) {}
+
+void Heap::ClearRecordedSlotRange(Address start, Address end) {}
+
 }  // namespace third_party_heap
 }  // namespace internal
 }  // namespace v8

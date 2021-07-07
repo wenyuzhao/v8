@@ -3482,6 +3482,7 @@ void TurboAssembler::CallCFunction(Register function, int num_arguments) {
 void TurboAssembler::CheckPageFlag(Register object, Register scratch, int mask,
                                    Condition cc, Label* condition_met,
                                    Label::Distance condition_met_distance) {
+  DCHECK(!V8_ENABLE_THIRD_PARTY_HEAP_BOOL);
   ASM_CODE_COMMENT(this);
   DCHECK(cc == zero || cc == not_zero);
   if (scratch == object) {

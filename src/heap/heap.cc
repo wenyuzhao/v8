@@ -6093,7 +6093,7 @@ void Heap::CheckHandleCount() {
 
 void Heap::ClearRecordedSlot(HeapObject object, ObjectSlot slot) {
 #ifndef V8_DISABLE_WRITE_BARRIERS
-  if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) {
+  if (FLAG_empty_barriers) {
     third_party_heap::Heap::ClearRecordedSlot(object, slot);
     return;
   }
@@ -6141,7 +6141,7 @@ void Heap::VerifySlotRangeHasNoRecordedSlots(Address start, Address end) {
 
 void Heap::ClearRecordedSlotRange(Address start, Address end) {
 #ifndef V8_DISABLE_WRITE_BARRIERS
-  if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) {
+  if (FLAG_empty_barriers) {
     third_party_heap::Heap::ClearRecordedSlotRange(start, end);
     return;
   }
@@ -6921,7 +6921,7 @@ Code Heap::GcSafeFindCodeForInnerPointer(Address inner_pointer) {
 }
 
 void Heap::WriteBarrierForCodeSlow(Code code) {
-  if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) return;
+  if (FLAG_empty_barriers) return;
   for (RelocIterator it(code, RelocInfo::EmbeddedObjectModeMask()); !it.done();
        it.next()) {
     GenerationalBarrierForCode(code, it.rinfo(), it.rinfo()->target_object());
@@ -6931,13 +6931,13 @@ void Heap::WriteBarrierForCodeSlow(Code code) {
 
 void Heap::GenerationalBarrierSlow(HeapObject object, Address slot,
                                    HeapObject value) {
-  if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) return;
+  if (FLAG_empty_barriers) return;
   MemoryChunk* chunk = MemoryChunk::FromHeapObject(object);
   RememberedSet<OLD_TO_NEW>::Insert<AccessMode::NON_ATOMIC>(chunk, slot);
 }
 
 void Heap::RecordEphemeronKeyWrite(EphemeronHashTable table, Address slot) {
-  if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) return;
+  if (FLAG_empty_barriers) return;
   DCHECK(ObjectInYoungGeneration(HeapObjectSlot(slot).ToHeapObject()));
   int slot_index = EphemeronHashTable::SlotToIndex(table.address(), slot);
   InternalIndex entry = EphemeronHashTable::IndexToEntry(slot_index);
@@ -6949,7 +6949,7 @@ void Heap::RecordEphemeronKeyWrite(EphemeronHashTable table, Address slot) {
 void Heap::EphemeronKeyWriteBarrierFromCode(Address raw_object,
                                             Address key_slot_address,
                                             Isolate* isolate) {
-  if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) return;
+  if (FLAG_empty_barriers) return;
   EphemeronHashTable table = EphemeronHashTable::cast(Object(raw_object));
   MaybeObjectSlot key_slot(key_slot_address);
   MaybeObject maybe_key = *key_slot;
@@ -7012,7 +7012,7 @@ template <typename TSlot>
 void Heap::WriteBarrierForRange(HeapObject object, TSlot start_slot,
                                 TSlot end_slot) {
   if (FLAG_disable_write_barriers) return;
-  if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) {
+  if (FLAG_empty_barriers) {
     third_party_heap::Heap::WriteBarrierForRange(object, start_slot, end_slot);
     return;
   }
