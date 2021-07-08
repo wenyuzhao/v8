@@ -822,6 +822,8 @@ ExternalReference ExternalReference::printf_function() {
   return ExternalReference(Redirect(FUNCTION_ADDR(std::printf)));
 }
 
+FUNCTION_REFERENCE(write_barrier, third_party_heap::Heap::WriteBarrier)
+
 FUNCTION_REFERENCE(refill_math_random, MathRandom::RefillCache)
 
 template <typename SubjectChar, typename PatternChar>

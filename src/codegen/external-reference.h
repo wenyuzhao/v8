@@ -187,6 +187,7 @@ class StatsCounter;
   V(new_deoptimizer_function, "Deoptimizer::New()")                            \
   V(orderedhashmap_gethash_raw, "orderedhashmap_gethash_raw")                  \
   V(printf_function, "printf")                                                 \
+  V(write_barrier, "write_barrier")                                            \
   V(refill_math_random, "MathRandom::RefillCache")                             \
   V(search_string_raw_one_one, "search_string_raw_one_one")                    \
   V(search_string_raw_one_two, "search_string_raw_one_two")                    \

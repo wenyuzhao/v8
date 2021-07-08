@@ -44,6 +44,8 @@ class Heap {
 
   static bool IsImmovable(HeapObject object);
 
+  static void WriteBarrier(Address object, Address slot, Address value);
+
   template <typename TSlot>
   static void WriteBarrierForRange(HeapObject object, TSlot start_slot, TSlot end_slot);
 
@@ -63,6 +65,10 @@ class Heap {
  private:
   Impl* impl_ = nullptr;
 };
+
+extern "C" {
+  void WriteBarrier();
+}
 
 }  // namespace third_party_heap
 }  // namespace internal

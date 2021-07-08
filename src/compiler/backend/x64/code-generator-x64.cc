@@ -282,11 +282,11 @@ class OutOfLineRecordWrite final : public OutOfLineCode {
     if (COMPRESS_POINTERS_BOOL) {
       __ DecompressTaggedPointer(value_, value_);
     }
-    // if (!FLAG_empty_barriers) {
+    if (!FLAG_empty_barriers) {
     __ CheckPageFlag(value_, scratch0_,
                      MemoryChunk::kPointersToHereAreInterestingMask, zero,
                      exit());
-    // }
+    }
     __ leaq(scratch1_, operand_);
 
     RememberedSetAction const remembered_set_action =
@@ -1363,7 +1363,14 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
         __ JumpIfSmi(value, ool->exit());
       }
       if (FLAG_empty_barriers) {
-        __ jmp(ool->entry());
+        __ PushCallerSaved(SaveFPRegsMode::kSave);
+        __ leaq(scratch0, operand);
+        __ movq(arg_reg_1, object);
+        __ movq(arg_reg_2, scratch0);
+        __ movq(arg_reg_3, value);
+        __ PrepareCallCFunction(0);
+        __ CallCFunction(ExternalReference::write_barrier(), 0);
+        __ PopCallerSaved(SaveFPRegsMode::kSave);
       } else {
         __ CheckPageFlag(object, scratch0,
                          MemoryChunk::kPointersFromHereAreInterestingMask,

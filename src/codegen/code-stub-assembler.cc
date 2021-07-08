@@ -4835,7 +4835,7 @@ void CodeStubAssembler::JumpIfPointersFromHereAreInteresting(
   //     &finished, interesting);
   // Goto(interesting);
   Branch(
-      WordNotEqual(object_word,
+      WordEqual(object_word,
                         IntPtrConstant(0)),
       &finished, interesting);
   BIND(&finished);
@@ -4851,7 +4851,7 @@ void CodeStubAssembler::MoveElements(ElementsKind kind,
 #ifdef V8_DISABLE_WRITE_BARRIERS
   const bool needs_barrier_check = false;
 #else
-  const bool needs_barrier_check = false;
+  const bool needs_barrier_check = !IsDoubleElementsKind(kind);
 #endif  // V8_DISABLE_WRITE_BARRIERS
 
   DCHECK(IsFastElementsKind(kind));
@@ -4940,7 +4940,7 @@ void CodeStubAssembler::CopyElements(ElementsKind kind,
 #ifdef V8_DISABLE_WRITE_BARRIERS
   const bool needs_barrier_check = false;
 #else
-  const bool needs_barrier_check = false;
+  const bool needs_barrier_check = !IsDoubleElementsKind(kind);
 #endif  // V8_DISABLE_WRITE_BARRIERS
 
   DCHECK(IsFastElementsKind(kind));
@@ -5206,13 +5206,13 @@ TNode<FixedArray> CodeStubAssembler::HeapObjectToFixedArray(
 void CodeStubAssembler::CopyPropertyArrayValues(TNode<HeapObject> from_array,
                                                 TNode<PropertyArray> to_array,
                                                 TNode<IntPtrT> property_count,
-                                                WriteBarrierMode,
+                                                WriteBarrierMode barrier_mode,
                                                 DestroySource destroy_source) {
   CSA_SLOW_ASSERT(this, Word32Or(IsPropertyArray(from_array),
                                  IsEmptyFixedArray(from_array)));
   Comment("[ CopyPropertyArrayValues");
 
-  bool needs_write_barrier = false;
+  bool needs_write_barrier = barrier_mode == UPDATE_WRITE_BARRIER;
 
   if (destroy_source == DestroySource::kNo) {
     // PropertyArray may contain mutable HeapNumbers, which will be cloned on

@@ -576,9 +576,21 @@ void MacroAssembler::RecordWrite(Register object, Register slot_address,
 
   if ((remembered_set_action == RememberedSetAction::kOmit &&
        !FLAG_incremental_marking) ||
-      FLAG_disable_write_barriers || true) {
+      FLAG_disable_write_barriers) {
     return;
   }
+
+  if (FLAG_empty_barriers) {
+      FrameScope scope(this, StackFrame::NONE);
+      PushCallerSaved(SaveFPRegsMode::kSave);
+      movq(arg_reg_1, object);
+      movq(arg_reg_2, slot_address);
+      movq(arg_reg_3, value);
+      PrepareCallCFunction(3);
+      CallCFunction(ExternalReference::write_barrier(), 3);
+      PopCallerSaved(SaveFPRegsMode::kSave);
+      return;
+    }
 
   if (FLAG_debug_code) {
     ASM_CODE_COMMENT_STRING(this, "Debug check slot_address");

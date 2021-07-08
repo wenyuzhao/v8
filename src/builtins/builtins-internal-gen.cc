@@ -346,23 +346,31 @@ class WriteBarrierCodeStubAssembler : public CodeStubAssembler {
 
   void GenerateRecordWrite(RememberedSetAction rs_mode,
                            SaveFPRegsMode fp_mode) {
-    // if (V8_DISABLE_WRITE_BARRIERS_BOOL) {
-    //   Return(TrueConstant());
-    //   return;
-    // }
-    // if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) {
-    //   Return(TrueConstant());
-    //   return;
-    // }
-    // switch (rs_mode) {
-    //   case RememberedSetAction::kEmit:
-    //     GenerationalWriteBarrier(fp_mode);
-    //     break;
-    //   case RememberedSetAction::kOmit:
-    //     IncrementalWriteBarrier(fp_mode);
-    //     break;
-    // }
-    // IncrementCounter(isolate()->counters()->write_barriers(), 1);
+    if (V8_DISABLE_WRITE_BARRIERS_BOOL) {
+      Return(TrueConstant());
+      return;
+    }
+    if (FLAG_empty_barriers) {
+      DebugBreak();
+      // TNode<ExternalReference> function = ExternalConstant(ExternalReference::write_barrier());
+      // CallCFunctionWithCallerSavedRegisters(function, MachineTypeOf<Int32T>::value, fp_mode
+
+      //     // std::make_pair(MachineTypeOf<IntPtrT>::value, object),
+      //     // std::make_pair(MachineTypeOf<IntPtrT>::value, slot),
+      //     // std::make_pair(MachineTypeOf<IntPtrT>::value, slot),
+      // );
+      Return(TrueConstant());
+      return;
+    }
+    switch (rs_mode) {
+      case RememberedSetAction::kEmit:
+        GenerationalWriteBarrier(fp_mode);
+        break;
+      case RememberedSetAction::kOmit:
+        IncrementalWriteBarrier(fp_mode);
+        break;
+    }
+    IncrementCounter(isolate()->counters()->write_barriers(), 1);
     Return(TrueConstant());
   }
 
