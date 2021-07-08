@@ -49,6 +49,8 @@ class Heap {
   template <typename TSlot>
   static void WriteBarrierForRange(HeapObject object, TSlot start_slot, TSlot end_slot);
 
+  static void WriteBarrierForCode(Code host, RelocInfo* rinfo, HeapObject object);
+
   static void ClearRecordedSlot(HeapObject object, ObjectSlot slot);
 
   static void ClearRecordedSlotRange(Address start, Address end);

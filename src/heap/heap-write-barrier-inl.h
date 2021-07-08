@@ -17,6 +17,7 @@
 #include "src/objects/heap-object.h"
 #include "src/objects/maybe-object-inl.h"
 #include "src/objects/slots-inl.h"
+#include "src/heap/third-party/heap-api.h"
 
 namespace v8 {
 namespace internal {
@@ -82,6 +83,10 @@ struct MemoryChunk {
 
 inline void GenerationalBarrierInternal(HeapObject object, Address slot,
                                         HeapObject value) {
+  if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) {
+    third_party_heap::Heap::WriteBarrier(object.ptr(), slot, value.ptr());
+    return;
+  }
   DCHECK(Heap_PageFlagsAreConsistent(object));
   heap_internals::MemoryChunk* value_chunk =
       heap_internals::MemoryChunk::FromHeapObject(value);
@@ -98,6 +103,10 @@ inline void GenerationalBarrierInternal(HeapObject object, Address slot,
 inline void GenerationalEphemeronKeyBarrierInternal(EphemeronHashTable table,
                                                     Address slot,
                                                     HeapObject value) {
+  if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) {
+    third_party_heap::Heap::WriteBarrier(table.ptr(), slot, value.ptr());
+    return;
+  }
   DCHECK(Heap::PageFlagsAreConsistent(table));
   heap_internals::MemoryChunk* value_chunk =
       heap_internals::MemoryChunk::FromHeapObject(value);
@@ -130,7 +139,6 @@ inline void WriteBarrierForCode(Code host) {
 
 inline void GenerationalBarrier(HeapObject object, ObjectSlot slot,
                                 Object value) {
-  if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) return;
   DCHECK(!HasWeakHeapObjectTag(value));
   if (!value.IsHeapObject()) return;
   GenerationalBarrier(object, slot, HeapObject::cast(value));
@@ -138,20 +146,17 @@ inline void GenerationalBarrier(HeapObject object, ObjectSlot slot,
 
 inline void GenerationalBarrier(HeapObject object, ObjectSlot slot,
                                 Code value) {
-  if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) return;
   DCHECK(!Heap_ValueMightRequireGenerationalWriteBarrier(value));
 }
 
 inline void GenerationalBarrier(HeapObject object, ObjectSlot slot,
                                 HeapObject value) {
-  if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) return;
   DCHECK(!HasWeakHeapObjectTag(*slot));
   heap_internals::GenerationalBarrierInternal(object, slot.address(), value);
 }
 
 inline void GenerationalEphemeronKeyBarrier(EphemeronHashTable table,
                                             ObjectSlot slot, Object value) {
-  if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) return;
   DCHECK(!HasWeakHeapObjectTag(*slot));
   DCHECK(!HasWeakHeapObjectTag(value));
   DCHECK(value.IsHeapObject());
@@ -161,7 +166,6 @@ inline void GenerationalEphemeronKeyBarrier(EphemeronHashTable table,
 
 inline void GenerationalBarrier(HeapObject object, MaybeObjectSlot slot,
                                 MaybeObject value) {
-  if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) return;
   HeapObject value_heap_object;
   if (!value->GetHeapObject(&value_heap_object)) return;
   heap_internals::GenerationalBarrierInternal(object, slot.address(),
@@ -170,7 +174,10 @@ inline void GenerationalBarrier(HeapObject object, MaybeObjectSlot slot,
 
 inline void GenerationalBarrierForCode(Code host, RelocInfo* rinfo,
                                        HeapObject object) {
-  if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) return;
+  if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) {
+    third_party_heap::Heap::WriteBarrierForCode(host, rinfo, object);
+    return;
+  }
   heap_internals::MemoryChunk* object_chunk =
       heap_internals::MemoryChunk::FromHeapObject(object);
   if (!object_chunk->InYoungGeneration()) return;

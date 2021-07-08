@@ -363,9 +363,22 @@ void LiftoffAssembler::StoreTaggedPointer(Register dst_addr,
                                      static_cast<uint32_t>(offset_imm));
   StoreTaggedField(dst_op, src.gp());
 
-  if (skip_write_barrier || FLAG_disable_write_barriers || true) return;
+  if (skip_write_barrier || FLAG_disable_write_barriers) return;
 
   Register scratch = pinned.set(GetUnusedRegister(kGpReg, pinned)).gp();
+
+  if (FLAG_empty_barriers) {
+    PushCallerSaved(SaveFPRegsMode::kSave);
+    movq(arg_reg_1, dst_addr);
+    leaq(scratch, dst_op);
+    movq(arg_reg_2, scratch);
+    movq(arg_reg_3, src.gp());
+    PrepareCallCFunction(3);
+    CallCFunction(ExternalReference::write_barrier(), 3);
+    PopCallerSaved(SaveFPRegsMode::kSave);
+    return;
+  }
+
   Label write_barrier;
   Label exit;
   CheckPageFlag(dst_addr, scratch,
