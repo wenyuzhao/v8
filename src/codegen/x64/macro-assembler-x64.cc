@@ -581,16 +581,16 @@ void MacroAssembler::RecordWrite(Register object, Register slot_address,
   }
 
   if (FLAG_empty_barriers) {
-      FrameScope scope(this, StackFrame::NONE);
-      PushCallerSaved(SaveFPRegsMode::kSave);
-      movq(arg_reg_1, object);
-      movq(arg_reg_2, slot_address);
-      movq(arg_reg_3, value);
-      PrepareCallCFunction(3);
-      CallCFunction(ExternalReference::write_barrier(), 3);
-      PopCallerSaved(SaveFPRegsMode::kSave);
-      return;
-    }
+    FrameScope scope(this, StackFrame::NONE);
+    PushCallerSaved(fp_mode);
+    movq(arg_reg_1, object);
+    movq(arg_reg_2, slot_address);
+    movq(arg_reg_3, value);
+    PrepareCallCFunction(3);
+    CallCFunction(ExternalReference::write_barrier(), 3);
+    PopCallerSaved(fp_mode);
+    return;
+  }
 
   if (FLAG_debug_code) {
     ASM_CODE_COMMENT_STRING(this, "Debug check slot_address");

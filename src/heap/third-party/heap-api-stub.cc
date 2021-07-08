@@ -68,12 +68,7 @@ void Heap::ClearRecordedSlot(HeapObject object, ObjectSlot slot) {}
 
 void Heap::ClearRecordedSlotRange(Address start, Address end) {}
 
-
-extern "C" {
-  void WriteBarrier() {
-    // printf("[BARRIER]\n");
-  }
-}
+void Heap::WriteBarrier(Address object, Address slot, Address value) {}
 
 }  // namespace third_party_heap
 }  // namespace internal

@@ -4827,16 +4827,20 @@ void CodeStubAssembler::FillFixedDoubleArrayWithZero(
 void CodeStubAssembler::JumpIfPointersFromHereAreInteresting(
     TNode<Object> object, Label* interesting) {
   Label finished(this);
+  if (FLAG_empty_barriers) {
+    Branch(BoolConstant(false), &finished, interesting);
+    BIND(&finished);
+    return;
+  }
   TNode<IntPtrT> object_word = BitcastTaggedToWord(object);
-  // TNode<IntPtrT> object_page = PageFromAddress(object_word);
-  // TNode<IntPtrT> page_flags = UncheckedCast<IntPtrT>(Load(
-  //     MachineType::IntPtr(), object_page, IntPtrConstant(Page::kFlagsOffset)));
-  // Branch(FalseConstant(),
-  //     &finished, interesting);
-  // Goto(interesting);
+  TNode<IntPtrT> object_page = PageFromAddress(object_word);
+  TNode<IntPtrT> page_flags = UncheckedCast<IntPtrT>(Load(
+      MachineType::IntPtr(), object_page, IntPtrConstant(Page::kFlagsOffset)));
   Branch(
-      WordEqual(object_word,
-                        IntPtrConstant(0)),
+      WordEqual(WordAnd(page_flags,
+                        IntPtrConstant(
+                            MemoryChunk::kPointersFromHereAreInterestingMask)),
+                IntPtrConstant(0)),
       &finished, interesting);
   BIND(&finished);
 }

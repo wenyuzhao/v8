@@ -579,8 +579,11 @@ WriteBarrierKind MemoryLowering::ComputeWriteBarrierKind(
     write_barrier_kind = kNoWriteBarrier;
   }
   if (write_barrier_kind == WriteBarrierKind::kAssertNoWriteBarrier) {
-    write_barrier_kind = WriteBarrierKind::kFullWriteBarrier;
-    // write_barrier_assert_failed_(node, object, function_debug_name_, zone());
+    if (FLAG_empty_barriers) {
+      write_barrier_kind = WriteBarrierKind::kFullWriteBarrier;
+    } else {
+      write_barrier_assert_failed_(node, object, function_debug_name_, zone());
+    }
   }
   return write_barrier_kind;
 }

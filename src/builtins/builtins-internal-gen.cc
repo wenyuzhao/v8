@@ -352,13 +352,6 @@ class WriteBarrierCodeStubAssembler : public CodeStubAssembler {
     }
     if (FLAG_empty_barriers) {
       DebugBreak();
-      // TNode<ExternalReference> function = ExternalConstant(ExternalReference::write_barrier());
-      // CallCFunctionWithCallerSavedRegisters(function, MachineTypeOf<Int32T>::value, fp_mode
-
-      //     // std::make_pair(MachineTypeOf<IntPtrT>::value, object),
-      //     // std::make_pair(MachineTypeOf<IntPtrT>::value, slot),
-      //     // std::make_pair(MachineTypeOf<IntPtrT>::value, slot),
-      // );
       Return(TrueConstant());
       return;
     }

@@ -282,11 +282,10 @@ class OutOfLineRecordWrite final : public OutOfLineCode {
     if (COMPRESS_POINTERS_BOOL) {
       __ DecompressTaggedPointer(value_, value_);
     }
-    if (!FLAG_empty_barriers) {
+    if (FLAG_empty_barriers) return;
     __ CheckPageFlag(value_, scratch0_,
                      MemoryChunk::kPointersToHereAreInterestingMask, zero,
                      exit());
-    }
     __ leaq(scratch1_, operand_);
 
     RememberedSetAction const remembered_set_action =
@@ -297,15 +296,15 @@ class OutOfLineRecordWrite final : public OutOfLineCode {
                                             : SaveFPRegsMode::kIgnore;
 
     if (mode_ == RecordWriteMode::kValueIsEphemeronKey) {
-      // __ CallEphemeronKeyBarrier(object_, scratch1_, save_fp_mode);
+      __ CallEphemeronKeyBarrier(object_, scratch1_, save_fp_mode);
 #if V8_ENABLE_WEBASSEMBLY
     } else if (stub_mode_ == StubCallMode::kCallWasmRuntimeStub) {
       // A direct call to a wasm runtime stub defined in this module.
       // Just encode the stub index. This will be patched when the code
       // is added to the native module and copied into wasm code space.
-      // __ CallRecordWriteStubSaveRegisters(object_, scratch1_,
-      //                                     remembered_set_action, save_fp_mode,
-      //                                     StubCallMode::kCallWasmRuntimeStub);
+      __ CallRecordWriteStubSaveRegisters(object_, scratch1_,
+                                          remembered_set_action, save_fp_mode,
+                                          StubCallMode::kCallWasmRuntimeStub);
 #endif  // V8_ENABLE_WEBASSEMBLY
     } else {
       __ CallRecordWriteStubSaveRegisters(object_, scratch1_,

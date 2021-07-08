@@ -66,10 +66,6 @@ class Heap {
   Impl* impl_ = nullptr;
 };
 
-extern "C" {
-  void WriteBarrier();
-}
-
 }  // namespace third_party_heap
 }  // namespace internal
 }  // namespace v8
