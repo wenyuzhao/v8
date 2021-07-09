@@ -581,7 +581,8 @@ void MacroAssembler::RecordWrite(Register object, Register slot_address,
   }
 
   if (FLAG_empty_barriers) {
-    FrameScope scope(this, StackFrame::NONE);
+    base::Optional<FrameScope> scope
+      = !has_frame() ? base::make_optional<FrameScope>(this, StackFrame::INTERNAL) : base::nullopt;
     PushCallerSaved(fp_mode);
     movq(arg_reg_1, object);
     movq(arg_reg_2, slot_address);
