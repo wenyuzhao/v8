@@ -74,6 +74,7 @@
 #endif  // V8_INTL_SUPPORT
 
 #ifdef V8_OS_LINUX
+#include <dlfcn.h>
 #include <sys/mman.h>  // For MultiMappedAllocator.
 #endif
 
@@ -327,6 +328,31 @@ class MultiMappedAllocator : public ArrayBufferAllocatorBase {
   std::unordered_map<void*, void*> regions_;
   base::Mutex regions_mutex_;
 };
+
+class Harness {
+ public:
+  void Prepare() {
+    if (!internal::FLAG_harness) return;
+    harness_handle_ =
+        dlopen(internal::FLAG_harness_lib, RTLD_NOW | RTLD_GLOBAL);
+    harness_begin_ =
+        (void (*)(size_t, ...))dlsym(harness_handle_, "harness_begin");
+    harness_end_ = (void (*)(size_t, ...))dlsym(harness_handle_, "harness_end");
+  }
+  template <typename... Args>
+  void HarnessBegin(Args... args) {
+    harness_begin_(sizeof...(args) >> 1, args...);
+  }
+  template <typename... Args>
+  void HarnessEnd(Args... args) {
+    harness_end_(sizeof...(args) >> 1, args...);
+  }
+
+ private:
+  void* harness_handle_ = nullptr;
+  void (*harness_begin_)(size_t, ...) = nullptr;
+  void (*harness_end_)(size_t, ...) = nullptr;
+} harness;
 
 #endif  // V8_OS_LINUX
 
@@ -2346,6 +2372,26 @@ void Shell::Version(const v8::FunctionCallbackInfo<v8::Value>& args) {
           .ToLocalChecked());
 }
 
+void Shell::HarnessPrepare(const v8::FunctionCallbackInfo<v8::Value>& args) {
+  harness.Prepare();
+}
+
+void Shell::HarnessBegin(const v8::FunctionCallbackInfo<v8::Value>& args) {
+  if (!internal::FLAG_harness) return;
+  auto isolate = reinterpret_cast<internal::Isolate*>(args.GetIsolate());
+  auto heap = isolate->heap();
+  harness.HarnessBegin("GC", static_cast<double>(heap->gc_count()), "time.gc",
+                       static_cast<double>(heap->total_gc_time_ms()));
+}
+
+void Shell::HarnessEnd(const v8::FunctionCallbackInfo<v8::Value>& args) {
+  if (!internal::FLAG_harness) return;
+  auto isolate = reinterpret_cast<internal::Isolate*>(args.GetIsolate());
+  auto heap = isolate->heap();
+  harness.HarnessEnd("GC", static_cast<double>(heap->gc_count()), "time.gc",
+                     static_cast<double>(heap->total_gc_time_ms()));
+}
+
 #ifdef V8_FUZZILLI
 
 // We have to assume that the fuzzer will be able to call this function e.g. by
@@ -2565,6 +2611,12 @@ Local<String> Shell::Stringify(Isolate* isolate, Local<Value> value) {
 
 Local<ObjectTemplate> Shell::CreateGlobalTemplate(Isolate* isolate) {
   Local<ObjectTemplate> global_template = ObjectTemplate::New(isolate);
+  global_template->Set(isolate, "harnessPrepare",
+                       FunctionTemplate::New(isolate, HarnessPrepare));
+  global_template->Set(isolate, "harnessBegin",
+                       FunctionTemplate::New(isolate, HarnessBegin));
+  global_template->Set(isolate, "harnessEnd",
+                       FunctionTemplate::New(isolate, HarnessEnd));
   global_template->Set(Symbol::GetToStringTag(isolate),
                        String::NewFromUtf8Literal(isolate, "global"));
   global_template->Set(isolate, "version",

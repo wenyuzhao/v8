@@ -6084,7 +6084,7 @@ HeapObject HeapObjectIterator::NextObject() {
 }
 
 void Heap::UpdateTotalGCTime(double duration) {
-  if (FLAG_trace_gc_verbose) {
+  if (FLAG_trace_gc_verbose || FLAG_harness) {
     total_gc_time_ms_ += duration;
   }
 }

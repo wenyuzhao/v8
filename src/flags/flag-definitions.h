@@ -1710,6 +1710,10 @@ DEFINE_BOOL(multi_mapped_mock_allocator, false,
             "Use a multi-mapped mock ArrayBuffer allocator for testing.")
 #endif
 
+DEFINE_BOOL(harness, false, "enable gc harness")
+DEFINE_STRING(harness_lib, "",
+              "specify the dynamically-loaded gc harness library")
+
 //
 // GDB JIT integration flags.
 //
