@@ -16,7 +16,7 @@ class MarkBit {
   using CellType = uint32_t;
   STATIC_ASSERT(sizeof(CellType) == sizeof(base::Atomic32));
 
-  inline MarkBit(CellType* cell, CellType mask) : cell_(cell), mask_(mask) {}
+  inline MarkBit(CellType* cell, CellType mask, bool read_only) : cell_(cell), mask_(mask), read_only_(read_only) {}
 
 #ifdef DEBUG
   bool operator==(const MarkBit& other) {
@@ -28,9 +28,9 @@ class MarkBit {
   inline MarkBit Next() {
     CellType new_mask = mask_ << 1;
     if (new_mask == 0) {
-      return MarkBit(cell_ + 1, 1);
+      return MarkBit(cell_ + 1, 1, read_only_);
     } else {
-      return MarkBit(cell_, new_mask);
+      return MarkBit(cell_, new_mask, read_only_);
     }
   }
 
@@ -47,8 +47,13 @@ class MarkBit {
   template <AccessMode mode = AccessMode::NON_ATOMIC>
   inline bool Clear();
 
+  constexpr bool InReadOnlySpace() const {
+    return read_only_;
+  }
+
   CellType* cell_;
   CellType mask_;
+  bool read_only_;
 
   friend class IncrementalMarking;
   friend class ConcurrentMarkingMarkbits;
@@ -134,9 +139,12 @@ class V8_EXPORT_PRIVATE Bitmap {
   }
 
   inline MarkBit MarkBitFromIndex(uint32_t index) {
+#ifdef V8_HEADER_MARKBITS
+    UNREACHABLE();
+#endif
     MarkBit::CellType mask = 1u << IndexInCell(index);
     MarkBit::CellType* cell = this->cells() + (index >> kBitsPerCellLog2);
-    return MarkBit(cell, mask);
+    return MarkBit(cell, mask, false);
   }
 };
 
@@ -346,7 +354,19 @@ template <>
 V8_EXPORT_PRIVATE bool ConcurrentBitmap<AccessMode::NON_ATOMIC>::IsClean();
 
 class Marking : public AllStatic {
+  // White: 0b00
+  // Grey: 0b10
+  // Black: 0b01 or 0b11
+  static std::pair<bool, bool> mark_state;
  public:
+  static uintptr_t GetMarkState() {
+    return mark_state.first ? 0b11 : 0b01;
+  }
+
+  static void UpdateMarkState() {
+    mark_state.first = !mark_state.first;
+  }
+
   // TODO(hpayer): The current mark bit operations use as default NON_ATOMIC
   // mode for access. We should remove the default value or switch it with
   // ATOMIC as soon we add concurrency.
@@ -355,6 +375,9 @@ class Marking : public AllStatic {
   static const char* kImpossibleBitPattern;
   template <AccessMode mode = AccessMode::NON_ATOMIC>
   V8_INLINE static bool IsImpossible(MarkBit mark_bit) {
+#ifdef V8_HEADER_MARKBITS
+    return false;
+#else
     if (mode == AccessMode::NON_ATOMIC) {
       return !mark_bit.Get<mode>() && mark_bit.Next().Get<mode>();
     }
@@ -367,39 +390,66 @@ class Marking : public AllStatic {
       return !mark_bit.Get<mode>();
     }
     return false;
+#endif
   }
 
   // Black markbits: 11
   static const char* kBlackBitPattern;
   template <AccessMode mode = AccessMode::NON_ATOMIC>
   V8_INLINE static bool IsBlack(MarkBit mark_bit) {
+#ifdef V8_HEADER_MARKBITS
+    if (mark_bit.InReadOnlySpace()) return true;
+    if (!mark_bit.Next().Get<mode>()) return false;
+    return mark_state.first ? mark_bit.Get<mode>() : !mark_bit.Get<mode>();
+#else
     return mark_bit.Get<mode>() && mark_bit.Next().Get<mode>();
+#endif
   }
 
   // White markbits: 00 - this is required by the mark bit clearer.
   static const char* kWhiteBitPattern;
   template <AccessMode mode = AccessMode::NON_ATOMIC>
   V8_INLINE static bool IsWhite(MarkBit mark_bit) {
+#ifdef V8_HEADER_MARKBITS
+    if (mark_bit.InReadOnlySpace()) return false;
+    return (!mark_bit.Get<mode>() && !mark_bit.Next().Get<mode>()) || (
+      (mark_state.first ? !mark_bit.template Get<mode>() : mark_bit.template Get<mode>()) && mark_bit.Next().Get<mode>()
+    );
+#else
     DCHECK(!IsImpossible<mode>(mark_bit));
     return !mark_bit.Get<mode>();
+#endif
   }
 
   // Grey markbits: 10
   static const char* kGreyBitPattern;
   template <AccessMode mode = AccessMode::NON_ATOMIC>
   V8_INLINE static bool IsGrey(MarkBit mark_bit) {
+#ifdef V8_HEADER_MARKBITS
+    if (mark_bit.InReadOnlySpace()) return false;
     return mark_bit.Get<mode>() && !mark_bit.Next().Get<mode>();
+#else
+    return mark_bit.Get<mode>() && !mark_bit.Next().Get<mode>();
+#endif
   }
 
   // IsBlackOrGrey assumes that the first bit is set for black or grey
   // objects.
   template <AccessMode mode = AccessMode::NON_ATOMIC>
   V8_INLINE static bool IsBlackOrGrey(MarkBit mark_bit) {
+#ifdef V8_HEADER_MARKBITS
+    if (mark_bit.InReadOnlySpace()) return true;
+    return IsBlack<mode>(mark_bit) || IsGrey<mode>(mark_bit);
+#else
     return mark_bit.Get<mode>();
+#endif
   }
 
   template <AccessMode mode = AccessMode::NON_ATOMIC>
   V8_INLINE static void MarkWhite(MarkBit markbit) {
+#ifdef V8_HEADER_MARKBITS
+    if (markbit.InReadOnlySpace()) return;
+#endif
     STATIC_ASSERT(mode == AccessMode::NON_ATOMIC);
     markbit.Clear<mode>();
     markbit.Next().Clear<mode>();
@@ -410,23 +460,71 @@ class Marking : public AllStatic {
   // then you may use it.
   template <AccessMode mode = AccessMode::NON_ATOMIC>
   V8_INLINE static void MarkBlack(MarkBit markbit) {
+#ifdef V8_HEADER_MARKBITS
+    if (markbit.InReadOnlySpace()) return;
+    if (mark_state.first) markbit.Set<mode>();
+    else markbit.Clear<mode>();
+    markbit.Next().Set<mode>();
+#else
     markbit.Set<mode>();
     markbit.Next().Set<mode>();
+#endif
+  }
+
+  template <AccessMode mode = AccessMode::NON_ATOMIC>
+  V8_INLINE static void MarkGrey(MarkBit markbit) {
+    if (markbit.InReadOnlySpace()) return;
+    markbit.Set<mode>();
+    markbit.Next().Clear<mode>();
   }
 
   template <AccessMode mode = AccessMode::NON_ATOMIC>
   V8_INLINE static bool WhiteToGrey(MarkBit markbit) {
+#ifdef V8_HEADER_MARKBITS
+    // DCHECK_EQ(mode, AccessMode::NON_ATOMIC);
+    if (markbit.InReadOnlySpace()) return false;
+    // DCHECK(!IsBlack(markbit));
+    if (!IsWhite(markbit)) return false;
+    MarkGrey(markbit);
+    return true;
+    // return markbit.Set<mode>() && markbit.Next().Clear<mode>();
+#else
     return markbit.Set<mode>();
+#endif
   }
 
   template <AccessMode mode = AccessMode::NON_ATOMIC>
   V8_INLINE static bool WhiteToBlack(MarkBit markbit) {
+#ifdef V8_HEADER_MARKBITS
+    if (markbit.InReadOnlySpace()) return false;
+    // DCHECK(!markbit.InReadOnlySpace());
+    // DCHECK_EQ(mode, AccessMode::NON_ATOMIC);
+    DCHECK(!IsGrey(markbit));
+    if (IsBlack(markbit)) return false;
+    MarkBlack(markbit);
+    return true;
+    // auto succ = mark_state.first ? markbit.Set<mode>() : markbit.Clear<mode>();
+    // return succ && markbit.Next().Set<mode>();
+#else
     return markbit.Set<mode>() && markbit.Next().Set<mode>();
+#endif
   }
 
   template <AccessMode mode = AccessMode::NON_ATOMIC>
   V8_INLINE static bool GreyToBlack(MarkBit markbit) {
+#ifdef V8_HEADER_MARKBITS
+    if (markbit.InReadOnlySpace()) return false;
+    // DCHECK(!markbit.InReadOnlySpace());
+    // DCHECK_EQ(mode, AccessMode::NON_ATOMIC);
+    DCHECK(!IsWhite(markbit));
+    if (IsBlack(markbit)) return false;
+    MarkBlack(markbit);
+    return true;
+    // auto succ = mark_state.first ? markbit.Set<mode>() : markbit.Clear<mode>();
+    // return succ && markbit.Next().Set<mode>();
+#else
     return markbit.Get<mode>() && markbit.Next().Set<mode>();
+#endif
   }
 
   enum ObjectColor {

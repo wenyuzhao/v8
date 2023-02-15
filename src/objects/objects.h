@@ -782,8 +782,11 @@ class MapWord {
     return map ^ Internals::kMapWordXorMask;
   }
   static constexpr Address Unpack(Address mapword) {
-    // TODO(wenyuzhao): Clear header metadata.
+#ifdef V8_HEADER_MARKBITS
+    return (mapword & ~Internals::kMapWordMetadataMask) ^ Internals::kMapWordXorMask;
+#else
     return mapword ^ Internals::kMapWordXorMask;
+#endif
   }
   static constexpr bool IsPacked(Address mapword) {
     return (static_cast<intptr_t>(mapword) & Internals::kMapWordXorMask) ==
@@ -794,13 +797,13 @@ class MapWord {
   static constexpr bool IsPacked(Address) { return false; }
 #endif
 
+  explicit MapWord(Address value) : value_(value) {}
+
  private:
   // HeapObject calls the private constructor and directly reads the value.
   friend class HeapObject;
   template <typename TFieldType, int kFieldOffset>
   friend class TaggedField;
-
-  explicit MapWord(Address value) : value_(value) {}
 
   Address value_;
 };

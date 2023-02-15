@@ -188,8 +188,11 @@ class Internals {
 #ifdef V8_MAP_PACKING
   V8_INLINE static constexpr internal::Address UnpackMapWord(
       internal::Address mapword) {
-    // TODO(wenyuzhao): Clear header metadata.
+#ifdef V8_HEADER_MARKBITS
+    return (mapword & ~kMapWordMetadataMask) ^ kMapWordXorMask;
+#else
     return mapword ^ kMapWordXorMask;
+#endif
   }
 #endif
 

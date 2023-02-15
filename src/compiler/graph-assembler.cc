@@ -534,8 +534,13 @@ Node* JSGraphAssembler::StoreField(FieldAccess const& access, Node* object,
 #ifdef V8_MAP_PACKING
 TNode<Map> GraphAssembler::UnpackMapWord(Node* map_word) {
   map_word = BitcastTaggedToWordForTagAndSmiBits(map_word);
-  // TODO(wenyuzhao): Clear header metadata.
+#ifdef V8_HEADER_MARKBITS
+  Node* map = WordXor(
+      WordAnd(map_word, IntPtrConstant(~Internals::kMapWordMetadataMask)),
+      IntPtrConstant(Internals::kMapWordXorMask));
+#else
   Node* map = WordXor(map_word, IntPtrConstant(Internals::kMapWordXorMask));
+#endif
   return TNode<Map>::UncheckedCast(BitcastWordToTagged(map));
 }
 

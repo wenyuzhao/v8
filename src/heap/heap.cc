@@ -830,6 +830,9 @@ void Heap::IncrementDeferredCount(v8::Isolate::UseCounterFeature feature) {
 bool Heap::UncommitFromSpace() { return new_space_->UncommitFromSpace(); }
 
 void Heap::GarbageCollectionPrologue() {
+#ifdef V8_HEADER_MARKBITS
+  Marking::UpdateMarkState();
+#endif
   TRACE_GC(tracer(), GCTracer::Scope::HEAP_PROLOGUE);
 
   // Reset GC statistics.

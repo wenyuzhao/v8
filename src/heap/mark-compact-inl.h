@@ -144,6 +144,10 @@ LiveObjectRange<mode>::iterator::iterator(const MemoryChunk* chunk,
           ReadOnlyRoots(chunk->heap()).two_pointer_filler_map()),
       free_space_map_(ReadOnlyRoots(chunk->heap()).free_space_map()),
       it_(chunk, bitmap) {
+#ifdef V8_HEADER_MARKBITS
+    cursor_ = start;
+    AdvanceToNextValidObject();
+#else
   it_.Advance(Bitmap::IndexToCell(
       Bitmap::CellAlignIndex(chunk_->AddressToMarkbitIndex(start))));
   if (!it_.Done()) {
@@ -151,6 +155,7 @@ LiveObjectRange<mode>::iterator::iterator(const MemoryChunk* chunk,
     current_cell_ = *it_.CurrentCell();
     AdvanceToNextValidObject();
   }
+#endif
 }
 
 template <LiveObjectIterationMode mode>
@@ -170,6 +175,39 @@ operator++(int) {
 
 template <LiveObjectIterationMode mode>
 void LiveObjectRange<mode>::iterator::AdvanceToNextValidObject() {
+#ifdef V8_HEADER_MARKBITS
+  auto chunk_end = chunk_->area_end();
+  while (cursor_ < chunk_end) {
+    // Get the object starting from `cursor_`
+    auto obj = HeapObject::FromAddress(cursor_);
+    if (0xdeadbeedbeadbeefULL == *(size_t*) (((size_t) obj.ptr()) - 1)) break;
+    // TODO(wenyuzhao) performance
+    int size;
+    if (obj.map_word().IsForwardingAddress()) {
+      auto forwarded_object = obj.map_word().ToForwardingAddress();
+      auto map = forwarded_object.map();
+      size = forwarded_object.SizeFromMap(map);
+    } else {
+      auto map = obj.map();
+      size = obj.SizeFromMap(map);
+    }
+    DCHECK_EQ(size & 0b111, 0);
+    cursor_ += size;
+    DCHECK_EQ(cursor_ & 0b111, 0);
+    // Return the object if it is live
+    if ((mode == kBlackObjects && MarkingStateBase<void, AccessMode::ATOMIC>().IsBlack(obj))
+      || (mode == kGreyObjects && MarkingStateBase<void, AccessMode::ATOMIC>().IsGrey(obj))
+      || (mode == kAllLiveObjects && MarkingStateBase<void, AccessMode::ATOMIC>().IsBlackOrGrey(obj))
+    ) {
+      current_object_ = obj;
+      current_size_ = size;
+      return;
+    }
+  }
+  cursor_ = chunk_end;
+  current_object_ = HeapObject();
+  current_size_ = 0;
+#else
   while (!it_.Done()) {
     HeapObject object;
     int size = 0;
@@ -278,6 +316,7 @@ void LiveObjectRange<mode>::iterator::AdvanceToNextValidObject() {
     }
   }
   current_object_ = HeapObject();
+#endif
 }
 
 template <LiveObjectIterationMode mode>

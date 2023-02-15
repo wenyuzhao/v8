@@ -146,6 +146,10 @@ class RecordWriteCodeStubAssembler : public CodeStubAssembler {
 
   void GetMarkBit(TNode<IntPtrT> object, TNode<IntPtrT>* cell,
                   TNode<IntPtrT>* mask) {
+#ifdef V8_HEADER_MARKBITS
+    *cell = IntPtrAdd(object, IntPtrConstant(4));
+    *mask = IntPtrConstant(0b11 << (47 - 32));
+#else
     TNode<IntPtrT> page = PageFromAddress(object);
     TNode<IntPtrT> bitmap =
         IntPtrAdd(page, IntPtrConstant(MemoryChunk::kMarkingBitmapOffset));
@@ -170,6 +174,7 @@ class RecordWriteCodeStubAssembler : public CodeStubAssembler {
       // WordAnd(r1, IntPtrConstant((1 << kBitsPerByte) - 1)));
       *mask = WordShl(IntPtrConstant(1), r1);
     }
+#endif
   }
 
   TNode<BoolT> ShouldSkipFPRegs(TNode<Smi> mode) {

@@ -729,7 +729,9 @@ void FillUpOneNewSpacePage(Isolate* isolate, Heap* heap) {
     if (length > 0) {
       Handle<FixedArray> padding =
           isolate->factory()->NewFixedArray(length, AllocationType::kYoung);
+#ifndef V8_HEADER_MARKBITS
       DCHECK(heap->new_space()->Contains(*padding));
+#endif
       space_remaining -= padding->Size();
     } else {
       // Not enough room to create another fixed array. Create a filler.

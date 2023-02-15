@@ -78,6 +78,11 @@ class MarkingVerifier : public ObjectVisitor, public RootVisitor {
  public:
   virtual void Run() = 0;
 
+  void ClearMarkingOnPage(const Page* page, Address start, Address end);
+  void ClearMarking(NewSpace* new_space);
+  void ClearMarking(PagedSpace* paged_space);
+  void ClearMarking(LargeObjectSpace* lo_space);
+
  protected:
   explicit MarkingVerifier(Heap* heap) : heap_(heap) {}
 
@@ -110,6 +115,8 @@ class MarkingVerifier : public ObjectVisitor, public RootVisitor {
 
   void VisitMapPointer(HeapObject object) override { VerifyMap(object.map()); }
 
+  virtual void MarkWhite(HeapObject object) {}
+
   void VerifyRoots();
   void VerifyMarkingOnPage(const Page* page, Address start, Address end);
   void VerifyMarking(NewSpace* new_space);
@@ -118,6 +125,65 @@ class MarkingVerifier : public ObjectVisitor, public RootVisitor {
 
   Heap* heap_;
 };
+
+void MarkingVerifier::ClearMarkingOnPage(const Page* page, Address start,
+                                          Address end) {
+  Address next_object_must_be_here_or_later = start;
+
+  for (auto object_and_size :
+       LiveObjectRange<kAllLiveObjects>(page, bitmap(page))) {
+    HeapObject object = object_and_size.first;
+    DCHECK(!MapWord::IsPacked(object.ptr()));
+    size_t size = object_and_size.second;
+    Address current = object.address();
+    if (current < start) continue;
+    if (current >= end) break;
+    CHECK(IsMarked(object));
+    CHECK(current >= next_object_must_be_here_or_later);
+    MarkWhite(object);
+    next_object_must_be_here_or_later = current + size;
+    // The object is either part of a black area of black allocation or a
+    // regular black object
+    CHECK(bitmap(page)->AllBitsSetInRange(
+              page->AddressToMarkbitIndex(current),
+              page->AddressToMarkbitIndex(next_object_must_be_here_or_later)) ||
+          bitmap(page)->AllBitsClearInRange(
+              page->AddressToMarkbitIndex(current + kTaggedSize * 2),
+              page->AddressToMarkbitIndex(next_object_must_be_here_or_later)));
+    current = next_object_must_be_here_or_later;
+  }
+}
+
+void MarkingVerifier::ClearMarking(NewSpace* space) {
+  Address end = space->top();
+  // The bottom position is at the start of its page. Allows us to use
+  // page->area_start() as start of range on all pages.
+  CHECK_EQ(space->first_allocatable_address(),
+           space->first_page()->area_start());
+
+  PageRange range(space->first_allocatable_address(), end);
+  for (auto it = range.begin(); it != range.end();) {
+    Page* page = *(it++);
+    Address limit = it != range.end() ? page->area_end() : end;
+    CHECK(limit == end || !page->Contains(end));
+    ClearMarkingOnPage(page, page->area_start(), limit);
+  }
+}
+
+void MarkingVerifier::ClearMarking(PagedSpace* space) {
+  for (Page* p : *space) {
+    ClearMarkingOnPage(p, p->area_start(), p->area_end());
+  }
+}
+
+void MarkingVerifier::ClearMarking(LargeObjectSpace* lo_space) {
+  LargeObjectSpaceObjectIterator it(lo_space);
+  for (HeapObject obj = it.Next(); !obj.is_null(); obj = it.Next()) {
+    DCHECK(!MapWord::IsPacked(obj.ptr()));
+    MarkWhite(obj);
+  }
+}
+
 
 void MarkingVerifier::VerifyRoots() {
   heap_->IterateRoots(this, base::EnumSet<SkipRoot>{SkipRoot::kWeak});
@@ -211,6 +277,10 @@ class FullMarkingVerifier : public MarkingVerifier {
 
   bool IsBlackOrGrey(HeapObject object) override {
     return marking_state_->IsBlackOrGrey(object);
+  }
+
+  virtual void MarkWhite(HeapObject object) override {
+    Marking::MarkWhite(marking_state_->MarkBitFrom(object));
   }
 
   void VerifyMap(Map map) override { VerifyHeapObjectImpl(map); }
@@ -522,6 +592,16 @@ void MarkCompactCollector::StartMarking() {
 }
 
 void MarkCompactCollector::CollectGarbage() {
+#ifdef V8_HEADER_MARKBITS
+  FullMarkingVerifier verifier(heap());
+  verifier.ClearMarking(heap_->new_space());
+  verifier.ClearMarking(heap_->new_lo_space());
+  verifier.ClearMarking(heap_->old_space());
+  verifier.ClearMarking(heap_->code_space());
+  verifier.ClearMarking(heap_->map_space());
+  verifier.ClearMarking(heap_->lo_space());
+  verifier.ClearMarking(heap_->code_lo_space());
+#endif
   // Make sure that Prepare() has been called. The individual steps below will
   // update the state as they proceed.
   DCHECK(state_ == PREPARE_GC);
@@ -538,7 +618,35 @@ void MarkCompactCollector::CollectGarbage() {
 
   StartSweepSpaces();
   Evacuate();
+
+#ifdef V8_HEADER_MARKBITS
+  sweeper()->StartSweeperTasks();
+  sweeper()->StartIterabilityTasks();
+  sweeper()->EnsureCompleted();
+
+  {
+    GCTracer::Scope sweep_scope(
+        heap()->tracer(), GCTracer::Scope::MC_SWEEP_MAP, ThreadKind::kMain);
+    StartSweepSpace(heap()->map_space());
+  }
+  sweeper()->StartSweeping();
+  // sweeper()->StartSweeperTasks();
+  // sweeper()->StartIterabilityTasks();
+  // Evacuate();
+  // EnsureSweepingCompleted();
+#endif
+
   Finish();
+
+#ifdef V8_HEADER_MARKBITS
+  EnsureSweepingCompleted();
+
+  CHECK(!sweeper()->AreSweeperTasksRunning());
+  for (Page* page : *heap()->map_space()) {
+    if (!page->SweepingDone()) printf("%p is not sweeped\n", page);
+    CHECK(page->SweepingDone());
+  }
+#endif
 }
 
 #ifdef VERIFY_HEAP
@@ -578,9 +686,11 @@ void MarkCompactCollector::VerifyMarkbitsAreClean() {
   VerifyMarkbitsAreClean(heap_->code_space());
   VerifyMarkbitsAreClean(heap_->map_space());
   VerifyMarkbitsAreClean(heap_->new_space());
+#ifndef V8_HEADER_MARKBITS
   // Read-only space should always be black since we never collect any objects
   // in it or linked from it.
   VerifyMarkbitsAreDirty(heap_->read_only_space());
+#endif
   VerifyMarkbitsAreClean(heap_->lo_space());
   VerifyMarkbitsAreClean(heap_->code_lo_space());
   VerifyMarkbitsAreClean(heap_->new_lo_space());
@@ -964,7 +1074,9 @@ class MarkCompactCollector::RootMarkingVisitor final : public RootVisitor {
 
   void VisitRootPointer(Root root, const char* description,
                         FullObjectSlot p) final {
+#ifndef V8_HEADER_MARKBITS
     DCHECK(!MapWord::IsPacked(p.Relaxed_Load().ptr()));
+#endif
     MarkObjectByPointer(root, p);
   }
 
@@ -1826,7 +1938,9 @@ size_t MarkCompactCollector::ProcessMarkingWorklist(size_t bytes_to_process) {
       continue;
     }
     DCHECK(object.IsHeapObject());
+#ifndef V8_HEADER_MARKBITS
     DCHECK(heap()->Contains(object));
+#endif
     DCHECK(!(marking_state()->IsWhite(object)));
     if (mode == MarkCompactCollector::MarkingWorklistProcessingMode::
                     kTrackNewlyDiscoveredObjects) {
@@ -4120,11 +4234,13 @@ void MarkCompactCollector::StartSweepSpaces() {
           heap()->tracer(), GCTracer::Scope::MC_SWEEP_CODE, ThreadKind::kMain);
       StartSweepSpace(heap()->code_space());
     }
+#ifndef V8_HEADER_MARKBITS
     {
       GCTracer::Scope sweep_scope(
           heap()->tracer(), GCTracer::Scope::MC_SWEEP_MAP, ThreadKind::kMain);
       StartSweepSpace(heap()->map_space());
     }
+#endif
     sweeper()->StartSweeping();
   }
 }

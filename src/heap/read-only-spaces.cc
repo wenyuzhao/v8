@@ -388,7 +388,9 @@ void ReadOnlySpace::Seal(SealMode ro_mode) {
     }
   }
 
+#ifndef V8_HEADER_MARKBITS
   SetPermissionsForPages(memory_allocator, PageAllocator::kRead);
+#endif
 }
 
 void ReadOnlySpace::Unseal() {
@@ -684,7 +686,9 @@ AllocationResult ReadOnlySpace::AllocateRaw(int size_in_bytes,
 #endif
   HeapObject heap_obj;
   if (!result.IsRetry() && result.To(&heap_obj)) {
+#ifndef V8_HEADER_MARKBITS
     DCHECK(heap()->incremental_marking()->marking_state()->IsBlack(heap_obj));
+#endif
   }
   return result;
 }

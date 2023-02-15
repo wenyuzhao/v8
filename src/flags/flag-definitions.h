@@ -1087,10 +1087,16 @@ DEFINE_BOOL(minor_mc_trace_fragmentation, false,
 DEFINE_BOOL(trace_evacuation, false, "report evacuation statistics")
 DEFINE_BOOL(trace_mutator_utilization, false,
             "print mutator utilization, allocation speed, gc speed")
-DEFINE_BOOL(incremental_marking, true, "use incremental marking")
-DEFINE_BOOL(incremental_marking_wrappers, true,
+#ifdef V8_HEADER_MARKBITS
+#define _ENABLE_INCREMENTAL_MARKING false
+#else
+#define _ENABLE_INCREMENTAL_MARKING true
+#endif
+DEFINE_BOOL(incremental_marking, _ENABLE_INCREMENTAL_MARKING, "use incremental marking")
+DEFINE_BOOL(incremental_marking_wrappers, _ENABLE_INCREMENTAL_MARKING,
             "use incremental marking for marking wrappers")
-DEFINE_BOOL(incremental_marking_task, true, "use tasks for incremental marking")
+DEFINE_BOOL(incremental_marking_task, _ENABLE_INCREMENTAL_MARKING, "use tasks for incremental marking")
+#undef _ENABLE_INCREMENTAL_MARKING
 DEFINE_INT(incremental_marking_soft_trigger, 0,
            "threshold for starting incremental marking via a task in percent "
            "of available space: limit - size")

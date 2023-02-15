@@ -441,9 +441,11 @@ void PagedSpace::FreeLinearAllocationArea() {
         MemoryChunk::FromAddress(current_top));
   }
 
+#ifndef V8_HEADER_MARKBITS
   DCHECK_IMPLIES(current_limit - current_top >= 2 * kTaggedSize,
                  heap()->incremental_marking()->marking_state()->IsWhite(
                      HeapObject::FromAddress(current_top)));
+#endif
   Free(current_top, current_limit - current_top,
        SpaceAccountingMode::kSpaceAccounted);
 }
