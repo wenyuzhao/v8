@@ -335,6 +335,7 @@ class Harness {
     if (!internal::FLAG_harness) return;
     harness_handle_ =
         dlopen(internal::FLAG_harness_lib, RTLD_NOW | RTLD_GLOBAL);
+    CHECK_WITH_MSG(harness_handle_ != NULL, "Failed to load harness library");
     harness_begin_ =
         (void (*)(size_t, ...))dlsym(harness_handle_, "harness_begin");
     harness_end_ = (void (*)(size_t, ...))dlsym(harness_handle_, "harness_end");
